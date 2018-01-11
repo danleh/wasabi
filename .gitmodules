@@ -1,0 +1,6 @@
+[submodule "wabt"]
+	path = wabt
+	url = ../../WebAssembly/wabt
+[submodule "emsdk"]
+	path = emsdk
+	url = ../../juj/emsdk.git
