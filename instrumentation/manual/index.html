@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+</head>
+<body>
+WebAssembly runner, see console.
+<script type="text/javascript">
+    // "async main"
+    (async function () {
+        let importObject = {
+            imports: {
+                output: x => console.log(x),
+            }
+        };
+
+        let {module, instance} = await fetch("./module.wasm")
+            .then(response => response.arrayBuffer())
+            .then(arrayBuffer => WebAssembly.instantiate(arrayBuffer, importObject));
+
+        // console.log(instance.exports.start());
+
+        // let result = instance.exports.test();
+        // console.log(result);
+    })();
+</script>
+</body>
+</html>
