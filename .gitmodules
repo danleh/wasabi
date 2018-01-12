@@ -4,3 +4,6 @@
 [submodule "emsdk"]
 	path = emsdk
 	url = ../../juj/emsdk.git
+[submodule "binaryen"]
+	path = binaryen
+	url = ../../WebAssembly/binaryen.git
