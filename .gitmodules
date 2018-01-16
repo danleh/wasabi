@@ -1,9 +1,9 @@
 [submodule "binaryen"]
 	path = binaryen
-	url = .https://github.com/WebAssembly/binaryen.git
+	url = https://github.com/WebAssembly/binaryen.git
 [submodule "wabt"]
 	path = wabt
-	url = https://https://github.com/WebAssembly/wabt.git
+	url = https://github.com/WebAssembly/wabt.git
 [submodule "emsdk"]
 	path = emsdk
 	url = https://github.com/juj/emsdk.git
