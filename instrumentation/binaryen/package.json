@@ -1,0 +1,7 @@
+{
+  "name": "wasm-instrumentation",
+  "version": "0.0.1",
+  "main": "src/main.js",
+  "author": "Daniel Lehmann <daniel.lehmann@crisp-da.de>",
+  "license": "MIT"
+}
