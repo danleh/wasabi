@@ -7,4 +7,6 @@
 [submodule "emsdk"]
 	path = emsdk
 	url = https://github.com/juj/emsdk.git
-
+[submodule "spec"]
+	path = spec
+	url = https://github.com/WebAssembly/spec.git
