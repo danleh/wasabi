@@ -16,4 +16,5 @@ let bytes = Bytes.create num_bytes in
 really_input in_channel bytes 0 num_bytes;
 close_in in_channel;
 let ast = Decode.decode "ackermann" bytes in
-Print.module_ stdout 80 ast;;
+print_endline (Ast.string_of_name (List.hd ast.it.exports).it.name);;
+(* Print.module_ stdout 80 ast;; *)
