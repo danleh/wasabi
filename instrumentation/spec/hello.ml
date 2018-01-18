@@ -1,7 +1,10 @@
 open Wasm;;
 
-(* All files xyz.ml, regardless of directory structure
- * are available as submodules with capital letters.
+(* The library itself is a module of same name.
+ * E.g., wasm.cmx -> open Wasm
+ *
+ * All files xyz.ml, regardless of directory structure
+ * are available as submodules within in the library one.
  * E.g., /syntax/ast.ml -> open Wasm.Ast
  *
  * If there is an interface file xyz.mli, only its symbols
@@ -16,5 +19,6 @@ let bytes = Bytes.create num_bytes in
 really_input in_channel bytes 0 num_bytes;
 close_in in_channel;
 let ast = Decode.decode "ackermann" bytes in
-print_endline (Ast.string_of_name (List.hd ast.it.exports).it.name);;
+let export_to_name (export : Ast.export) = Ast.string_of_name export.it.name in
+List.iter (fun e -> print_endline (export_to_name e)) ast.it.exports;;
 (* Print.module_ stdout 80 ast;; *)
