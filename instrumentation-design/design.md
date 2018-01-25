@@ -19,8 +19,7 @@ Pros:
 Cons:
 
 - implementation: either in-engine or as a proxy
-- ??? only useful if instrumentation is faster then network speed, otherwise the latter catches up anyway
-- actual use in practice? ??? a developer will have the modules local anyway, not many will be doing instrumentation in production, especially not on mobile
+- actual use in practice? a developer will have the modules local anyway, not many will be doing instrumentation in production, especially not on mobile -> BUT a developer could ship the instrumentation framework in WASM with his/her website and instrumentation happens on users machine!
 
 ### Parallel Instrumentation? (related to Streaming)
 
@@ -35,10 +34,9 @@ Pros:
 
 Cons:
 
-- ??? multithreading is hard to implement (?)
+- multithreading is hard to implement
 
-MP: How about single-pass, modular instrumentation? I.e., it could be used for streaming instrumentationand it could be easily parallelized.
-
+MP: How about single-pass (linear), modular (function-independent) instrumentation? I.e., it could be used for streaming instrumentationand it could be easily parallelized.
 
 ### Record/Replay?
 
@@ -51,13 +49,13 @@ Pros:
 
 Cons:
 
-- ??? Jalangi2 doesn't use this anymore (why?)
+- Jalangi2 doesn't use this anymore (because if non-determinism, also nobody used it anyway)
 - at least doubles the memory requirements of the instrumented binary cf. the uninstrumented one
 - is the analysis really more expensive than recording every memory access? (I suspect not, since the analysis results are probably much less data to store/process.) So in reality, does this slow down the instrumented binary more than "online" analysis?
 
 MP: Maybe as a recond step, once we have an instrumentation tool?
 
-### Static vs. Dynamic (JIT) Instrumentation
+### Static (Ahead-of-Time) vs. Dynamic (JIT) Instrumentation
 
 Dynamic: instrument only "on-demand" when some code is executed (== jumped to), not everything beforehand. PIN and Valgrind do it.
 
@@ -74,7 +72,7 @@ Pros Static / Cons Dynamic:
 	- needs instrumented code cache HashMap + some quick lookup before that
 	- need to include instrumentation framework at runtime of the instrumented binary
 	- needs to patch code at runtime, i.e., change jump targets from the "dispatcher" to the newly instrumented code (this is not even possible in WASM!?)
-+ ??? most of a binary is probably executed, thus dynamic instrumentation only delays the instrumentation but has to do it eventually anyway (TODO: evaluate! is this true?) 
++ most of a binary is probably executed, thus dynamic instrumentation only delays the instrumentation but has to do it eventually anyway -> NO! libraries are only executed 5% or so!
 
 MP: Sounds like static makes more sense for WASM.
 
@@ -180,7 +178,7 @@ C++, Rust, any language that compiles to WASM:
 
 - fast, but still high-level
 
-MP: Can't we compile JS to WASM? Any language that compiles to WASM seems fine.
+MP: Can't we compile JS to WASM? Any language that compiles to WASM seems fine. -> unfortunately not, several JS features cannot be translated, e.g., DOM, GC, threading, dynamic features like objects
 
 ### Other
 
@@ -190,34 +188,29 @@ MP: Can't we compile JS to WASM? Any language that compiles to WASM seems fine.
 
 ## Possible Analyses / Use-Cases for Instrumentation
 
-*Simple* ones, i.e., analysis itself is well known
+*Simple* ones, implement first
 
 - instruction counting: which instruction is executed how often
 	1. per whole module (simplest case)
 	2. per function
 - basic block counting / coverage
 	* needs some control-flow analysis
-- taint analysis
-	* simplest version: just 1 bit, "tainted" or not
-	* needs "shadow values", i.e., associated meta information for each memory "cell" (byte?)
-	* needs "shadow execution", i.e., computation on this meta information, invoked when computation on actual values happens
-- memory access tracing
-	* record address of each read/write
-	* show regions that are never accessed (maybe as an image?) -> should have not been allocated?
-	* show regions that are accessed very often -> potential for optimization?
 - call counting
 	1. which function is called how often
 		* need to handle direct and indirect calls
 	2. from which other function (build flame graph?)
 - null/empty instrumentation: run instrumentation framework but do no user analysis
 
-Known but not as simple to implement:
+Not as simple, but still well understood, implement next:
 
-- general time profiling: which function is executed how long, flamegraph?
-	* precise (actually measure time) vs. sampling (periodically observe which is currently executing, is this possible in WASM?)
-- fault injection: flip bits/change bytes in WASM memory
-- concolic execution (?)
-- track origin of null values: when null value is read, where was it written from?
+- memory access tracing
+	* record address of each read/write
+	* show regions that are never accessed (maybe as an image?) -> should have not been allocated?
+	* show regions that are accessed very often -> potential for optimization?
+- taint analysis
+	* simplest version: just 1 bit, "tainted" or not
+	* needs "shadow values", i.e., associated meta information for each memory "cell" (byte?)
+	* needs "shadow execution", i.e., computation on this meta information, invoked when computation on actual values happens
 
 New analyses, possibly *specific to WebAssembly*:
 
@@ -233,5 +226,8 @@ New analyses, possibly *specific to WebAssembly*:
 Other:
 
 - record & replay, for time-traveling debugging
-
-
+- general time profiling: which function is executed how long, flamegraph?
+	* precise (actually measure time) vs. sampling (periodically observe which is currently executing, is this possible in WASM?)
+- fault injection: flip bits/change bytes in WASM memory
+- concolic execution (?)
+- track origin of null values: when null value is read, where was it written from?
