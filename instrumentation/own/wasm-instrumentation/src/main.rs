@@ -6,6 +6,11 @@ use std::io::{self, BufReader, Error};
 use std::io::ErrorKind::InvalidData;
 use byteorder::{ReadBytesExt, LittleEndian};
 
+/// convenience method
+fn wasm_error<T>(reason: &str) -> io::Result<T> {
+    Err(Error::new(InvalidData, reason))
+}
+
 pub trait ReadWasmExt: io::Read + Sized {
     fn read_byte(&mut self) -> io::Result<u8> {
         use byteorder::ReadBytesExt;
@@ -15,8 +20,8 @@ pub trait ReadWasmExt: io::Read + Sized {
     fn read_u32_leb128(&mut self) -> io::Result<u32> {
         match leb128::read::unsigned(self) {
             Err(leb128::read::Error::IoError(io_err)) => Err(io_err),
-            Err(leb128::read::Error::Overflow) => Err(Error::new(InvalidData, "overflow")),
-            Ok(value) if value > u32::max_value() as u64 => Err(Error::new(InvalidData, "overflow")),
+            Err(leb128::read::Error::Overflow) => wasm_error("overflow"),
+            Ok(value) if value > u32::max_value() as u64 => wasm_error("overflow"),
             Ok(value) => Ok(value as u32),
         }
     }
@@ -36,7 +41,18 @@ pub enum Section {
 }
 
 #[derive(Debug)]
-pub struct FuncType;
+pub struct FuncType {
+    params: Vec<ValType>,
+    results: Vec<ValType>,
+}
+
+#[derive(Debug)]
+pub enum ValType {
+    I32,
+    I64,
+    F32,
+    F64,
+}
 
 trait ParseWasm: Sized {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self>;
@@ -47,32 +63,74 @@ impl ParseWasm for Module {
         let mut magic_number = [0u8; 4];
         reader.read_exact(&mut magic_number)?;
         if &magic_number != b"\0asm" {
-            return Err(Error::new(InvalidData, "magic bytes do not match"));
+            return wasm_error("magic bytes do not match");
         }
 
         let version = reader.read_u32::<LittleEndian>()?;
         if version != 1 {
-            return Err(io::Error::new(InvalidData, "not version 1"));
+            return wasm_error("not version 1");
         }
 
-        Ok(Module {
-            version,
-            sections: vec![],
-        })
+        let mut sections = Vec::new();
+        loop {
+            let section = Section::parse(reader);
+            match section {
+                Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+                _ => {}
+            };
+            sections.push(section?);
+        }
+
+        Ok(Module { version, sections })
     }
 }
 
 impl ParseWasm for Section {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let type_ = reader.read_byte()?;
-        let size = reader.read_u32_leb128()?;
-
         // TODO parallelize by jumping forward size bytes for each section
+        let _size = reader.read_u32_leb128()?;
 
         match type_ {
-            1 => Ok(Section::Type(vec![])),
-            _ => unimplemented!()
+            1 => Ok(Section::Type(Vec::parse(reader)?)),
+            _ => unimplemented!("other sections")
         }
+    }
+}
+
+impl<T: ParseWasm> ParseWasm for Vec<T> {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let size = reader.read_u32_leb128()?;
+        let mut vec: Vec<T> = Vec::with_capacity(size as usize);
+        for _ in 0..size {
+            vec.push(T::parse(reader)?);
+        };
+        Ok(vec)
+    }
+}
+
+impl ParseWasm for FuncType {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        if reader.read_byte()? != 0x60 {
+            return wasm_error("wrong byte, expected functype");
+        }
+
+        let params = Vec::parse(reader)?;
+        let results = Vec::parse(reader)?;
+
+        Ok(FuncType { params, results })
+    }
+}
+
+impl ParseWasm for ValType {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        Ok(match reader.read_byte()? {
+            0x7f => ValType::I32,
+            0x7e => ValType::I64,
+            0x7d => ValType::F32,
+            0x7c => ValType::F64,
+            _ => wasm_error("wrong byte, expected valtype")?
+        })
     }
 }
 
@@ -80,34 +138,4 @@ fn main() {
     let file = File::open("test/type-func.wasm").unwrap();
     let mut buf_reader = BufReader::new(file);
     println!("{:?}", Module::parse(&mut buf_reader));
-}
-//
-//fn parse_section<R: io::Read>(reader: &mut R) -> Section {
-//    let section_type = reader.read_byte().unwrap();
-//    let section_size = reader.read_u32_leb128().unwrap();
-//    println!("type: {}, size: {}", section_type, section_size);
-//    match section_type{
-//        1 => parse_type_section(&mut reader.take(section_size as u64)),
-//        _ => unimplemented!()
-//    }
-//}
-
-fn parse_type_section<R: io::Read>(reader: &mut R) -> Section {
-    let num_funcs = reader.read_u32_leb128().unwrap();
-    let mut funcs = Vec::new();
-    println!("funcs: {}", num_funcs);
-    // TODO implement vec() combinator
-    for i in 0..num_funcs {
-        assert_eq!(reader.read_byte().unwrap(), 0x60, "function type has incorrect byte");
-        let num_params = reader.read_u32_leb128().unwrap();
-        for j in 0..num_params {
-            println!("param valtype: {}", reader.read_byte().unwrap());
-        }
-        let num_results = reader.read_u32_leb128().unwrap();
-        for j in 0..num_results {
-            println!("result valtype: {}", reader.read_byte().unwrap());
-        }
-        funcs.push(FuncType);
-    }
-    Section::Type(funcs)
 }
