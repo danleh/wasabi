@@ -37,7 +37,10 @@ pub struct Module {
 
 #[derive(Debug)]
 pub enum Section {
-    Type(Vec<FuncType>)
+    // TODO custom derive + some "tag" attribute to distinguish cases?
+    Type(Vec<FuncType>),
+    Function(Vec<TypeIdx>),
+    Code(Vec<Code>),
 }
 
 #[derive(Debug)]
@@ -52,6 +55,32 @@ pub enum ValType {
     I64,
     F32,
     F64,
+}
+
+#[derive(Debug)]
+pub struct TypeIdx(u32);
+
+#[derive(Debug)]
+pub struct Code {
+    func: Func
+}
+
+#[derive(Debug)]
+pub struct Func {
+    locals: Vec<Locals>,
+    expr: Expr // TODO replace with Vec<Instr> since the Expr only contains the end byte 0x0b anyway
+}
+
+#[derive(Debug)]
+pub struct Locals;
+
+#[derive(Debug)]
+pub struct Expr;
+
+#[derive(Debug)]
+pub enum Instr {
+    Nop,
+    // TODO some simple instr
 }
 
 trait ParseWasm: Sized {
@@ -91,10 +120,12 @@ impl ParseWasm for Section {
         // TODO parallelize by jumping forward size bytes for each section
         let _size = reader.read_u32_leb128()?;
 
-        match type_ {
-            1 => Ok(Section::Type(Vec::parse(reader)?)),
-            _ => unimplemented!("other sections")
-        }
+        Ok(match type_ {
+            1 => Section::Type(Vec::parse(reader)?),
+            3 => Section::Function(Vec::parse(reader)?),
+            10 => Section::Code(Vec::parse(reader)?),
+            s => unimplemented!("section type {}", s)
+        })
     }
 }
 
@@ -131,6 +162,48 @@ impl ParseWasm for ValType {
             0x7c => ValType::F64,
             _ => wasm_error("wrong byte, expected valtype")?
         })
+    }
+}
+
+impl ParseWasm for TypeIdx {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        Ok(TypeIdx(reader.read_u32_leb128()?))
+    }
+}
+
+impl ParseWasm for Code {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let _size = reader.read_u32_leb128()?;
+        // TODO parallelize function decoding by jumping forward _size bytes
+
+        Ok(Code { func: Func::parse(reader)? })
+    }
+}
+
+impl ParseWasm for Func {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        Ok(Func {
+            locals: Vec::parse(reader)?,
+            expr: Expr::parse(reader)?
+        })
+    }
+}
+
+impl ParseWasm for Locals {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        unimplemented!()
+    }
+}
+
+impl ParseWasm for Expr {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        loop {
+            match reader.read_byte()? {
+                0x0b => break,
+                byte => println!("instr byte 0x{:02x}", byte) // FIXME
+            }
+        }
+        Ok(Expr)
     }
 }
 
