@@ -80,7 +80,47 @@ pub enum Instr {
 
     Drop = 0x1a,
     Select = 0x1b,
+//    Const(i32)
 
+// what I would want:
+//    Const<T: ValType>(underlying<T>)
+//    I32Const(u32) = 0x41,
+
+}
+/*
+enum Test {
+    #[opcode = 0x41] I32Const(u32),
+}
+
+struct Memarg {
+    alignment: u32,
+    offset: u32
+}
+
+// should generate:
+
+impl ParseWasm for Test {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        Ok(match reader.read_byte()? {
+            0x41 => Test::I32Const(Memarg::parse(reader)?),
+            byte => return wasm_error(format!("expected Test, got byte 0x{:02x}", byte))
+        })
+    }
+}
+
+impl ParseWasm for Memarg {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        Ok(Memarg {
+            alignment: u32::parse(reader)?,
+            offset: u32::parse(reader)?,
+        })
+    }
+}
+*/
+impl ParseWasm for u32 {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        reader.read_u32_leb128()
+    }
 }
 
 trait ParseWasm: Sized {
