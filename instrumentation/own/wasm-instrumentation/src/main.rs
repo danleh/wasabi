@@ -22,8 +22,8 @@ pub trait ReadWasmExt: io::Read + Sized {
     fn read_u32_leb128(&mut self) -> io::Result<u32> {
         match leb128::read::unsigned(self) {
             Err(leb128::read::Error::IoError(io_err)) => Err(io_err),
-            Err(leb128::read::Error::Overflow) => wasm_error("overflow"),
-            Ok(value) if value > u32::max_value() as u64 => wasm_error("overflow"),
+            Err(leb128::read::Error::Overflow) => wasm_error("leb128 to u32 overflow"),
+            Ok(value) if value > u32::max_value() as u64 => wasm_error("leb128 to u32 overflow"),
             Ok(value) => Ok(value as u32),
         }
     }
