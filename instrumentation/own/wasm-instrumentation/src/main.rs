@@ -7,7 +7,9 @@ use std::io::ErrorKind::InvalidData;
 use byteorder::{ReadBytesExt, LittleEndian};
 
 /// convenience method
-fn wasm_error<T>(reason: &str) -> io::Result<T> {
+fn wasm_error<T, E>(reason: E) -> io::Result<T>
+    where E: Into<Box<std::error::Error + Send + Sync>>
+{
     Err(Error::new(InvalidData, reason))
 }
 
