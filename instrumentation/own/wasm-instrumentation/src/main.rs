@@ -1,10 +1,14 @@
 extern crate byteorder;
 extern crate leb128;
+#[macro_use]
+extern crate enum_primitive_derive;
+extern crate num_traits;
 
 use std::fs::File;
 use std::io::{self, BufReader, Error};
 use std::io::ErrorKind::InvalidData;
 use byteorder::{ReadBytesExt, LittleEndian};
+use num_traits::FromPrimitive;
 
 /// convenience method
 fn wasm_error<T, E>(reason: E) -> io::Result<T>
@@ -42,7 +46,7 @@ pub enum Section {
     // TODO custom derive + some "tag" attribute to distinguish cases?
     Type(Vec<FuncType>),
     Function(Vec<TypeIdx>),
-    Code(Vec<Code>),
+    Code(Vec<Func>),
 }
 
 #[derive(Debug)]
@@ -63,26 +67,20 @@ pub enum ValType {
 pub struct TypeIdx(u32);
 
 #[derive(Debug)]
-pub struct Code {
-    func: Func
-}
-
-#[derive(Debug)]
 pub struct Func {
-    locals: Vec<Locals>,
-    expr: Expr // TODO replace with Vec<Instr> since the Expr only contains the end byte 0x0b anyway
+    locals: Vec<ValType>,
+    instructions: Vec<Instr>,
 }
 
-#[derive(Debug)]
-pub struct Locals;
-
-#[derive(Debug)]
-pub struct Expr;
-
-#[derive(Debug)]
+#[derive(Debug, Primitive)]
 pub enum Instr {
-    Nop,
-    // TODO some simple instr
+    Unreachable = 0x00,
+    Nop = 0x01,
+    // TODO https://webassembly.github.io/spec/core/binary/instructions.html#control-instructions
+
+    Drop = 0x1a,
+    Select = 0x1b,
+
 }
 
 trait ParseWasm: Sized {
@@ -173,39 +171,24 @@ impl ParseWasm for TypeIdx {
     }
 }
 
-impl ParseWasm for Code {
+impl ParseWasm for Func {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let _size = reader.read_u32_leb128()?;
         // TODO parallelize function decoding by jumping forward _size bytes
+        let locals = Vec::parse(reader)?;
 
-        Ok(Code { func: Func::parse(reader)? })
-    }
-}
-
-impl ParseWasm for Func {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Ok(Func {
-            locals: Vec::parse(reader)?,
-            expr: Expr::parse(reader)?
-        })
-    }
-}
-
-impl ParseWasm for Locals {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        unimplemented!()
-    }
-}
-
-impl ParseWasm for Expr {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        // instructions
         loop {
             match reader.read_byte()? {
                 0x0b => break,
-                byte => println!("instr byte 0x{:02x}", byte) // FIXME
+                byte => {
+                    println!("instr byte 0x{:02x}", byte);
+                    println!("{:?}", Instr::from_u8(byte))
+                } // FIXME
             }
         }
-        Ok(Expr)
+
+        Ok(Func { locals, instructions: Vec::new() })
     }
 }
 
