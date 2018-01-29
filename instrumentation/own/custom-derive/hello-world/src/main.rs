@@ -1,12 +1,17 @@
+#![feature(attr_literals)]
+
 #[macro_use]
 extern crate hello_world_derive;
 
-trait HelloWorld {
+pub trait HelloWorld {
     fn hello_world();
 }
 
 #[derive(HelloWorld)]
-struct FrenchToast;
+#[opcode = 0x41]
+struct FrenchToast {
+    #[opcode = "bla"] field: u32
+}
 
 #[derive(HelloWorld)]
 struct Waffles;
