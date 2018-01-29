@@ -55,12 +55,12 @@ pub struct FuncType {
     results: Vec<ValType>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Primitive)]
 pub enum ValType {
-    I32,
-    I64,
-    F32,
-    F64,
+    I32 = 0x7f,
+    I64 = 0x7e,
+    F32 = 0x7d,
+    F64 = 0x7c,
 }
 
 #[derive(Debug)]
@@ -155,13 +155,11 @@ impl ParseWasm for FuncType {
 
 impl ParseWasm for ValType {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Ok(match reader.read_byte()? {
-            0x7f => ValType::I32,
-            0x7e => ValType::I64,
-            0x7d => ValType::F32,
-            0x7c => ValType::F64,
-            _ => wasm_error("wrong byte, expected valtype")?
-        })
+        let byte = reader.read_byte()?;
+        match ValType::from_u8(byte) {
+            Some(val_type) => Ok(val_type),
+            None => wasm_error(format!("expected valtype, got byte 0x{:02x}, ", byte))
+        }
     }
 }
 
