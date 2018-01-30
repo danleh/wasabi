@@ -52,7 +52,7 @@ impl ParseWasm for String {
         reader.read_exact(&mut buf)?;
         match String::from_utf8(buf) {
             Ok(str) => Ok(str),
-            Err(e) => wasm_error(e.to_string()), // TODO better error message
+            Err(e) => wasm_error(format!("utf-8 conversion error: {}", e.to_string())),
         }
     }
 }
@@ -116,7 +116,6 @@ pub struct Import {
 #[derive(ParseWasm, Debug)]
 pub enum ImportType {
     #[tag = 0x0] Function(TypeIdx),
-    // TODO
 }
 
 #[derive(ParseWasm, Debug, PartialEq)]
