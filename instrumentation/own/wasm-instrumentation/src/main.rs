@@ -144,7 +144,7 @@ impl ParseWasm for Section {
             1 => Section::Type(Vec::parse(reader)?),
             3 => Section::Function(Vec::parse(reader)?),
             10 => Section::Code(Vec::parse(reader)?),
-            s => unimplemented!("section type {}", s)
+            s => wasm_error(format!("unknown section type {}", s))?
         })
     }
 }
@@ -188,7 +188,7 @@ impl ParseWasm for Func {
 }
 
 fn main() {
-    let file = File::open("test/type-func.wasm").unwrap();
+    let file = File::open("test/hello-manual.wasm").unwrap();
     let mut buf_reader = BufReader::new(file);
-    println!("{:?}", Module::parse(&mut buf_reader));
+    println!("{:?}", Module::parse(&mut buf_reader).map_err(|err| err.to_string()));
 }
