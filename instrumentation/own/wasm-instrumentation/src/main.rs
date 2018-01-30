@@ -5,15 +5,11 @@ extern crate parse_wasm_derive;
 
 extern crate byteorder;
 extern crate leb128;
-#[macro_use]
-extern crate enum_primitive_derive;
-extern crate num_traits;
 
 use std::fs::File;
 use std::io::{self, BufReader, Error};
 use std::io::ErrorKind::InvalidData;
 use byteorder::{ReadBytesExt, LittleEndian};
-use num_traits::FromPrimitive;
 
 /// convenience method
 fn wasm_error<T, E>(reason: E) -> io::Result<T>
@@ -60,12 +56,12 @@ pub struct FuncType {
     results: Vec<ValType>,
 }
 
-#[derive(Debug, Primitive)]
+#[derive(ParseWasm, Debug)]
 pub enum ValType {
-    I32 = 0x7f,
-    I64 = 0x7e,
-    F32 = 0x7d,
-    F64 = 0x7c,
+    #[tag = 0x7f] I32,
+    #[tag = 0x7e] I64,
+    #[tag = 0x7d] F32,
+    #[tag = 0x7c] F64,
 }
 
 #[derive(ParseWasm, Debug)]
@@ -77,20 +73,19 @@ pub struct Func {
     instructions: Vec<Instr>,
 }
 
-#[derive(Debug, Primitive)]
+#[derive(ParseWasm, Debug)]
 pub enum Instr {
-    Unreachable = 0x00,
-    Nop = 0x01,
+    #[tag = 0x00] Unreachable,
+    #[tag = 0x01] Nop,
     // TODO https://webassembly.github.io/spec/core/binary/instructions.html#control-instructions
 
-    Drop = 0x1a,
-    Select = 0x1b,
+    #[tag = 0x1a] Drop,
+    #[tag = 0x1b] Select,
 //    Const(i32)
 
 // what I would want:
 //    Const<T: ValType>(underlying<T>)
 //    I32Const(u32) = 0x41,
-
 }
 /*
 enum Test {
@@ -110,7 +105,7 @@ impl ParseWasm for Test {
 #[derive(ParseWasm, Debug)]
 struct Memarg {
     alignment: u32,
-    offset: u32
+    offset: u32,
 }
 
 impl ParseWasm for u32 {
@@ -184,18 +179,8 @@ impl ParseWasm for FuncType {
 
         Ok(FuncType {
             params: Vec::parse(reader)?,
-            results: Vec::parse(reader)?
+            results: Vec::parse(reader)?,
         })
-    }
-}
-
-impl ParseWasm for ValType {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let byte = reader.read_byte()?;
-        match ValType::from_u8(byte) {
-            Some(val_type) => Ok(val_type),
-            None => wasm_error(format!("expected valtype, got byte 0x{:02x}, ", byte))
-        }
     }
 }
 
@@ -211,7 +196,7 @@ impl ParseWasm for Func {
                 0x0b => break,
                 byte => {
                     println!("instr byte 0x{:02x}", byte);
-                    println!("{:?}", Instr::from_u8(byte))
+//                    println!("{:?}", Instr::from_u8(byte))
                 } // FIXME
             }
         }
