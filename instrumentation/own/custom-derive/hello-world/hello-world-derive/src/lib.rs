@@ -7,14 +7,20 @@ use proc_macro::TokenStream;
 use syn::DeriveInput;
 use syn::Attribute;
 
-#[proc_macro_derive(HelloWorld, attributes(opcode))]
+#[proc_macro_derive(HelloWorld, attributes(tag))]
 pub fn hello_world(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree
     let input: DeriveInput = syn::parse(input).unwrap();
 
-    let attrs: Vec<Option<syn::Meta>> = input.attrs.iter().map(Attribute::interpret_meta).collect();
+//    println!("{:?}", input);
 
-    println!("{:?}", attrs);
+    if let DeriveInput { data: syn::Data::Enum(syn::DataEnum{ variants, .. }), .. } = input {
+        println!("{:?}", variants.into_iter().collect::<Vec<syn::Variant>>());
+    }
+
+//    let attrs: Vec<Option<syn::Meta>> = input.attrs.iter().map(Attribute::interpret_meta).collect();
+//
+//    println!("{:?}", attrs);
 
     // Build the impl
     let name = input.ident;
