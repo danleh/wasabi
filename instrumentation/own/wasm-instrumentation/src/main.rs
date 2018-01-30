@@ -22,6 +22,7 @@ impl ParseWasm for u8 {
     }
 }
 
+// TODO save LEB128 encoding with u32 value to make sure decoding-encoding round-trips
 impl ParseWasm for u32 {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         match leb128::read::unsigned(reader) {
@@ -89,32 +90,16 @@ pub struct Func {
 
 #[derive(ParseWasm, Debug)]
 pub enum Instr {
+    #[tag = 0x0b] End, // inserted for easier handling of if/blocks/function ends
+
     #[tag = 0x00] Unreachable,
     #[tag = 0x01] Nop,
-    // TODO https://webassembly.github.io/spec/core/binary/instructions.html#control-instructions
 
     #[tag = 0x1a] Drop,
     #[tag = 0x1b] Select,
-//    Const(i32)
 
-// what I would want:
-//    Const<T: ValType>(underlying<T>)
-//    I32Const(u32) = 0x41,
+    #[tag = 0x41] I32Const(u32)
 }
-/*
-enum Test {
-    #[tag = 0x41] I32Const(u32),
-}
-// should generate:
-impl ParseWasm for Test {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Ok(match reader.read_byte()? {
-            0x41 => Test::I32Const(Memarg::parse(reader)?),
-            byte => return wasm_error(format!("expected tag for Test, got 0x{:02x}", byte))
-        })
-    }
-}
-*/
 
 #[derive(ParseWasm, Debug)]
 struct Memarg {
@@ -179,22 +164,19 @@ impl ParseWasm for FuncType {
 
 impl ParseWasm for Func {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let _size = u32::parse(reader)?;
         // TODO parallelize function decoding by jumping forward _size bytes
-        let locals = Vec::parse(reader)?;
+        let _size = u32::parse(reader)?;
 
-        // instructions
+        let locals = Vec::parse(reader)?;
+        let mut instructions = Vec::new();
         loop {
-            match u8::parse(reader)? {
-                0x0b => break,
-                byte => {
-                    println!("instr byte 0x{:02x}", byte);
-//                    println!("{:?}", Instr::from_u8(byte))
-                } // FIXME
+            match Instr::parse(reader) {
+                Ok(instr) => instructions.push(instr),
+                Err(e) => break // FIXME
             }
         }
 
-        Ok(Func { locals, instructions: Vec::new() })
+        Ok(Func { locals, instructions })
     }
 }
 
