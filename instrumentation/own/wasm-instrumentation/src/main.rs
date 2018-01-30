@@ -88,7 +88,7 @@ pub struct Func {
     instructions: Vec<Instr>,
 }
 
-#[derive(ParseWasm, Debug)]
+#[derive(ParseWasm, Debug, PartialEq)]
 pub enum Instr {
     #[tag = 0x0b] End, // inserted for easier handling of if/blocks/function ends
 
@@ -169,10 +169,17 @@ impl ParseWasm for Func {
 
         let locals = Vec::parse(reader)?;
         let mut instructions = Vec::new();
+        let mut blocks_to_end = 0;
+
         loop {
-            match Instr::parse(reader) {
-                Ok(instr) => instructions.push(instr),
-                Err(e) => break // FIXME
+            let instr = Instr::parse(reader)?;
+
+            if instr == Instr::End {
+                blocks_to_end -= 1;
+            }
+            instructions.push(instr);
+            if blocks_to_end < 0 {
+                break;
             }
         }
 
