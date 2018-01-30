@@ -1,3 +1,8 @@
+#![feature(attr_literals)]
+
+#[macro_use]
+extern crate parse_wasm_derive;
+
 extern crate byteorder;
 extern crate leb128;
 #[macro_use]
@@ -63,7 +68,7 @@ pub enum ValType {
     F64 = 0x7c,
 }
 
-#[derive(Debug)]
+#[derive(ParseWasm, Debug)]
 pub struct TypeIdx(u32);
 
 #[derive(Debug)]
@@ -200,12 +205,6 @@ impl ParseWasm for ValType {
             Some(val_type) => Ok(val_type),
             None => wasm_error(format!("expected valtype, got byte 0x{:02x}, ", byte))
         }
-    }
-}
-
-impl ParseWasm for TypeIdx {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Ok(TypeIdx(reader.read_u32_leb128()?))
     }
 }
 
