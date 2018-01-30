@@ -4,7 +4,7 @@ extern crate syn;
 extern crate quote;
 
 use proc_macro::TokenStream;
-use syn::{DeriveInput, Data, Type, DataStruct, Fields, FieldsUnnamed, Attribute};
+use syn::{DeriveInput, Data, Type, Ident, DataStruct, Fields, FieldsUnnamed, FieldsNamed, Attribute};
 
 #[proc_macro_derive(ParseWasm, attributes(tag))]
 pub fn hello_world(input: TokenStream) -> TokenStream {
@@ -19,11 +19,21 @@ pub fn hello_world(input: TokenStream) -> TokenStream {
         Data::Struct(DataStruct { fields: Fields::Unnamed(FieldsUnnamed { unnamed, .. }), .. }) => {
             let field_tys: Vec<Type> = unnamed.into_iter().map(|field| field.ty).collect();
             quote! {
-                #data_name(#(#field_tys::parse(reader)?),*)
+                #data_name(
+                    #( #field_tys::parse(reader)? ),*
+                )
             }
         },
+        // struct with fields
+        Data::Struct(DataStruct { fields: Fields::Named(FieldsNamed { named, .. }), .. }) => {
+            let (field_names, field_tys): (Vec<Ident>, Vec<Type>) = named.into_iter().map(|field| (field.ident.unwrap(), field.ty)).unzip();
+            quote! {
+                #data_name {
+                    #( #field_names: #field_tys::parse(reader)? ),*
+                }
+            }
+        }
         // TODO
-        // step 2: struct with fields
         // step 3: enum with unit variants
         // step 4: custom tags on enum variants
         // step 5: enum with struct variants

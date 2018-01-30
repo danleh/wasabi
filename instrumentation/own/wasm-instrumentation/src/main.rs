@@ -94,34 +94,25 @@ pub enum Instr {
 }
 /*
 enum Test {
-    #[opcode = 0x41] I32Const(u32),
+    #[tag = 0x41] I32Const(u32),
 }
+// should generate:
+impl ParseWasm for Test {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        Ok(match reader.read_byte()? {
+            0x41 => Test::I32Const(Memarg::parse(reader)?),
+            byte => return wasm_error(format!("expected tag for Test, got 0x{:02x}", byte))
+        })
+    }
+}
+*/
 
+#[derive(ParseWasm, Debug)]
 struct Memarg {
     alignment: u32,
     offset: u32
 }
 
-// should generate:
-
-impl ParseWasm for Test {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Ok(match reader.read_byte()? {
-            0x41 => Test::I32Const(Memarg::parse(reader)?),
-            byte => return wasm_error(format!("expected Test, got byte 0x{:02x}", byte))
-        })
-    }
-}
-
-impl ParseWasm for Memarg {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Ok(Memarg {
-            alignment: u32::parse(reader)?,
-            offset: u32::parse(reader)?,
-        })
-    }
-}
-*/
 impl ParseWasm for u32 {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         reader.read_u32_leb128()
@@ -191,10 +182,10 @@ impl ParseWasm for FuncType {
             return wasm_error("wrong byte, expected functype");
         }
 
-        let params = Vec::parse(reader)?;
-        let results = Vec::parse(reader)?;
-
-        Ok(FuncType { params, results })
+        Ok(FuncType {
+            params: Vec::parse(reader)?,
+            results: Vec::parse(reader)?
+        })
     }
 }
 
