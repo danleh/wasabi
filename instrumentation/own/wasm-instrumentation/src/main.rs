@@ -45,6 +45,18 @@ impl<T: ParseWasm> ParseWasm for Vec<T> {
     }
 }
 
+impl ParseWasm for String {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let size = u32::parse(reader)?;
+        let mut buf = vec![0u8; size as usize];
+        reader.read_exact(&mut buf)?;
+        match String::from_utf8(buf) {
+            Ok(str) => Ok(str),
+            Err(e) => wasm_error(e.to_string()), // TODO better error message
+        }
+    }
+}
+
 /// convenience method
 fn wasm_error<T, E>(reason: E) -> io::Result<T>
     where E: Into<Box<std::error::Error + Send + Sync>>
