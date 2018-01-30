@@ -15,6 +15,13 @@ trait ParseWasm: Sized {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self>;
 }
 
+impl ParseWasm for u8 {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        use byteorder::ReadBytesExt;
+        reader.read_u8()
+    }
+}
+
 impl ParseWasm for u32 {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         match leb128::read::unsigned(reader) {
@@ -26,10 +33,14 @@ impl ParseWasm for u32 {
     }
 }
 
-impl ParseWasm for u8 {
+impl<T: ParseWasm> ParseWasm for Vec<T> {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        use byteorder::ReadBytesExt;
-        reader.read_u8()
+        let size = u32::parse(reader)?;
+        let mut vec: Vec<T> = Vec::with_capacity(size as usize);
+        for _ in 0..size {
+            vec.push(T::parse(reader)?);
+        };
+        Ok(vec)
     }
 }
 
@@ -48,7 +59,6 @@ pub struct Module {
 
 #[derive(Debug)]
 pub enum Section {
-    // TODO custom derive + some "tag" attribute to distinguish cases?
     Type(Vec<FuncType>),
     Function(Vec<TypeIdx>),
     Code(Vec<Func>),
@@ -112,9 +122,6 @@ struct Memarg {
     offset: u32,
 }
 
-
-
-
 impl ParseWasm for Module {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let mut magic_number = [0u8; 4];
@@ -154,17 +161,6 @@ impl ParseWasm for Section {
             10 => Section::Code(Vec::parse(reader)?),
             s => unimplemented!("section type {}", s)
         })
-    }
-}
-
-impl<T: ParseWasm> ParseWasm for Vec<T> {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let size = u32::parse(reader)?;
-        let mut vec: Vec<T> = Vec::with_capacity(size as usize);
-        for _ in 0..size {
-            vec.push(T::parse(reader)?);
-        };
-        Ok(vec)
     }
 }
 
