@@ -166,12 +166,11 @@ impl ParseWasm for Module {
 
         let mut sections = Vec::new();
         loop {
-            let section = Section::parse(reader);
-            match section {
+            match Section::parse(reader) {
+                Ok(section) => sections.push(section),
                 Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
-                _ => {}
+                Err(e) => return Err(e)
             };
-            sections.push(section?);
         }
 
         Ok(Module { version, sections })
