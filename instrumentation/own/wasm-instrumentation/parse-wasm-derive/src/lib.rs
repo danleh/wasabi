@@ -4,7 +4,7 @@ extern crate syn;
 extern crate quote;
 
 use proc_macro::TokenStream;
-use syn::{DeriveInput, Data, Type, Ident, DataStruct, DataEnum, Fields, FieldsUnnamed, FieldsNamed, Meta, MetaNameValue, Lit};
+use syn::{DeriveInput, Data, Type, Ident, DataStruct, DataEnum, Fields, FieldsUnnamed, FieldsNamed, Meta, MetaNameValue, Lit, TypePath, Path, PathSegment, PathArguments};
 use quote::Tokens;
 
 #[proc_macro_derive(ParseWasm, attributes(tag))]
@@ -64,7 +64,7 @@ fn recurse_into_fields(name: Ident, fields: Fields) -> Tokens {
         Fields::Unit => quote!(#name),
         Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
             let field_tys: Vec<Type> = unnamed.into_iter()
-                .map(|field| field.ty)
+                .map(|field| remove_type_arguments(field.ty))
                 .collect();
             quote! {
                 #name(
@@ -74,7 +74,7 @@ fn recurse_into_fields(name: Ident, fields: Fields) -> Tokens {
         }
         Fields::Named(FieldsNamed { named, .. }) => {
             let (field_names, field_tys): (Vec<Ident>, Vec<Type>) = named.into_iter()
-                .map(|field| (field.ident.unwrap(), field.ty))
+                .map(|field| (field.ident.unwrap(), remove_type_arguments(field.ty)))
                 .unzip();
             quote! {
                 #name {
@@ -83,4 +83,17 @@ fn recurse_into_fields(name: Ident, fields: Fields) -> Tokens {
             }
         }
     }
+}
+
+// so that a field: Vec<T> is parsed by Vec::parse() not Vec<T>::parse() (which is not valid syntax)
+fn remove_type_arguments(mut ty: Type) -> Type {
+    if let Type::Path(TypePath { path: Path { ref mut segments, .. }, .. }) = ty {
+        *segments = segments.into_iter().map(|segment| {
+            PathSegment {
+                arguments: PathArguments::None,
+                ..*segment
+            }
+        }).collect();
+    }
+    ty
 }
