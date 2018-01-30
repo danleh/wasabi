@@ -37,7 +37,7 @@ pub fn hello_world(input: TokenStream) -> TokenStream {
 
             // match enum variants by tag
             quote! {
-                match reader.read_byte()? {
+                match u8::parse(reader)? {
                     #( #variant_tags => #data_name_repeated::#variant_create, )*
                     byte => wasm_error(format!("expected tag for #data_name, got 0x{:02x}, ", byte))?
                 }

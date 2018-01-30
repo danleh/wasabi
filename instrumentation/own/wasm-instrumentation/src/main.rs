@@ -11,21 +11,13 @@ use std::io::{self, BufReader, Error};
 use std::io::ErrorKind::InvalidData;
 use byteorder::{ReadBytesExt, LittleEndian};
 
-/// convenience method
-fn wasm_error<T, E>(reason: E) -> io::Result<T>
-    where E: Into<Box<std::error::Error + Send + Sync>>
-{
-    Err(Error::new(InvalidData, reason))
+trait ParseWasm: Sized {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self>;
 }
 
-pub trait ReadWasmExt: io::Read + Sized {
-    fn read_byte(&mut self) -> io::Result<u8> {
-        use byteorder::ReadBytesExt;
-        self.read_u8()
-    }
-
-    fn read_u32_leb128(&mut self) -> io::Result<u32> {
-        match leb128::read::unsigned(self) {
+impl ParseWasm for u32 {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        match leb128::read::unsigned(reader) {
             Err(leb128::read::Error::IoError(io_err)) => Err(io_err),
             Err(leb128::read::Error::Overflow) => wasm_error("leb128 to u32 overflow"),
             Ok(value) if value > u32::max_value() as u64 => wasm_error("leb128 to u32 overflow"),
@@ -34,7 +26,19 @@ pub trait ReadWasmExt: io::Read + Sized {
     }
 }
 
-impl<R: io::Read> ReadWasmExt for R {}
+impl ParseWasm for u8 {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        use byteorder::ReadBytesExt;
+        reader.read_u8()
+    }
+}
+
+/// convenience method
+fn wasm_error<T, E>(reason: E) -> io::Result<T>
+    where E: Into<Box<std::error::Error + Send + Sync>>
+{
+    Err(Error::new(InvalidData, reason))
+}
 
 #[derive(Debug)]
 pub struct Module {
@@ -108,15 +112,8 @@ struct Memarg {
     offset: u32,
 }
 
-impl ParseWasm for u32 {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        reader.read_u32_leb128()
-    }
-}
 
-trait ParseWasm: Sized {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self>;
-}
+
 
 impl ParseWasm for Module {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
@@ -147,9 +144,9 @@ impl ParseWasm for Module {
 
 impl ParseWasm for Section {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let type_ = reader.read_byte()?;
+        let type_ = u8::parse(reader)?;
         // TODO parallelize by jumping forward size bytes for each section
-        let _size = reader.read_u32_leb128()?;
+        let _size = u32::parse(reader)?;
 
         Ok(match type_ {
             1 => Section::Type(Vec::parse(reader)?),
@@ -162,7 +159,7 @@ impl ParseWasm for Section {
 
 impl<T: ParseWasm> ParseWasm for Vec<T> {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let size = reader.read_u32_leb128()?;
+        let size = u32::parse(reader)?;
         let mut vec: Vec<T> = Vec::with_capacity(size as usize);
         for _ in 0..size {
             vec.push(T::parse(reader)?);
@@ -173,7 +170,7 @@ impl<T: ParseWasm> ParseWasm for Vec<T> {
 
 impl ParseWasm for FuncType {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        if reader.read_byte()? != 0x60 {
+        if u8::parse(reader)? != 0x60 {
             return wasm_error("wrong byte, expected functype");
         }
 
@@ -186,13 +183,13 @@ impl ParseWasm for FuncType {
 
 impl ParseWasm for Func {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let _size = reader.read_u32_leb128()?;
+        let _size = u32::parse(reader)?;
         // TODO parallelize function decoding by jumping forward _size bytes
         let locals = Vec::parse(reader)?;
 
         // instructions
         loop {
-            match reader.read_byte()? {
+            match u8::parse(reader)? {
                 0x0b => break,
                 byte => {
                     println!("instr byte 0x{:02x}", byte);
