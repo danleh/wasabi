@@ -58,11 +58,24 @@ pub struct Module {
     sections: Vec<Section>,
 }
 
-#[derive(Debug)]
+#[derive(ParseWasm, Debug)]
 pub enum Section {
-    Type(Vec<FuncType>),
-    Function(Vec<TypeIdx>),
-    Code(Vec<Func>),
+    #[tag = 1]
+    Type(WithSize<Vec<FuncType>>),
+    //    #[tag = 1] Import(u32, Vec<Import>),
+    #[tag = 3] Function(u32, Vec<TypeIdx>),
+    #[tag = 10] Code(u32, Vec<Func>),
+}
+
+#[derive(Debug)]
+pub struct WithSize<T>(u32, T);
+impl<T: ParseWasm> ParseWasm for WithSize<T> {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        Ok(WithSize(
+            u32::parse(reader)?,
+            T::parse(reader)?
+        ))
+    }
 }
 
 #[derive(Debug)]
@@ -98,7 +111,7 @@ pub enum Instr {
     #[tag = 0x1a] Drop,
     #[tag = 0x1b] Select,
 
-    #[tag = 0x41] I32Const(u32)
+    #[tag = 0x41] I32Const(u32),
 }
 
 #[derive(ParseWasm, Debug)]
@@ -134,20 +147,20 @@ impl ParseWasm for Module {
     }
 }
 
-impl ParseWasm for Section {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let type_ = u8::parse(reader)?;
-        // TODO parallelize by jumping forward size bytes for each section
-        let _size = u32::parse(reader)?;
-
-        Ok(match type_ {
-            1 => Section::Type(Vec::parse(reader)?),
-            3 => Section::Function(Vec::parse(reader)?),
-            10 => Section::Code(Vec::parse(reader)?),
-            s => wasm_error(format!("unknown section type {}", s))?
-        })
-    }
-}
+//impl ParseWasm for Section {
+//    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+//        let type_ = u8::parse(reader)?;
+//        // TODO parallelize by jumping forward size bytes for each section
+//        let _size = u32::parse(reader)?;
+//
+//        Ok(match type_ {
+//            1 => Section::Type(Vec::parse(reader)?),
+//            3 => Section::Function(Vec::parse(reader)?),
+//            10 => Section::Code(Vec::parse(reader)?),
+//            s => wasm_error(format!("unknown section type {}", s))?
+//        })
+//    }
+//}
 
 impl ParseWasm for FuncType {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
@@ -188,7 +201,7 @@ impl ParseWasm for Func {
 }
 
 fn main() {
-    let file = File::open("test/hello-manual.wasm").unwrap();
+    let file = File::open("test/type-func.wasm").unwrap();
     let mut buf_reader = BufReader::new(file);
     println!("{:?}", Module::parse(&mut buf_reader).map_err(|err| err.to_string()));
 }
