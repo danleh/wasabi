@@ -92,7 +92,8 @@ pub enum Section {
     #[tag = 10] Code(WithSize<Vec<WithSize<Func>>>),
 }
 
-#[derive(Debug)]
+#[derive(ParseWasm, Debug)]
+#[tag = 0x60]
 pub struct FuncType {
     params: Vec<ValType>,
     results: Vec<ValType>,
@@ -174,21 +175,6 @@ impl ParseWasm for Module {
         }
 
         Ok(Module { version, sections })
-    }
-}
-
-// TODO add #[tag = <u8>] annotation for structs in custom derive
-// TODO then remove this and replace with derive(ParseWasm)
-impl ParseWasm for FuncType {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        if u8::parse(reader)? != 0x60 {
-            return wasm_error("wrong byte, expected functype");
-        }
-
-        Ok(FuncType {
-            params: Vec::parse(reader)?,
-            results: Vec::parse(reader)?,
-        })
     }
 }
 

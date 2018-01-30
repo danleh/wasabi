@@ -4,7 +4,7 @@ extern crate syn;
 extern crate quote;
 
 use proc_macro::TokenStream;
-use syn::{DeriveInput, Data, Type, Ident, DataStruct, DataEnum, Fields, FieldsUnnamed, FieldsNamed, Meta, MetaNameValue, Lit, TypePath, Path, PathSegment, PathArguments};
+use syn::{DeriveInput, Data, Type, Ident, DataStruct, DataEnum, Fields, FieldsUnnamed, FieldsNamed, Meta, MetaNameValue, Lit, TypePath, Path, PathSegment, PathArguments, Attribute};
 use quote::Tokens;
 
 #[proc_macro_derive(ParseWasm, attributes(tag))]
@@ -13,19 +13,26 @@ pub fn hello_world(input: TokenStream) -> TokenStream {
     let data_name = input.ident;
 
     let impl_body = match input.data {
-        Data::Struct(DataStruct { fields, .. }) => recurse_into_fields(data_name, fields),
+        Data::Struct(DataStruct { fields, .. }) => {
+            let create = recurse_into_fields(data_name, fields);
+
+            // (optionally:) check that tag matches
+            if !input.attrs.is_empty() {
+                let tag = attributes_to_tag_value(&input.attrs);
+                quote!({
+                    let byte = u8::parse(reader)?;
+                    if byte != #tag {
+                        return wasm_error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte));
+                    }
+                    #create
+                })
+            } else {
+                create
+            }
+        }
         Data::Enum(DataEnum { variants, .. }) => {
             let variant_tags: Vec<u8> = variants.iter()
-                .map(|variant| {
-                    if variant.attrs.len() == 1 {
-                        if let Some(Meta::NameValue(MetaNameValue { ident, lit: Lit::Int(lit_int), .. })) = variant.attrs[0].interpret_meta() {
-                            if ident.to_string() == "tag" && lit_int.value() < u8::max_value() as u64 {
-                                return lit_int.value() as u8;
-                            }
-                        }
-                    }
-                    panic!("every enum variant must have exactly one #[tag = <u8>] attribute")
-                })
+                .map(|variant| attributes_to_tag_value(&variant.attrs))
                 .collect();
 
             let variant_create: Vec<Tokens> = variants.into_iter()
@@ -96,4 +103,15 @@ fn remove_type_arguments(mut ty: Type) -> Type {
         }).collect();
     }
     ty
+}
+
+fn attributes_to_tag_value(attributes: &[Attribute]) -> u8 {
+    if attributes.len() == 1 {
+        if let Some(Meta::NameValue(MetaNameValue { ident, lit: Lit::Int(lit_int), .. })) = attributes[0].interpret_meta() {
+            if ident.to_string() == "tag" && lit_int.value() < u8::max_value() as u64 {
+                return lit_int.value() as u8;
+            }
+        }
+    }
+    panic!("structs can have / every enum variant must have exactly one #[tag = <u8>] attribute")
 }
