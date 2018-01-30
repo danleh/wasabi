@@ -11,8 +11,15 @@ use std::io::{self, BufReader, Error};
 use std::io::ErrorKind::InvalidData;
 use byteorder::{ReadBytesExt, LittleEndian};
 
-trait ParseWasm: Sized {
+pub trait ParseWasm: Sized {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self>;
+
+    /// convenience method
+    fn error<E>(reason: E) -> io::Result<Self>
+        where E: Into<Box<std::error::Error + Send + Sync>>
+    {
+        Err(Error::new(InvalidData, reason))
+    }
 }
 
 impl ParseWasm for u8 {
@@ -27,8 +34,8 @@ impl ParseWasm for u32 {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         match leb128::read::unsigned(reader) {
             Err(leb128::read::Error::IoError(io_err)) => Err(io_err),
-            Err(leb128::read::Error::Overflow) => wasm_error("leb128 to u32 overflow"),
-            Ok(value) if value > u32::max_value() as u64 => wasm_error("leb128 to u32 overflow"),
+            Err(leb128::read::Error::Overflow) => Self::error("leb128 to u32 overflow"),
+            Ok(value) if value > u32::max_value() as u64 => Self::error("leb128 to u32 overflow"),
             Ok(value) => Ok(value as u32),
         }
     }
@@ -52,16 +59,9 @@ impl ParseWasm for String {
         reader.read_exact(&mut buf)?;
         match String::from_utf8(buf) {
             Ok(str) => Ok(str),
-            Err(e) => wasm_error(format!("utf-8 conversion error: {}", e.to_string())),
+            Err(e) => Self::error(format!("utf-8 conversion error: {}", e.to_string())),
         }
     }
-}
-
-/// convenience method
-fn wasm_error<T, E>(reason: E) -> io::Result<T>
-    where E: Into<Box<std::error::Error + Send + Sync>>
-{
-    Err(Error::new(InvalidData, reason))
 }
 
 #[derive(Debug)]
@@ -111,7 +111,7 @@ pub enum ValType {
 pub struct Import {
     module: String,
     name: String,
-    type_: ImportType
+    type_: ImportType,
 }
 
 #[derive(ParseWasm, Debug)]
@@ -156,12 +156,12 @@ impl ParseWasm for Module {
         let mut magic_number = [0u8; 4];
         reader.read_exact(&mut magic_number)?;
         if &magic_number != b"\0asm" {
-            return wasm_error("magic bytes do not match");
+            return Self::error("magic bytes do not match");
         }
 
         let version = reader.read_u32::<LittleEndian>()?;
         if version != 1 {
-            return wasm_error("not version 1");
+            return Self::error("not version 1");
         }
 
         let mut sections = Vec::new();

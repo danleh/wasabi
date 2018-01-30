@@ -22,7 +22,7 @@ pub fn hello_world(input: TokenStream) -> TokenStream {
                 quote!({
                     let byte = u8::parse(reader)?;
                     if byte != #tag {
-                        return wasm_error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte));
+                        return Self::error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte));
                     }
                     #create
                 })
@@ -46,7 +46,7 @@ pub fn hello_world(input: TokenStream) -> TokenStream {
             quote! {
                 match u8::parse(reader)? {
                     #( #variant_tags => #data_name_repeated::#variant_create, )*
-                    byte => wasm_error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte))?
+                    byte => Self::error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte))?
                 }
             }
         }
