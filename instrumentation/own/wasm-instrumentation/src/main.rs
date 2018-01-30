@@ -65,6 +65,19 @@ fn wasm_error<T, E>(reason: E) -> io::Result<T>
 }
 
 #[derive(Debug)]
+pub struct WithSize<T>(u32, T);
+
+impl<T: ParseWasm> ParseWasm for WithSize<T> {
+    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let size = u32::parse(reader)?;
+        // TODO parallelize section and/or function decoding by jumping forward size bytes
+        // we can do this generically in here: read size into a buf, spawn rayon work-stealing
+        // thread for rest of the parsing in the buf
+        Ok(WithSize(size, T::parse(reader)?))
+    }
+}
+
+#[derive(Debug)]
 pub struct Module {
     version: u32,
     sections: Vec<Section>,
@@ -72,22 +85,11 @@ pub struct Module {
 
 #[derive(ParseWasm, Debug)]
 pub enum Section {
-    #[tag = 1]
-    Type(WithSize<Vec<FuncType>>),
-    //    #[tag = 1] Import(u32, Vec<Import>),
-    #[tag = 3] Function(u32, Vec<TypeIdx>),
-    #[tag = 10] Code(u32, Vec<Func>),
-}
-
-#[derive(Debug)]
-pub struct WithSize<T>(u32, T);
-impl<T: ParseWasm> ParseWasm for WithSize<T> {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Ok(WithSize(
-            u32::parse(reader)?,
-            T::parse(reader)?
-        ))
-    }
+    #[tag = 1] Type(WithSize<Vec<FuncType>>),
+    #[tag = 2] Import(WithSize<Vec<Import>>),
+    #[tag = 3] Function(WithSize<Vec<TypeIdx>>),
+    #[tag = 8] Start(WithSize<FuncIdx>),
+    #[tag = 10] Code(WithSize<Vec<WithSize<Func>>>),
 }
 
 #[derive(Debug)]
@@ -105,7 +107,23 @@ pub enum ValType {
 }
 
 #[derive(ParseWasm, Debug)]
+pub struct Import {
+    module: String,
+    name: String,
+    type_: ImportType
+}
+
+#[derive(ParseWasm, Debug)]
+pub enum ImportType {
+    #[tag = 0x0] Function(TypeIdx),
+    // TODO
+}
+
+#[derive(ParseWasm, Debug, PartialEq)]
 pub struct TypeIdx(u32);
+
+#[derive(ParseWasm, Debug, PartialEq)]
+pub struct FuncIdx(u32);
 
 #[derive(Debug)]
 pub struct Func {
@@ -119,6 +137,7 @@ pub enum Instr {
 
     #[tag = 0x00] Unreachable,
     #[tag = 0x01] Nop,
+    #[tag = 0x10] Call(FuncIdx),
 
     #[tag = 0x1a] Drop,
     #[tag = 0x1b] Select,
@@ -127,7 +146,7 @@ pub enum Instr {
 }
 
 #[derive(ParseWasm, Debug)]
-struct Memarg {
+pub struct Memarg {
     alignment: u32,
     offset: u32,
 }
@@ -159,21 +178,8 @@ impl ParseWasm for Module {
     }
 }
 
-//impl ParseWasm for Section {
-//    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-//        let type_ = u8::parse(reader)?;
-//        // TODO parallelize by jumping forward size bytes for each section
-//        let _size = u32::parse(reader)?;
-//
-//        Ok(match type_ {
-//            1 => Section::Type(Vec::parse(reader)?),
-//            3 => Section::Function(Vec::parse(reader)?),
-//            10 => Section::Code(Vec::parse(reader)?),
-//            s => wasm_error(format!("unknown section type {}", s))?
-//        })
-//    }
-//}
-
+// TODO add #[tag = <u8>] annotation for structs in custom derive
+// TODO then remove this and replace with derive(ParseWasm)
 impl ParseWasm for FuncType {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         if u8::parse(reader)? != 0x60 {
@@ -189,9 +195,6 @@ impl ParseWasm for FuncType {
 
 impl ParseWasm for Func {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        // TODO parallelize function decoding by jumping forward _size bytes
-        let _size = u32::parse(reader)?;
-
         let locals = Vec::parse(reader)?;
         let mut instructions = Vec::new();
         let mut blocks_to_end = 0;
@@ -202,7 +205,9 @@ impl ParseWasm for Func {
             if instr == Instr::End {
                 blocks_to_end -= 1;
             }
+
             instructions.push(instr);
+
             if blocks_to_end < 0 {
                 break;
             }
@@ -213,7 +218,7 @@ impl ParseWasm for Func {
 }
 
 fn main() {
-    let file = File::open("test/type-func.wasm").unwrap();
+    let file = File::open("test/hello-manual.wasm").unwrap();
     let mut buf_reader = BufReader::new(file);
-    println!("{:?}", Module::parse(&mut buf_reader).map_err(|err| err.to_string()));
+    println!("{:#?}", Module::parse(&mut buf_reader).map_err(|err| err.to_string()));
 }
