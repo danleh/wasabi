@@ -11,6 +11,15 @@ use std::io::{self, BufReader, Error};
 use std::io::ErrorKind::InvalidData;
 use byteorder::{ReadBytesExt, LittleEndian};
 
+// TODO move ParseWasm trait into own module
+// TODO rename ParseWasm to DecodeWasm?
+// TODO add EncodeWasm trait
+// TODO rename parse-wasm-derive to wasm-derive
+// TODO add derive(EncodeWasm)
+// TODO make sure that encode(decode(file)) == file
+
+// TODO parse more complex wasm files (emscripten one, or a wasm test suite?)
+
 pub trait ParseWasm: Sized {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self>;
 
