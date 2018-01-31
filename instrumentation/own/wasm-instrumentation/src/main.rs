@@ -230,6 +230,26 @@ pub enum Mut {
     #[tag = 0x01] Var,
 }
 
+type BlockType = Option<ValType>;
+impl Wasm for BlockType {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        Ok(match u8::decode(reader)? {
+            0x40 => None,
+            byte => {
+                let mut buf = [byte; 1];
+                Some(ValType::decode(&mut &buf[..])?)
+            }
+        })
+    }
+
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        match self {
+            &None => 0x40u8.encode(writer),
+            &Some(ref val_type) => val_type.encode(writer)
+        }
+    }
+}
+
 #[derive(Wasm, Debug)]
 pub struct Func {
     locals: Vec<Locals>,
