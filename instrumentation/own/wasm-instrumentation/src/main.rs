@@ -174,7 +174,7 @@ pub struct FuncType {
     results: Vec<ValType>,
 }
 
-#[derive(Wasm, Debug)]
+#[derive(Wasm, Debug, PartialEq)]
 pub enum ValType {
     #[tag = 0x7f] I32,
     #[tag = 0x7e] I64,
@@ -230,22 +230,25 @@ pub enum Mut {
     #[tag = 0x01] Var,
 }
 
-type BlockType = Option<ValType>;
+#[derive(Debug, PartialEq)]
+pub struct BlockType(Option<ValType>);
+
+/// have to implement manually because of strange compressed format:
+/// no tag, because they know that 0x40 and ValType are disjunct
 impl Wasm for BlockType {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Ok(match u8::decode(reader)? {
+        Ok(BlockType(match u8::decode(reader)? {
             0x40 => None,
             byte => {
                 let mut buf = [byte; 1];
                 Some(ValType::decode(&mut &buf[..])?)
             }
-        })
+        }))
     }
-
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         match self {
-            &None => 0x40u8.encode(writer),
-            &Some(ref val_type) => val_type.encode(writer)
+            &BlockType(None) => 0x40u8.encode(writer),
+            &BlockType(Some(ref val_type)) => val_type.encode(writer)
         }
     }
 }
@@ -259,7 +262,7 @@ pub struct Func {
 #[derive(Wasm, Debug)]
 pub struct Locals(Vec<ValType>);
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Expr(Vec<Instr>);
 
 #[derive(Wasm, Debug, PartialEq)]
@@ -268,7 +271,16 @@ pub enum Instr {
 
     #[tag = 0x00] Unreachable,
     #[tag = 0x01] Nop,
+    #[tag = 0x02] Block(BlockType, Expr), // TODO make sure this works as intended
+    #[tag = 0x03] Loop(BlockType, Expr), // TODO make sure this works as intended
+    #[tag = 0x04] If(BlockType, Expr), // TODO make sure this works as intended
+    #[tag = 0x05] Else, // TODO make sure this works as intended
 
+    #[tag = 0x0c] Br(LabelIdx),
+    #[tag = 0x0d] BrIf(LabelIdx),
+    #[tag = 0x0e] BrTable(Vec<LabelIdx>, LabelIdx),
+
+    #[tag = 0x0f] Return,
     #[tag = 0x10] Call(FuncIdx),
     #[tag = 0x11] CallIndirect(TypeIdx, /* unused, always 0x00 in WASM version 1 */ u8),
 
@@ -410,7 +422,7 @@ pub enum Instr {
     #[tag = 0xbc] I32ReinterpretF32,
     #[tag = 0xbd] I64ReinterpretF64,
     #[tag = 0xbe] F32ReinterpretI32,
-    #[tag = 0xbf] F64ReinterpretI64
+    #[tag = 0xbf] F64ReinterpretI64,
 }
 
 #[derive(Wasm, Debug, PartialEq)]
@@ -460,7 +472,7 @@ impl Wasm for Module {
                 Ok(section) => {
                     println!("found section: {:?}", section); // DEBUG
                     sections.push(section)
-                },
+                }
                 Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(e)
             };
@@ -491,6 +503,7 @@ impl Wasm for Expr {
                 blocks_to_end -= 1;
             }
 
+            println!("instr: {:?}", instr); // DEBUG
             instructions.push(instr);
 
             if blocks_to_end < 0 {
