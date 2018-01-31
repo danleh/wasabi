@@ -154,15 +154,18 @@ pub enum Section {
     // TODO table
     // TODO memory
     #[tag = 6] Global(WithSize<Vec<Global>>),
-    // TODO export
+    #[tag = 7] Export(WithSize<Vec<Export>>),
     #[tag = 8] Start(WithSize<FuncIdx>),
-    // TODO element
+    #[tag = 9] Element(WithSize<Vec<Element>>),
     #[tag = 10] Code(WithSize<Vec<WithSize<Func>>>),
     // TODO data
 }
 
 #[derive(Wasm, Debug)]
 pub struct Global(GlobalType, Expr);
+
+#[derive(Wasm, Debug)]
+pub struct Element(TableIdx, Expr, Vec<FuncIdx>);
 
 #[derive(Wasm, Debug)]
 #[tag = 0x60]
@@ -187,11 +190,25 @@ pub struct Import {
 }
 
 #[derive(Wasm, Debug)]
+pub struct Export {
+    name: String,
+    type_: ExportType,
+}
+
+#[derive(Wasm, Debug)]
 pub enum ImportType {
     #[tag = 0x0] Function(TypeIdx),
     #[tag = 0x1] Table(TableType),
     #[tag = 0x2] Memory(Limits),
     #[tag = 0x3] Global(GlobalType),
+}
+
+#[derive(Wasm, Debug)]
+pub enum ExportType {
+    #[tag = 0x0] Function(TypeIdx),
+    #[tag = 0x1] Table(TableIdx),
+    #[tag = 0x2] Memory(MemoryIdx),
+    #[tag = 0x3] Global(GlobalIdx),
 }
 
 #[derive(Wasm, Debug)]
@@ -286,7 +303,10 @@ impl Wasm for Module {
         let mut sections = Vec::new();
         loop {
             match Section::decode(reader) {
-                Ok(section) => sections.push(section),
+                Ok(section) => {
+                    println!("found section: {:?}", section); // DEBUG
+                    sections.push(section)
+                },
                 Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(e)
             };
@@ -342,7 +362,7 @@ fn main() {
         Ok(m) => m,
         Err(e) => {
             eprintln!("{}", e);
-            Module { version: 1, sections: vec![] }
+            return;
         }
     };
     println!("{:#?}", module);
