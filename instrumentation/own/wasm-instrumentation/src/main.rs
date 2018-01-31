@@ -1,15 +1,10 @@
 #![feature(attr_literals)]
-
 #[macro_use]
 extern crate parse_wasm_derive;
-
 extern crate byteorder;
 extern crate leb128;
 
-use std::fs::File;
-use std::io::{self, BufReader, Error};
-use std::io::ErrorKind::InvalidData;
-use byteorder::{ReadBytesExt, LittleEndian};
+use std::io;
 
 // TODO move ParseWasm trait into own module
 // TODO rename ParseWasm to DecodeWasm?
@@ -27,7 +22,7 @@ pub trait ParseWasm: Sized {
     fn error<E>(reason: E) -> io::Result<Self>
         where E: Into<Box<std::error::Error + Send + Sync>>
     {
-        Err(Error::new(InvalidData, reason))
+        Err(io::Error::new(io::ErrorKind::InvalidData, reason))
     }
 }
 
@@ -168,7 +163,8 @@ impl ParseWasm for Module {
             return Self::error("magic bytes do not match");
         }
 
-        let version = reader.read_u32::<LittleEndian>()?;
+        use byteorder::ReadBytesExt;
+        let version = reader.read_u32::<byteorder::LittleEndian>()?;
         if version != 1 {
             return Self::error("not version 1");
         }
@@ -211,7 +207,7 @@ impl ParseWasm for Func {
 }
 
 fn main() {
-    let file = File::open("test/hello-manual.wasm").unwrap();
-    let mut buf_reader = BufReader::new(file);
+    let file = std::fs::File::open("test/hello-manual.wasm").unwrap();
+    let mut buf_reader = io::BufReader::new(file);
     println!("{:#?}", Module::parse(&mut buf_reader).map_err(|err| err.to_string()));
 }
