@@ -31,7 +31,7 @@ impl Wasm for u8 {
     }
 }
 
-// TODO save LEB128 encoding with u32 value to make sure decoding-encoding round-trips
+// TODO save LEB128 encoding with value to make sure decoding-encoding round-trips
 impl Wasm for u32 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         match leb128::read::unsigned(reader) {
@@ -43,6 +43,42 @@ impl Wasm for u32 {
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         leb128::write::unsigned(writer, *self as u64).map(|_num_bytes| ())
+    }
+}
+
+// TODO save LEB128 encoding with value to make sure decoding-encoding round-trips
+impl Wasm for u64 {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        match leb128::read::unsigned(reader) {
+            Err(leb128::read::Error::IoError(io_err)) => Err(io_err),
+            Err(leb128::read::Error::Overflow) => Self::error("leb128 to u64 overflow"),
+            Ok(value) => Ok(value),
+        }
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        leb128::write::unsigned(writer, *self as u64).map(|_num_bytes| ())
+    }
+}
+
+impl Wasm for f32 {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        use byteorder::ReadBytesExt;
+        reader.read_f32::<byteorder::LittleEndian>()
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        use byteorder::WriteBytesExt;
+        writer.write_f32::<byteorder::LittleEndian>(*self)
+    }
+}
+
+impl Wasm for f64 {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        use byteorder::ReadBytesExt;
+        reader.read_f64::<byteorder::LittleEndian>()
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        use byteorder::WriteBytesExt;
+        writer.write_f64::<byteorder::LittleEndian>(*self)
     }
 }
 
@@ -111,12 +147,18 @@ pub struct Module {
 
 #[derive(Wasm, Debug)]
 pub enum Section {
+    // TODO custom
     #[tag = 1] Type(WithSize<Vec<FuncType>>),
     #[tag = 2] Import(WithSize<Vec<Import>>),
     #[tag = 3] Function(WithSize<Vec<TypeIdx>>),
+    // TODO table
+    // TODO memory
     #[tag = 6] Global(WithSize<Vec<Global>>),
+    // TODO export
     #[tag = 8] Start(WithSize<FuncIdx>),
+    // TODO element
     #[tag = 10] Code(WithSize<Vec<WithSize<Func>>>),
+    // TODO data
 }
 
 #[derive(Wasm, Debug)]
@@ -156,13 +198,10 @@ pub enum ImportType {
 #[tag = 0x70]
 pub struct TableType(Limits);
 
-#[derive(Wasm, Debug, PartialEq)]
-pub struct TypeIdx(u32);
-
 #[derive(Wasm, Debug)]
 pub enum Limits {
     #[tag = 0x00] Min(u32),
-    #[tag = 0x01] MinMax(u32, u32)
+    #[tag = 0x01] MinMax(u32, u32),
 }
 
 #[derive(Wasm, Debug)]
@@ -171,11 +210,8 @@ pub struct GlobalType(ValType, Mut);
 #[derive(Wasm, Debug)]
 pub enum Mut {
     #[tag = 0x00] Const,
-    #[tag = 0x01] Var
+    #[tag = 0x01] Var,
 }
-
-#[derive(Wasm, Debug, PartialEq)]
-pub struct FuncIdx(u32);
 
 #[derive(Wasm, Debug)]
 pub struct Func {
@@ -197,8 +233,35 @@ pub enum Instr {
     #[tag = 0x1a] Drop,
     #[tag = 0x1b] Select,
 
+    #[tag = 0x20] GetLocal(LocalIdx),
+    #[tag = 0x21] SetLocal(LocalIdx),
+    #[tag = 0x22] TeeLocal(LocalIdx),
+    #[tag = 0x23] GetGlobal(GlobalIdx),
+    #[tag = 0x24] SetGlobal(GlobalIdx),
+
     #[tag = 0x41] I32Const(u32),
+    #[tag = 0x42] I64Const(u64),
+    #[tag = 0x43] F32Const(f32),
+    #[tag = 0x44] F64Const(f64),
 }
+
+#[derive(Wasm, Debug, PartialEq)]
+pub struct TypeIdx(u32);
+
+#[derive(Wasm, Debug, PartialEq)]
+pub struct FuncIdx(u32);
+
+#[derive(Wasm, Debug, PartialEq)]
+pub struct TableIdx(u32);
+
+#[derive(Wasm, Debug, PartialEq)]
+pub struct MemoryIdx(u32);
+
+#[derive(Wasm, Debug, PartialEq)]
+pub struct GlobalIdx(u32);
+
+#[derive(Wasm, Debug, PartialEq)]
+pub struct LocalIdx(u32);
 
 #[derive(Wasm, Debug)]
 pub struct Memarg {
