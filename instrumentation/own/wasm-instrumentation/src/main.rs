@@ -254,27 +254,28 @@ impl Wasm for BlockType {
 }
 
 #[derive(Wasm, Debug)]
-pub struct Func {
-    locals: Vec<Locals>,
-    instructions: Expr,
-}
+pub struct Func(Vec<Locals>, Expr);
 
 #[derive(Wasm, Debug)]
-pub struct Locals(Vec<ValType>);
+pub struct Locals {
+    count: u32,
+    type_: ValType
+}
 
 #[derive(Debug, PartialEq)]
 pub struct Expr(Vec<Instr>);
 
 #[derive(Wasm, Debug, PartialEq)]
 pub enum Instr {
-    #[tag = 0x0b] End, // inserted for easier handling of if/blocks/function ends
-
     #[tag = 0x00] Unreachable,
     #[tag = 0x01] Nop,
-    #[tag = 0x02] Block(BlockType, Expr), // TODO make sure this works as intended
-    #[tag = 0x03] Loop(BlockType, Expr), // TODO make sure this works as intended
-    #[tag = 0x04] If(BlockType, Expr), // TODO make sure this works as intended
-    #[tag = 0x05] Else, // TODO make sure this works as intended
+
+    // NOTE Blocks are handled by Expr::decode which returns as soon as an Else or End is found
+    #[tag = 0x02] Block(BlockType, Expr),
+    #[tag = 0x03] Loop(BlockType, Expr),
+    #[tag = 0x04] If(BlockType, Expr),
+    #[tag = 0x05] Else(Expr), // TODO make sure this works correctly
+    #[tag = 0x0b] End,
 
     #[tag = 0x0c] Br(LabelIdx),
     #[tag = 0x0d] BrIf(LabelIdx),
@@ -293,7 +294,31 @@ pub enum Instr {
     #[tag = 0x23] GetGlobal(GlobalIdx),
     #[tag = 0x24] SetGlobal(GlobalIdx),
 
-    // TODO memory instr
+    #[tag = 0x28] I32Load(Memarg),
+    #[tag = 0x29] I64Load(Memarg),
+    #[tag = 0x2a] F32Load(Memarg),
+    #[tag = 0x2b] F64Load(Memarg),
+    #[tag = 0x2c] I32Load8S(Memarg),
+    #[tag = 0x2d] I32Load8U(Memarg),
+    #[tag = 0x2e] I32Load16S(Memarg),
+    #[tag = 0x2f] I32Load16U(Memarg),
+    #[tag = 0x30] I64Load8S(Memarg),
+    #[tag = 0x31] I64Load8U(Memarg),
+    #[tag = 0x32] I64Load16S(Memarg),
+    #[tag = 0x33] I64Load16U(Memarg),
+    #[tag = 0x34] I64Load32S(Memarg),
+    #[tag = 0x35] I64Load32U(Memarg),
+    #[tag = 0x36] I32Store(Memarg),
+    #[tag = 0x37] I64Store(Memarg),
+    #[tag = 0x38] F32Store(Memarg),
+    #[tag = 0x39] F64Store(Memarg),
+    #[tag = 0x3a] I32Store8(Memarg),
+    #[tag = 0x3b] I32Store16(Memarg),
+    #[tag = 0x3c] I64Store8(Memarg),
+    #[tag = 0x3d] I64Store16(Memarg),
+    #[tag = 0x3e] I64Store32(Memarg),
+    #[tag = 0x3f] CurrentMemory(/* unused, always 0x00 in WASM version 1 */ u8),
+    #[tag = 0x40] GrowMemory(/* unused, always 0x00 in WASM version 1 */ u8),
 
     #[tag = 0x41] I32Const(u32),
     #[tag = 0x42] I64Const(u64),
@@ -446,7 +471,7 @@ pub struct LocalIdx(u32);
 #[derive(Wasm, Debug, PartialEq)]
 pub struct LabelIdx(u32);
 
-#[derive(Wasm, Debug)]
+#[derive(Wasm, Debug, PartialEq)]
 pub struct Memarg {
     alignment: u32,
     offset: u32,
@@ -493,22 +518,18 @@ impl Wasm for Module {
 impl Wasm for Expr {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let mut instructions = Vec::new();
-        let mut blocks_to_end = 0;
 
-        loop {
+        let mut found_end = false;
+        while !found_end {
             let instr = Instr::decode(reader)?;
 
-            // FIXME match against control instructions and push/pop blocks
-            if instr == Instr::End {
-                blocks_to_end -= 1;
-            }
+            match instr {
+                Instr::Else(..) | Instr::End => found_end = true, // FIXME should we really stop at the Else?
+                _ => {}
+            };
 
             println!("instr: {:?}", instr); // DEBUG
             instructions.push(instr);
-
-            if blocks_to_end < 0 {
-                break;
-            }
         }
 
         Ok(Expr(instructions))
