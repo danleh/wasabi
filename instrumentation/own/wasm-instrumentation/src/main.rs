@@ -6,7 +6,6 @@ extern crate leb128;
 
 use std::io;
 
-// TODO move ParseWasm trait into own module
 // TODO parse more complex wasm files (emscripten one, or a wasm test suite?)
 
 pub trait Wasm: Sized {
@@ -115,9 +114,13 @@ pub enum Section {
     #[tag = 1] Type(WithSize<Vec<FuncType>>),
     #[tag = 2] Import(WithSize<Vec<Import>>),
     #[tag = 3] Function(WithSize<Vec<TypeIdx>>),
+    #[tag = 6] Global(WithSize<Vec<Global>>),
     #[tag = 8] Start(WithSize<FuncIdx>),
     #[tag = 10] Code(WithSize<Vec<WithSize<Func>>>),
 }
+
+#[derive(Wasm, Debug)]
+pub struct Global(GlobalType, Expr);
 
 #[derive(Wasm, Debug)]
 #[tag = 0x60]
@@ -144,19 +147,44 @@ pub struct Import {
 #[derive(Wasm, Debug)]
 pub enum ImportType {
     #[tag = 0x0] Function(TypeIdx),
+    #[tag = 0x1] Table(TableType),
+    #[tag = 0x2] Memory(Limits),
+    #[tag = 0x3] Global(GlobalType),
 }
+
+#[derive(Wasm, Debug)]
+#[tag = 0x70]
+pub struct TableType(Limits);
 
 #[derive(Wasm, Debug, PartialEq)]
 pub struct TypeIdx(u32);
 
+#[derive(Wasm, Debug)]
+pub enum Limits {
+    #[tag = 0x00] Min(u32),
+    #[tag = 0x01] MinMax(u32, u32)
+}
+
+#[derive(Wasm, Debug)]
+pub struct GlobalType(ValType, Mut);
+
+#[derive(Wasm, Debug)]
+pub enum Mut {
+    #[tag = 0x00] Const,
+    #[tag = 0x01] Var
+}
+
 #[derive(Wasm, Debug, PartialEq)]
 pub struct FuncIdx(u32);
 
-#[derive(Debug)]
+#[derive(Wasm, Debug)]
 pub struct Func {
     locals: Vec<ValType>,
-    instructions: Vec<Instr>,
+    instructions: Expr,
 }
+
+#[derive(Debug)]
+pub struct Expr(Vec<Instr>);
 
 #[derive(Wasm, Debug, PartialEq)]
 pub enum Instr {
@@ -213,9 +241,8 @@ impl Wasm for Module {
     }
 }
 
-impl Wasm for Func {
+impl Wasm for Expr {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let locals = Vec::decode(reader)?;
         let mut instructions = Vec::new();
         let mut blocks_to_end = 0;
 
@@ -233,23 +260,28 @@ impl Wasm for Func {
             }
         }
 
-        Ok(Func { locals, instructions })
+        Ok(Expr(instructions))
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        self.locals.encode(writer)?;
-        for instr in &self.instructions {
-            instr.encode(writer)?;
+        for instruction in &self.0 {
+            instruction.encode(writer)?;
         }
         Ok(())
     }
 }
 
 fn main() {
-    let file_name = "test/hello-manual.wasm";
+    let file_name = "test/hello-emcc.wasm";
 
     use std::fs::File;
     let mut buf_reader = io::BufReader::new(File::open(file_name).unwrap());
-    let module = Module::decode(&mut buf_reader).unwrap();
+    let module = match Module::decode(&mut buf_reader) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("{}", e);
+            Module { version: 1, sections: vec![] }
+        }
+    };
     println!("{:#?}", module);
 
     let encoded_file_name = file_name.to_string().replace(".wasm", ".encoded.wasm");
