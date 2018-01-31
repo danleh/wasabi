@@ -6,7 +6,6 @@ extern crate leb128;
 
 use std::io;
 
-// TODO make sure that encode(decode(file)) == file
 // TODO move ParseWasm trait into own module
 // TODO parse more complex wasm files (emscripten one, or a wasm test suite?)
 
@@ -238,12 +237,15 @@ impl Wasm for Func {
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         self.locals.encode(writer)?;
-        self.instructions.encode(writer)
+        for instr in &self.instructions {
+            instr.encode(writer)?;
+        }
+        Ok(())
     }
 }
 
 fn main() {
-    let file_name = "test/type-func.wasm";
+    let file_name = "test/hello-manual.wasm";
 
     use std::fs::File;
     let mut buf_reader = io::BufReader::new(File::open(file_name).unwrap());
