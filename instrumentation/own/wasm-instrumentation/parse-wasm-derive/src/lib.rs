@@ -7,7 +7,7 @@ use proc_macro::TokenStream;
 use syn::{DeriveInput, Data, Type, Ident, DataStruct, DataEnum, Fields, FieldsUnnamed, FieldsNamed, Meta, MetaNameValue, Lit, TypePath, Path, PathSegment, PathArguments, Attribute};
 use quote::Tokens;
 
-#[proc_macro_derive(ParseWasm, attributes(tag))]
+#[proc_macro_derive(Wasm, attributes(tag))]
 pub fn hello_world(input: TokenStream) -> TokenStream {
     let input: DeriveInput = syn::parse(input).unwrap();
     let data_name = input.ident;
@@ -50,12 +50,12 @@ pub fn hello_world(input: TokenStream) -> TokenStream {
                 }
             }
         }
-        _ => unimplemented!("can only derive(ParseWasm) for structs and enums")
+        _ => unimplemented!("can only derive(Wasm) for structs and enums")
     };
 
     // boilerplate of impl that is the same for any data type
     let impl_ = quote! {
-        impl ParseWasm for #data_name {
+        impl Wasm for #data_name {
             fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
                 Ok(#impl_body)
             }

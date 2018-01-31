@@ -15,7 +15,7 @@ use std::io;
 
 // TODO parse more complex wasm files (emscripten one, or a wasm test suite?)
 
-pub trait ParseWasm: Sized {
+pub trait Wasm: Sized {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self>;
 
     /// convenience method
@@ -26,7 +26,7 @@ pub trait ParseWasm: Sized {
     }
 }
 
-impl ParseWasm for u8 {
+impl Wasm for u8 {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         use byteorder::ReadBytesExt;
         reader.read_u8()
@@ -34,7 +34,7 @@ impl ParseWasm for u8 {
 }
 
 // TODO save LEB128 encoding with u32 value to make sure decoding-encoding round-trips
-impl ParseWasm for u32 {
+impl Wasm for u32 {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         match leb128::read::unsigned(reader) {
             Err(leb128::read::Error::IoError(io_err)) => Err(io_err),
@@ -45,7 +45,7 @@ impl ParseWasm for u32 {
     }
 }
 
-impl<T: ParseWasm> ParseWasm for Vec<T> {
+impl<T: Wasm> Wasm for Vec<T> {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let size = u32::parse(reader)?;
         let mut vec: Vec<T> = Vec::with_capacity(size as usize);
@@ -56,7 +56,7 @@ impl<T: ParseWasm> ParseWasm for Vec<T> {
     }
 }
 
-impl ParseWasm for String {
+impl Wasm for String {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let size = u32::parse(reader)?;
         let mut buf = vec![0u8; size as usize];
@@ -71,7 +71,7 @@ impl ParseWasm for String {
 #[derive(Debug)]
 pub struct WithSize<T>(u32, T);
 
-impl<T: ParseWasm> ParseWasm for WithSize<T> {
+impl<T: Wasm> Wasm for WithSize<T> {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let size = u32::parse(reader)?;
         // TODO parallelize section and/or function decoding by jumping forward size bytes
@@ -87,7 +87,7 @@ pub struct Module {
     sections: Vec<Section>,
 }
 
-#[derive(ParseWasm, Debug)]
+#[derive(Wasm, Debug)]
 pub enum Section {
     #[tag = 1] Type(WithSize<Vec<FuncType>>),
     #[tag = 2] Import(WithSize<Vec<Import>>),
@@ -96,14 +96,14 @@ pub enum Section {
     #[tag = 10] Code(WithSize<Vec<WithSize<Func>>>),
 }
 
-#[derive(ParseWasm, Debug)]
+#[derive(Wasm, Debug)]
 #[tag = 0x60]
 pub struct FuncType {
     params: Vec<ValType>,
     results: Vec<ValType>,
 }
 
-#[derive(ParseWasm, Debug)]
+#[derive(Wasm, Debug)]
 pub enum ValType {
     #[tag = 0x7f] I32,
     #[tag = 0x7e] I64,
@@ -111,22 +111,22 @@ pub enum ValType {
     #[tag = 0x7c] F64,
 }
 
-#[derive(ParseWasm, Debug)]
+#[derive(Wasm, Debug)]
 pub struct Import {
     module: String,
     name: String,
     type_: ImportType,
 }
 
-#[derive(ParseWasm, Debug)]
+#[derive(Wasm, Debug)]
 pub enum ImportType {
     #[tag = 0x0] Function(TypeIdx),
 }
 
-#[derive(ParseWasm, Debug, PartialEq)]
+#[derive(Wasm, Debug, PartialEq)]
 pub struct TypeIdx(u32);
 
-#[derive(ParseWasm, Debug, PartialEq)]
+#[derive(Wasm, Debug, PartialEq)]
 pub struct FuncIdx(u32);
 
 #[derive(Debug)]
@@ -135,7 +135,7 @@ pub struct Func {
     instructions: Vec<Instr>,
 }
 
-#[derive(ParseWasm, Debug, PartialEq)]
+#[derive(Wasm, Debug, PartialEq)]
 pub enum Instr {
     #[tag = 0x0b] End, // inserted for easier handling of if/blocks/function ends
 
@@ -149,13 +149,13 @@ pub enum Instr {
     #[tag = 0x41] I32Const(u32),
 }
 
-#[derive(ParseWasm, Debug)]
+#[derive(Wasm, Debug)]
 pub struct Memarg {
     alignment: u32,
     offset: u32,
 }
 
-impl ParseWasm for Module {
+impl Wasm for Module {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let mut magic_number = [0u8; 4];
         reader.read_exact(&mut magic_number)?;
@@ -182,7 +182,7 @@ impl ParseWasm for Module {
     }
 }
 
-impl ParseWasm for Func {
+impl Wasm for Func {
     fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let locals = Vec::parse(reader)?;
         let mut instructions = Vec::new();
