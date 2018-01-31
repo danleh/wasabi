@@ -232,9 +232,12 @@ pub enum Mut {
 
 #[derive(Wasm, Debug)]
 pub struct Func {
-    locals: Vec<ValType>,
+    locals: Vec<Locals>,
     instructions: Expr,
 }
+
+#[derive(Wasm, Debug)]
+pub struct Locals(Vec<ValType>);
 
 #[derive(Debug)]
 pub struct Expr(Vec<Instr>);
