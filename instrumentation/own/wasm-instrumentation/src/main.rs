@@ -6,14 +6,17 @@ extern crate leb128;
 
 use std::io;
 
+// TODO implement derive for encode()
 // TODO move ParseWasm trait into own module
-// TODO add derive(EncodeWasm)
 // TODO make sure that encode(decode(file)) == file
 
 // TODO parse more complex wasm files (emscripten one, or a wasm test suite?)
 
 pub trait Wasm: Sized {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self>;
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        unimplemented!()
+    }
 
     /// convenience method
     fn error<E>(reason: E) -> io::Result<Self>
@@ -28,6 +31,10 @@ impl Wasm for u8 {
         use byteorder::ReadBytesExt;
         reader.read_u8()
     }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        use byteorder::WriteBytesExt;
+        writer.write_u8(*self)
+    }
 }
 
 // TODO save LEB128 encoding with u32 value to make sure decoding-encoding round-trips
@@ -40,6 +47,9 @@ impl Wasm for u32 {
             Ok(value) => Ok(value as u32),
         }
     }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        leb128::write::unsigned(writer, *self as u64).map(|_num_bytes| ())
+    }
 }
 
 impl<T: Wasm> Wasm for Vec<T> {
@@ -50,6 +60,13 @@ impl<T: Wasm> Wasm for Vec<T> {
             vec.push(T::decode(reader)?);
         };
         Ok(vec)
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        (self.len() as u32).encode(writer)?;
+        for element in self {
+            element.encode(writer)?;
+        }
+        Ok(())
     }
 }
 
@@ -63,6 +80,13 @@ impl Wasm for String {
             Err(e) => Self::error(format!("utf-8 conversion error: {}", e.to_string())),
         }
     }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        (self.len() as u32).encode(writer)?;
+        for byte in self.bytes() {
+            byte.encode(writer)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -75,6 +99,13 @@ impl<T: Wasm> Wasm for WithSize<T> {
         // we can do this generically in here: read size into a buf, spawn rayon work-stealing
         // thread for rest of the parsing in the buf
         Ok(WithSize(size, T::decode(reader)?))
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        // FIXME write proper size, not just the old one (might have changed through instrumentation!
+        // idea: write contents T to buffer first, once known how many bytes have been written,
+        // write those
+        self.0.encode(writer)?;
+        self.1.encode(writer)
     }
 }
 
@@ -177,6 +208,14 @@ impl Wasm for Module {
 
         Ok(Module { version, sections })
     }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        writer.write_all(b"\0asm")?;
+        writer.write_all(&[1, 0, 0, 0])?;
+        for section in &self.sections {
+            section.encode(writer)?;
+        }
+        Ok(())
+    }
 }
 
 impl Wasm for Func {
@@ -201,10 +240,22 @@ impl Wasm for Func {
 
         Ok(Func { locals, instructions })
     }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        self.locals.encode(writer)?;
+        self.instructions.encode(writer)
+    }
 }
 
 fn main() {
-    let file = std::fs::File::open("test/hello-manual.wasm").unwrap();
-    let mut buf_reader = io::BufReader::new(file);
-    println!("{:#?}", Module::decode(&mut buf_reader).map_err(|err| err.to_string()));
+    let file_name = "test/empty.wasm";
+
+    use std::fs::File;
+    let mut buf_reader = io::BufReader::new(File::open(file_name).unwrap());
+    let module = Module::decode(&mut buf_reader).unwrap();
+    println!("{:#?}", module);
+
+    let encoded_file_name = file_name.to_string().replace(".wasm", ".encoded.wasm");
+    let mut buf_writer = io::BufWriter::new(File::create(&encoded_file_name).unwrap());
+    module.encode(&mut buf_writer).unwrap();
+    println!("written encoded Module to {}", encoded_file_name);
 }
