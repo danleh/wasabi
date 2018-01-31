@@ -8,7 +8,7 @@ use syn::{DeriveInput, Data, Type, Ident, DataStruct, DataEnum, Fields, FieldsUn
 use quote::Tokens;
 
 #[proc_macro_derive(Wasm, attributes(tag))]
-pub fn hello_world(input: TokenStream) -> TokenStream {
+pub fn derive_wasm(input: TokenStream) -> TokenStream {
     let input: DeriveInput = syn::parse(input).unwrap();
     let data_name = input.ident;
 

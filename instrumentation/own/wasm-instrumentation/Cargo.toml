@@ -4,6 +4,6 @@ version = "0.1.0"
 authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
 
 [dependencies]
-parse-wasm-derive = { path = "parse-wasm-derive" }
+wasm-derive = { path = "wasm-derive" }
 byteorder = "1.2.1"
 leb128 = "0.2.2"

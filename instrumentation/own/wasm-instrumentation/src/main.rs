@@ -1,14 +1,12 @@
 #![feature(attr_literals)]
 #[macro_use]
-extern crate parse_wasm_derive;
+extern crate wasm_derive;
 extern crate byteorder;
 extern crate leb128;
 
 use std::io;
 
 // TODO move ParseWasm trait into own module
-// TODO rename ParseWasm to DecodeWasm?
-// TODO add EncodeWasm trait
 // TODO rename parse-wasm-derive to wasm-derive
 // TODO add derive(EncodeWasm)
 // TODO make sure that encode(decode(file)) == file

@@ -1,5 +1,5 @@
 [package]
-name = "parse-wasm-derive"
+name = "wasm-derive"
 version = "0.1.0"
 authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
 
