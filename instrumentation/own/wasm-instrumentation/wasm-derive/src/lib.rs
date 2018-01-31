@@ -20,7 +20,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
             if !input.attrs.is_empty() {
                 let tag = attributes_to_tag_value(&input.attrs);
                 quote!({
-                    let byte = u8::parse(reader)?;
+                    let byte = u8::decode(reader)?;
                     if byte != #tag {
                         return Self::error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte));
                     }
@@ -44,7 +44,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
 
             // match enum variants by tag
             quote! {
-                match u8::parse(reader)? {
+                match u8::decode(reader)? {
                     #( #variant_tags => #data_name_repeated::#variant_create, )*
                     byte => Self::error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte))?
                 }
@@ -56,7 +56,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
     // boilerplate of impl that is the same for any data type
     let impl_ = quote! {
         impl Wasm for #data_name {
-            fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+            fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
                 Ok(#impl_body)
             }
         }
@@ -75,7 +75,7 @@ fn recurse_into_fields(name: Ident, fields: Fields) -> Tokens {
                 .collect();
             quote! {
                 #name(
-                    #( #field_tys::parse(reader)? ),*
+                    #( #field_tys::decode(reader)? ),*
                 )
             }
         }
@@ -85,14 +85,14 @@ fn recurse_into_fields(name: Ident, fields: Fields) -> Tokens {
                 .unzip();
             quote! {
                 #name {
-                    #( #field_names: #field_tys::parse(reader)? ),*
+                    #( #field_names: #field_tys::decode(reader)? ),*
                 }
             }
         }
     }
 }
 
-// so that a field: Vec<T> is parsed by Vec::parse() not Vec<T>::parse() (which is not valid syntax)
+// so that a field: Vec<T> is decoded by Vec::decode() not Vec<T>::decode() (which is not valid syntax)
 fn remove_type_arguments(mut ty: Type) -> Type {
     if let Type::Path(TypePath { path: Path { ref mut segments, .. }, .. }) = ty {
         *segments = segments.into_iter().map(|segment| {

@@ -7,14 +7,13 @@ extern crate leb128;
 use std::io;
 
 // TODO move ParseWasm trait into own module
-// TODO rename parse-wasm-derive to wasm-derive
 // TODO add derive(EncodeWasm)
 // TODO make sure that encode(decode(file)) == file
 
 // TODO parse more complex wasm files (emscripten one, or a wasm test suite?)
 
 pub trait Wasm: Sized {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self>;
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self>;
 
     /// convenience method
     fn error<E>(reason: E) -> io::Result<Self>
@@ -25,7 +24,7 @@ pub trait Wasm: Sized {
 }
 
 impl Wasm for u8 {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         use byteorder::ReadBytesExt;
         reader.read_u8()
     }
@@ -33,7 +32,7 @@ impl Wasm for u8 {
 
 // TODO save LEB128 encoding with u32 value to make sure decoding-encoding round-trips
 impl Wasm for u32 {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         match leb128::read::unsigned(reader) {
             Err(leb128::read::Error::IoError(io_err)) => Err(io_err),
             Err(leb128::read::Error::Overflow) => Self::error("leb128 to u32 overflow"),
@@ -44,19 +43,19 @@ impl Wasm for u32 {
 }
 
 impl<T: Wasm> Wasm for Vec<T> {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let size = u32::parse(reader)?;
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let size = u32::decode(reader)?;
         let mut vec: Vec<T> = Vec::with_capacity(size as usize);
         for _ in 0..size {
-            vec.push(T::parse(reader)?);
+            vec.push(T::decode(reader)?);
         };
         Ok(vec)
     }
 }
 
 impl Wasm for String {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let size = u32::parse(reader)?;
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let size = u32::decode(reader)?;
         let mut buf = vec![0u8; size as usize];
         reader.read_exact(&mut buf)?;
         match String::from_utf8(buf) {
@@ -70,12 +69,12 @@ impl Wasm for String {
 pub struct WithSize<T>(u32, T);
 
 impl<T: Wasm> Wasm for WithSize<T> {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let size = u32::parse(reader)?;
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let size = u32::decode(reader)?;
         // TODO parallelize section and/or function decoding by jumping forward size bytes
         // we can do this generically in here: read size into a buf, spawn rayon work-stealing
         // thread for rest of the parsing in the buf
-        Ok(WithSize(size, T::parse(reader)?))
+        Ok(WithSize(size, T::decode(reader)?))
     }
 }
 
@@ -154,7 +153,7 @@ pub struct Memarg {
 }
 
 impl Wasm for Module {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let mut magic_number = [0u8; 4];
         reader.read_exact(&mut magic_number)?;
         if &magic_number != b"\0asm" {
@@ -169,7 +168,7 @@ impl Wasm for Module {
 
         let mut sections = Vec::new();
         loop {
-            match Section::parse(reader) {
+            match Section::decode(reader) {
                 Ok(section) => sections.push(section),
                 Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(e)
@@ -181,13 +180,13 @@ impl Wasm for Module {
 }
 
 impl Wasm for Func {
-    fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let locals = Vec::parse(reader)?;
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let locals = Vec::decode(reader)?;
         let mut instructions = Vec::new();
         let mut blocks_to_end = 0;
 
         loop {
-            let instr = Instr::parse(reader)?;
+            let instr = Instr::decode(reader)?;
 
             if instr == Instr::End {
                 blocks_to_end -= 1;
@@ -207,5 +206,5 @@ impl Wasm for Func {
 fn main() {
     let file = std::fs::File::open("test/hello-manual.wasm").unwrap();
     let mut buf_reader = io::BufReader::new(file);
-    println!("{:#?}", Module::parse(&mut buf_reader).map_err(|err| err.to_string()));
+    println!("{:#?}", Module::decode(&mut buf_reader).map_err(|err| err.to_string()));
 }
