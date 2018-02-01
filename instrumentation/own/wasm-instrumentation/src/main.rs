@@ -260,8 +260,8 @@ pub enum Section {
     #[tag = 1] Type(WithSize<Vec<FuncType>>),
     #[tag = 2] Import(WithSize<Vec<Import>>),
     #[tag = 3] Function(WithSize<Vec<TypeIdx>>),
-    // TODO table
-    // TODO memory
+    #[tag = 4] Table(WithSize<Vec<TableType>>), // untested
+    #[tag = 5] Memory(WithSize<Vec<Limits>>), // untested
     #[tag = 6] Global(WithSize<Vec<Global>>),
     #[tag = 7] Export(WithSize<Vec<Export>>),
     #[tag = 8] Start(WithSize<FuncIdx>),
