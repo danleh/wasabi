@@ -8,6 +8,7 @@ extern crate rayon;
 use std::io;
 use rayon::prelude::*;
 
+// FIXME debug by bb.wasm does not round trip, is it really because of LEB128 or sth different!?
 // TODO test with WASM spec test suite
 
 pub trait Wasm: Sized {
@@ -35,6 +36,14 @@ impl Wasm for u8 {
 }
 
 // TODO save LEB128 encoding with value to make sure decoding-encoding round-trips
+// TODO implement this for T = u32, u64, i32, i64
+// TODO change opcodes and WithSize to use this instead of "raw Ts"
+#[derive(Debug)]
+pub struct Leb128<T> {
+    value: T,
+    original_bytes: Vec<u8>
+}
+
 impl Wasm for u32 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         match leb128::read::unsigned(reader) {
@@ -49,7 +58,6 @@ impl Wasm for u32 {
     }
 }
 
-// TODO save LEB128 encoding with value to make sure decoding-encoding round-trips
 impl Wasm for u64 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         match leb128::read::unsigned(reader) {
@@ -63,7 +71,6 @@ impl Wasm for u64 {
     }
 }
 
-// TODO save LEB128 encoding with value to make sure decoding-encoding round-trips
 impl Wasm for i32 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         match leb128::read::signed(reader) {
@@ -78,7 +85,6 @@ impl Wasm for i32 {
     }
 }
 
-// TODO save LEB128 encoding with value to make sure decoding-encoding round-trips
 impl Wasm for i64 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         match leb128::read::signed(reader) {
@@ -185,7 +191,7 @@ impl<T: Wasm> Wasm for WithSize<T> {
 #[derive(Debug)]
 pub struct Parallel<T>(Vec<WithSize<T>>);
 
-impl<T: Wasm + Send> Wasm for Parallel<T> {
+impl<T: Wasm + Send + Sync> Wasm for Parallel<T> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let num_elements = u32::decode(reader)?;
         let mut bufs = Vec::with_capacity(num_elements as usize);
@@ -218,8 +224,27 @@ impl<T: Wasm + Send> Wasm for Parallel<T> {
         Ok(Parallel(decoded))
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        // TODO parallelize encoding as well
-        self.0.encode(writer)
+        let vec = &self.0;
+        let mut bytes_written = (vec.len() as u32).encode(writer)?;
+
+        // encode elements to buffers in parallel
+        let encoded: Vec<io::Result<(Vec<u8>, usize)>> = vec.par_iter()
+            .map(|element| {
+                let mut buf = Vec::with_capacity(element.old_size as usize);
+                let new_size = element.content.encode(&mut buf)?;
+                Ok((buf, new_size))
+            })
+            .collect();
+
+        // write sizes and buffer contents to actual writer (non-parallel, but hopefully fast)
+        for element in encoded {
+            let (buf, new_size) = element?;
+            bytes_written += (new_size as u32).encode(writer)?;
+            writer.write_all(&buf)?;
+            bytes_written += new_size;
+        }
+
+        Ok(bytes_written)
     }
 }
 
