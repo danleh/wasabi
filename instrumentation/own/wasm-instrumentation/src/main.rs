@@ -385,6 +385,33 @@ pub struct Locals {
     type_: ValType,
 }
 
+#[derive(Wasm, Debug, PartialEq)]
+pub struct TypeIdx(u32);
+
+#[derive(Wasm, Debug, PartialEq)]
+pub struct FuncIdx(u32);
+
+#[derive(Wasm, Debug, PartialEq)]
+pub struct TableIdx(u32);
+
+#[derive(Wasm, Debug, PartialEq)]
+pub struct MemoryIdx(u32);
+
+#[derive(Wasm, Debug, PartialEq)]
+pub struct GlobalIdx(u32);
+
+#[derive(Wasm, Debug, PartialEq)]
+pub struct LocalIdx(u32);
+
+#[derive(Wasm, Debug, PartialEq)]
+pub struct LabelIdx(u32);
+
+#[derive(Wasm, Debug, PartialEq)]
+pub struct Memarg {
+    alignment: u32,
+    offset: u32,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Expr(Vec<Instr>);
 
@@ -573,33 +600,6 @@ pub enum Instr {
     #[tag = 0xbf] F64ReinterpretI64,
 }
 
-#[derive(Wasm, Debug, PartialEq)]
-pub struct TypeIdx(u32);
-
-#[derive(Wasm, Debug, PartialEq)]
-pub struct FuncIdx(u32);
-
-#[derive(Wasm, Debug, PartialEq)]
-pub struct TableIdx(u32);
-
-#[derive(Wasm, Debug, PartialEq)]
-pub struct MemoryIdx(u32);
-
-#[derive(Wasm, Debug, PartialEq)]
-pub struct GlobalIdx(u32);
-
-#[derive(Wasm, Debug, PartialEq)]
-pub struct LocalIdx(u32);
-
-#[derive(Wasm, Debug, PartialEq)]
-pub struct LabelIdx(u32);
-
-#[derive(Wasm, Debug, PartialEq)]
-pub struct Memarg {
-    alignment: u32,
-    offset: u32,
-}
-
 impl Wasm for Module {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let mut magic_number = [0u8; 4];
@@ -670,25 +670,28 @@ fn main() {
     let default_file_name = "test/hello-emcc.wasm";
     let file_name = std::env::args().nth(1).unwrap_or(default_file_name.into());
 
-    use std::fs::File;
-    let mut buf_reader = io::BufReader::new(File::open(&file_name).unwrap());
-    let mut module = match Module::decode(&mut buf_reader) {
-        Ok(m) => m,
-        Err(e) => {
-            eprintln!("{}", e);
-            return;
+    std::process::exit(match || -> io::Result<()> {
+        use std::fs::File;
+        let mut buf_reader = io::BufReader::new(File::open(&file_name)?);
+        let module = Module::decode(&mut buf_reader)?;
+        debug!("{:#?}", module);
+
+        // TODO implement actual instrumentation, not just this dummy function add
+        // match module.sections[0] {
+        //     Section::Type(ref mut _0) => _0.content.push(FuncType {params: Vec::new(), results: Vec::new()}),
+        //     _ => {}
+        // };
+
+        let encoded_file_name = file_name.replace(".wasm", ".encoded.wasm");
+        let mut buf_writer = io::BufWriter::new(File::create(&encoded_file_name)?);
+        let bytes_written = module.encode(&mut buf_writer)?;
+        println!("written encoded Module to {}, {} bytes", encoded_file_name, bytes_written);
+        Ok(())
+    }() {
+        Ok(_) => 0,
+        Err(ref e) => {
+            eprintln!("Error: {}", e);
+            1
         }
-    };
-    debug!("{:#?}", module);
-
-    let encoded_file_name = file_name.replace(".wasm", ".encoded.wasm");
-    let mut buf_writer = io::BufWriter::new(File::create(&encoded_file_name).unwrap());
-
-//    match module.sections[0] {
-//        Section::Type(ref mut _0) => _0.content.push(FuncType {params: Vec::new(), results: Vec::new()}),
-//        _ => {}
-//    };
-
-    let bytes_written = module.encode(&mut buf_writer).unwrap();
-    println!("written encoded Module to {}, {} bytes", encoded_file_name, bytes_written);
+    });
 }
