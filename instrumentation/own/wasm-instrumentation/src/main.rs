@@ -180,10 +180,21 @@ impl<T: Wasm> Wasm for WithSize<T> {
     }
 }
 
-// TODO add impl for Vec<WithSize<T>> that spawns threads to parallelize section and/or function
-// decoding by jumping forward old_size bytes.
-// We can do this generically in the trait?: read size into a buf, spawn rayon work-stealing
-// thread for rest of the parsing in the buf
+#[derive(Debug)]
+pub struct Parallel<T>(Vec<WithSize<T>>);
+
+impl<T: Wasm> Wasm for Parallel<T> {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        // TODO spawn threads to parallelize section and/or function
+        // decoding by jumping forward old_size bytes.
+        // We can do this generically in the trait?: read size into a buf, spawn rayon work-stealing
+        // thread for rest of the parsing in the buf
+        Ok(Parallel(Vec::decode(reader)?))
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        self.0.encode(writer)
+    }
+}
 
 #[derive(Debug)]
 pub struct Module {
@@ -203,7 +214,7 @@ pub enum Section {
     #[tag = 7] Export(WithSize<Vec<Export>>),
     #[tag = 8] Start(WithSize<FuncIdx>),
     #[tag = 9] Element(WithSize<Vec<Element>>),
-    #[tag = 10] Code(WithSize<Vec<WithSize<Func>>>),
+    #[tag = 10] Code(WithSize<Parallel<Func>>),
     #[tag = 11] Data(WithSize<Vec<Data>>),
 }
 
@@ -544,7 +555,7 @@ impl Wasm for Module {
         loop {
             match Section::decode(reader) {
                 Ok(section) => {
-                    println!("found section: {:?}", section); // DEBUG
+//                    println!("found section: {:?}", section); // DEBUG
                     sections.push(section)
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
@@ -605,7 +616,9 @@ fn main() {
             return;
         }
     };
-    println!("{:#?}", module);
+    if std::env::args().nth(2).is_none() {
+        println!("{:#?}", module);
+    }
 
     let encoded_file_name = file_name.replace(".wasm", ".encoded.wasm");
     let mut buf_writer = io::BufWriter::new(File::create(&encoded_file_name).unwrap());
