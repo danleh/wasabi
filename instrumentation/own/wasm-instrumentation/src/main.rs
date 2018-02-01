@@ -8,6 +8,15 @@ extern crate rayon;
 use std::io;
 use rayon::prelude::*;
 
+macro_rules! debug {
+    ( $fmt:expr, $( $args:expr ),* ) => {
+        let should_output = std::env::args().nth(2).is_none(); // give "silent" or so as second argument
+        if should_output {
+            println!($fmt, $( $args ),* );
+        }
+    };
+}
+
 // FIXME debug by bb.wasm does not round trip, is it really because of LEB128 or sth different!?
 // TODO test with WASM spec test suite
 
@@ -41,7 +50,7 @@ impl Wasm for u8 {
 #[derive(Debug)]
 pub struct Leb128<T> {
     value: T,
-    original_bytes: Vec<u8>
+    original_bytes: Vec<u8>,
 }
 
 impl Wasm for u32 {
@@ -260,8 +269,10 @@ pub enum Section {
     #[tag = 1] Type(WithSize<Vec<FuncType>>),
     #[tag = 2] Import(WithSize<Vec<Import>>),
     #[tag = 3] Function(WithSize<Vec<TypeIdx>>),
-    #[tag = 4] Table(WithSize<Vec<TableType>>), // untested
-    #[tag = 5] Memory(WithSize<Vec<Limits>>), // untested
+    // untested
+    #[tag = 4] Table(WithSize<Vec<TableType>>),
+    // untested
+    #[tag = 5] Memory(WithSize<Vec<Limits>>),
     #[tag = 6] Global(WithSize<Vec<Global>>),
     #[tag = 7] Export(WithSize<Vec<Export>>),
     #[tag = 8] Start(WithSize<FuncIdx>),
@@ -607,7 +618,7 @@ impl Wasm for Module {
         loop {
             match Section::decode(reader) {
                 Ok(section) => {
-//                    println!("found section: {:?}", section); // DEBUG
+                    debug!("decoded section: {:?}", section);
                     sections.push(section)
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
@@ -668,9 +679,7 @@ fn main() {
             return;
         }
     };
-    if std::env::args().nth(2).is_none() {
-        println!("{:#?}", module);
-    }
+    debug!("{:#?}", module);
 
     let encoded_file_name = file_name.replace(".wasm", ".encoded.wasm");
     let mut buf_writer = io::BufWriter::new(File::create(&encoded_file_name).unwrap());
