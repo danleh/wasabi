@@ -199,20 +199,26 @@ impl<T: Wasm + Send> Wasm for Parallel<T> {
         }
 
         // parallel decode of each buffer
-        let decoded: Vec<WithSize<T>> = bufs.into_par_iter()
-            .map(|buf| {
+        let vec_results: Vec<io::Result<WithSize<T>>> = bufs.into_par_iter()
+            .map(|buf| -> io::Result<_> {
                 let old_size = buf.len() as u32;
-                WithSize {
+                Ok(WithSize {
                     old_size,
-                    content: T::decode(&mut &buf[..]).unwrap(), // FIXME
-                }
+                    content: T::decode(&mut &buf[..])?,
+                })
             })
             .collect();
+
+        // unswitch Vec and Result (non-parallel again :/)
+        let mut decoded = Vec::with_capacity(vec_results.len());
+        for elem in vec_results {
+            decoded.push(elem?);
+        }
 
         Ok(Parallel(decoded))
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        // TODO parallelize this
+        // TODO parallelize encoding as well
         self.0.encode(writer)
     }
 }
