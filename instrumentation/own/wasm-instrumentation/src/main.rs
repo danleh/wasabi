@@ -10,7 +10,6 @@ use std::io;
 
 pub trait Wasm: Sized {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self>;
-    // TODO change to Result<written_bytes> so that we can seek/backpatch
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize>;
 
     /// convenience method
@@ -158,14 +157,10 @@ pub struct WithSize<T> {
     old_size: u32,
     content: T,
 }
-// TODO add ParallelWithSize<T>(T) that spawns threads
 
 impl<T: Wasm> Wasm for WithSize<T> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let old_size = u32::decode(reader)?;
-        // TODO parallelize section and/or function decoding by jumping forward old_size bytes
-        // we can do this generically in here: read size into a buf, spawn rayon work-stealing
-        // thread for rest of the parsing in the buf
         Ok(WithSize {
             old_size,
             content: T::decode(reader)?,
@@ -184,6 +179,11 @@ impl<T: Wasm> Wasm for WithSize<T> {
         Ok(bytes_written)
     }
 }
+
+// TODO add impl for Vec<WithSize<T>> that spawns threads to parallelize section and/or function
+// decoding by jumping forward old_size bytes.
+// We can do this generically in the trait?: read size into a buf, spawn rayon work-stealing
+// thread for rest of the parsing in the buf
 
 #[derive(Debug)]
 pub struct Module {
@@ -597,7 +597,7 @@ fn main() {
 
     use std::fs::File;
     let mut buf_reader = io::BufReader::new(File::open(file_name).unwrap());
-    let module = match Module::decode(&mut buf_reader) {
+    let mut module = match Module::decode(&mut buf_reader) {
         Ok(m) => m,
         Err(e) => {
             eprintln!("{}", e);
@@ -608,6 +608,11 @@ fn main() {
 
     let encoded_file_name = file_name.to_string().replace(".wasm", ".encoded.wasm");
     let mut buf_writer = io::BufWriter::new(File::create(&encoded_file_name).unwrap());
+
+//    match module.sections[0] {
+//        Section::Type(ref mut _0) => _0.content.push(FuncType {params: Vec::new(), results: Vec::new()}),
+//        _ => {}
+//    };
 
     let bytes_written = module.encode(&mut buf_writer).unwrap();
     println!("written encoded Module to {}, {} bytes", encoded_file_name, bytes_written);
