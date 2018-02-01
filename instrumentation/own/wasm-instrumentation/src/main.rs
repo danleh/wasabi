@@ -60,6 +60,35 @@ impl Wasm for u64 {
     }
 }
 
+// TODO save LEB128 encoding with value to make sure decoding-encoding round-trips
+impl Wasm for i32 {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        match leb128::read::signed(reader) {
+            Err(leb128::read::Error::IoError(io_err)) => Err(io_err),
+            Err(leb128::read::Error::Overflow) => Self::error("leb128 to i32 overflow"),
+            Ok(value) if value > i32::max_value() as i64 => Self::error("leb128 to i32 overflow"),
+            Ok(value) => Ok(value as i32),
+        }
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        leb128::write::signed(writer, *self as i64).map(|_num_bytes| ())
+    }
+}
+
+// TODO save LEB128 encoding with value to make sure decoding-encoding round-trips
+impl Wasm for i64 {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        match leb128::read::signed(reader) {
+            Err(leb128::read::Error::IoError(io_err)) => Err(io_err),
+            Err(leb128::read::Error::Overflow) => Self::error("leb128 to i64 overflow"),
+            Ok(value) => Ok(value),
+        }
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        leb128::write::signed(writer, *self as i64).map(|_num_bytes| ())
+    }
+}
+
 impl Wasm for f32 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         use byteorder::ReadBytesExt;
@@ -134,6 +163,9 @@ impl<T: Wasm> Wasm for WithSize<T> {
         // FIXME write proper size, not just the old one (might have changed through instrumentation!
         // idea: write contents T to buffer first, once known how many bytes have been written,
         // write those
+        // other idea: use Seek trait to allow back-patching!
+        // see https://doc.rust-lang.org/std/io/struct.Cursor.html
+        // and https://doc.rust-lang.org/std/io/trait.Seek.html
         self.0.encode(writer)?;
         self.1.encode(writer)
     }
@@ -320,8 +352,8 @@ pub enum Instr {
     #[tag = 0x3f] CurrentMemory(/* unused, always 0x00 in WASM version 1 */ u8),
     #[tag = 0x40] GrowMemory(/* unused, always 0x00 in WASM version 1 */ u8),
 
-    #[tag = 0x41] I32Const(u32),
-    #[tag = 0x42] I64Const(u64),
+    #[tag = 0x41] I32Const(i32),
+    #[tag = 0x42] I64Const(i64),
     #[tag = 0x43] F32Const(f32),
     #[tag = 0x44] F64Const(f64),
 
