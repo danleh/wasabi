@@ -16,7 +16,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
     // extract handling of fields since it is the same for structs and enums
     let recurse_into_fields = |name: Ident, tag: u8, fields: Fields| -> (Tokens, (Tokens, Tokens)) {
         match fields {
-            Fields::Unit => (quote!(#name), (quote!(), quote!(&#data_name::#name => #tag.encode(writer)?))),
+            Fields::Unit => (quote!(#name), (quote!(), quote!(&#data_name::#name => bytes_written += #tag.encode(writer)?))),
             Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
                 let (field_idx, field_tys): (Vec<Index>, Vec<Type>) = unnamed.into_iter()
                     .enumerate()
@@ -30,14 +30,14 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
                     )
                 },
                 (quote! {
-                    #( self.#field_idx.encode(writer)?; )*
+                    #( bytes_written += self.#field_idx.encode(writer)?; )*
                 },
                 quote!(
                     &#data_name::#name(
                         #( ref #field_idx_name ),*
                     ) => {
-                        #tag.encode(writer)?;
-                        #( #field_idx_name_2.encode(writer)? );*
+                        bytes_written += #tag.encode(writer)?;
+                        #( bytes_written += #field_idx_name_2.encode(writer)? );*
                     }
                 )))
             }
@@ -54,14 +54,14 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
                     }
                 },
                 (quote! {
-                    #( self.#field_names_2.encode(writer)?; )*
+                    #( bytes_written += self.#field_names_2.encode(writer)?; )*
                 },
                 quote!(
                     &#data_name::#name(
                         #( ref #field_names_3 ),*
                     ) => {
-                        #tag.encode(writer)?;
-                        #( #field_names_4.encode(writer)? );*
+                        bytes_written += #tag.encode(writer)?;
+                        #( bytes_written += #field_names_4.encode(writer)? );*
                     }
                 )))
             }
@@ -83,7 +83,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
                     #decode
                 }),
                 quote! {
-                    #tag.encode(writer)?;
+                    bytes_written += #tag.encode(writer)?;
                     #encode
                 })
             } else {
@@ -124,9 +124,10 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
             fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
                 Ok(#decode_body)
             }
-            fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+            fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+                let mut bytes_written = 0;
                 #encode_body
-                Ok(())
+                Ok(bytes_written)
             }
         }
     };

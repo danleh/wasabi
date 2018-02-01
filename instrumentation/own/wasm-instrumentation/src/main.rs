@@ -6,11 +6,12 @@ extern crate leb128;
 
 use std::io;
 
-// TODO parse more complex wasm files (emscripten one, or a wasm test suite?)
+// TODO test with WASM spec test suite
 
 pub trait Wasm: Sized {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self>;
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()>;
+    // TODO change to Result<written_bytes> so that we can seek/backpatch
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize>;
 
     /// convenience method
     fn error<E>(reason: E) -> io::Result<Self>
@@ -25,9 +26,10 @@ impl Wasm for u8 {
         use byteorder::ReadBytesExt;
         reader.read_u8()
     }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         use byteorder::WriteBytesExt;
-        writer.write_u8(*self)
+        writer.write_u8(*self)?;
+        Ok(1)
     }
 }
 
@@ -41,8 +43,8 @@ impl Wasm for u32 {
             Ok(value) => Ok(value as u32),
         }
     }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        leb128::write::unsigned(writer, *self as u64).map(|_num_bytes| ())
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        leb128::write::unsigned(writer, *self as u64)
     }
 }
 
@@ -55,8 +57,8 @@ impl Wasm for u64 {
             Ok(value) => Ok(value),
         }
     }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        leb128::write::unsigned(writer, *self as u64).map(|_num_bytes| ())
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        leb128::write::unsigned(writer, *self as u64)
     }
 }
 
@@ -70,8 +72,8 @@ impl Wasm for i32 {
             Ok(value) => Ok(value as i32),
         }
     }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        leb128::write::signed(writer, *self as i64).map(|_num_bytes| ())
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        leb128::write::signed(writer, *self as i64)
     }
 }
 
@@ -84,8 +86,8 @@ impl Wasm for i64 {
             Ok(value) => Ok(value),
         }
     }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        leb128::write::signed(writer, *self as i64).map(|_num_bytes| ())
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        leb128::write::signed(writer, *self as i64)
     }
 }
 
@@ -94,9 +96,10 @@ impl Wasm for f32 {
         use byteorder::ReadBytesExt;
         reader.read_f32::<byteorder::LittleEndian>()
     }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         use byteorder::WriteBytesExt;
-        writer.write_f32::<byteorder::LittleEndian>(*self)
+        writer.write_f32::<byteorder::LittleEndian>(*self)?;
+        Ok(4)
     }
 }
 
@@ -105,9 +108,10 @@ impl Wasm for f64 {
         use byteorder::ReadBytesExt;
         reader.read_f64::<byteorder::LittleEndian>()
     }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         use byteorder::WriteBytesExt;
-        writer.write_f64::<byteorder::LittleEndian>(*self)
+        writer.write_f64::<byteorder::LittleEndian>(*self)?;
+        Ok(8)
     }
 }
 
@@ -120,12 +124,12 @@ impl<T: Wasm> Wasm for Vec<T> {
         };
         Ok(vec)
     }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        (self.len() as u32).encode(writer)?;
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        let mut bytes_written = (self.len() as u32).encode(writer)?;
         for element in self {
-            element.encode(writer)?;
+            bytes_written += element.encode(writer)?;
         }
-        Ok(())
+        Ok(bytes_written)
     }
 }
 
@@ -139,17 +143,17 @@ impl Wasm for String {
             Err(e) => Self::error(format!("utf-8 conversion error: {}", e.to_string())),
         }
     }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        (self.len() as u32).encode(writer)?;
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        let mut bytes_written = (self.len() as u32).encode(writer)?;
         for byte in self.bytes() {
-            byte.encode(writer)?;
+            bytes_written += byte.encode(writer)?;
         }
-        Ok(())
+        Ok(bytes_written)
     }
 }
 
 #[derive(Debug)]
-pub struct WithSize<T>(u32, T);
+pub struct WithSize<T>(u32, T); // FIXME remove u32, should be calculated when writing, not saved!
 
 impl<T: Wasm> Wasm for WithSize<T> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
@@ -159,15 +163,16 @@ impl<T: Wasm> Wasm for WithSize<T> {
         // thread for rest of the parsing in the buf
         Ok(WithSize(size, T::decode(reader)?))
     }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         // FIXME write proper size, not just the old one (might have changed through instrumentation!
         // idea: write contents T to buffer first, once known how many bytes have been written,
         // write those
         // other idea: use Seek trait to allow back-patching!
         // see https://doc.rust-lang.org/std/io/struct.Cursor.html
         // and https://doc.rust-lang.org/std/io/trait.Seek.html
-        self.0.encode(writer)?;
-        self.1.encode(writer)
+        let mut bytes_written = self.0.encode(writer)?; // FIXME do not write self.0 but compute from write from self.1.
+        bytes_written += self.1.encode(writer)?;
+        Ok(bytes_written)
     }
 }
 
@@ -269,7 +274,7 @@ pub enum Mut {
 pub struct BlockType(Option<ValType>);
 
 /// have to implement manually because of strange compressed format:
-/// no tag, because they know that 0x40 and ValType are disjunct
+/// no tag, because they know that 0x40 and ValType are disjoint
 impl Wasm for BlockType {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         Ok(BlockType(match u8::decode(reader)? {
@@ -280,7 +285,7 @@ impl Wasm for BlockType {
             }
         }))
     }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         match self {
             &BlockType(None) => 0x40u8.encode(writer),
             &BlockType(Some(ref val_type)) => val_type.encode(writer)
@@ -540,13 +545,14 @@ impl Wasm for Module {
 
         Ok(Module { version, sections })
     }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_all(b"\0asm")?;
         writer.write_all(&[1, 0, 0, 0])?;
+        let mut bytes_written = 8;
         for section in &self.sections {
-            section.encode(writer)?;
+            bytes_written += section.encode(writer)?;
         }
-        Ok(())
+        Ok(bytes_written)
     }
 }
 
@@ -568,11 +574,12 @@ impl Wasm for Expr {
 
         Ok(Expr(instructions))
     }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        let mut bytes_written = 0;
         for instruction in &self.0 {
-            instruction.encode(writer)?;
+            bytes_written += instruction.encode(writer)?;
         }
-        Ok(())
+        Ok(bytes_written)
     }
 }
 
@@ -592,6 +599,7 @@ fn main() {
 
     let encoded_file_name = file_name.to_string().replace(".wasm", ".encoded.wasm");
     let mut buf_writer = io::BufWriter::new(File::create(&encoded_file_name).unwrap());
-    module.encode(&mut buf_writer).unwrap();
-    println!("written encoded Module to {}", encoded_file_name);
+
+    let bytes_written = module.encode(&mut buf_writer).unwrap();
+    println!("written encoded Module to {}, {} bytes", encoded_file_name, bytes_written);
 }
