@@ -153,25 +153,34 @@ impl Wasm for String {
 }
 
 #[derive(Debug)]
-pub struct WithSize<T>(u32, T); // FIXME remove u32, should be calculated when writing, not saved!
+pub struct WithSize<T> {
+    /// as a hint for allocating the write buffer
+    old_size: u32,
+    content: T,
+}
+// TODO add ParallelWithSize<T>(T) that spawns threads
 
 impl<T: Wasm> Wasm for WithSize<T> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let size = u32::decode(reader)?;
-        // TODO parallelize section and/or function decoding by jumping forward size bytes
+        let old_size = u32::decode(reader)?;
+        // TODO parallelize section and/or function decoding by jumping forward old_size bytes
         // we can do this generically in here: read size into a buf, spawn rayon work-stealing
         // thread for rest of the parsing in the buf
-        Ok(WithSize(size, T::decode(reader)?))
+        Ok(WithSize {
+            old_size,
+            content: T::decode(reader)?,
+        })
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        // FIXME write proper size, not just the old one (might have changed through instrumentation!
-        // idea: write contents T to buffer first, once known how many bytes have been written,
-        // write those
-        // other idea: use Seek trait to allow back-patching!
-        // see https://doc.rust-lang.org/std/io/struct.Cursor.html
-        // and https://doc.rust-lang.org/std/io/trait.Seek.html
-        let mut bytes_written = self.0.encode(writer)?; // FIXME do not write self.0 but compute from write from self.1.
-        bytes_written += self.1.encode(writer)?;
+        // write contents to buffer to know size
+        let mut buf = Vec::with_capacity(self.old_size as usize);
+        let new_size = self.content.encode(&mut buf)?;
+
+        // write size, then contents from buffer to actual writer
+        let mut bytes_written = (new_size as u32).encode(writer)?;
+        writer.write_all(&buf)?;
+        bytes_written += new_size;
+
         Ok(bytes_written)
     }
 }
@@ -195,7 +204,7 @@ pub enum Section {
     #[tag = 8] Start(WithSize<FuncIdx>),
     #[tag = 9] Element(WithSize<Vec<Element>>),
     #[tag = 10] Code(WithSize<Vec<WithSize<Func>>>),
-    #[tag = 11] Data(WithSize<Vec<Data>>)
+    #[tag = 11] Data(WithSize<Vec<Data>>),
 }
 
 #[derive(Wasm, Debug)]
@@ -299,7 +308,7 @@ pub struct Func(Vec<Locals>, Expr);
 #[derive(Wasm, Debug)]
 pub struct Locals {
     count: u32,
-    type_: ValType
+    type_: ValType,
 }
 
 #[derive(Debug, PartialEq)]
