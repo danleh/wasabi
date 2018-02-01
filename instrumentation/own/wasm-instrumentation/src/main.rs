@@ -3,8 +3,10 @@
 extern crate wasm_derive;
 extern crate byteorder;
 extern crate leb128;
+extern crate rayon;
 
 use std::io;
+use rayon::prelude::*;
 
 // TODO test with WASM spec test suite
 
@@ -183,15 +185,34 @@ impl<T: Wasm> Wasm for WithSize<T> {
 #[derive(Debug)]
 pub struct Parallel<T>(Vec<WithSize<T>>);
 
-impl<T: Wasm> Wasm for Parallel<T> {
+impl<T: Wasm + Send> Wasm for Parallel<T> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        // TODO spawn threads to parallelize section and/or function
-        // decoding by jumping forward old_size bytes.
-        // We can do this generically in the trait?: read size into a buf, spawn rayon work-stealing
-        // thread for rest of the parsing in the buf
-        Ok(Parallel(Vec::decode(reader)?))
+        let num_elements = u32::decode(reader)?;
+        let mut bufs = Vec::with_capacity(num_elements as usize);
+
+        // read all elements into buffers of the given size (non-parallel, but hopefully fast)
+        for _ in 0..num_elements {
+            let num_bytes = u32::decode(reader)?;
+            let mut buf = vec![0u8; num_bytes as usize];
+            reader.read_exact(&mut buf)?;
+            bufs.push(buf);
+        }
+
+        // parallel decode of each buffer
+        let decoded: Vec<WithSize<T>> = bufs.into_par_iter()
+            .map(|buf| {
+                let old_size = buf.len() as u32;
+                WithSize {
+                    old_size,
+                    content: T::decode(&mut &buf[..]).unwrap(), // FIXME
+                }
+            })
+            .collect();
+
+        Ok(Parallel(decoded))
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        // TODO parallelize this
         self.0.encode(writer)
     }
 }
