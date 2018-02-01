@@ -8,6 +8,8 @@ extern crate rayon;
 use std::io;
 use rayon::prelude::*;
 
+// TODO test with WASM spec test suite
+
 macro_rules! debug {
     ( $fmt:expr, $( $args:expr ),* ) => {
         let should_output = std::env::args().nth(2).is_none(); // give "silent" or so as second argument
@@ -16,9 +18,6 @@ macro_rules! debug {
         }
     };
 }
-
-// FIXME debug by bb.wasm does not round trip, is it really because of LEB128 or sth different!?
-// TODO test with WASM spec test suite
 
 pub trait Wasm: Sized {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self>;
