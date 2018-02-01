@@ -7,3 +7,4 @@ authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
 wasm-derive = { path = "wasm-derive" }
 byteorder = "1.2.1"
 leb128 = "0.2.2"
+rayon = "0.9.0"
