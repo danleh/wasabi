@@ -593,10 +593,11 @@ impl Wasm for Expr {
 }
 
 fn main() {
-    let file_name = "test/hello-emcc.wasm";
+    let default_file_name = "test/hello-emcc.wasm";
+    let file_name = std::env::args().nth(1).unwrap_or(default_file_name.into());
 
     use std::fs::File;
-    let mut buf_reader = io::BufReader::new(File::open(file_name).unwrap());
+    let mut buf_reader = io::BufReader::new(File::open(&file_name).unwrap());
     let mut module = match Module::decode(&mut buf_reader) {
         Ok(m) => m,
         Err(e) => {
@@ -606,7 +607,7 @@ fn main() {
     };
     println!("{:#?}", module);
 
-    let encoded_file_name = file_name.to_string().replace(".wasm", ".encoded.wasm");
+    let encoded_file_name = file_name.replace(".wasm", ".encoded.wasm");
     let mut buf_writer = io::BufWriter::new(File::create(&encoded_file_name).unwrap());
 
 //    match module.sections[0] {
