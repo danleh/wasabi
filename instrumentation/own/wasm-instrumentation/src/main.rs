@@ -190,8 +190,11 @@ pub enum Section {
     #[tag = 8] Start(WithSize<FuncIdx>),
     #[tag = 9] Element(WithSize<Vec<Element>>),
     #[tag = 10] Code(WithSize<Vec<WithSize<Func>>>),
-    // TODO data
+    #[tag = 11] Data(WithSize<Vec<Data>>)
 }
+
+#[derive(Wasm, Debug)]
+pub struct Data(MemoryIdx, /* offset given by constant expr */ Expr, Vec<u8>);
 
 #[derive(Wasm, Debug)]
 pub struct Global(GlobalType, Expr);
@@ -302,11 +305,11 @@ pub enum Instr {
     #[tag = 0x00] Unreachable,
     #[tag = 0x01] Nop,
 
-    // NOTE Blocks are handled by Expr::decode which returns as soon as an Else or End is found
+    // NOTE block nesting is handled by Expr::decode which returns as soon as an Else or End is found
     #[tag = 0x02] Block(BlockType, Expr),
     #[tag = 0x03] Loop(BlockType, Expr),
     #[tag = 0x04] If(BlockType, Expr),
-    #[tag = 0x05] Else(Expr), // TODO make sure this works correctly
+    #[tag = 0x05] Else(Expr),
     #[tag = 0x0b] End,
 
     #[tag = 0x0c] Br(LabelIdx),
@@ -556,11 +559,10 @@ impl Wasm for Expr {
             let instr = Instr::decode(reader)?;
 
             match instr {
-                Instr::Else(..) | Instr::End => found_end = true, // FIXME should we really stop at the Else?
+                Instr::Else(..) | Instr::End => found_end = true,
                 _ => {}
             };
 
-            println!("instr: {:?}", instr); // DEBUG
             instructions.push(instr);
         }
 
