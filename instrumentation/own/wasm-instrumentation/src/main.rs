@@ -264,7 +264,8 @@ pub struct Module {
 
 #[derive(Wasm, Debug)]
 pub enum Section {
-    // TODO custom
+    // untested
+    #[tag = 0] Custom(Vec<u8>),
     #[tag = 1] Type(WithSize<Vec<FuncType>>),
     #[tag = 2] Import(WithSize<Vec<Import>>),
     #[tag = 3] Function(WithSize<Vec<TypeIdx>>),
