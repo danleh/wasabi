@@ -213,7 +213,7 @@ impl<T: Wasm + Send + Sync> Wasm for Parallel<T> {
         }
 
         // parallel decode of each buffer
-        let vec_results: Vec<io::Result<WithSize<T>>> = bufs.into_par_iter()
+        let decoded: io::Result<Vec<WithSize<T>>> = bufs.into_par_iter()
             .map(|buf| -> io::Result<_> {
                 let old_size = buf.len() as u32;
                 Ok(WithSize {
@@ -223,20 +223,14 @@ impl<T: Wasm + Send + Sync> Wasm for Parallel<T> {
             })
             .collect();
 
-        // unswitch Vec and Result (non-parallel again :/)
-        let mut decoded = Vec::with_capacity(vec_results.len());
-        for elem in vec_results {
-            decoded.push(elem?);
-        }
-
-        Ok(Parallel(decoded))
+        Ok(Parallel(decoded?))
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         let vec = &self.0;
         let mut bytes_written = (vec.len() as u32).encode(writer)?;
 
         // encode elements to buffers in parallel
-        let encoded: Vec<io::Result<(Vec<u8>, usize)>> = vec.par_iter()
+        let encoded: io::Result<Vec<(Vec<u8>, usize)>> = vec.par_iter()
             .map(|element| {
                 let mut buf = Vec::with_capacity(element.old_size as usize);
                 let new_size = element.content.encode(&mut buf)?;
@@ -245,8 +239,7 @@ impl<T: Wasm + Send + Sync> Wasm for Parallel<T> {
             .collect();
 
         // write sizes and buffer contents to actual writer (non-parallel, but hopefully fast)
-        for element in encoded {
-            let (buf, new_size) = element?;
+        for (buf, new_size) in encoded? {
             bytes_written += (new_size as u32).encode(writer)?;
             writer.write_all(&buf)?;
             bytes_written += new_size;
