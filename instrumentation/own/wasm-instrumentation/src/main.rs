@@ -10,69 +10,86 @@ use rayon::prelude::*;
 
 // TODO test with WASM spec test suite
 
-#[derive(Debug, PartialEq)]
-pub struct Leb128<T> {
-    value: T,
-    // save old number of bytes used to encode the value for round-tripping
-    min_num_bytes: usize,
-}
+mod leb128_ {
+    use std::io;
+    use Wasm;
 
-impl<T> Leb128<T> {
-    // can only create an Leb128 from an old one by updating, this way we never forget to
-    // take the old min_num_bytes into consideration when encoding
-    pub fn update<U>(&self, new_value: U) -> Leb128<U> {
-        Leb128 {
-            value: new_value,
-            min_num_bytes: self.min_num_bytes,
-        }
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    // cannot be constructed outside of this module, since its fields are not pub
+    pub struct Private<T>(T, ());
+
+    #[derive(Debug, PartialEq)]
+    pub struct Leb128<T> {
+        pub value: T,
+        // save old number of bytes used to encode the value for round-tripping
+        pub min_num_bytes: Private<usize>,
     }
-}
 
-impl Wasm for Leb128<u32> {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let mut value = 0;
-        let mut bytes_read = 0;
-        let mut shift = 0;
-        let mut byte = 0x80;
+    impl<T> Leb128<T> {
+        // can only create an Leb128 from an old one by updating, this way we never forget to
+        // take the old min_num_bytes into consideration when encoding
+        // TODO better name for this
+        pub fn update<U>(&self, new_value: U) -> Leb128<U> {
+            Self::from_old(new_value, self.min_num_bytes)
+        }
 
-        while byte & 0x80 != 0 {
-            byte = u8::decode(reader)?;
-            if let Some(high_bits) = ((byte & 0x7f) as u32).checked_shl(shift) {
-                value |= high_bits;
-            } else {
-                Self::error("LEB128 to u32 overflow")?;
+        // TODO better name
+        pub fn from_old<U>(new_value: U, old_min_num_bytes: Private<usize>) -> Leb128<U> {
+            Leb128 {
+                value: new_value,
+                min_num_bytes: old_min_num_bytes
             }
-            bytes_read += 1;
-            shift += 7;
         }
-
-        Ok(Leb128 {
-            value,
-            min_num_bytes: bytes_read,
-        })
     }
 
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        let mut value = self.value;
-        let mut bytes_written = 0;
-        let mut more_bytes = true;
+    impl Wasm for Leb128<u32> {
+        fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+            let mut value = 0;
+            let mut bytes_read = 0;
+            let mut shift = 0;
+            let mut byte = 0x80;
 
-        while more_bytes {
-            // select low 7 bits of value
-            let mut byte_to_write = value as u8 & 0x7F;
-            value >>= 7;
-            bytes_written += 1;
-
-            more_bytes = value > 0 || bytes_written < self.min_num_bytes;
-            if more_bytes {
-                byte_to_write |= 0x80;
+            while byte & 0x80 != 0 {
+                byte = u8::decode(reader)?;
+                if let Some(high_bits) = ((byte & 0x7f) as u32).checked_shl(shift) {
+                    value |= high_bits;
+                } else {
+                    Self::error("LEB128 to u32 overflow")?;
+                }
+                bytes_read += 1;
+                shift += 7;
             }
-            byte_to_write.encode(writer)?;
+
+            Ok(Leb128 {
+                value,
+                min_num_bytes: Private(bytes_read, ()),
+            })
         }
 
-        Ok(bytes_written)
+        fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+            let mut value = self.value;
+            let mut bytes_written = 0;
+            let mut more_bytes = true;
+
+            while more_bytes {
+                // select low 7 bits of value
+                let mut byte_to_write = value as u8 & 0x7F;
+                value >>= 7;
+                bytes_written += 1;
+
+                more_bytes = value > 0 || bytes_written < self.min_num_bytes.0;
+                if more_bytes {
+                    byte_to_write |= 0x80;
+                }
+                byte_to_write.encode(writer)?;
+            }
+
+            Ok(bytes_written)
+        }
     }
 }
+
+use leb128_::Leb128;
 
 macro_rules! debug {
     ( $fmt:expr, $( $args:expr ),* ) => {
@@ -106,6 +123,7 @@ impl Wasm for u8 {
         Ok(1)
     }
 }
+
 
 
 // TODO replace with own LEB128 parser/encoder
@@ -216,12 +234,8 @@ impl<T: Wasm> Wasm for Leb128<Vec<T>> {
 impl Wasm for Leb128<String> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let buf: Leb128<Vec<u8>> = Leb128::decode(reader)?;
-
         match String::from_utf8(buf.value) {
-            Ok(string) => Ok(Leb128 {
-                value: string,
-                min_num_bytes: buf.min_num_bytes
-            }),
+            Ok(string) => Ok(Leb128::<Vec<u8>>::from_old(string, buf.min_num_bytes)),
             Err(e) => Self::error(format!("utf-8 conversion error: {}", e.to_string())),
         }
     }
@@ -283,7 +297,7 @@ impl<T: Wasm + Send + Sync> Wasm for Parallel<T> {
                 let new_size = element.content.encode(&mut buf)?;
                 Ok(WithSize {
                     size: element.size.update(new_size as u32),
-                    content: buf,
+                    content: buf
                 })
             })
             .collect();
