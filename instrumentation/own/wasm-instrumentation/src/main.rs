@@ -10,60 +10,24 @@ use rayon::prelude::*;
 
 // TODO test with WASM spec test suite
 
-macro_rules! debug {
-    ( $fmt:expr, $( $args:expr ),* ) => {
-        let should_output = std::env::args().nth(2).is_none(); // give "silent" or so as second argument
-        if should_output {
-            println!($fmt, $( $args ),* );
-        }
-    };
-}
-
-pub trait Wasm: Sized {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self>;
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize>;
-
-    /// convenience method
-    fn error<E>(reason: E) -> io::Result<Self>
-        where E: Into<Box<std::error::Error + Send + Sync>>
-    {
-        Err(io::Error::new(io::ErrorKind::InvalidData, reason))
-    }
-}
-
-impl Wasm for u8 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        use byteorder::ReadBytesExt;
-        reader.read_u8()
-    }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        use byteorder::WriteBytesExt;
-        writer.write_u8(*self)?;
-        Ok(1)
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub struct Leb128<T> {
     value: T,
     // save old number of bytes used to encode the value for round-tripping
     min_num_bytes: usize,
 }
-// TODO make struct private (non-constructable) and only allow &self.update(value) to make sure
-// we never forget using the old min_num_bytes as hint when writing a Leb128 (the only way to get
-// a Leb128 is then via decoding).
 
 impl<T> Leb128<T> {
-    fn update<U>(&self, new_value: U) -> Leb128<U> {
+    // can only create an Leb128 from an old one by updating, this way we never forget to
+    // take the old min_num_bytes into consideration when encoding
+    pub fn update<U>(&self, new_value: U) -> Leb128<U> {
         Leb128 {
             value: new_value,
-            min_num_bytes: self.min_num_bytes
+            min_num_bytes: self.min_num_bytes,
         }
     }
 }
 
-// TODO move into leb128 module, make public, but only this should be in the module, so that
-// only this impl can create Leb128 manually
 impl Wasm for Leb128<u32> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let mut value = 0;
@@ -107,6 +71,39 @@ impl Wasm for Leb128<u32> {
         }
 
         Ok(bytes_written)
+    }
+}
+
+macro_rules! debug {
+    ( $fmt:expr, $( $args:expr ),* ) => {
+        let should_output = std::env::args().nth(2).is_none(); // give "silent" or so as second argument
+        if should_output {
+            println!($fmt, $( $args ),* );
+        }
+    };
+}
+
+pub trait Wasm: Sized {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self>;
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize>;
+
+    /// convenience method
+    fn error<E>(reason: E) -> io::Result<Self>
+        where E: Into<Box<std::error::Error + Send + Sync>>
+    {
+        Err(io::Error::new(io::ErrorKind::InvalidData, reason))
+    }
+}
+
+impl Wasm for u8 {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        use byteorder::ReadBytesExt;
+        reader.read_u8()
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        use byteorder::WriteBytesExt;
+        writer.write_u8(*self)?;
+        Ok(1)
     }
 }
 
@@ -186,10 +183,7 @@ impl<T: Wasm> Wasm for WithSize<T> {
         let new_size = self.content.encode(&mut buf)?;
 
         // write size, then contents from buffer to actual writer
-        let mut bytes_written = Leb128 {
-            value: new_size as u32,
-            ..self.size
-        }.encode(writer)?;
+        let mut bytes_written = self.size.update(new_size as u32).encode(writer)?;
         writer.write_all(&buf)?;
         bytes_written += new_size;
 
@@ -205,18 +199,12 @@ impl<T: Wasm> Wasm for Leb128<Vec<T>> {
             vec.push(T::decode(reader)?);
         };
 
-        Ok(Leb128 {
-            value: vec,
-            min_num_bytes: size.min_num_bytes
-        })
+        Ok(size.update(vec))
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        let size = Leb128 {
-            value: self.value.len() as u32,
-            min_num_bytes: self.min_num_bytes
-        };
+        let new_size = self.value.len() as u32;
 
-        let mut bytes_written = size.encode(writer)?;
+        let mut bytes_written = self.update(new_size).encode(writer)?;
         for element in &self.value {
             bytes_written += element.encode(writer)?;
         }
@@ -228,22 +216,23 @@ impl<T: Wasm> Wasm for Leb128<Vec<T>> {
 impl Wasm for Leb128<String> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let buf: Leb128<Vec<u8>> = Leb128::decode(reader)?;
+
         match String::from_utf8(buf.value) {
             Ok(string) => Ok(Leb128 {
                 value: string,
-                min_num_bytes: buf.min_num_bytes,
+                min_num_bytes: buf.min_num_bytes
             }),
             Err(e) => Self::error(format!("utf-8 conversion error: {}", e.to_string())),
         }
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        let mut bytes_written = Leb128 {
-            value: self.value.len() as u32,
-            min_num_bytes: self.min_num_bytes
-        }.encode(writer)?;
+        let new_size = self.value.len() as u32;
+
+        let mut bytes_written = self.update(new_size).encode(writer)?;
         for byte in self.value.bytes() {
             bytes_written += byte.encode(writer)?;
         }
+
         Ok(bytes_written)
     }
 }
@@ -278,17 +267,13 @@ impl<T: Wasm + Send + Sync> Wasm for Parallel<T> {
             .collect();
         let decoded = decoded?;
 
-        Ok(Parallel(Leb128 {
-            value: decoded,
-            min_num_bytes: num_elements.min_num_bytes,
-        }))
+        Ok(Parallel(num_elements.update(decoded)))
     }
+
+    // TODO refactor this to be sure no WithSize is forgotten or superfluous
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         let vec = &self.0;
-        let new_size = Leb128 {
-            value: vec.value.len() as u32,
-            min_num_bytes: vec.min_num_bytes
-        };
+        let new_size = vec.update(vec.value.len() as u32);
         let mut bytes_written = new_size.encode(writer)?;
 
         // encode elements to buffers in parallel
@@ -297,11 +282,8 @@ impl<T: Wasm + Send + Sync> Wasm for Parallel<T> {
                 let mut buf = Vec::with_capacity(element.size.value as usize);
                 let new_size = element.content.encode(&mut buf)?;
                 Ok(WithSize {
-                    size: Leb128 {
-                        value: new_size as u32,
-                        min_num_bytes: element.size.min_num_bytes
-                    },
-                    content: buf
+                    size: element.size.update(new_size as u32),
+                    content: buf,
                 })
             })
             .collect();
