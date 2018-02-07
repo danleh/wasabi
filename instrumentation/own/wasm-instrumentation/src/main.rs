@@ -43,42 +43,75 @@ impl Wasm for u8 {
     }
 }
 
-// TODO save LEB128 encoding with value to make sure decoding-encoding round-trips
-// TODO implement this for T = u32, u64, i32, i64
-// TODO change opcodes and WithSize to use this instead of "raw Ts"
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Leb128<T> {
     value: T,
-    original_bytes: Vec<u8>,
+    // save old number of bytes used to encode the value for round-tripping
+    min_num_bytes: usize,
 }
+// TODO make struct private (non-constructable) and only allow &self.update(value) to make sure
+// we never forget using the old min_num_bytes as hint when writing a Leb128 (the only way to get
+// a Leb128 is then via decoding).
 
-impl Wasm for u32 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        match leb128::read::unsigned(reader) {
-            Err(leb128::read::Error::IoError(io_err)) => Err(io_err),
-            Err(leb128::read::Error::Overflow) => Self::error("leb128 to u32 overflow"),
-            Ok(value) if value > u32::max_value() as u64 => Self::error("leb128 to u32 overflow"),
-            Ok(value) => Ok(value as u32),
+impl<T> Leb128<T> {
+    fn update<U>(&self, new_value: U) -> Leb128<U> {
+        Leb128 {
+            value: new_value,
+            min_num_bytes: self.min_num_bytes
         }
     }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        leb128::write::unsigned(writer, *self as u64)
-    }
 }
 
-impl Wasm for u64 {
+// TODO move into leb128 module, make public, but only this should be in the module, so that
+// only this impl can create Leb128 manually
+impl Wasm for Leb128<u32> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        match leb128::read::unsigned(reader) {
-            Err(leb128::read::Error::IoError(io_err)) => Err(io_err),
-            Err(leb128::read::Error::Overflow) => Self::error("leb128 to u64 overflow"),
-            Ok(value) => Ok(value),
+        let mut value = 0;
+        let mut bytes_read = 0;
+        let mut shift = 0;
+        let mut byte = 0x80;
+
+        while byte & 0x80 != 0 {
+            byte = u8::decode(reader)?;
+            if let Some(high_bits) = ((byte & 0x7f) as u32).checked_shl(shift) {
+                value |= high_bits;
+            } else {
+                Self::error("LEB128 to u32 overflow")?;
+            }
+            bytes_read += 1;
+            shift += 7;
         }
+
+        Ok(Leb128 {
+            value,
+            min_num_bytes: bytes_read,
+        })
     }
+
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        leb128::write::unsigned(writer, *self as u64)
+        let mut value = self.value;
+        let mut bytes_written = 0;
+        let mut more_bytes = true;
+
+        while more_bytes {
+            // select low 7 bits of value
+            let mut byte_to_write = value as u8 & 0x7F;
+            value >>= 7;
+            bytes_written += 1;
+
+            more_bytes = value > 0 || bytes_written < self.min_num_bytes;
+            if more_bytes {
+                byte_to_write |= 0x80;
+            }
+            byte_to_write.encode(writer)?;
+        }
+
+        Ok(bytes_written)
     }
 }
 
+
+// TODO replace with own LEB128 parser/encoder
 impl Wasm for i32 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         match leb128::read::signed(reader) {
@@ -93,6 +126,7 @@ impl Wasm for i32 {
     }
 }
 
+// TODO replace with own LEB128 parser/encoder
 impl Wasm for i64 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         match leb128::read::signed(reader) {
@@ -130,65 +164,32 @@ impl Wasm for f64 {
     }
 }
 
-impl<T: Wasm> Wasm for Vec<T> {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let size = u32::decode(reader)?;
-        let mut vec: Vec<T> = Vec::with_capacity(size as usize);
-        for _ in 0..size {
-            vec.push(T::decode(reader)?);
-        };
-        Ok(vec)
-    }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        let mut bytes_written = (self.len() as u32).encode(writer)?;
-        for element in self {
-            bytes_written += element.encode(writer)?;
-        }
-        Ok(bytes_written)
-    }
-}
-
-impl Wasm for String {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let size = u32::decode(reader)?;
-        let mut buf = vec![0u8; size as usize];
-        reader.read_exact(&mut buf)?;
-        match String::from_utf8(buf) {
-            Ok(str) => Ok(str),
-            Err(e) => Self::error(format!("utf-8 conversion error: {}", e.to_string())),
-        }
-    }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        let mut bytes_written = (self.len() as u32).encode(writer)?;
-        for byte in self.bytes() {
-            bytes_written += byte.encode(writer)?;
-        }
-        Ok(bytes_written)
-    }
-}
-
 #[derive(Debug)]
 pub struct WithSize<T> {
-    /// as a hint for allocating the write buffer
-    old_size: u32,
+    // save old size for two reasons
+    // a) performance: use as initial capacity of the write buffer
+    // b) round-tripping: encode new size with as least as many bytes as old size
+    size: Leb128<u32>,
     content: T,
 }
 
 impl<T: Wasm> Wasm for WithSize<T> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let old_size = u32::decode(reader)?;
         Ok(WithSize {
-            old_size,
+            size: Leb128::decode(reader)?,
             content: T::decode(reader)?,
         })
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         // write contents to buffer to know size
-        let mut buf = Vec::with_capacity(self.old_size as usize);
+        let mut buf = Vec::with_capacity(self.size.value as usize);
         let new_size = self.content.encode(&mut buf)?;
 
         // write size, then contents from buffer to actual writer
-        let mut bytes_written = (new_size as u32).encode(writer)?;
+        let mut bytes_written = Leb128 {
+            value: new_size as u32,
+            ..self.size
+        }.encode(writer)?;
         writer.write_all(&buf)?;
         bytes_written += new_size;
 
@@ -196,53 +197,120 @@ impl<T: Wasm> Wasm for WithSize<T> {
     }
 }
 
+impl<T: Wasm> Wasm for Leb128<Vec<T>> {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let size = Leb128::decode(reader)?;
+        let mut vec: Vec<T> = Vec::with_capacity(size.value as usize);
+        for _ in 0..size.value {
+            vec.push(T::decode(reader)?);
+        };
+
+        Ok(Leb128 {
+            value: vec,
+            min_num_bytes: size.min_num_bytes
+        })
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        let size = Leb128 {
+            value: self.value.len() as u32,
+            min_num_bytes: self.min_num_bytes
+        };
+
+        let mut bytes_written = size.encode(writer)?;
+        for element in &self.value {
+            bytes_written += element.encode(writer)?;
+        }
+
+        Ok(bytes_written)
+    }
+}
+
+impl Wasm for Leb128<String> {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let buf: Leb128<Vec<u8>> = Leb128::decode(reader)?;
+        match String::from_utf8(buf.value) {
+            Ok(string) => Ok(Leb128 {
+                value: string,
+                min_num_bytes: buf.min_num_bytes,
+            }),
+            Err(e) => Self::error(format!("utf-8 conversion error: {}", e.to_string())),
+        }
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        let mut bytes_written = Leb128 {
+            value: self.value.len() as u32,
+            min_num_bytes: self.min_num_bytes
+        }.encode(writer)?;
+        for byte in self.value.bytes() {
+            bytes_written += byte.encode(writer)?;
+        }
+        Ok(bytes_written)
+    }
+}
+
 #[derive(Debug)]
-pub struct Parallel<T>(Vec<WithSize<T>>);
+pub struct Parallel<T>(Leb128<Vec<WithSize<T>>>);
 
 impl<T: Wasm + Send + Sync> Wasm for Parallel<T> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let num_elements = u32::decode(reader)?;
-        let mut bufs = Vec::with_capacity(num_elements as usize);
+        let num_elements = Leb128::decode(reader)?;
+        let mut bufs = Vec::with_capacity(num_elements.value as usize);
 
         // read all elements into buffers of the given size (non-parallel, but hopefully fast)
-        for _ in 0..num_elements {
-            let num_bytes = u32::decode(reader)?;
-            let mut buf = vec![0u8; num_bytes as usize];
+        for _ in 0..num_elements.value {
+            let num_bytes = Leb128::decode(reader)?;
+            let mut buf = vec![0u8; num_bytes.value as usize];
             reader.read_exact(&mut buf)?;
-            bufs.push(buf);
+            bufs.push(WithSize {
+                size: num_bytes,
+                content: buf,
+            });
         }
 
         // parallel decode of each buffer
         let decoded: io::Result<Vec<WithSize<T>>> = bufs.into_par_iter()
             .map(|buf| -> io::Result<_> {
-                let old_size = buf.len() as u32;
                 Ok(WithSize {
-                    old_size,
-                    content: T::decode(&mut &buf[..])?,
+                    size: buf.size,
+                    content: T::decode(&mut &buf.content[..])?,
+                })
+            })
+            .collect();
+        let decoded = decoded?;
+
+        Ok(Parallel(Leb128 {
+            value: decoded,
+            min_num_bytes: num_elements.min_num_bytes,
+        }))
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        let vec = &self.0;
+        let new_size = Leb128 {
+            value: vec.value.len() as u32,
+            min_num_bytes: vec.min_num_bytes
+        };
+        let mut bytes_written = new_size.encode(writer)?;
+
+        // encode elements to buffers in parallel
+        let encoded: io::Result<Vec<WithSize<Vec<u8>>>> = vec.value.par_iter()
+            .map(|element| {
+                let mut buf = Vec::with_capacity(element.size.value as usize);
+                let new_size = element.content.encode(&mut buf)?;
+                Ok(WithSize {
+                    size: Leb128 {
+                        value: new_size as u32,
+                        min_num_bytes: element.size.min_num_bytes
+                    },
+                    content: buf
                 })
             })
             .collect();
 
-        Ok(Parallel(decoded?))
-    }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        let vec = &self.0;
-        let mut bytes_written = (vec.len() as u32).encode(writer)?;
-
-        // encode elements to buffers in parallel
-        let encoded: io::Result<Vec<(Vec<u8>, usize)>> = vec.par_iter()
-            .map(|element| {
-                let mut buf = Vec::with_capacity(element.old_size as usize);
-                let new_size = element.content.encode(&mut buf)?;
-                Ok((buf, new_size))
-            })
-            .collect();
-
         // write sizes and buffer contents to actual writer (non-parallel, but hopefully fast)
-        for (buf, new_size) in encoded? {
-            bytes_written += (new_size as u32).encode(writer)?;
-            writer.write_all(&buf)?;
-            bytes_written += new_size;
+        for buf in encoded? {
+            bytes_written += buf.size.encode(writer)?;
+            writer.write_all(&buf.content)?;
+            bytes_written += buf.size.value as usize; // FIXME double cast, first to u32, now back
         }
 
         Ok(bytes_written)
@@ -258,36 +326,36 @@ pub struct Module {
 #[derive(Wasm, Debug)]
 pub enum Section {
     // untested
-    #[tag = 0] Custom(Vec<u8>),
-    #[tag = 1] Type(WithSize<Vec<FuncType>>),
-    #[tag = 2] Import(WithSize<Vec<Import>>),
-    #[tag = 3] Function(WithSize<Vec<TypeIdx>>),
+    #[tag = 0] Custom(Leb128<Vec<u8>>),
+    #[tag = 1] Type(WithSize<Leb128<Vec<FuncType>>>),
+    #[tag = 2] Import(WithSize<Leb128<Vec<Import>>>),
+    #[tag = 3] Function(WithSize<Leb128<Vec<TypeIdx>>>),
     // untested
-    #[tag = 4] Table(WithSize<Vec<TableType>>),
+    #[tag = 4] Table(WithSize<Leb128<Vec<TableType>>>),
     // untested
-    #[tag = 5] Memory(WithSize<Vec<Limits>>),
-    #[tag = 6] Global(WithSize<Vec<Global>>),
-    #[tag = 7] Export(WithSize<Vec<Export>>),
+    #[tag = 5] Memory(WithSize<Leb128<Vec<Limits>>>),
+    #[tag = 6] Global(WithSize<Leb128<Vec<Global>>>),
+    #[tag = 7] Export(WithSize<Leb128<Vec<Export>>>),
     #[tag = 8] Start(WithSize<FuncIdx>),
-    #[tag = 9] Element(WithSize<Vec<Element>>),
+    #[tag = 9] Element(WithSize<Leb128<Vec<Element>>>),
     #[tag = 10] Code(WithSize<Parallel<Func>>),
-    #[tag = 11] Data(WithSize<Vec<Data>>),
+    #[tag = 11] Data(WithSize<Leb128<Vec<Data>>>),
 }
 
 #[derive(Wasm, Debug)]
-pub struct Data(MemoryIdx, /* offset given by constant expr */ Expr, Vec<u8>);
+pub struct Data(MemoryIdx, /* offset given by constant expr */ Expr, Leb128<Vec<u8>>);
 
 #[derive(Wasm, Debug)]
 pub struct Global(GlobalType, Expr);
 
 #[derive(Wasm, Debug)]
-pub struct Element(TableIdx, Expr, Vec<FuncIdx>);
+pub struct Element(TableIdx, Expr, Leb128<Vec<FuncIdx>>);
 
 #[derive(Wasm, Debug)]
 #[tag = 0x60]
 pub struct FuncType {
-    params: Vec<ValType>,
-    results: Vec<ValType>,
+    params: Leb128<Vec<ValType>>,
+    results: Leb128<Vec<ValType>>,
 }
 
 #[derive(Wasm, Debug, PartialEq)]
@@ -300,14 +368,14 @@ pub enum ValType {
 
 #[derive(Wasm, Debug)]
 pub struct Import {
-    module: String,
-    name: String,
+    module: Leb128<String>,
+    name: Leb128<String>,
     type_: ImportType,
 }
 
 #[derive(Wasm, Debug)]
 pub struct Export {
-    name: String,
+    name: Leb128<String>,
     type_: ExportType,
 }
 
@@ -333,8 +401,8 @@ pub struct TableType(Limits);
 
 #[derive(Wasm, Debug)]
 pub enum Limits {
-    #[tag = 0x00] Min(u32),
-    #[tag = 0x01] MinMax(u32, u32),
+    #[tag = 0x00] Min(Leb128<u32>),
+    #[tag = 0x01] MinMax(Leb128<u32>, Leb128<u32>),
 }
 
 #[derive(Wasm, Debug)]
@@ -370,39 +438,39 @@ impl Wasm for BlockType {
 }
 
 #[derive(Wasm, Debug)]
-pub struct Func(Vec<Locals>, Expr);
+pub struct Func(Leb128<Vec<Locals>>, Expr);
 
 #[derive(Wasm, Debug)]
 pub struct Locals {
-    count: u32,
+    count: Leb128<u32>,
     type_: ValType,
 }
 
 #[derive(Wasm, Debug, PartialEq)]
-pub struct TypeIdx(u32);
+pub struct TypeIdx(Leb128<u32>);
 
 #[derive(Wasm, Debug, PartialEq)]
-pub struct FuncIdx(u32);
+pub struct FuncIdx(Leb128<u32>);
 
 #[derive(Wasm, Debug, PartialEq)]
-pub struct TableIdx(u32);
+pub struct TableIdx(Leb128<u32>);
 
 #[derive(Wasm, Debug, PartialEq)]
-pub struct MemoryIdx(u32);
+pub struct MemoryIdx(Leb128<u32>);
 
 #[derive(Wasm, Debug, PartialEq)]
-pub struct GlobalIdx(u32);
+pub struct GlobalIdx(Leb128<u32>);
 
 #[derive(Wasm, Debug, PartialEq)]
-pub struct LocalIdx(u32);
+pub struct LocalIdx(Leb128<u32>);
 
 #[derive(Wasm, Debug, PartialEq)]
-pub struct LabelIdx(u32);
+pub struct LabelIdx(Leb128<u32>);
 
 #[derive(Wasm, Debug, PartialEq)]
 pub struct Memarg {
-    alignment: u32,
-    offset: u32,
+    alignment: Leb128<u32>,
+    offset: Leb128<u32>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -422,7 +490,7 @@ pub enum Instr {
 
     #[tag = 0x0c] Br(LabelIdx),
     #[tag = 0x0d] BrIf(LabelIdx),
-    #[tag = 0x0e] BrTable(Vec<LabelIdx>, LabelIdx),
+    #[tag = 0x0e] BrTable(Leb128<Vec<LabelIdx>>, LabelIdx),
 
     #[tag = 0x0f] Return,
     #[tag = 0x10] Call(FuncIdx),
