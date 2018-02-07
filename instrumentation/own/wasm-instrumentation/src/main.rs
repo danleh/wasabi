@@ -14,15 +14,13 @@ mod leb128_ {
     use std::io;
     use Wasm;
 
-    #[derive(Debug, PartialEq, Clone, Copy)]
-    // cannot be constructed outside of this module, since its fields are not pub
-    pub struct Private<T>(T, ());
-
     #[derive(Debug, PartialEq)]
     pub struct Leb128<T> {
         pub value: T,
         // save old number of bytes used to encode the value for round-tripping
-        pub min_num_bytes: Private<usize>,
+        pub min_num_bytes: usize,
+        // so that Leb128 cannot be constructed outside of this module, since at least one field is not pub
+        private: ()
     }
 
     impl<T> Leb128<T> {
@@ -34,10 +32,11 @@ mod leb128_ {
         }
 
         // TODO better name
-        pub fn from_old<U>(new_value: U, old_min_num_bytes: Private<usize>) -> Leb128<U> {
+        pub fn from_old<U>(new_value: U, old_min_num_bytes: usize) -> Leb128<U> {
             Leb128 {
                 value: new_value,
-                min_num_bytes: old_min_num_bytes
+                min_num_bytes: old_min_num_bytes,
+                private: ()
             }
         }
     }
@@ -62,7 +61,8 @@ mod leb128_ {
 
             Ok(Leb128 {
                 value,
-                min_num_bytes: Private(bytes_read, ()),
+                min_num_bytes: bytes_read,
+                private: (),
             })
         }
 
@@ -77,7 +77,7 @@ mod leb128_ {
                 value >>= 7;
                 bytes_written += 1;
 
-                more_bytes = value > 0 || bytes_written < self.min_num_bytes.0;
+                more_bytes = value > 0 || bytes_written < self.min_num_bytes;
                 if more_bytes {
                     byte_to_write |= 0x80;
                 }
