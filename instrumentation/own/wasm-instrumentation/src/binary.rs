@@ -1,4 +1,4 @@
-use ast::*;
+use ast::{BlockType, Expr, Instr, Module, Section, ValType, WithSize};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use leb128::{Leb128, ReadLeb128, WriteLeb128};
 use rayon::prelude::*;
@@ -16,6 +16,9 @@ pub trait WasmBinary: Sized {
         Err(io::Error::new(io::ErrorKind::InvalidData, reason))
     }
 }
+
+
+/* Primitive types */
 
 impl WasmBinary for u8 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
@@ -74,6 +77,8 @@ impl WasmBinary for f64 {
     }
 }
 
+
+/* Generic "AST combinators" */
 
 impl<T: WasmBinary> WasmBinary for WithSize<T> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
@@ -142,84 +147,67 @@ impl WasmBinary for Leb128<String> {
     }
 }
 
-impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<T> {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let num_elements: Leb128<u32> = Leb128::decode(reader)?;
-        let mut bufs = Vec::with_capacity(num_elements.value as usize);
+//impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<T> {
+//    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+//        let num_elements: Leb128<u32> = Leb128::decode(reader)?;
+//        let mut bufs = Vec::with_capacity(num_elements.value as usize);
+//
+//        // read all elements into buffers of the given size (non-parallel, but hopefully fast)
+//        for _ in 0..num_elements.value {
+//            let num_bytes = Leb128::decode(reader)?;
+//            let mut buf = vec![0u8; num_bytes.value as usize];
+//            reader.read_exact(&mut buf)?;
+//            bufs.push(WithSize {
+//                size: num_bytes,
+//                content: buf,
+//            });
+//        }
+//
+//        // parallel decode of each buffer
+//        let decoded: io::Result<Vec<WithSize<T>>> = bufs.into_par_iter()
+//            .map(|buf| -> io::Result<_> {
+//                Ok(WithSize {
+//                    size: buf.size,
+//                    content: T::decode(&mut &buf.content[..])?,
+//                })
+//            })
+//            .collect();
+//        let decoded = decoded?;
+//
+//        Ok(Parallel(num_elements.map(decoded)))
+//    }
+//
+//    // TODO refactor this to be sure no WithSize is forgotten or superfluous
+//    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+//        let vec = &self.0;
+//        let new_size = vec.map(vec.len() as u32);
+//        let mut bytes_written = new_size.encode(writer)?;
+//
+//        // encode elements to buffers in parallel
+//        let encoded: io::Result<Vec<WithSize<Vec<u8>>>> = vec.par_iter()
+//            .map(|element| {
+//                let mut buf = Vec::with_capacity(element.size.value as usize);
+//                let new_size = element.content.encode(&mut buf)?;
+//                Ok(WithSize {
+//                    size: element.size.map(new_size as u32),
+//                    content: buf,
+//                })
+//            })
+//            .collect();
+//
+//        // write sizes and buffer contents to actual writer (non-parallel, but hopefully fast)
+//        for buf in encoded? {
+//            bytes_written += buf.size.encode(writer)?;
+//            writer.write_all(&buf.content)?;
+//            bytes_written += buf.size.value as usize; // FIXME double cast, first to u32, now back
+//        }
+//
+//        Ok(bytes_written)
+//    }
+//}
 
-        // read all elements into buffers of the given size (non-parallel, but hopefully fast)
-        for _ in 0..num_elements.value {
-            let num_bytes = Leb128::decode(reader)?;
-            let mut buf = vec![0u8; num_bytes.value as usize];
-            reader.read_exact(&mut buf)?;
-            bufs.push(WithSize {
-                size: num_bytes,
-                content: buf,
-            });
-        }
 
-        // parallel decode of each buffer
-        let decoded: io::Result<Vec<WithSize<T>>> = bufs.into_par_iter()
-            .map(|buf| -> io::Result<_> {
-                Ok(WithSize {
-                    size: buf.size,
-                    content: T::decode(&mut &buf.content[..])?,
-                })
-            })
-            .collect();
-        let decoded = decoded?;
-
-        Ok(Parallel(num_elements.map(decoded)))
-    }
-
-    // TODO refactor this to be sure no WithSize is forgotten or superfluous
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        let vec = &self.0;
-        let new_size = vec.map(vec.len() as u32);
-        let mut bytes_written = new_size.encode(writer)?;
-
-        // encode elements to buffers in parallel
-        let encoded: io::Result<Vec<WithSize<Vec<u8>>>> = vec.par_iter()
-            .map(|element| {
-                let mut buf = Vec::with_capacity(element.size.value as usize);
-                let new_size = element.content.encode(&mut buf)?;
-                Ok(WithSize {
-                    size: element.size.map(new_size as u32),
-                    content: buf,
-                })
-            })
-            .collect();
-
-        // write sizes and buffer contents to actual writer (non-parallel, but hopefully fast)
-        for buf in encoded? {
-            bytes_written += buf.size.encode(writer)?;
-            writer.write_all(&buf.content)?;
-            bytes_written += buf.size.value as usize; // FIXME double cast, first to u32, now back
-        }
-
-        Ok(bytes_written)
-    }
-}
-
-/// have to implement manually because of strange compressed format:
-/// no tag, because they know that 0x40 and ValType are disjoint
-impl WasmBinary for BlockType {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Ok(BlockType(match u8::decode(reader)? {
-            0x40 => None,
-            byte => {
-                let mut buf = [byte; 1];
-                Some(ValType::decode(&mut &buf[..])?)
-            }
-        }))
-    }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        match self {
-            &BlockType(None) => 0x40u8.encode(writer),
-            &BlockType(Some(ref val_type)) => val_type.encode(writer)
-        }
-    }
-}
+/* Special cases that cannot be derived and need a manual impl */
 
 impl WasmBinary for Module {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
@@ -256,6 +244,7 @@ impl WasmBinary for Module {
     }
 }
 
+/// needs manual impl because of Else/End handling
 impl WasmBinary for Expr {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let mut instructions = Vec::new();
@@ -280,5 +269,25 @@ impl WasmBinary for Expr {
             bytes_written += instruction.encode(writer)?;
         }
         Ok(bytes_written)
+    }
+}
+
+/// needs manual impl because of compressed format: even though it is "logically" an enum, it has
+/// no tag, because they know that 0x40 and ValType are disjoint
+impl WasmBinary for BlockType {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        Ok(BlockType(match u8::decode(reader)? {
+            0x40 => None,
+            byte => {
+                let mut buf = [byte; 1];
+                Some(ValType::decode(&mut &buf[..])?)
+            }
+        }))
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        match self {
+            &BlockType(None) => 0x40u8.encode(writer),
+            &BlockType(Some(ref val_type)) => val_type.encode(writer)
+        }
     }
 }
