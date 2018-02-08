@@ -1,11 +1,13 @@
+#![recursion_limit = "128"]
+
 extern crate proc_macro;
 extern crate syn;
 #[macro_use]
 extern crate quote;
 
 use proc_macro::TokenStream;
-use syn::{DeriveInput, Data, Type, Ident, DataStruct, DataEnum, Fields, FieldsUnnamed, FieldsNamed, Meta, MetaNameValue, Lit, TypePath, Path, PathSegment, PathArguments, Attribute, Index};
 use quote::Tokens;
+use syn::{Attribute, Data, DataEnum, DataStruct, DeriveInput, Fields, FieldsNamed, FieldsUnnamed, Ident, Index, Lit, Meta, MetaNameValue, Path, PathArguments, PathSegment, Type, TypePath};
 
 #[proc_macro_derive(Wasm, attributes(tag))]
 pub fn derive_wasm(input: TokenStream) -> TokenStream {
@@ -121,10 +123,10 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
     // boilerplate of impl that is the same for any data type
     let impl_ = quote! {
         impl Wasm for #data_name {
-            fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+            fn decode<R: ::std::io::Read>(reader: &mut R) -> ::std::io::Result<Self> {
                 Ok(#decode_body)
             }
-            fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+            fn encode<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<usize> {
                 let mut bytes_written = 0;
                 #encode_body
                 Ok(bytes_written)
