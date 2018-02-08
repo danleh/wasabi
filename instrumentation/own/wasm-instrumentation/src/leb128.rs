@@ -1,17 +1,20 @@
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::io;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 #[derive(Debug, PartialEq)]
 pub struct Leb128<T> {
     pub value: T,
-    /// When reading an `Leb128<T>`, the number of bytes used to encode the `value`.
+    /// When reading an `Leb128<T>`, the number of bytes in which `value` was encoded.
     /// When writing an `Leb128<T>`, the minimum number of bytes used to encode `value`.
     ///
     /// This way, reading and writing an `Leb128<T>` always results in the same number of bytes,
     /// i.e., it round-trips.
-    pub byte_count: usize, // TODO does this have to be pub?
+    pub byte_count: u8,
 }
+
+
+/* Convenience */
 
 impl<T> Leb128<T> {
     // TODO replace with static "with_byte_count" or something?
@@ -34,8 +37,14 @@ impl<T> Deref for Leb128<T> {
     }
 }
 
-// TODO implement DerefMut?
+impl<T> DerefMut for Leb128<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.value
+    }
+}
 
+
+/* Traits for encoding and decoding Leb128 primitive integers */
 
 pub trait ReadLeb128<T>: io::Read {
     fn read_leb128(&mut self) -> io::Result<Leb128<T>>;
@@ -101,7 +110,7 @@ macro_rules! impl_leb128_integer {
                     self.write_u8(byte_to_write)?;
                 }
 
-                Ok(bytes_written)
+                Ok(bytes_written as usize)
             }
         }
     }
