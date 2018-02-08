@@ -6,96 +6,13 @@ extern crate rayon;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use rayon::prelude::*;
-use std::{i32, i64, io, u32};
-use std::ops::Deref;
+use std::io;
 
 // TODO test with WASM spec test suite
 
-// TODO move into own module, make independent of Wasm trait
-#[derive(Debug, PartialEq)]
-pub struct Leb128<T> {
-    value: T,
-    // save old number of bytes used to encode the value so that encoding results in at least the
-    // same number of bytes and decoding and encoding round-trips.
-    byte_count: usize,
-}
+mod leb128;
 
-impl<T> Leb128<T> {
-    fn map<U>(&self, new_value: U) -> Leb128<U> {
-        Leb128 {
-            value: new_value,
-            byte_count: self.byte_count,
-        }
-    }
-}
-
-impl<T> Deref for Leb128<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.value
-    }
-}
-
-// need to write this as a macro, not a generic impl because
-// a) num_traits are quite lacking, e.g., there is no "U as T" for primitive integers
-// b) specialization: impl<T: PrimInt> for Leb128<T> overlaps (and is NOT more special than)
-//    impl<T: Wasm> for Leb128<Vec<T>> or the generic String impl
-macro_rules! impl_leb128_integer {
-    ($T:ident) => {
-        impl Wasm for Leb128<$T> {
-            fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-                let mut value = 0;
-                let mut bytes_read = 0;
-                let mut shift = 0;
-                let mut byte = 0x80;
-
-                while byte & 0x80 != 0 {
-                    byte = u8::decode(reader)?;
-                    if let Some(high_bits) = ((byte & 0x7f) as $T).checked_shl(shift) {
-                        value |= high_bits;
-                    } else {
-                        Self::error(format!("LEB128 to {} overflow", stringify!($T)))?;
-                    }
-                    bytes_read += 1;
-                    shift += 7;
-                }
-
-                Ok(Leb128 {
-                    value,
-                    byte_count: bytes_read
-                })
-            }
-
-            fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-                let mut value = self.value;
-                let mut bytes_written = 0;
-                let mut more_bytes = true;
-
-                while more_bytes {
-                    // select low 7 bits of value
-                    let mut byte_to_write = value as u8 & 0x7F;
-                    // sign extends, important for signed integers!
-                    value >>= 7;
-                    bytes_written += 1;
-
-                    // for unsigned integers, MIN and 0 are the same, but for signed ones the
-                    // double check of value is important: -1 (all 1's) and 0 (all 0's) stop writing
-                    more_bytes = (value > $T::MIN && value > 0) || bytes_written < self.byte_count;
-                    if more_bytes {
-                        byte_to_write |= 0x80;
-                    }
-                    byte_to_write.encode(writer)?;
-                }
-
-                Ok(bytes_written)
-            }
-        }
-    }
-}
-
-impl_leb128_integer!(u32);
-impl_leb128_integer!(i32);
-impl_leb128_integer!(i64);
+use leb128::{Leb128, ReadLeb128, WriteLeb128};
 
 macro_rules! debug {
     ( $fmt:expr, $( $args:expr ),* ) => {
@@ -125,6 +42,33 @@ impl Wasm for u8 {
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_u8(*self)?;
         Ok(1)
+    }
+}
+
+impl Wasm for Leb128<u32> {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        reader.read_leb128()
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        writer.write_leb128(self)
+    }
+}
+
+impl Wasm for Leb128<i32> {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        reader.read_leb128()
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        writer.write_leb128(self)
+    }
+}
+
+impl Wasm for Leb128<i64> {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        reader.read_leb128()
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        writer.write_leb128(self)
     }
 }
 
