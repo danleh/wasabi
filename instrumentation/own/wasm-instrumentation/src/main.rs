@@ -4,108 +4,94 @@ extern crate wasm_derive;
 extern crate byteorder;
 extern crate rayon;
 
-use std::io;
+use std::{io, u32, i32, i64};
 use rayon::prelude::*;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
 // TODO test with WASM spec test suite
 
-mod leb128 {
-    use std::*;
-    use Wasm;
-
-    #[derive(Debug, PartialEq)]
-    pub struct Leb128<T> {
-        pub value: T,
-        // save old number of bytes used to encode the value for round-tripping
-        // TODO rename to just num_bytes or byte_count (-> google, which is preferred?)
-        pub min_num_bytes: usize,
-        // so that Leb128 cannot be constructed outside of this module, since at least one field is not pub
-        private: (), // FIXME this probably needs to go anyway, since adding new instructions with an encoding must be possible to construct
-    }
-
-    impl<T> Leb128<T> {
-        // can only create an Leb128 from an old one by updating, this way we never forget to
-        // take the old min_num_bytes into consideration when encoding
-        // TODO better name for this
-        pub fn update<U>(&self, new_value: U) -> Leb128<U> {
-            Self::from_old(new_value, self.min_num_bytes)
-        }
-
-        // TODO better name
-        pub fn from_old<U>(new_value: U, old_min_num_bytes: usize) -> Leb128<U> {
-            Leb128 {
-                value: new_value,
-                min_num_bytes: old_min_num_bytes,
-                private: (),
-            }
-        }
-    }
-
-    // need to write this as a macro, not a generic impl because
-    // a) num_traits are quite lacking, e.g., there is no "U as T" for primitive ints
-    // b) specialization: impl<T: PrimInt> for Leb128<T> overlaps (and is no more special than)
-    //    impl<T: Wasm> for Leb128<Vec<T>> or the generic String impl
-    macro_rules! impl_leb128_integer {
-        ($T:ident) => {
-            impl Wasm for Leb128<$T> {
-                fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-                    let mut value = 0;
-                    let mut bytes_read = 0;
-                    let mut shift = 0;
-                    let mut byte = 0x80;
-
-                    while byte & 0x80 != 0 {
-                        byte = u8::decode(reader)?;
-                        if let Some(high_bits) = ((byte & 0x7f) as $T).checked_shl(shift) {
-                            value |= high_bits;
-                        } else {
-                            Self::error(format!("LEB128 to {} overflow", stringify!($T)))?;
-                        }
-                        bytes_read += 1;
-                        shift += 7;
-                    }
-
-                    Ok(Leb128 {
-                        value,
-                        min_num_bytes: bytes_read,
-                        private: (),
-                    })
-                }
-
-                fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-                    let mut value = self.value;
-                    let mut bytes_written = 0;
-                    let mut more_bytes = true;
-
-                    while more_bytes {
-                        // select low 7 bits of value
-                        let mut byte_to_write = value as u8 & 0x7F;
-                        // sign extends, important for signed integers!
-                        value >>= 7;
-                        bytes_written += 1;
-
-                        // for unsigned integers, MIN and 0 are the same, but for signed ones
-                        // this double check is important: -1 (all 1's) and 0 (all 0's) stop writing
-                        more_bytes = (value > $T::MIN && value > 0) || bytes_written < self.min_num_bytes;
-                        if more_bytes {
-                            byte_to_write |= 0x80;
-                        }
-                        byte_to_write.encode(writer)?;
-                    }
-
-                    Ok(bytes_written)
-                }
-            }
-        }
-    }
-
-    impl_leb128_integer!(u32);
-    impl_leb128_integer!(i32);
-    impl_leb128_integer!(i64);
+#[derive(Debug, PartialEq)]
+pub struct Leb128<T> {
+    pub value: T,
+    // save old number of bytes used to encode the value for round-tripping
+    // TODO rename to just num_bytes or byte_count (-> google, which is preferred?)
+    pub min_num_bytes: usize,
 }
 
-use leb128::Leb128;
+// TODO more convenience when creating LEB128s from T, either an From<T> impl or new() function?
+
+impl<T> Leb128<T> {
+    // can only create an Leb128 from an old one by updating, this way we never forget to
+    // take the old min_num_bytes into consideration when encoding
+    // TODO better name for this
+    pub fn update<U>(&self, new_value: U) -> Leb128<U> {
+        Leb128 {
+            value: new_value,
+            min_num_bytes: self.min_num_bytes,
+        }
+    }
+}
+
+// need to write this as a macro, not a generic impl because
+// a) num_traits are quite lacking, e.g., there is no "U as T" for primitive ints
+// b) specialization: impl<T: PrimInt> for Leb128<T> overlaps (and is no more special than)
+//    impl<T: Wasm> for Leb128<Vec<T>> or the generic String impl
+macro_rules! impl_leb128_integer {
+    ($T:ident) => {
+        impl Wasm for Leb128<$T> {
+            fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+                let mut value = 0;
+                let mut bytes_read = 0;
+                let mut shift = 0;
+                let mut byte = 0x80;
+
+                while byte & 0x80 != 0 {
+                    byte = u8::decode(reader)?;
+                    if let Some(high_bits) = ((byte & 0x7f) as $T).checked_shl(shift) {
+                        value |= high_bits;
+                    } else {
+                        Self::error(format!("LEB128 to {} overflow", stringify!($T)))?;
+                    }
+                    bytes_read += 1;
+                    shift += 7;
+                }
+
+                Ok(Leb128 {
+                    value,
+                    min_num_bytes: bytes_read
+                })
+            }
+
+            fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+                let mut value = self.value;
+                let mut bytes_written = 0;
+                let mut more_bytes = true;
+
+                while more_bytes {
+                    // select low 7 bits of value
+                    let mut byte_to_write = value as u8 & 0x7F;
+                    // sign extends, important for signed integers!
+                    value >>= 7;
+                    bytes_written += 1;
+
+                    // for unsigned integers, MIN and 0 are the same, but for signed ones the
+                    // double check of value is important: -1 (all 1's) and 0 (all 0's) stop writing
+                    more_bytes = (value > $T::MIN && value > 0) || bytes_written < self.min_num_bytes;
+                    if more_bytes {
+                        byte_to_write |= 0x80;
+                    }
+                    byte_to_write.encode(writer)?;
+                }
+
+                Ok(bytes_written)
+            }
+        }
+    }
+}
+
+impl_leb128_integer!(u32);
+impl_leb128_integer!(i32);
+impl_leb128_integer!(i64);
 
 macro_rules! debug {
     ( $fmt:expr, $( $args:expr ),* ) => {
@@ -214,7 +200,10 @@ impl Wasm for Leb128<String> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let buf: Leb128<Vec<u8>> = Leb128::decode(reader)?;
         match String::from_utf8(buf.value) {
-            Ok(string) => Ok(Leb128::<Vec<u8>>::from_old(string, buf.min_num_bytes)),
+            Ok(string) => Ok(Leb128 {
+                value: string,
+                min_num_bytes: buf.min_num_bytes,
+            }),
             Err(e) => Self::error(format!("utf-8 conversion error: {}", e.to_string())),
         }
     }
