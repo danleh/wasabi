@@ -1,11 +1,30 @@
-use WasmBinary;
 use leb128::Leb128;
+use WasmBinary;
 
 #[derive(Debug)]
 pub struct Module {
     pub version: u32,
     pub sections: Vec<Section>,
 }
+
+
+/* Markers and generic AST nodes */
+
+#[derive(Debug)]
+pub struct WithSize<T> {
+    /// Remember content size for two reasons:
+    /// a) Performance: use as initial capacity of the write buffer when encoding.
+    /// b) Round-tripping: encode new size with at least as many bytes as old size.
+    pub size: Leb128<u32>,
+    pub content: T,
+}
+
+// FIXME this shouldnt be a struct, if you ask me. Change to impl specialization for Leb128<Vec<WithSize>>?
+#[derive(Debug)]
+pub struct Parallel<T>(pub Leb128<Vec<WithSize<T>>>);
+
+
+/* Sections */
 
 #[derive(WasmBinary, Debug)]
 pub enum Section {
@@ -26,42 +45,26 @@ pub enum Section {
     #[tag = 11] Data(WithSize<Leb128<Vec<Data>>>),
 }
 
-#[derive(Debug)]
-pub struct WithSize<T> {
-    // save old size for two reasons
-    // a) performance: use as initial capacity of the write buffer
-    // b) round-tripping: encode new size with as least as many bytes as old size
-    pub size: Leb128<u32>,
-    pub content: T,
+#[derive(WasmBinary, Debug)]
+pub struct Global {
+    pub type_: GlobalType,
+    pub init: Expr,
 }
 
-// FIXME this shouldnt be a struct, if you ask me. Rather to impl specialization for Leb128<Vec<WithSize
-#[derive(Debug)]
-pub struct Parallel<T>(pub Leb128<Vec<WithSize<T>>>);
-
 #[derive(WasmBinary, Debug)]
-// TODO make named struct, 2nd component: offset
-pub struct Data(pub MemoryIdx, pub /* offset given by constant expr */ Expr, pub Leb128<Vec<u8>>);
-
-#[derive(WasmBinary, Debug)]
-pub struct Global(pub GlobalType, pub Expr);
-
-#[derive(WasmBinary, Debug)]
-pub struct Element(pub TableIdx, Expr, pub Leb128<Vec<FuncIdx>>);
-
-#[derive(WasmBinary, Debug)]
-#[tag = 0x60]
-pub struct FuncType {
-    pub params: Leb128<Vec<ValType>>,
-    pub results: Leb128<Vec<ValType>>,
+pub struct Element {
+    // always 0x00 in WASM version 1
+    pub _unused: TableIdx,
+    pub offset: Expr,
+    pub init: Leb128<Vec<FuncIdx>>,
 }
 
-#[derive(WasmBinary, Debug, PartialEq)]
-pub enum ValType {
-    #[tag = 0x7f] I32,
-    #[tag = 0x7e] I64,
-    #[tag = 0x7d] F32,
-    #[tag = 0x7c] F64,
+#[derive(WasmBinary, Debug)]
+pub struct Data {
+    // always 0x00 in WASM version 1
+    pub _unused: MemoryIdx,
+    pub offset: Expr,
+    pub init: Leb128<Vec<u8>>,
 }
 
 #[derive(WasmBinary, Debug)]
@@ -75,6 +78,46 @@ pub struct Import {
 pub struct Export {
     pub name: Leb128<String>,
     pub type_: ExportType,
+}
+
+
+/* Types */
+
+#[derive(WasmBinary, Debug, PartialEq)]
+pub enum ValType {
+    #[tag = 0x7f] I32,
+    #[tag = 0x7e] I64,
+    #[tag = 0x7d] F32,
+    #[tag = 0x7c] F64,
+}
+
+#[derive(WasmBinary, Debug)]
+#[tag = 0x60]
+pub struct FuncType {
+    pub params: Leb128<Vec<ValType>>,
+    pub results: Leb128<Vec<ValType>>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct BlockType(pub Option<ValType>);
+
+#[derive(WasmBinary, Debug)]
+pub enum Limits {
+    #[tag = 0x00] Min(Leb128<u32>),
+    #[tag = 0x01] MinMax(Leb128<u32>, Leb128<u32>),
+}
+
+#[derive(WasmBinary, Debug)]
+#[tag = 0x70]
+pub struct TableType(pub Limits);
+
+#[derive(WasmBinary, Debug)]
+pub struct GlobalType(pub ValType, pub Mut);
+
+#[derive(WasmBinary, Debug)]
+pub enum Mut {
+    #[tag = 0x00] Const,
+    #[tag = 0x01] Var,
 }
 
 #[derive(WasmBinary, Debug)]
@@ -93,36 +136,8 @@ pub enum ExportType {
     #[tag = 0x3] Global(GlobalIdx),
 }
 
-#[derive(WasmBinary, Debug)]
-#[tag = 0x70]
-pub struct TableType(pub Limits);
 
-#[derive(WasmBinary, Debug)]
-pub enum Limits {
-    #[tag = 0x00] Min(Leb128<u32>),
-    #[tag = 0x01] MinMax(Leb128<u32>, Leb128<u32>),
-}
-
-#[derive(WasmBinary, Debug)]
-pub struct GlobalType(pub ValType, pub Mut);
-
-#[derive(WasmBinary, Debug)]
-pub enum Mut {
-    #[tag = 0x00] Const,
-    #[tag = 0x01] Var,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct BlockType(pub Option<ValType>);
-
-#[derive(WasmBinary, Debug)]
-pub struct Func(pub Leb128<Vec<Locals>>, pub Expr);
-
-#[derive(WasmBinary, Debug)]
-pub struct Locals {
-    pub count: Leb128<u32>,
-    pub type_: ValType,
-}
+/* Indices */
 
 #[derive(WasmBinary, Debug, PartialEq)]
 pub struct TypeIdx(pub Leb128<u32>);
@@ -145,10 +160,16 @@ pub struct LocalIdx(pub Leb128<u32>);
 #[derive(WasmBinary, Debug, PartialEq)]
 pub struct LabelIdx(pub Leb128<u32>);
 
-#[derive(WasmBinary, Debug, PartialEq)]
-pub struct Memarg {
-    pub alignment: Leb128<u32>,
-    pub offset: Leb128<u32>,
+
+/* Code */
+
+#[derive(WasmBinary, Debug)]
+pub struct Func(pub Leb128<Vec<Locals>>, pub Expr);
+
+#[derive(WasmBinary, Debug)]
+pub struct Locals {
+    pub count: Leb128<u32>,
+    pub type_: ValType,
 }
 
 #[derive(Debug, PartialEq)]
@@ -172,7 +193,7 @@ pub enum Instr {
 
     #[tag = 0x0f] Return,
     #[tag = 0x10] Call(FuncIdx),
-    #[tag = 0x11] CallIndirect(TypeIdx, /* unused, always 0x00 in WASM version 1 */ u8),
+    #[tag = 0x11] CallIndirect(TypeIdx, /* unused, always 0x00 in WASM version 1 */ TableIdx),
 
     #[tag = 0x1a] Drop,
     #[tag = 0x1b] Select,
@@ -206,8 +227,8 @@ pub enum Instr {
     #[tag = 0x3c] I64Store8(Memarg),
     #[tag = 0x3d] I64Store16(Memarg),
     #[tag = 0x3e] I64Store32(Memarg),
-    #[tag = 0x3f] CurrentMemory(/* unused, always 0x00 in WASM version 1 */ u8),
-    #[tag = 0x40] GrowMemory(/* unused, always 0x00 in WASM version 1 */ u8),
+    #[tag = 0x3f] CurrentMemory(/* unused, always 0x00 in WASM version 1 */ MemoryIdx),
+    #[tag = 0x40] GrowMemory(/* unused, always 0x00 in WASM version 1 */ MemoryIdx),
 
     #[tag = 0x41] I32Const(Leb128<i32>),
     #[tag = 0x42] I64Const(Leb128<i64>),
@@ -337,4 +358,10 @@ pub enum Instr {
     #[tag = 0xbd] I64ReinterpretF64,
     #[tag = 0xbe] F32ReinterpretI32,
     #[tag = 0xbf] F64ReinterpretI64,
+}
+
+#[derive(WasmBinary, Debug, PartialEq)]
+pub struct Memarg {
+    pub alignment: Leb128<u32>,
+    pub offset: Leb128<u32>,
 }
