@@ -17,15 +17,11 @@ pub struct Leb128<T> {
 /* Convenience */
 
 impl<T> Leb128<T> {
-    // TODO replace with static "with_byte_count" or something?
-    /// Replace the value, but keep the byte_count from self.
-    ///
-    /// When encoding the resulting `Leb128<U>`, the byte_count will still be used to determine the
-    /// minimum number of bytes for encoding U.
-    pub fn map<U>(&self, new_value: U) -> Leb128<U> {
+    /// Create a new `value` with the byte_count from an `old_value`.
+    pub fn with_byte_count<U>(value: T, old_value: &Leb128<U>) -> Self {
         Leb128 {
-            value: new_value,
-            byte_count: self.byte_count,
+            value,
+            byte_count: old_value.byte_count,
         }
     }
 }
