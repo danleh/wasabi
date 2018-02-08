@@ -9,7 +9,7 @@ use proc_macro::TokenStream;
 use quote::Tokens;
 use syn::{Attribute, Data, DataEnum, DataStruct, DeriveInput, Fields, FieldsNamed, FieldsUnnamed, Ident, Index, Lit, Meta, MetaNameValue, Path, PathArguments, PathSegment, Type, TypePath};
 
-#[proc_macro_derive(Wasm, attributes(tag))]
+#[proc_macro_derive(WasmBinary, attributes(tag))]
 pub fn derive_wasm(input: TokenStream) -> TokenStream {
     let input: DeriveInput = syn::parse(input).unwrap();
     let data_name = input.ident;
@@ -122,7 +122,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
 
     // boilerplate of impl that is the same for any data type
     let impl_ = quote! {
-        impl Wasm for #data_name {
+        impl WasmBinary for #data_name {
             fn decode<R: ::std::io::Read>(reader: &mut R) -> ::std::io::Result<Self> {
                 Ok(#decode_body)
             }

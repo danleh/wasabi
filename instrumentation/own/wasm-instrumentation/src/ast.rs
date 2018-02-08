@@ -1,4 +1,4 @@
-use Wasm;
+use WasmBinary;
 use leb128::Leb128;
 
 #[derive(Debug)]
@@ -7,7 +7,7 @@ pub struct Module {
     pub sections: Vec<Section>,
 }
 
-#[derive(Wasm, Debug)]
+#[derive(WasmBinary, Debug)]
 pub enum Section {
     // untested
     #[tag = 0] Custom(Leb128<Vec<u8>>),
@@ -39,24 +39,24 @@ pub struct WithSize<T> {
 #[derive(Debug)]
 pub struct Parallel<T>(pub Leb128<Vec<WithSize<T>>>);
 
-#[derive(Wasm, Debug)]
+#[derive(WasmBinary, Debug)]
 // TODO make named struct, 2nd component: offset
 pub struct Data(pub MemoryIdx, pub /* offset given by constant expr */ Expr, pub Leb128<Vec<u8>>);
 
-#[derive(Wasm, Debug)]
+#[derive(WasmBinary, Debug)]
 pub struct Global(pub GlobalType, pub Expr);
 
-#[derive(Wasm, Debug)]
+#[derive(WasmBinary, Debug)]
 pub struct Element(pub TableIdx, Expr, pub Leb128<Vec<FuncIdx>>);
 
-#[derive(Wasm, Debug)]
+#[derive(WasmBinary, Debug)]
 #[tag = 0x60]
 pub struct FuncType {
     pub params: Leb128<Vec<ValType>>,
     pub results: Leb128<Vec<ValType>>,
 }
 
-#[derive(Wasm, Debug, PartialEq)]
+#[derive(WasmBinary, Debug, PartialEq)]
 pub enum ValType {
     #[tag = 0x7f] I32,
     #[tag = 0x7e] I64,
@@ -64,20 +64,20 @@ pub enum ValType {
     #[tag = 0x7c] F64,
 }
 
-#[derive(Wasm, Debug)]
+#[derive(WasmBinary, Debug)]
 pub struct Import {
     pub module: Leb128<String>,
     pub name: Leb128<String>,
     pub type_: ImportType,
 }
 
-#[derive(Wasm, Debug)]
+#[derive(WasmBinary, Debug)]
 pub struct Export {
     pub name: Leb128<String>,
     pub type_: ExportType,
 }
 
-#[derive(Wasm, Debug)]
+#[derive(WasmBinary, Debug)]
 pub enum ImportType {
     #[tag = 0x0] Function(TypeIdx),
     #[tag = 0x1] Table(TableType),
@@ -85,7 +85,7 @@ pub enum ImportType {
     #[tag = 0x3] Global(GlobalType),
 }
 
-#[derive(Wasm, Debug)]
+#[derive(WasmBinary, Debug)]
 pub enum ExportType {
     #[tag = 0x0] Function(TypeIdx),
     #[tag = 0x1] Table(TableIdx),
@@ -93,20 +93,20 @@ pub enum ExportType {
     #[tag = 0x3] Global(GlobalIdx),
 }
 
-#[derive(Wasm, Debug)]
+#[derive(WasmBinary, Debug)]
 #[tag = 0x70]
 pub struct TableType(pub Limits);
 
-#[derive(Wasm, Debug)]
+#[derive(WasmBinary, Debug)]
 pub enum Limits {
     #[tag = 0x00] Min(Leb128<u32>),
     #[tag = 0x01] MinMax(Leb128<u32>, Leb128<u32>),
 }
 
-#[derive(Wasm, Debug)]
+#[derive(WasmBinary, Debug)]
 pub struct GlobalType(pub ValType, pub Mut);
 
-#[derive(Wasm, Debug)]
+#[derive(WasmBinary, Debug)]
 pub enum Mut {
     #[tag = 0x00] Const,
     #[tag = 0x01] Var,
@@ -115,37 +115,37 @@ pub enum Mut {
 #[derive(Debug, PartialEq)]
 pub struct BlockType(pub Option<ValType>);
 
-#[derive(Wasm, Debug)]
+#[derive(WasmBinary, Debug)]
 pub struct Func(pub Leb128<Vec<Locals>>, pub Expr);
 
-#[derive(Wasm, Debug)]
+#[derive(WasmBinary, Debug)]
 pub struct Locals {
     pub count: Leb128<u32>,
     pub type_: ValType,
 }
 
-#[derive(Wasm, Debug, PartialEq)]
+#[derive(WasmBinary, Debug, PartialEq)]
 pub struct TypeIdx(pub Leb128<u32>);
 
-#[derive(Wasm, Debug, PartialEq)]
+#[derive(WasmBinary, Debug, PartialEq)]
 pub struct FuncIdx(pub Leb128<u32>);
 
-#[derive(Wasm, Debug, PartialEq)]
+#[derive(WasmBinary, Debug, PartialEq)]
 pub struct TableIdx(pub Leb128<u32>);
 
-#[derive(Wasm, Debug, PartialEq)]
+#[derive(WasmBinary, Debug, PartialEq)]
 pub struct MemoryIdx(pub Leb128<u32>);
 
-#[derive(Wasm, Debug, PartialEq)]
+#[derive(WasmBinary, Debug, PartialEq)]
 pub struct GlobalIdx(pub Leb128<u32>);
 
-#[derive(Wasm, Debug, PartialEq)]
+#[derive(WasmBinary, Debug, PartialEq)]
 pub struct LocalIdx(pub Leb128<u32>);
 
-#[derive(Wasm, Debug, PartialEq)]
+#[derive(WasmBinary, Debug, PartialEq)]
 pub struct LabelIdx(pub Leb128<u32>);
 
-#[derive(Wasm, Debug, PartialEq)]
+#[derive(WasmBinary, Debug, PartialEq)]
 pub struct Memarg {
     pub alignment: Leb128<u32>,
     pub offset: Leb128<u32>,
@@ -154,7 +154,7 @@ pub struct Memarg {
 #[derive(Debug, PartialEq)]
 pub struct Expr(pub Vec<Instr>);
 
-#[derive(Wasm, Debug, PartialEq)]
+#[derive(WasmBinary, Debug, PartialEq)]
 pub enum Instr {
     #[tag = 0x00] Unreachable,
     #[tag = 0x01] Nop,

@@ -17,6 +17,9 @@ use leb128::{Leb128, ReadLeb128, WriteLeb128};
 mod ast;
 use ast::*;
 
+//mod binary;
+//use binary::WasmBinary;
+
 macro_rules! debug {
     ( $fmt:expr, $( $args:expr ),* ) => {
         let should_output = std::env::args().nth(2).is_none(); // give "silent" or so as second argument
@@ -26,7 +29,7 @@ macro_rules! debug {
     };
 }
 
-pub trait Wasm: Sized {
+pub trait WasmBinary: Sized {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self>;
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize>;
 
@@ -38,7 +41,7 @@ pub trait Wasm: Sized {
     }
 }
 
-impl Wasm for u8 {
+impl WasmBinary for u8 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         reader.read_u8()
     }
@@ -48,7 +51,7 @@ impl Wasm for u8 {
     }
 }
 
-impl Wasm for Leb128<u32> {
+impl WasmBinary for Leb128<u32> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         reader.read_leb128()
     }
@@ -57,7 +60,7 @@ impl Wasm for Leb128<u32> {
     }
 }
 
-impl Wasm for Leb128<i32> {
+impl WasmBinary for Leb128<i32> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         reader.read_leb128()
     }
@@ -66,7 +69,7 @@ impl Wasm for Leb128<i32> {
     }
 }
 
-impl Wasm for Leb128<i64> {
+impl WasmBinary for Leb128<i64> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         reader.read_leb128()
     }
@@ -75,7 +78,7 @@ impl Wasm for Leb128<i64> {
     }
 }
 
-impl Wasm for f32 {
+impl WasmBinary for f32 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         reader.read_f32::<byteorder::LittleEndian>()
     }
@@ -85,7 +88,7 @@ impl Wasm for f32 {
     }
 }
 
-impl Wasm for f64 {
+impl WasmBinary for f64 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         reader.read_f64::<byteorder::LittleEndian>()
     }
@@ -96,7 +99,7 @@ impl Wasm for f64 {
 }
 
 
-impl<T: Wasm> Wasm for WithSize<T> {
+impl<T: WasmBinary> WasmBinary for WithSize<T> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         Ok(WithSize {
             size: Leb128::decode(reader)?,
@@ -117,7 +120,7 @@ impl<T: Wasm> Wasm for WithSize<T> {
     }
 }
 
-impl<T: Wasm> Wasm for Leb128<Vec<T>> {
+impl<T: WasmBinary> WasmBinary for Leb128<Vec<T>> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let size: Leb128<u32> = Leb128::decode(reader)?;
 
@@ -140,7 +143,7 @@ impl<T: Wasm> Wasm for Leb128<Vec<T>> {
     }
 }
 
-impl Wasm for Leb128<String> {
+impl WasmBinary for Leb128<String> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let buf: Leb128<Vec<u8>> = Leb128::decode(reader)?;
         match String::from_utf8(buf.value) {
@@ -163,7 +166,7 @@ impl Wasm for Leb128<String> {
     }
 }
 
-impl<T: Wasm + Send + Sync> Wasm for Parallel<T> {
+impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<T> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let num_elements: Leb128<u32> = Leb128::decode(reader)?;
         let mut bufs = Vec::with_capacity(num_elements.value as usize);
@@ -224,7 +227,7 @@ impl<T: Wasm + Send + Sync> Wasm for Parallel<T> {
 
 /// have to implement manually because of strange compressed format:
 /// no tag, because they know that 0x40 and ValType are disjoint
-impl Wasm for BlockType {
+impl WasmBinary for BlockType {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         Ok(BlockType(match u8::decode(reader)? {
             0x40 => None,
@@ -242,7 +245,7 @@ impl Wasm for BlockType {
     }
 }
 
-impl Wasm for Module {
+impl WasmBinary for Module {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let mut magic_number = [0u8; 4];
         reader.read_exact(&mut magic_number)?;
@@ -258,10 +261,7 @@ impl Wasm for Module {
         let mut sections = Vec::new();
         loop {
             match Section::decode(reader) {
-                Ok(section) => {
-                    debug!("decoded section: {:?}", section);
-                    sections.push(section)
-                }
+                Ok(section) => sections.push(section),
                 Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(e)
             };
@@ -280,7 +280,7 @@ impl Wasm for Module {
     }
 }
 
-impl Wasm for Expr {
+impl WasmBinary for Expr {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let mut instructions = Vec::new();
 
