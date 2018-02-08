@@ -18,10 +18,10 @@ type String = Leb128<::std::string::String>;
 
 #[derive(Debug)]
 pub struct WithSize<T> {
-    /// Remember content size for two reasons:
-    /// 1. Performance: use as initial capacity of the write buffer when encoding.
-    /// 2. Round-tripping: encode new size with at least as many bytes as old size.
-    pub size: Leb128<u32>,
+    /// Do not save the size of the contents, since it might change through AST transformations anyway.
+    /// But DO save the byte_count that was used to save the size (in Leb128), so that decoding and
+    /// encoding the size will round-trip.
+    pub size: Leb128<()>,
     pub content: T,
 }
 

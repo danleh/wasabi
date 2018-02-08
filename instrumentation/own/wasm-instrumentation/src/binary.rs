@@ -39,6 +39,9 @@ impl WasmBinary for Leb128<u32> {
     }
 }
 
+// TODO add usize impl, but Err if value > u32::MAX, since that is not allowed in WASM spec
+// TODO then remove all as u32 and as usize casts
+
 impl WasmBinary for Leb128<i32> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         reader.read_leb128()
@@ -83,14 +86,13 @@ impl WasmBinary for f64 {
 impl<T: WasmBinary> WasmBinary for WithSize<T> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         Ok(WithSize {
-            size: Leb128::decode(reader)?,
+            size: Leb128::<u32>::decode(reader)?.map(()),
             content: T::decode(reader)?,
         })
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        // write contents to buffer of known size
-        let mut buf = Vec::with_capacity(self.size.value as usize);
+        let mut buf = Vec::new();
         let new_size = self.content.encode(&mut buf)?;
 
         // write new size, then contents from buffer to actual writer
@@ -156,25 +158,22 @@ impl WasmBinary for Leb128<String> {
 impl<T: WasmBinary + Send + Sync> WasmBinary for Leb128<Vec<WithSize<T>>> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let num_elements: Leb128<u32> = Leb128::decode(reader)?;
-        let mut bufs = Vec::with_capacity(num_elements.value as usize);
 
         // read all elements into buffers of the given size (non-parallel, but hopefully fast)
+        let mut bufs = Vec::new();
         for _ in 0..num_elements.value {
-            let num_bytes = Leb128::decode(reader)?;
+            let num_bytes: Leb128<u32> = Leb128::decode(reader)?;
             let mut buf = vec![0u8; num_bytes.value as usize];
             reader.read_exact(&mut buf)?;
-            bufs.push(WithSize {
-                size: num_bytes,
-                content: buf,
-            });
+            bufs.push(num_bytes.map(buf));
         }
 
         // parallel decode of each buffer
         let decoded: io::Result<Vec<WithSize<T>>> = bufs.into_par_iter()
-            .map(|buf| -> io::Result<_> {
+            .map(|buf| {
                 Ok(WithSize {
-                    size: buf.size,
-                    content: T::decode(&mut &buf.content[..])?,
+                    size: buf.map(()),
+                    content: T::decode(&mut &buf.value[..])?,
                 })
             })
             .collect();
@@ -183,18 +182,17 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Leb128<Vec<WithSize<T>>> {
         Ok(num_elements.map(decoded))
     }
 
-    // TODO refactor this to be sure no WithSize is forgotten or superfluous
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         let new_size = self.map(self.len() as u32);
         let mut bytes_written = new_size.encode(writer)?;
 
         // encode elements to buffers in parallel
         let encoded: io::Result<Vec<WithSize<Vec<u8>>>> = self.par_iter()
-            .map(|element| {
-                let mut buf = Vec::with_capacity(element.size.value as usize);
-                let new_size = element.content.encode(&mut buf)?;
+            .map(|element: &WithSize<T>| {
+                let mut buf = Vec::new();
+                element.content.encode(&mut buf)?;
                 Ok(WithSize {
-                    size: element.size.map(new_size as u32),
+                    size: element.size.map(()),
                     content: buf,
                 })
             })
@@ -202,9 +200,10 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Leb128<Vec<WithSize<T>>> {
 
         // write sizes and buffer contents to actual writer (non-parallel, but hopefully fast)
         for buf in encoded? {
-            bytes_written += buf.size.encode(writer)?;
+            let size = buf.size.map(buf.content.len() as u32);
+            bytes_written += size.encode(writer)?;
             writer.write_all(&buf.content)?;
-            bytes_written += buf.size.value as usize; // FIXME double cast, first to u32, now back
+            bytes_written += size.value as usize; // FIXME double cast
         }
 
         Ok(bytes_written)
