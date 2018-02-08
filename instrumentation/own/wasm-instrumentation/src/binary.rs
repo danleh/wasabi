@@ -186,9 +186,8 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Leb128<Vec<WithSize<T>>> {
                 })
             })
             .collect();
-        let decoded = decoded?;
 
-        Ok(Leb128::with_byte_count(decoded, &num_elements))
+        Ok(Leb128::with_byte_count(decoded?, &num_elements))
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
@@ -196,22 +195,19 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Leb128<Vec<WithSize<T>>> {
         let mut bytes_written = new_size.encode(writer)?;
 
         // encode elements to buffers in parallel
-        let encoded: io::Result<Vec<WithSize<Vec<u8>>>> = self.par_iter()
+        let encoded: io::Result<Vec<Leb128<Vec<u8>>>> = self.par_iter()
             .map(|element: &WithSize<T>| {
                 let mut buf = Vec::new();
                 element.content.encode(&mut buf)?;
-                Ok(WithSize {
-                    size: Leb128::with_byte_count((), &element.size),
-                    content: buf,
-                })
+                Ok(Leb128::with_byte_count(buf, &element.size))
             })
             .collect();
 
         // write sizes and buffer contents to actual writer (non-parallel, but hopefully fast)
         for buf in encoded? {
-            let size = Leb128::with_byte_count(buf.content.len(), &buf.size);
+            let size = Leb128::with_byte_count(buf.len(), &buf);
             bytes_written += size.encode(writer)?;
-            writer.write_all(&buf.content)?;
+            writer.write_all(&buf)?;
             bytes_written += size.value;
         }
 
