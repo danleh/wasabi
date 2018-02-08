@@ -2,25 +2,26 @@
 #[macro_use]
 extern crate wasm_derive;
 extern crate byteorder;
-extern crate leb128;
 extern crate rayon;
 
 use std::io;
 use rayon::prelude::*;
+use byteorder::{ReadBytesExt, WriteBytesExt};
 
 // TODO test with WASM spec test suite
 
-mod leb128_ {
-    use std::io;
+mod leb128 {
+    use std::*;
     use Wasm;
 
     #[derive(Debug, PartialEq)]
     pub struct Leb128<T> {
         pub value: T,
         // save old number of bytes used to encode the value for round-tripping
+        // TODO rename to just num_bytes or byte_count (-> google, which is preferred?)
         pub min_num_bytes: usize,
         // so that Leb128 cannot be constructed outside of this module, since at least one field is not pub
-        private: ()
+        private: (), // FIXME this probably needs to go anyway, since adding new instructions with an encoding must be possible to construct
     }
 
     impl<T> Leb128<T> {
@@ -36,60 +37,75 @@ mod leb128_ {
             Leb128 {
                 value: new_value,
                 min_num_bytes: old_min_num_bytes,
-                private: ()
-            }
-        }
-    }
-
-    impl Wasm for Leb128<u32> {
-        fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-            let mut value = 0;
-            let mut bytes_read = 0;
-            let mut shift = 0;
-            let mut byte = 0x80;
-
-            while byte & 0x80 != 0 {
-                byte = u8::decode(reader)?;
-                if let Some(high_bits) = ((byte & 0x7f) as u32).checked_shl(shift) {
-                    value |= high_bits;
-                } else {
-                    Self::error("LEB128 to u32 overflow")?;
-                }
-                bytes_read += 1;
-                shift += 7;
-            }
-
-            Ok(Leb128 {
-                value,
-                min_num_bytes: bytes_read,
                 private: (),
-            })
-        }
-
-        fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-            let mut value = self.value;
-            let mut bytes_written = 0;
-            let mut more_bytes = true;
-
-            while more_bytes {
-                // select low 7 bits of value
-                let mut byte_to_write = value as u8 & 0x7F;
-                value >>= 7;
-                bytes_written += 1;
-
-                more_bytes = value > 0 || bytes_written < self.min_num_bytes;
-                if more_bytes {
-                    byte_to_write |= 0x80;
-                }
-                byte_to_write.encode(writer)?;
             }
-
-            Ok(bytes_written)
         }
     }
+
+    // need to write this as a macro, not a generic impl because
+    // a) num_traits are quite lacking, e.g., there is no "U as T" for primitive ints
+    // b) specialization: impl<T: PrimInt> for Leb128<T> overlaps (and is no more special than)
+    //    impl<T: Wasm> for Leb128<Vec<T>> or the generic String impl
+    macro_rules! impl_leb128_integer {
+        ($T:ident) => {
+            impl Wasm for Leb128<$T> {
+                fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+                    let mut value = 0;
+                    let mut bytes_read = 0;
+                    let mut shift = 0;
+                    let mut byte = 0x80;
+
+                    while byte & 0x80 != 0 {
+                        byte = u8::decode(reader)?;
+                        if let Some(high_bits) = ((byte & 0x7f) as $T).checked_shl(shift) {
+                            value |= high_bits;
+                        } else {
+                            Self::error(format!("LEB128 to {} overflow", stringify!($T)))?;
+                        }
+                        bytes_read += 1;
+                        shift += 7;
+                    }
+
+                    Ok(Leb128 {
+                        value,
+                        min_num_bytes: bytes_read,
+                        private: (),
+                    })
+                }
+
+                fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+                    let mut value = self.value;
+                    let mut bytes_written = 0;
+                    let mut more_bytes = true;
+
+                    while more_bytes {
+                        // select low 7 bits of value
+                        let mut byte_to_write = value as u8 & 0x7F;
+                        // sign extends, important for signed integers!
+                        value >>= 7;
+                        bytes_written += 1;
+
+                        // for unsigned integers, MIN and 0 are the same, but for signed ones
+                        // this double check is important: -1 (all 1's) and 0 (all 0's) stop writing
+                        more_bytes = (value > $T::MIN && value > 0) || bytes_written < self.min_num_bytes;
+                        if more_bytes {
+                            byte_to_write |= 0x80;
+                        }
+                        byte_to_write.encode(writer)?;
+                    }
+
+                    Ok(bytes_written)
+                }
+            }
+        }
+    }
+
+    impl_leb128_integer!(u32);
+    impl_leb128_integer!(i32);
+    impl_leb128_integer!(i64);
 }
 
-use leb128_::Leb128;
+use leb128::Leb128;
 
 macro_rules! debug {
     ( $fmt:expr, $( $args:expr ),* ) => {
@@ -114,54 +130,19 @@ pub trait Wasm: Sized {
 
 impl Wasm for u8 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        use byteorder::ReadBytesExt;
         reader.read_u8()
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        use byteorder::WriteBytesExt;
         writer.write_u8(*self)?;
         Ok(1)
     }
 }
 
-
-
-// TODO replace with own LEB128 parser/encoder
-impl Wasm for i32 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        match leb128::read::signed(reader) {
-            Err(leb128::read::Error::IoError(io_err)) => Err(io_err),
-            Err(leb128::read::Error::Overflow) => Self::error("leb128 to i32 overflow"),
-            Ok(value) if value > i32::max_value() as i64 => Self::error("leb128 to i32 overflow"),
-            Ok(value) => Ok(value as i32),
-        }
-    }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        leb128::write::signed(writer, *self as i64)
-    }
-}
-
-// TODO replace with own LEB128 parser/encoder
-impl Wasm for i64 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        match leb128::read::signed(reader) {
-            Err(leb128::read::Error::IoError(io_err)) => Err(io_err),
-            Err(leb128::read::Error::Overflow) => Self::error("leb128 to i64 overflow"),
-            Ok(value) => Ok(value),
-        }
-    }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        leb128::write::signed(writer, *self as i64)
-    }
-}
-
 impl Wasm for f32 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        use byteorder::ReadBytesExt;
         reader.read_f32::<byteorder::LittleEndian>()
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        use byteorder::WriteBytesExt;
         writer.write_f32::<byteorder::LittleEndian>(*self)?;
         Ok(4)
     }
@@ -169,11 +150,9 @@ impl Wasm for f32 {
 
 impl Wasm for f64 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        use byteorder::ReadBytesExt;
         reader.read_f64::<byteorder::LittleEndian>()
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        use byteorder::WriteBytesExt;
         writer.write_f64::<byteorder::LittleEndian>(*self)?;
         Ok(8)
     }
@@ -297,7 +276,7 @@ impl<T: Wasm + Send + Sync> Wasm for Parallel<T> {
                 let new_size = element.content.encode(&mut buf)?;
                 Ok(WithSize {
                     size: element.size.update(new_size as u32),
-                    content: buf
+                    content: buf,
                 })
             })
             .collect();
@@ -527,8 +506,8 @@ pub enum Instr {
     #[tag = 0x3f] CurrentMemory(/* unused, always 0x00 in WASM version 1 */ u8),
     #[tag = 0x40] GrowMemory(/* unused, always 0x00 in WASM version 1 */ u8),
 
-    #[tag = 0x41] I32Const(i32),
-    #[tag = 0x42] I64Const(i64),
+    #[tag = 0x41] I32Const(Leb128<i32>),
+    #[tag = 0x42] I64Const(Leb128<i64>),
     #[tag = 0x43] F32Const(f32),
     #[tag = 0x44] F64Const(f64),
 
@@ -665,7 +644,6 @@ impl Wasm for Module {
             return Self::error("magic bytes do not match");
         }
 
-        use byteorder::ReadBytesExt;
         let version = reader.read_u32::<byteorder::LittleEndian>()?;
         if version != 1 {
             return Self::error("not version 1");
