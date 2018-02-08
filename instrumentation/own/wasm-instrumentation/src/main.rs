@@ -1,4 +1,4 @@
-#![feature(attr_literals)]
+#![feature(attr_literals, specialization)]
 
 #[macro_use]
 extern crate custom_derive;

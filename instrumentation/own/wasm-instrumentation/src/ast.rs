@@ -9,7 +9,7 @@ pub struct Module {
 }
 
 
-/* Markers and generic AST nodes */
+/* Generic "AST combinators" */
 
 // redefine Vec and String so that their length is encoded/decoded as LEB128 by default,
 // use ::std::vec::Vec<T> / ::std::string::String for unaltered behavior
@@ -24,10 +24,6 @@ pub struct WithSize<T> {
     pub size: Leb128<u32>,
     pub content: T,
 }
-
-// FIXME this shouldnt be a struct, if you ask me. Change to impl specialization for Leb128<Vec<WithSize>>?
-#[derive(Debug)]
-pub struct Parallel<T>(pub Vec<WithSize<T>>);
 
 
 /* Sections */
@@ -47,7 +43,7 @@ pub enum Section {
     #[tag = 7] Export(WithSize<Vec<Export>>),
     #[tag = 8] Start(WithSize<FuncIdx>),
     #[tag = 9] Element(WithSize<Vec<Element>>),
-    #[tag = 10] Code(WithSize<Parallel<Func>>),
+    #[tag = 10] Code(WithSize<Vec<WithSize<Func>>>),
     #[tag = 11] Data(WithSize<Vec<Data>>),
 }
 
