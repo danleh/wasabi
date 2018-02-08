@@ -1,5 +1,5 @@
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use std::{i32, i64, io, u32};
+use std::io;
 use std::ops::Deref;
 
 #[derive(Debug, PartialEq)]
@@ -92,9 +92,9 @@ macro_rules! impl_leb128_integer {
                     value >>= 7;
                     bytes_written += 1;
 
-                    // for unsigned integers, MIN and 0 are the same, but for signed ones the
+                    // for unsigned integers, min_value and 0 are the same, but for signed ones the
                     // double check of value is important: -1 (all 1's) and 0 (all 0's) stop writing
-                    more_bytes = (value > $T::MIN && value > 0) || bytes_written < leb128.byte_count;
+                    more_bytes = (value > $T::min_value() && value > 0) || bytes_written < leb128.byte_count;
                     if more_bytes {
                         byte_to_write |= 0x80;
                     }
@@ -108,5 +108,6 @@ macro_rules! impl_leb128_integer {
 }
 
 impl_leb128_integer!(u32);
+impl_leb128_integer!(usize);
 impl_leb128_integer!(i32);
 impl_leb128_integer!(i64);
