@@ -4,24 +4,30 @@ use WasmBinary;
 #[derive(Debug)]
 pub struct Module {
     pub version: u32,
-    pub sections: Vec<Section>,
+    // the number of sections is not encoded
+    pub sections: ::std::vec::Vec<Section>,
 }
 
 
 /* Markers and generic AST nodes */
 
+// redefine Vec and String so that their length is encoded/decoded as LEB128 by default,
+// use ::std::vec::Vec<T> / ::std::string::String for unaltered behavior
+type Vec<T> = Leb128<::std::vec::Vec<T>>;
+type String = Leb128<::std::string::String>;
+
 #[derive(Debug)]
 pub struct WithSize<T> {
     /// Remember content size for two reasons:
-    /// a) Performance: use as initial capacity of the write buffer when encoding.
-    /// b) Round-tripping: encode new size with at least as many bytes as old size.
+    /// 1. Performance: use as initial capacity of the write buffer when encoding.
+    /// 2. Round-tripping: encode new size with at least as many bytes as old size.
     pub size: Leb128<u32>,
     pub content: T,
 }
 
 // FIXME this shouldnt be a struct, if you ask me. Change to impl specialization for Leb128<Vec<WithSize>>?
 #[derive(Debug)]
-pub struct Parallel<T>(pub Leb128<Vec<WithSize<T>>>);
+pub struct Parallel<T>(pub Vec<WithSize<T>>);
 
 
 /* Sections */
@@ -29,20 +35,20 @@ pub struct Parallel<T>(pub Leb128<Vec<WithSize<T>>>);
 #[derive(WasmBinary, Debug)]
 pub enum Section {
     // untested
-    #[tag = 0] Custom(Leb128<Vec<u8>>),
-    #[tag = 1] Type(WithSize<Leb128<Vec<FuncType>>>),
-    #[tag = 2] Import(WithSize<Leb128<Vec<Import>>>),
-    #[tag = 3] Function(WithSize<Leb128<Vec<TypeIdx>>>),
+    #[tag = 0] Custom(Vec<u8>),
+    #[tag = 1] Type(WithSize<Vec<FuncType>>),
+    #[tag = 2] Import(WithSize<Vec<Import>>),
+    #[tag = 3] Function(WithSize<Vec<TypeIdx>>),
     // untested
-    #[tag = 4] Table(WithSize<Leb128<Vec<TableType>>>),
+    #[tag = 4] Table(WithSize<Vec<TableType>>),
     // untested
-    #[tag = 5] Memory(WithSize<Leb128<Vec<Limits>>>),
-    #[tag = 6] Global(WithSize<Leb128<Vec<Global>>>),
-    #[tag = 7] Export(WithSize<Leb128<Vec<Export>>>),
+    #[tag = 5] Memory(WithSize<Vec<Limits>>),
+    #[tag = 6] Global(WithSize<Vec<Global>>),
+    #[tag = 7] Export(WithSize<Vec<Export>>),
     #[tag = 8] Start(WithSize<FuncIdx>),
-    #[tag = 9] Element(WithSize<Leb128<Vec<Element>>>),
+    #[tag = 9] Element(WithSize<Vec<Element>>),
     #[tag = 10] Code(WithSize<Parallel<Func>>),
-    #[tag = 11] Data(WithSize<Leb128<Vec<Data>>>),
+    #[tag = 11] Data(WithSize<Vec<Data>>),
 }
 
 #[derive(WasmBinary, Debug)]
@@ -56,7 +62,7 @@ pub struct Element {
     // always 0x00 in WASM version 1
     pub _unused: TableIdx,
     pub offset: Expr,
-    pub init: Leb128<Vec<FuncIdx>>,
+    pub init: Vec<FuncIdx>,
 }
 
 #[derive(WasmBinary, Debug)]
@@ -64,19 +70,19 @@ pub struct Data {
     // always 0x00 in WASM version 1
     pub _unused: MemoryIdx,
     pub offset: Expr,
-    pub init: Leb128<Vec<u8>>,
+    pub init: Vec<u8>,
 }
 
 #[derive(WasmBinary, Debug)]
 pub struct Import {
-    pub module: Leb128<String>,
-    pub name: Leb128<String>,
+    pub module: String,
+    pub name: String,
     pub type_: ImportType,
 }
 
 #[derive(WasmBinary, Debug)]
 pub struct Export {
-    pub name: Leb128<String>,
+    pub name: String,
     pub type_: ExportType,
 }
 
@@ -94,8 +100,8 @@ pub enum ValType {
 #[derive(WasmBinary, Debug)]
 #[tag = 0x60]
 pub struct FuncType {
-    pub params: Leb128<Vec<ValType>>,
-    pub results: Leb128<Vec<ValType>>,
+    pub params: Vec<ValType>,
+    pub results: Vec<ValType>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -164,7 +170,7 @@ pub struct LabelIdx(pub Leb128<u32>);
 /* Code */
 
 #[derive(WasmBinary, Debug)]
-pub struct Func(pub Leb128<Vec<Locals>>, pub Expr);
+pub struct Func(pub Vec<Locals>, pub Expr);
 
 #[derive(WasmBinary, Debug)]
 pub struct Locals {
@@ -173,7 +179,8 @@ pub struct Locals {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Expr(pub Vec<Instr>);
+// the number of instructions is not encoded
+pub struct Expr(pub ::std::vec::Vec<Instr>);
 
 #[derive(WasmBinary, Debug, PartialEq)]
 pub enum Instr {
@@ -189,7 +196,7 @@ pub enum Instr {
 
     #[tag = 0x0c] Br(LabelIdx),
     #[tag = 0x0d] BrIf(LabelIdx),
-    #[tag = 0x0e] BrTable(Leb128<Vec<LabelIdx>>, LabelIdx),
+    #[tag = 0x0e] BrTable(Vec<LabelIdx>, LabelIdx),
 
     #[tag = 0x0f] Return,
     #[tag = 0x10] Call(FuncIdx),
