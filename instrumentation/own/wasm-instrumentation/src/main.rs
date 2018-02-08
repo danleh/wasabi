@@ -1,7 +1,7 @@
 #![feature(attr_literals)]
 
 #[macro_use]
-extern crate wasm_derive;
+extern crate custom_derive;
 extern crate byteorder;
 extern crate rayon;
 
