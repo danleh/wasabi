@@ -18,6 +18,7 @@ mod leb128;
 mod ast;
 mod binary;
 mod instrument;
+mod display;
 #[cfg(test)]
 mod tests;
 
@@ -45,13 +46,13 @@ fn main() {
         let module = Module::decode(&mut BufReader::new(File::open(input)?))?;
 
         if !silent {
-            println!("before: {:#?}", module);
+            println!("before: {:?}", module);
         }
 
         let module = instrument(module);
 
         if !silent {
-            println!("after: {:#?}", module);
+            println!("after: {:?}", module);
         }
 
         let bytes_written = module.encode(&mut BufWriter::new(File::create(output)?))?;
