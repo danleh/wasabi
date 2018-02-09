@@ -39,6 +39,15 @@ impl<T> DerefMut for Leb128<T> {
     }
 }
 
+impl<T> From<T> for Leb128<T> {
+    fn from(value: T) -> Self {
+        Leb128 {
+            value,
+            byte_count: 0,
+        }
+    }
+}
+
 
 /* Traits for encoding and decoding Leb128 primitive integers */
 
