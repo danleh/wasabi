@@ -31,10 +31,10 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
                         #( #field_tys::decode(reader)? ),*
                     )
                 },
-                (quote! {
+                 (quote! {
                     #( bytes_written += self.#field_idx.encode(writer)?; )*
                 },
-                quote!(
+                  quote!(
                     &#data_name::#name(
                         #( ref #field_idx_name ),*
                     ) => {
@@ -55,10 +55,10 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
                         #( #field_names: #field_tys::decode(reader)? ),*
                     }
                 },
-                (quote! {
+                 (quote! {
                     #( bytes_written += self.#field_names_2.encode(writer)?; )*
                 },
-                quote!(
+                  quote!(
                     &#data_name::#name(
                         #( ref #field_names_3 ),*
                     ) => {
@@ -74,6 +74,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
         Data::Struct(DataStruct { fields, .. }) => {
             let (decode, (encode, _)) = recurse_into_fields(data_name, 0, fields);
 
+            // FIXME use that attributes is Option<u8>
             // (optionally:) check that tag matches / encode tag
             if !input.attrs.is_empty() {
                 let tag = attributes_to_tag_value(&input.attrs);
@@ -84,7 +85,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
                     }
                     #decode
                 }),
-                quote! {
+                 quote! {
                     bytes_written += #tag.encode(writer)?;
                     #encode
                 })
@@ -94,7 +95,8 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
         }
         Data::Enum(DataEnum { variants, .. }) => {
             let variant_tags: Vec<u8> = variants.iter()
-                .map(|variant| attributes_to_tag_value(&variant.attrs))
+                // FIXME is filter_map correct?
+                .filter_map(|variant| attributes_to_tag_value(&variant.attrs))
                 .collect();
             let (variants_decode, encode): (Vec<Tokens>, Vec<(Tokens, Tokens)>) = variants.into_iter().enumerate()
                 .map(|(idx, variant)| recurse_into_fields(variant.ident, variant_tags[idx], variant.fields))
@@ -111,7 +113,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
                     byte => Self::error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte))?
                 }
             },
-            quote! {
+             quote! {
                 match self {
                     #( #variants_encode ),*
                 };
@@ -137,7 +139,8 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
     impl_.into()
 }
 
-// so that a field: Vec<T> is decoded by Vec::decode() not Vec<T>::decode() (which is not valid syntax)
+/// Transform, e.g., Vec<T> into just Vec. Useful when calling trait methods on a generic type, i.e.,
+/// Vec<T>::decode() is not valid syntax but Vec::decode() is.
 fn remove_type_arguments(mut ty: Type) -> Type {
     if let Type::Path(TypePath { path: Path { ref mut segments, .. }, .. }) = ty {
         *segments = segments.into_iter().map(|segment| {
@@ -150,13 +153,13 @@ fn remove_type_arguments(mut ty: Type) -> Type {
     ty
 }
 
-fn attributes_to_tag_value(attributes: &[Attribute]) -> u8 {
-    if attributes.len() == 1 {
-        if let Some(Meta::NameValue(MetaNameValue { ident, lit: Lit::Int(lit_int), .. })) = attributes[0].interpret_meta() {
-            if ident.to_string() == "tag" && lit_int.value() < u8::max_value() as u64 {
-                return lit_int.value() as u8;
-            }
-        }
+/// Take the first `#[tag = <byte literal>]` attribute and return the value of `byte literal`.
+fn attributes_to_tag_value(attributes: &[Attribute]) -> Option<u8> {
+    let attribute = attributes.first()?;
+    match attribute.interpret_meta() {
+        Some(Meta::NameValue(MetaNameValue { ident, lit: Lit::Int(ref uint), .. }))
+        if ident.to_string() == "tag" && uint.value() <= u8::max_value() as u64 =>
+            Some(uint.value() as u8),
+        _ => panic!("attribute must be of type #[tag = <u8 literal>], got {}", quote!(#attribute))
     }
-    panic!("structs can have / every enum variant must have exactly one #[tag = <u8>] attribute")
 }
