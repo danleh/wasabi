@@ -4,6 +4,7 @@ use leb128::{Leb128, ReadLeb128, WriteLeb128};
 use rayon::prelude::*;
 use std::error::Error;
 use std::io;
+use std::mem::size_of;
 
 pub trait WasmBinary: Sized {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self>;
@@ -117,7 +118,7 @@ impl<T: WasmBinary> WasmBinary for Leb128<Vec<T>> {
     default fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let size = Leb128::decode(reader)?;
 
-        let mut vec: Vec<T> = Vec::with_capacity(size.value);
+        let mut vec: Vec<T> = Vec::with_capacity(size.value * size_of::<T>());
         for _ in 0..size.value {
             vec.push(T::decode(reader)?);
         };
@@ -169,7 +170,7 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Leb128<Vec<WithSize<T>>> {
         let num_elements = Leb128::decode(reader)?;
 
         // read all elements into buffers of the given size (non-parallel, but hopefully fast)
-        let mut bufs = Vec::new();
+        let mut bufs = Vec::with_capacity(num_elements.value * size_of::<Leb128<Vec<u8>>>());
         for _ in 0..num_elements.value {
             let num_bytes = Leb128::decode(reader)?;
             let mut buf = vec![0u8; num_bytes.value];
