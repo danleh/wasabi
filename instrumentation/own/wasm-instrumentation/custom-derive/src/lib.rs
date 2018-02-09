@@ -8,53 +8,14 @@ extern crate quote;
 
 use proc_macro::TokenStream;
 use quote::{Tokens, ToTokens};
-use syn::{parse_quote, Attribute, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed, Ident, Index, Lit, Meta, MetaNameValue, Path, PathArguments, PathSegment, Type, TypePath, Variant};
+use syn::{Attribute, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, Ident, Index, Lit, Meta, MetaNameValue, Path, PathArguments, PathSegment, Type, TypePath, Variant};
 
 #[proc_macro_derive(WasmBinary, attributes(tag))]
 pub fn derive_wasm(input: TokenStream) -> TokenStream {
     let input: DeriveInput = syn::parse(input).unwrap();
     let data_name = input.ident;
 
-    // TODO refactor this mess: e.g., make tag proper Option<u8>, include handling of tags for structs here
-    // extract handling of fields since it is the same for structs and enums
-    let recurse_into_fields = |name: Ident, tag: Option<u8>, fields: Fields| -> Tokens {
-        match fields {
-            Fields::Unit => quote!(&#data_name::#name => bytes_written += #tag.encode(writer)?),
-            Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
-                let (field_idx, field_tys): (Vec<Index>, Vec<Type>) = unnamed.into_iter()
-                    .enumerate()
-                    .map(|(idx, field)| (Index::from(idx), remove_type_arguments(&field.ty)))
-                    .unzip();
-                let field_idx_name: Vec<Ident> = (0..field_idx.len()).map(|i| Ident::from(format!("_{}", i))).collect();
-                let field_idx_name_2 = field_idx_name.clone();
-                quote!(
-                    &#data_name::#name(
-                        #( ref #field_idx_name ),*
-                    ) => {
-                        bytes_written += #tag.encode(writer)?;
-                        #( bytes_written += #field_idx_name_2.encode(writer)? );*
-                    }
-                )
-            }
-            Fields::Named(FieldsNamed { named, .. }) => {
-                let (field_names, field_tys): (Vec<Ident>, Vec<Type>) = named.into_iter()
-                    .map(|field| (field.ident.unwrap(), remove_type_arguments(&field.ty)))
-                    .unzip();
-                let field_names_2 = field_names.clone();
-                let field_names_3 = field_names.clone();
-                let field_names_4 = field_names.clone();
-                quote!(
-                    &#data_name::#name(
-                        #( ref #field_names_3 ),*
-                    ) => {
-                        bytes_written += #tag.encode(writer)?;
-                        #( bytes_written += #field_names_4.encode(writer)? );*
-                    }
-                )
-            }
-        }
-    };
-
+    // TODO split into own decode and encode parts as well...
     let (decode_body, encode_body) = match input.data {
         Data::Struct(DataStruct { fields, .. }) => {
             let tag: Option<u8> = attributes_to_tag(&input.attrs);
@@ -93,21 +54,9 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
             })
         }
         Data::Enum(DataEnum { variants, .. }) => {
+            let decode_variant = variants.iter().map(|variant| decode_variant(&data_name, variant));
+            let encode_variant = variants.iter().map(|variant| encode_variant(&data_name, variant));
 
-            let decode_variant = variants.iter().map(|variant| decode_variant(&data_name, variant)).collect::<Vec<_>>();
-
-            let variant_tags: Vec<u8> = variants.iter()
-                // FIXME is filter_map correct?
-                .filter_map(|variant| attributes_to_tag(&variant.attrs))
-                .collect();
-            let variants_encode: Vec<Tokens> = variants.into_iter().enumerate()
-                .map(|(idx, variant)| recurse_into_fields(variant.ident, Some(variant_tags[idx]), variant.fields))
-                .collect();
-
-            // needs to be repeated for quote repetition with #( ... )*
-            let data_name_repeated = vec![data_name; variant_tags.len()];
-
-            // match enum variants by tag
             (quote! {
                 match u8::decode(reader)? {
                     #( #decode_variant )*
@@ -115,8 +64,8 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
                 }
             },
              quote! {
-                match self {
-                    #( #variants_encode ),*
+                match *self {
+                    #( #encode_variant ),*
                 };
             })
         }
@@ -138,6 +87,29 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
     };
 
     impl_.into()
+}
+
+fn encode_variant(super_name: &Ident, variant: &Variant) -> Tokens {
+    let tag = attributes_to_tag(&variant.attrs)
+        .expect(&format!("every enum variant needs a tag, but {} does not have one", variant.ident));
+    let variant_name = &variant.ident;
+
+    let fields = &variant.fields;
+    match *fields {
+        Fields::Unit => quote!(#super_name::#variant_name => bytes_written += #tag.encode(writer)?),
+        Fields::Unnamed(_) => {
+            let field_names = &(0..fields.iter().count()).map(|i| Ident::from(format!("_{}", i))).collect::<Vec<_>>();
+            quote!(
+                #super_name::#variant_name(
+                    #( ref #field_names ),*
+                ) => {
+                    bytes_written += #tag.encode(writer)?;
+                    #( bytes_written += #field_names.encode(writer)? );*
+                }
+            )
+        },
+        Fields::Named(_) => unimplemented!("cannot derive struct variants at the moment..."),
+    }
 }
 
 fn decode_variant(super_name: &Ident, variant: &Variant) -> Tokens {
