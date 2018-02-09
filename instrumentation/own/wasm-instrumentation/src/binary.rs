@@ -282,8 +282,8 @@ impl WasmBinary for Expr {
     }
 }
 
-/// needs manual impl because of compressed format: even though it is "logically" an enum, it has
-/// no tag, because they know that 0x40 and ValType are disjoint
+/// needs manual impl because of compressed format: even though BlockType is "logically" an enum,
+/// it has no tag, because they know that 0x40 (empty block) and ValType are disjoint.
 impl WasmBinary for BlockType {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         Ok(BlockType(match u8::decode(reader)? {
