@@ -27,6 +27,10 @@ macro_rules! debug {
 }
 
 fn main() {
+    // TODO add proper command line arg handling
+    // -s for silent
+    // -o <file>
+
     let default_file_name = "test/hello-emcc.wasm";
     let file_name = std::env::args().nth(1).unwrap_or(default_file_name.into());
 
