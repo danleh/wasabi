@@ -1,13 +1,14 @@
 #![recursion_limit = "128"]
 
 extern crate proc_macro;
+#[macro_use]
 extern crate syn;
 #[macro_use]
 extern crate quote;
 
 use proc_macro::TokenStream;
 use quote::{Tokens, ToTokens};
-use syn::{Attribute, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed, Ident, Index, Lit, Meta, MetaNameValue, Path, PathArguments, PathSegment, Type, TypePath};
+use syn::{parse_quote, Attribute, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed, Ident, Index, Lit, Meta, MetaNameValue, Path, PathArguments, PathSegment, Type, TypePath, Variant};
 
 #[proc_macro_derive(WasmBinary, attributes(tag))]
 pub fn derive_wasm(input: TokenStream) -> TokenStream {
@@ -66,7 +67,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
 
     let (decode_body, encode_body) = match input.data {
         Data::Struct(DataStruct { fields, .. }) => {
-            let tag: Option<u8> = attributes_to_tag_value(&input.attrs);
+            let tag: Option<u8> = attributes_to_tag(&input.attrs);
 
             // decode struct
             let decode_tag = tag.map(|tag| quote! {
@@ -75,13 +76,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
                     return Self::error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte));
                 }
             });
-
-            let decode_fields = fields.iter().map(decode_field);
-            let decode_fields = match fields {
-                Fields::Unit => quote!(#data_name),
-                Fields::Unnamed(_) => quote!(#data_name( #( #decode_fields ),* )),
-                Fields::Named(_) => quote!(#data_name { #( #decode_fields ),* }),
-            };
+            let decode_fields = decode_fields(&parse_quote!(#data_name), &fields);
 
             // encode struct
             let encode_tag = tag.map(|tag| quote! {
@@ -97,19 +92,23 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
                 #( bytes_written += self.#encode_fields.encode(writer)?; )*
             };
 
+            // decode and encode body
             (quote!({
-                #( decode_tag )*
+                #( #decode_tag )*
                 #decode_fields
             }),
              quote! {
-                #( encode_tag )*
+                #( #encode_tag )*
                 #encode_fields
             })
         }
         Data::Enum(DataEnum { variants, .. }) => {
+
+            let decode_variant = variants.iter().map(|variant| decode_variant(&data_name, variant)).collect::<Vec<_>>();
+
             let variant_tags: Vec<u8> = variants.iter()
                 // FIXME is filter_map correct?
-                .filter_map(|variant| attributes_to_tag_value(&variant.attrs))
+                .filter_map(|variant| attributes_to_tag(&variant.attrs))
                 .collect();
             let (variants_decode, variants_encode): (Vec<Tokens>, Vec<Tokens>) = variants.into_iter().enumerate()
                 .map(|(idx, variant)| recurse_into_fields(variant.ident, Some(variant_tags[idx]), variant.fields))
@@ -121,7 +120,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
             // match enum variants by tag
             (quote! {
                 match u8::decode(reader)? {
-                    #( #variant_tags => #data_name_repeated::#variants_decode, )*
+                    #( #decode_variant )*
                     byte => Self::error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte))?
                 }
             },
@@ -151,6 +150,26 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
     impl_.into()
 }
 
+fn decode_variant(super_name: &Ident, variant: &Variant) -> Tokens {
+    let tag = attributes_to_tag(&variant.attrs)
+        .expect(&format!("every enum variant needs a tag, but {} does not have one", variant.ident));
+
+    let variant_name = &variant.ident;
+    let name = parse_quote!(#super_name::#variant_name);
+
+    let decode_fields = decode_fields(&name, &variant.fields);
+    quote!( #tag => #decode_fields, )
+}
+
+fn decode_fields(name: &TypePath, fields: &Fields) -> Tokens {
+    let decoded_fields = fields.iter().map(decode_field);
+    match *fields {
+        Fields::Unit => quote!(#name),
+        Fields::Unnamed(_) => quote!(#name( #( #decoded_fields ),* )),
+        Fields::Named(_) => quote!(#name { #( #decoded_fields ),* }),
+    }
+}
+
 fn decode_field(field: &Field) -> Tokens {
     let field_name = field.ident;
     let field_ty = remove_type_arguments(&field.ty);
@@ -173,7 +192,7 @@ fn remove_type_arguments(ty: &Type) -> Type {
 }
 
 /// Take the first `#[tag = <byte literal>]` attribute and return the value of `byte literal`.
-fn attributes_to_tag_value(attributes: &[Attribute]) -> Option<u8> {
+fn attributes_to_tag(attributes: &[Attribute]) -> Option<u8> {
     let attribute = attributes.first()?;
     match attribute.interpret_meta() {
         Some(Meta::NameValue(MetaNameValue { ident, lit: Lit::Int(ref uint), .. }))
