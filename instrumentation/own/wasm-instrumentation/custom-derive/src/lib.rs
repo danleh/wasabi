@@ -6,8 +6,8 @@ extern crate syn;
 extern crate quote;
 
 use proc_macro::TokenStream;
-use quote::Tokens;
-use syn::{Attribute, Data, DataEnum, DataStruct, DeriveInput, Fields, FieldsNamed, FieldsUnnamed, Ident, Index, Lit, Meta, MetaNameValue, Path, PathArguments, PathSegment, Type, TypePath};
+use quote::{Tokens, ToTokens};
+use syn::{Attribute, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed, Ident, Index, Lit, Meta, MetaNameValue, Path, PathArguments, PathSegment, Type, TypePath};
 
 #[proc_macro_derive(WasmBinary, attributes(tag))]
 pub fn derive_wasm(input: TokenStream) -> TokenStream {
@@ -16,13 +16,13 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
 
     // TODO refactor this mess: e.g., make tag proper Option<u8>, include handling of tags for structs here
     // extract handling of fields since it is the same for structs and enums
-    let recurse_into_fields = |name: Ident, tag: u8, fields: Fields| -> (Tokens, (Tokens, Tokens)) {
+    let recurse_into_fields = |name: Ident, tag: Option<u8>, fields: Fields| -> (Tokens, (Tokens, Tokens)) {
         match fields {
             Fields::Unit => (quote!(#name), (quote!(), quote!(&#data_name::#name => bytes_written += #tag.encode(writer)?))),
             Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
                 let (field_idx, field_tys): (Vec<Index>, Vec<Type>) = unnamed.into_iter()
                     .enumerate()
-                    .map(|(idx, field)| (Index::from(idx), remove_type_arguments(field.ty)))
+                    .map(|(idx, field)| (Index::from(idx), remove_type_arguments(&field.ty)))
                     .unzip();
                 let field_idx_name: Vec<Ident> = (0..field_idx.len()).map(|i| Ident::from(format!("_{}", i))).collect();
                 let field_idx_name_2 = field_idx_name.clone();
@@ -45,7 +45,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
             }
             Fields::Named(FieldsNamed { named, .. }) => {
                 let (field_names, field_tys): (Vec<Ident>, Vec<Type>) = named.into_iter()
-                    .map(|field| (field.ident.unwrap(), remove_type_arguments(field.ty)))
+                    .map(|field| (field.ident.unwrap(), remove_type_arguments(&field.ty)))
                     .unzip();
                 let field_names_2 = field_names.clone();
                 let field_names_3 = field_names.clone();
@@ -72,26 +72,45 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
 
     let (decode_body, encode_body) = match input.data {
         Data::Struct(DataStruct { fields, .. }) => {
-            let (decode, (encode, _)) = recurse_into_fields(data_name, 0, fields);
+            let tag: Option<u8> = attributes_to_tag_value(&input.attrs);
 
-            // FIXME use that attributes is Option<u8>
-            // (optionally:) check that tag matches / encode tag
-            if !input.attrs.is_empty() {
-                let tag = attributes_to_tag_value(&input.attrs);
-                (quote!({
-                    let byte = u8::decode(reader)?;
-                    if byte != #tag {
-                        return Self::error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte));
-                    }
-                    #decode
-                }),
-                 quote! {
-                    bytes_written += #tag.encode(writer)?;
-                    #encode
-                })
-            } else {
-                (decode, encode)
-            }
+            // decode struct
+            let decode_tag = tag.map(|tag| quote! {
+                let byte = u8::decode(reader)?;
+                if byte != #tag {
+                    return Self::error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte));
+                }
+            });
+
+            let decode_fields = fields.iter().map(decode_field);
+            let decode_fields = match fields {
+                Fields::Unit => quote!(#data_name),
+                Fields::Unnamed(_) => quote!(#data_name( #( #decode_fields ),* )),
+                Fields::Named(_) => quote!(#data_name { #( #decode_fields ),* }),
+            };
+
+            // encode struct
+            let encode_tag = tag.map(|tag| quote! {
+                bytes_written += #tag.encode(writer)?;
+            });
+
+            let encode_fields = match fields {
+                Fields::Unit => Vec::new(),
+                Fields::Unnamed(_) => (0..fields.iter().count()).map(|i| Index::from(i).into_tokens()).collect(),
+                Fields::Named(_) => fields.iter().map(|field| field.ident.unwrap().into_tokens()).collect(),
+            };
+            let encode_fields = quote! {
+                #( bytes_written += self.#encode_fields.encode(writer)?; )*
+            };
+
+            (quote!({
+                #( decode_tag )*
+                #decode_fields
+            }),
+            quote! {
+                #( encode_tag )*
+                #encode_fields
+            })
         }
         Data::Enum(DataEnum { variants, .. }) => {
             let variant_tags: Vec<u8> = variants.iter()
@@ -99,7 +118,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
                 .filter_map(|variant| attributes_to_tag_value(&variant.attrs))
                 .collect();
             let (variants_decode, encode): (Vec<Tokens>, Vec<(Tokens, Tokens)>) = variants.into_iter().enumerate()
-                .map(|(idx, variant)| recurse_into_fields(variant.ident, variant_tags[idx], variant.fields))
+                .map(|(idx, variant)| recurse_into_fields(variant.ident, Some(variant_tags[idx]), variant.fields))
                 .unzip();
             let (_, variants_encode): (Vec<Tokens>, Vec<Tokens>) = encode.into_iter().unzip();
 
@@ -139,9 +158,16 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
     impl_.into()
 }
 
+fn decode_field(field: &Field) -> Tokens {
+    let field_name = field.ident;
+    let field_ty = remove_type_arguments(&field.ty);
+    quote!( #( #field_name: )* #field_ty::decode(reader)? )
+}
+
 /// Transform, e.g., Vec<T> into just Vec. Useful when calling trait methods on a generic type, i.e.,
 /// Vec<T>::decode() is not valid syntax but Vec::decode() is.
-fn remove_type_arguments(mut ty: Type) -> Type {
+fn remove_type_arguments(ty: &Type) -> Type {
+    let mut ty = ty.clone();
     if let Type::Path(TypePath { path: Path { ref mut segments, .. }, .. }) = ty {
         *segments = segments.into_iter().map(|segment| {
             PathSegment {
