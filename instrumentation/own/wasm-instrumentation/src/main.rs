@@ -17,7 +17,6 @@ mod binary;
 #[cfg(test)]
 mod tests;
 
-// TODO test with WASM spec test suite
 // TODO "streaming AST" API: return Module {} after reading only the first 8 bytes, implement
 // Iterator<Item = Section> for Module -> Module must somehow retain the reader to do so...
 

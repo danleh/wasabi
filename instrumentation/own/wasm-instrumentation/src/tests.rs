@@ -16,6 +16,8 @@ fn decoding_valid_files_works() {
 #[test]
 fn decoding_and_encoding_roundtrips() {
     for path in wasm_files("test/input") {
+        println!("round-trip test for {}", path.display());
+
         let mut wasm_binary_input = Vec::new();
         File::open(&path).unwrap().read_to_end(&mut wasm_binary_input).unwrap();
 
