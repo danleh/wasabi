@@ -1,10 +1,11 @@
-#![feature(attr_literals, specialization, conservative_impl_trait)]
+#![feature(attr_literals, specialization, conservative_impl_trait, test)]
 
 #[macro_use]
 extern crate custom_derive;
 extern crate byteorder;
 extern crate rayon;
 extern crate walkdir;
+extern crate test;
 
 use ast::Module;
 use binary::WasmBinary;
