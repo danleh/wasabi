@@ -1,9 +1,10 @@
-#![feature(attr_literals, specialization)]
+#![feature(attr_literals, specialization, conservative_impl_trait)]
 
 #[macro_use]
 extern crate custom_derive;
 extern crate byteorder;
 extern crate rayon;
+extern crate walkdir;
 
 use ast::Module;
 use binary::WasmBinary;
@@ -33,7 +34,7 @@ fn main() {
     // -s for silent
     // -o <file>
 
-    let default_file_name = "test/hello-emcc.wasm";
+    let default_file_name = "test/input/hello-emcc.wasm";
     let file_name = std::env::args().nth(1).unwrap_or(default_file_name.into());
 
     std::process::exit(match || -> io::Result<()> {
@@ -48,7 +49,7 @@ fn main() {
         //     _ => {}
         // };
 
-        let encoded_file_name = file_name.replace(".wasm", ".encoded.wasm");
+        let encoded_file_name = file_name.replace("input", "output/identity");
         let mut buf_writer = io::BufWriter::new(File::create(&encoded_file_name)?);
         let bytes_written = module.encode(&mut buf_writer)?;
         println!("written encoded Module to {}, {} bytes", encoded_file_name, bytes_written);
