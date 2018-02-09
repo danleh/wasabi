@@ -5,59 +5,62 @@ extern crate custom_derive;
 extern crate byteorder;
 extern crate rayon;
 extern crate walkdir;
+extern crate clap;
 extern crate test;
 
 use ast::Module;
 use binary::WasmBinary;
-use std::io;
+use clap::{App, Arg};
+use std::fs::File;
+use std::io::{self, BufReader, BufWriter};
 
 mod leb128;
 mod ast;
 mod binary;
+mod instrument;
 #[cfg(test)]
 mod tests;
 
 // TODO "streaming AST" API: return Module {} after reading only the first 8 bytes, implement
 // Iterator<Item = Section> for Module -> Module must somehow retain the reader to do so...
 
-macro_rules! debug {
-    ( $fmt:expr, $( $args:expr ),* ) => {
-        let should_output = std::env::args().nth(2).is_none(); // give "silent" or so as second argument
-        if should_output {
-            println!($fmt, $( $args ),* );
-        }
-    };
-}
-
 fn main() {
-    // TODO add proper command line arg handling
-    // -s for silent
-    // -o <file>
+    let args = App::new("wasm-instrument")
+        .arg(Arg::with_name("silent").short("s").long("silent"))
+        .arg(Arg::with_name("input").required(true))
+        .arg(Arg::with_name("output").short("o").takes_value(true).required(true))
+        .arg(Arg::with_name("instrumentation").default_value("identity"))
+        .get_matches();
 
-    let default_file_name = "test/input/hello-emcc.wasm";
-    let file_name = std::env::args().nth(1).unwrap_or(default_file_name.into());
+    let silent = args.is_present("silent");
+    let input = args.value_of("input").unwrap();
+    let output = args.value_of("output").unwrap();
+    let instrument = match args.value_of("instrumentation").unwrap() {
+        "identity" => instrument::identity,
+        "add" => instrument::add_trivial_function_type,
+        instrumentation => unimplemented!("instrumentation {}", instrumentation)
+    };
 
     std::process::exit(match || -> io::Result<()> {
-        use std::fs::File;
-        let mut buf_reader = io::BufReader::new(File::open(&file_name)?);
-        let module = Module::decode(&mut buf_reader)?;
-        debug!("{:#?}", module);
+        let module = Module::decode(&mut BufReader::new(File::open(input)?))?;
 
-        // TODO implement actual instrumentation, not just this dummy function add
-        // match module.sections[0] {
-        //     Section::Type(ref mut _0) => _0.content.push(FuncType {params: Vec::new(), results: Vec::new()}),
-        //     _ => {}
-        // };
+        if !silent {
+            println!("before: {:#?}", module);
+        }
 
-        let encoded_file_name = file_name.replace("input", "output/identity");
-        let mut buf_writer = io::BufWriter::new(File::create(&encoded_file_name)?);
-        let bytes_written = module.encode(&mut buf_writer)?;
-        println!("written encoded Module to {}, {} bytes", encoded_file_name, bytes_written);
+        let module = instrument(module);
+
+        if !silent {
+            println!("after: {:#?}", module);
+        }
+
+        let bytes_written = module.encode(&mut BufWriter::new(File::create(output)?))?;
+        println!("written encoded Module to {}, {} bytes", output, bytes_written);
         Ok(())
     }() {
         Ok(_) => 0,
         Err(ref e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("error: {}", e);
             1
         }
     });
