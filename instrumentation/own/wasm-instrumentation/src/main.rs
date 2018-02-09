@@ -12,6 +12,8 @@ use std::io;
 mod leb128;
 mod ast;
 mod binary;
+#[cfg(test)]
+mod tests;
 
 // TODO test with WASM spec test suite
 // TODO "streaming AST" API: return Module {} after reading only the first 8 bytes, implement
