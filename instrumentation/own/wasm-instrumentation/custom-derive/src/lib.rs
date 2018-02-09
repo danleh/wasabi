@@ -17,9 +17,9 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
 
     // TODO refactor this mess: e.g., make tag proper Option<u8>, include handling of tags for structs here
     // extract handling of fields since it is the same for structs and enums
-    let recurse_into_fields = |name: Ident, tag: Option<u8>, fields: Fields| -> (Tokens, Tokens) {
+    let recurse_into_fields = |name: Ident, tag: Option<u8>, fields: Fields| -> Tokens {
         match fields {
-            Fields::Unit => (quote!(#name), quote!(&#data_name::#name => bytes_written += #tag.encode(writer)?)),
+            Fields::Unit => quote!(&#data_name::#name => bytes_written += #tag.encode(writer)?),
             Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
                 let (field_idx, field_tys): (Vec<Index>, Vec<Type>) = unnamed.into_iter()
                     .enumerate()
@@ -27,19 +27,14 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
                     .unzip();
                 let field_idx_name: Vec<Ident> = (0..field_idx.len()).map(|i| Ident::from(format!("_{}", i))).collect();
                 let field_idx_name_2 = field_idx_name.clone();
-                (quote! {
-                    #name(
-                        #( #field_tys::decode(reader)? ),*
-                    )
-                },
-                 quote!(
+                quote!(
                     &#data_name::#name(
                         #( ref #field_idx_name ),*
                     ) => {
                         bytes_written += #tag.encode(writer)?;
                         #( bytes_written += #field_idx_name_2.encode(writer)? );*
                     }
-                ))
+                )
             }
             Fields::Named(FieldsNamed { named, .. }) => {
                 let (field_names, field_tys): (Vec<Ident>, Vec<Type>) = named.into_iter()
@@ -48,19 +43,14 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
                 let field_names_2 = field_names.clone();
                 let field_names_3 = field_names.clone();
                 let field_names_4 = field_names.clone();
-                (quote! {
-                    #name {
-                        #( #field_names: #field_tys::decode(reader)? ),*
-                    }
-                },
-                 quote!(
+                quote!(
                     &#data_name::#name(
                         #( ref #field_names_3 ),*
                     ) => {
                         bytes_written += #tag.encode(writer)?;
                         #( bytes_written += #field_names_4.encode(writer)? );*
                     }
-                ))
+                )
             }
         }
     };
@@ -110,9 +100,9 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
                 // FIXME is filter_map correct?
                 .filter_map(|variant| attributes_to_tag(&variant.attrs))
                 .collect();
-            let (variants_decode, variants_encode): (Vec<Tokens>, Vec<Tokens>) = variants.into_iter().enumerate()
+            let variants_encode: Vec<Tokens> = variants.into_iter().enumerate()
                 .map(|(idx, variant)| recurse_into_fields(variant.ident, Some(variant_tags[idx]), variant.fields))
-                .unzip();
+                .collect();
 
             // needs to be repeated for quote repetition with #( ... )*
             let data_name_repeated = vec![data_name; variant_tags.len()];
