@@ -13,14 +13,12 @@ use syn::{Attribute, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, Ide
 #[proc_macro_derive(WasmBinary, attributes(tag))]
 pub fn derive_wasm(input: TokenStream) -> TokenStream {
     let input: DeriveInput = syn::parse(input).unwrap();
-    let data_name = input.ident;
+    let data_name = &input.ident;
 
-    // TODO split into own decode and encode parts as well...
-    let (decode_body, encode_body) = match input.data {
-        Data::Struct(DataStruct { fields, .. }) => {
+    let decode_expr = match &input.data {
+        &Data::Struct(DataStruct { ref fields, .. }) => {
             let tag: Option<u8> = attributes_to_tag(&input.attrs);
 
-            // decode struct
             let decode_tag = tag.map(|tag| quote! {
                 let byte = u8::decode(reader)?;
                 if byte != #tag {
@@ -29,79 +27,62 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
             });
             let decode_fields = decode_fields(&parse_quote!(#data_name), &fields);
 
-            // encode struct
-            let encode_fields = encode_fields(&parse_quote!(#data_name), tag, &fields);
-
-            // decode and encode body
-            (quote!({
+            quote!({
                 #( #decode_tag )*
                 #decode_fields
-            }),
-             quote! {
-                match *self {
-                    #encode_fields
-                };
             })
         }
-        Data::Enum(DataEnum { variants, .. }) => {
-            let decode_variants = variants.iter().map(|variant| decode_variant(&data_name, variant));
-            let encode_variants = variants.iter().map(|variant| encode_variant(&data_name, variant));
+        &Data::Enum(DataEnum { ref variants, .. }) => {
+            let decode_variants = variants.iter().map(|variant| decode_variant(data_name, variant));
 
-            (quote!(
-                match u8::decode(reader)? {
-                    #( #decode_variants )*
-                    byte => Self::error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte))?
-                }),
-             quote! {
-                match *self {
-                    #( #encode_variants ),*
-                };
+            quote!(match u8::decode(reader)? {
+                #( #decode_variants )*
+                byte => Self::error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte))?
             })
         }
         _ => unimplemented!("can only derive(WasmBinary) for structs and enums")
     };
 
-    // boilerplate of impl that is the same for any data type
-    let impl_ = quote! {
+    let encode_match_arms = match &input.data {
+        &Data::Struct(DataStruct { ref fields, .. }) => {
+            let tag: Option<u8> = attributes_to_tag(&input.attrs);
+            encode_fields(&parse_quote!(#data_name), tag, &fields)
+        }
+        &Data::Enum(DataEnum { ref variants, .. }) => {
+            let encode_variants = variants.iter().map(|variant| encode_variant(data_name, variant));
+            quote!( #( #encode_variants ),* )
+        }
+        _ => unimplemented!("can only derive(WasmBinary) for structs and enums")
+    };
+
+    quote!(
         impl WasmBinary for #data_name {
             fn decode<R: ::std::io::Read>(reader: &mut R) -> ::std::io::Result<Self> {
-                Ok(#decode_body)
+                Ok(#decode_expr)
             }
             fn encode<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<usize> {
                 let mut bytes_written = 0;
-                #encode_body
+                match *self {
+                    #encode_match_arms
+                };
                 Ok(bytes_written)
             }
         }
-    };
-
-    impl_.into()
+    ).into()
 }
 
-fn encode_variant(super_name: &Ident, variant: &Variant) -> Tokens {
-    let tag = attributes_to_tag(&variant.attrs);
-    let variant_name = &variant.ident;
-    let name = parse_quote!(#super_name::#variant_name);
-
-    encode_fields(&name, tag, &variant.fields)
-}
-
-fn encode_fields(name: &TypePath, tag: Option<u8>, fields: &Fields) -> Tokens {
-    let field_names: &Vec<_> = &fields.iter().enumerate().map(encode_field_name).collect();
-    let body = quote!({
-        #( bytes_written += #tag.encode(writer)?; )*
-        #( bytes_written += #field_names.encode(writer)? );*
-    });
-    match *fields {
-        Fields::Unit => quote!(#name => #body),
-        Fields::Unnamed(_) => quote!( #name( #( ref #field_names ),* ) => #body),
-        Fields::Named(_) => quote!( #name { #( ref #field_names ),* } => #body),
+/// Take the first `#[tag = <byte literal>]` attribute and return the value of `byte literal`.
+fn attributes_to_tag(attributes: &[Attribute]) -> Option<u8> {
+    let attribute = attributes.first()?;
+    match attribute.interpret_meta() {
+        Some(Meta::NameValue(MetaNameValue { ident, lit: Lit::Int(ref uint), .. }))
+        if ident.to_string() == "tag" && uint.value() <= u8::max_value() as u64 =>
+            Some(uint.value() as u8),
+        _ => panic!("attribute must be of type #[tag = <u8 literal>], got {}", quote!(#attribute))
     }
 }
 
-fn encode_field_name((i, field): (usize, &Field)) -> Ident {
-    field.ident.unwrap_or(Ident::from(format!("_{}", i)))
-}
+/* for decode() */
 
 fn decode_variant(super_name: &Ident, variant: &Variant) -> Tokens {
     let tag = attributes_to_tag(&variant.attrs)
@@ -143,13 +124,29 @@ fn remove_type_arguments(ty: &Type) -> Type {
     ty
 }
 
-/// Take the first `#[tag = <byte literal>]` attribute and return the value of `byte literal`.
-fn attributes_to_tag(attributes: &[Attribute]) -> Option<u8> {
-    let attribute = attributes.first()?;
-    match attribute.interpret_meta() {
-        Some(Meta::NameValue(MetaNameValue { ident, lit: Lit::Int(ref uint), .. }))
-        if ident.to_string() == "tag" && uint.value() <= u8::max_value() as u64 =>
-            Some(uint.value() as u8),
-        _ => panic!("attribute must be of type #[tag = <u8 literal>], got {}", quote!(#attribute))
+/* for encode() */
+
+fn encode_variant(super_name: &Ident, variant: &Variant) -> Tokens {
+    let tag = attributes_to_tag(&variant.attrs);
+    let variant_name = &variant.ident;
+    let name = parse_quote!(#super_name::#variant_name);
+
+    encode_fields(&name, tag, &variant.fields)
+}
+
+fn encode_fields(name: &TypePath, tag: Option<u8>, fields: &Fields) -> Tokens {
+    let field_names: &Vec<_> = &fields.iter().enumerate().map(encode_field_name).collect();
+    let body = quote!({
+        #( bytes_written += #tag.encode(writer)?; )*
+        #( bytes_written += #field_names.encode(writer)? );*
+    });
+    match *fields {
+        Fields::Unit => quote!(#name => #body),
+        Fields::Unnamed(_) => quote!( #name( #( ref #field_names ),* ) => #body),
+        Fields::Named(_) => quote!( #name { #( ref #field_names ),* } => #body),
     }
+}
+
+fn encode_field_name((i, field): (usize, &Field)) -> Ident {
+    field.ident.unwrap_or(Ident::from(format!("_{}", i)))
 }
