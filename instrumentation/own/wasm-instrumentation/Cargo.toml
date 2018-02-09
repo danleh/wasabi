@@ -7,3 +7,4 @@ authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
 custom-derive = { path = "custom-derive" }
 byteorder = "1.2.1"
 rayon = "0.9.0"
+walkdir = "2"
