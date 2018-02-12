@@ -25,6 +25,24 @@ pub struct WithSize<T> {
     pub content: T,
 }
 
+impl<T> From<T> for WithSize<T> {
+    fn from(content: T) -> Self {
+        WithSize {
+            size: ().into(),
+            content,
+        }
+    }
+}
+
+impl<T> From<T> for WithSize<Leb128<T>> {
+    fn from(content: T) -> Self {
+        WithSize {
+            size: ().into(),
+            content: content.into(),
+        }
+    }
+}
+
 
 /* Sections */
 
