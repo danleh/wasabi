@@ -40,20 +40,28 @@ fn main() {
     let instrument = match args.value_of("instrumentation").unwrap() {
         "identity" => instrument::identity,
         "add" => instrument::add_trivial_function_type,
+        "count-calls" => instrument::count_call_instructions,
         instrumentation => unimplemented!("instrumentation {}", instrumentation)
     };
 
     std::process::exit(match || -> io::Result<()> {
-        let module = Module::decode(&mut BufReader::new(File::open(input)?))?;
+        let mut module = Module::decode(&mut BufReader::new(File::open(input)?))?;
 
         if !silent {
-            println!("before: {}", module);
+            println!("Before:");
+            println!("{:#?}", module);
+            println!("{}", module.wat());
         }
 
-        let module = instrument(module);
+        if !silent {
+            println!("run instrumentation {}\n", args.value_of("instrumentation").unwrap());
+        }
+        instrument(&mut module);
 
         if !silent {
-            println!("after: {}", module);
+            println!("After:");
+            println!("{:#?}", module);
+            println!("{}", module.wat());
         }
 
         let bytes_written = module.encode(&mut BufWriter::new(File::create(output)?))?;
