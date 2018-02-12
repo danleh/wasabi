@@ -4,6 +4,7 @@ use std::io;
 //use std::fmt::{Display, Error, Formatter, Result};
 use std::process::Command;
 use tempfile::NamedTempFile;
+use serde_json;
 
 impl Module {
     pub fn wat(&self) -> io::Result<String> {
@@ -21,6 +22,14 @@ impl Module {
         } else {
             Ok(stdout)
         }
+    }
+
+    // TODO customize JSON output as I described below for Display in general, i.e.,
+    // - implement serde for Leb128 and WithSize myself
+    // - use some formatting/"JSON-explorer" tool to make things nice to display, maybe there is even sth with Oppen's pretty printing approach (80 chars linewidth)
+    pub fn json(&self) -> io::Result<String> {
+        serde_json::to_string(&self).map_err(|err|
+            io::Error::new(io::ErrorKind::InvalidData, err.to_string()))
     }
 }
 
