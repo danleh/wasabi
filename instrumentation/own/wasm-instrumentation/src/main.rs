@@ -8,6 +8,10 @@ extern crate walkdir;
 extern crate clap;
 extern crate test;
 extern crate tempfile;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde;
+extern crate serde_json;
 
 use ast::Module;
 use binary::WasmBinary;
