@@ -1,11 +1,12 @@
 use ast::Module;
 use binary::WasmBinary;
+use std::io;
 //use std::fmt::{Display, Error, Formatter, Result};
 use std::process::Command;
 use tempfile::NamedTempFile;
 
 impl Module {
-    pub fn wat(&self) -> String {
+    pub fn wat(&self) -> io::Result<String> {
         let mut tmpfile = NamedTempFile::new().unwrap();
         self.encode(&mut tmpfile).unwrap();
 
@@ -13,10 +14,13 @@ impl Module {
             .arg(tmpfile.path().as_os_str())
             .output()
             .unwrap();
-        let mut buffer = String::from_utf8(output.stdout).unwrap();
-        buffer.push_str(&String::from_utf8(output.stderr).unwrap());
-
-        buffer
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        if !stderr.is_empty() {
+            Err(io::Error::new(io::ErrorKind::InvalidData, stderr))
+        } else {
+            Ok(stdout)
+        }
     }
 }
 

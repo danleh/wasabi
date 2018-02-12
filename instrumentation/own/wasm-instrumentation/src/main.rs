@@ -50,18 +50,18 @@ fn main() {
         if !silent {
             println!("Before:");
             println!("{:#?}", module);
-            println!("{}", module.wat());
+            println!("{}", module.wat()?);
         }
 
         if !silent {
-            println!("run instrumentation {}\n", args.value_of("instrumentation").unwrap());
+            println!("running instrumentation {}...\n", args.value_of("instrumentation").unwrap());
         }
         instrument(&mut module);
 
         if !silent {
             println!("After:");
             println!("{:#?}", module);
-            println!("{}", module.wat());
+            println!("{}", module.wat()?);
         }
 
         let bytes_written = module.encode(&mut BufWriter::new(File::create(output)?))?;
