@@ -44,6 +44,8 @@ pub enum Section {
     #[tag = 8] Start(WithSize<FuncIdx>),
     #[tag = 9] Element(WithSize<Vec<Element>>),
     #[tag = 10] Code(WithSize<Vec<WithSize<Func>>>),
+    // to benchmark how much faster it gets without instruction decoding
+//    #[tag = 10] Code(WithSize<Vec<Vec<u8>>>),
     #[tag = 11] Data(WithSize<Vec<Data>>),
 }
 

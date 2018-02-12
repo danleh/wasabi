@@ -7,6 +7,7 @@ extern crate rayon;
 extern crate walkdir;
 extern crate clap;
 extern crate test;
+extern crate tempfile;
 
 use ast::Module;
 use binary::WasmBinary;
@@ -46,13 +47,13 @@ fn main() {
         let module = Module::decode(&mut BufReader::new(File::open(input)?))?;
 
         if !silent {
-            println!("before: {:?}", module);
+            println!("before: {}", module);
         }
 
         let module = instrument(module);
 
         if !silent {
-            println!("after: {:?}", module);
+            println!("after: {}", module);
         }
 
         let bytes_written = module.encode(&mut BufWriter::new(File::create(output)?))?;
