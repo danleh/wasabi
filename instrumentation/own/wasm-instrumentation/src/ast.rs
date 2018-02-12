@@ -1,4 +1,5 @@
 use leb128::Leb128;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use WasmBinary;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -16,7 +17,7 @@ pub struct Module {
 type Vec<T> = Leb128<::std::vec::Vec<T>>;
 type String = Leb128<::std::string::String>;
 
-#[derive(Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialOrd, PartialEq)]
 pub struct WithSize<T> {
     /// Do not save the size of the contents, since it might change through AST transformations anyway.
     /// But DO save the byte_count that was used to save the size (in Leb128), so that decoding and
@@ -25,6 +26,7 @@ pub struct WithSize<T> {
     pub content: T,
 }
 
+/// convenience
 impl<T> From<T> for WithSize<T> {
     fn from(content: T) -> Self {
         WithSize {
@@ -34,12 +36,27 @@ impl<T> From<T> for WithSize<T> {
     }
 }
 
+/// convenience
 impl<T> From<T> for WithSize<Leb128<T>> {
     fn from(content: T) -> Self {
         WithSize {
             size: ().into(),
             content: content.into(),
         }
+    }
+}
+
+impl<T: Serialize> Serialize for WithSize<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where
+        S: Serializer {
+        self.content.serialize(serializer)
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for WithSize<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where
+        D: Deserializer<'de> {
+        Ok(T::deserialize(deserializer)?.into())
     }
 }
 
