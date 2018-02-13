@@ -190,7 +190,7 @@ pub enum ImportType {
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
 pub enum ExportType {
-    #[tag = 0x0] Function(TypeIdx),
+    #[tag = 0x0] Function(FuncIdx),
     #[tag = 0x1] Table(TableIdx),
     #[tag = 0x2] Memory(MemoryIdx),
     #[tag = 0x3] Global(GlobalIdx),
