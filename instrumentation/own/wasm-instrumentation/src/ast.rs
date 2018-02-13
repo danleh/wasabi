@@ -84,7 +84,7 @@ pub enum Section {
     #[tag = 2] Import(WithSize<Vec<Import>>),
     #[tag = 3] Function(WithSize<Vec<TypeIdx>>),
     #[tag = 4] Table(WithSize<Vec<TableType>>),
-    #[tag = 5] Memory(WithSize<Vec<Limits>>),
+    #[tag = 5] Memory(WithSize<Vec<MemoryType>>),
     #[tag = 6] Global(WithSize<Vec<Global>>),
     #[tag = 7] Export(WithSize<Vec<Export>>),
     #[tag = 8] Start(WithSize<FuncIdx>),
@@ -176,6 +176,9 @@ pub enum ElemType {
 }
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+pub struct MemoryType(pub Limits);
+
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
 pub struct GlobalType(pub ValType, pub Mut);
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
@@ -188,7 +191,7 @@ pub enum Mut {
 pub enum ImportType {
     #[tag = 0x0] Function(TypeIdx),
     #[tag = 0x1] Table(TableType),
-    #[tag = 0x2] Memory(Limits),
+    #[tag = 0x2] Memory(MemoryType),
     #[tag = 0x3] Global(GlobalType),
 }
 
