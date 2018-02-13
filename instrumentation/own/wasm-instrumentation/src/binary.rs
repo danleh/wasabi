@@ -1,4 +1,5 @@
 use ast::{BlockType, Expr, Instr, Module, Section, ValType, WithSize};
+use ast::Limits;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use leb128::{Leb128, ReadLeb128, WriteLeb128};
 use rayon::prelude::*;
@@ -298,6 +299,38 @@ impl WasmBinary for BlockType {
         match self {
             &BlockType(None) => 0x40u8.encode(writer),
             &BlockType(Some(ref val_type)) => val_type.encode(writer)
+        }
+    }
+}
+
+/// needs manual impl because the tag if max is present comes at the beginning of the struct, not
+/// before the max field.
+impl WasmBinary for Limits {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        Ok(match u8::decode(reader)? {
+            0x00 => Limits {
+                initial_size: Leb128::decode(reader)?,
+                max_size: None,
+            },
+            0x01 => Limits {
+                initial_size: Leb128::decode(reader)?,
+                max_size: Some(Leb128::decode(reader)?),
+            },
+            byte => Self::error(format!("expected tag for Limits, got 0x{:02x}", byte))?
+        })
+    }
+
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        match self.max_size {
+            None => {
+                0x00u8.encode(writer)?;
+                self.initial_size.encode(writer)
+            },
+            Some(ref max_size) => {
+                0x01u8.encode(writer)?;
+                self.initial_size.encode(writer)?;
+                max_size.encode(writer)
+            },
         }
     }
 }

@@ -278,7 +278,7 @@ impl WasmDisplay for LabelIdx {
 
 impl WasmDisplay for TableType {
     fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        w.write_str("table ")?;
+        w.write_str("table  ")?;
         self.1.write(&mut w)
     }
 }
@@ -292,9 +292,11 @@ impl WasmDisplay for MemoryType {
 
 impl WasmDisplay for Limits {
     fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        match *self {
-            Limits::Min(ref min) => write!(&mut w, "[{}, ∞)", min.value),
-            Limits::MinMax(ref min, ref max) => write!(&mut w, "[{}, {})", min.value, max.value),
+        write!(&mut w, "of size: (initial: {}, max: ", self.initial_size.value)?;
+        if let Some(ref max) = self.max_size {
+            write!(&mut w, "{})", max.value)
+        } else {
+            w.write_str("unlimited)")
         }
     }
 }
@@ -304,7 +306,7 @@ impl WasmDisplay for GlobalType {
         w.write_str("global ")?;
         match self.1 {
             Mut::Const => w.write_str("const "),
-            Mut::Var => w.write_str("mut "),
+            Mut::Var => w.write_str("mut   "),
         }?;
         self.0.write(&mut w)
     }

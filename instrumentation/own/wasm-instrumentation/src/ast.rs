@@ -145,25 +145,23 @@ pub struct FuncType {
 pub struct BlockType(pub Option<ValType>);
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
-// TODO change to struct with fields
-// min: Leb128<u32>,
-// max: Option<Leb128<u32>>
-pub enum Limits {
-    #[tag = 0x00] Min(Leb128<u32>),
-    #[tag = 0x01] MinMax(Leb128<u32>, Leb128<u32>),
-}
-
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct TableType(pub ElemType, pub Limits);
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub enum ElemType {
+    // only value in WASM version 1
     #[tag = 0x70]
     Anyfunc,
 }
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct MemoryType(pub Limits);
+
+#[derive(Debug, PartialOrd, PartialEq)]
+pub struct Limits {
+    pub initial_size: Leb128<u32>,
+    pub max_size: Option<Leb128<u32>>
+}
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct GlobalType(pub ValType, pub Mut);
