@@ -203,6 +203,7 @@ pub enum ExportType {
 pub struct TypeIdx(pub Leb128<u32>);
 
 #[derive(WasmBinary, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+// TODO rename FunctionIdx (all other Idx are full names)
 pub struct FuncIdx(pub Leb128<u32>);
 
 #[derive(WasmBinary, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -224,7 +225,11 @@ pub struct LabelIdx(pub Leb128<u32>);
 /* Code */
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
-pub struct Func(pub Vec<Locals>, pub Expr);
+// TODO rename to Function, all others also have full names
+pub struct Func {
+    pub locals: Vec<Locals>,
+    pub body: Expr,
+}
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
 pub struct Locals {
