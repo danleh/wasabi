@@ -1,10 +1,37 @@
+use ast::Data;
+use ast::Element;
+use ast::Export;
+use ast::ExportType;
+use ast::Expr;
+use ast::Func;
+use ast::FuncIdx;
+use ast::FuncType;
+use ast::Global;
+use ast::GlobalIdx;
+use ast::GlobalType;
+use ast::Import;
+use ast::ImportType;
+use ast::LabelIdx;
+use ast::Limits;
+use ast::LocalIdx;
+use ast::Locals;
+use ast::MemoryIdx;
+use ast::MemoryType;
 use ast::Module;
+use ast::Mut;
+use ast::Section;
+use ast::TableIdx;
+use ast::TableType;
+use ast::TypeIdx;
+use ast::ValType;
+use ast::WithSize;
 use binary::WasmBinary;
+use leb128::Leb128;
+use serde_json;
+use std::fmt::{self, Write};
 use std::io;
-//use std::fmt::{Display, Error, Formatter, Result};
 use std::process::Command;
 use tempfile::NamedTempFile;
-use serde_json;
 
 impl Module {
     pub fn wat(&self) -> io::Result<String> {
@@ -24,23 +51,362 @@ impl Module {
         }
     }
 
-    // TODO customize JSON output as I described below for Display in general, i.e.,
-    // - implement serde for Leb128 and WithSize myself
-    // - use some formatting/"JSON-explorer" tool to make things nice to display, maybe there is even sth with Oppen's pretty printing approach (80 chars linewidth)
+    // TODO remove once the display() is done
     pub fn json(&self) -> io::Result<String> {
         serde_json::to_string(&self).map_err(|err|
             io::Error::new(io::ErrorKind::InvalidData, err.to_string()))
     }
+
+    pub fn display(&self) -> String {
+        let mut buf = String::new();
+        self.write(&mut buf).expect("write to String should succeed");
+        buf
+    }
 }
 
-// TODO implement proper own display trait:
-// - wat is too high-level (doesn't show empty sections etc)
-// - fmt::Debug is too low-level/annyoing (shows Leb128 and WithSize, always nested)
-// don't show Leb128 and WithSize
-// indent each section, vector etc.
-// but do not indent indices and func types and other short elements
+// TODO move indentation wrapper stuff to utils module
 
-//impl Display for Module {
-//    fn fmt(&self, f: &mut Formatter) -> Result {
-//    }
-//}
+pub struct IndentationWrite<'w>(&'w mut fmt::Write);
+
+impl<'w> fmt::Write for IndentationWrite<'w> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let indented_lines = s.replace('\n', "\n  ");
+        self.0.write_str(&indented_lines)
+    }
+}
+
+pub trait IndentExt {
+    /// Wraps the fmt::Write self into an IndentationWrite, which indents every following
+    /// newline by two spaces.
+    /// The current line is not indented, so make sure to write a '\n' after calling this.
+    fn indent(&mut self) -> IndentationWrite;
+}
+
+impl<W: fmt::Write> IndentExt for W {
+    fn indent(&mut self) -> IndentationWrite {
+        IndentationWrite(self)
+    }
+}
+
+
+trait WasmDisplay {
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result;
+}
+
+impl WasmDisplay for Module {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        w.write_str("Module:")?;
+        self.sections.write(&mut w)
+    }
+}
+
+impl WasmDisplay for Section {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        match *self {
+            Section::Custom(ref bytes) => {
+                w.write_str("custom section: ")?;
+                bytes.write(&mut w)
+            }
+            Section::Type(ref func_types) => {
+                w.write_str("type section:")?;
+                write_enumerated(func_types, &mut w)
+            }
+            Section::Import(ref imports) => {
+                w.write_str("import section:")?;
+                imports.write(&mut w)
+            }
+            Section::Function(ref funcs) => {
+                w.write_str("function section:")?;
+                write_enumerated(funcs, &mut w)
+            }
+            Section::Table(ref tables) => {
+                w.write_str("table section:")?;
+                write_enumerated(tables, &mut w)
+            }
+            Section::Memory(ref mems) => {
+                w.write_str("memory section:")?;
+                write_enumerated(mems, &mut w)
+            }
+            Section::Global(ref globals) => {
+                w.write_str("global section:")?;
+                write_enumerated(globals, &mut w)
+            }
+            Section::Export(ref exports) => {
+                w.write_str("export section:")?;
+                exports.write(&mut w)
+            }
+            Section::Start(ref func_idx) => {
+                w.write_str("start section:")?;
+                {
+                    let mut w = w.indent();
+                    func_idx.write(&mut w)?;
+                    w.write_char('\n')
+                }
+            }
+            Section::Element(ref elements) => {
+                w.write_str("element section:")?;
+                elements.write(&mut w)
+            }
+            Section::Code(ref funcs) => {
+                w.write_str("code section:")?;
+                write_enumerated(funcs, &mut w)
+            }
+            Section::Data(ref data) => {
+                w.write_str("data section:")?;
+                data.write(&mut w)
+            }
+        }
+    }
+}
+
+impl WasmDisplay for Func {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        let mut w = w.indent();
+
+        w.write_str("\nlocals:")?;
+        if self.locals.is_empty() {
+            w.write_str(" none")?;
+        } else {
+            self.locals.write(&mut w)?;
+        }
+
+        w.write_str("\nbody: ")?;
+        self.body.write(&mut w)
+    }
+}
+
+impl WasmDisplay for Locals {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        self.type_.write(&mut w)?;
+        write!(&mut w, " × {}", self.count.value)
+    }
+}
+
+impl WasmDisplay for Element {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        self.table.write(&mut w)?;
+        let mut w = w.indent();
+        w.write_str("\nat offset: ")?;
+        self.offset.write(&mut w)?;
+        w.write_str("\ninit with:")?;
+        self.init.write(&mut w)
+    }
+}
+
+impl WasmDisplay for Data {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        self.memory.write(&mut w)?;
+        let mut w = w.indent();
+        w.write_str("\nat offset: ")?;
+        self.offset.write(&mut w)?;
+        w.write_str("\ninit with: ")?;
+        self.init.write(&mut w)
+    }
+}
+
+impl WasmDisplay for Global {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        self.type_.write(&mut w)?;
+        w.write_str(" = ")?;
+        self.init.write(&mut w)
+    }
+}
+
+impl WasmDisplay for Expr {
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        // FIXME
+        w.write_str("TODO")
+    }
+}
+
+impl WasmDisplay for ValType {
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        w.write_str(match *self {
+            ValType::I32 => "i32",
+            ValType::I64 => "i64",
+            ValType::F32 => "f32",
+            ValType::F64 => "f64",
+        })
+    }
+}
+
+impl WasmDisplay for FuncType {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        w.write_char('[')?;
+        for (i, param) in self.params.iter().enumerate() {
+            param.write(&mut w)?;
+            if i + 2 <= self.params.len() {
+                w.write_str(", ")?;
+            }
+        }
+        w.write_str("] -> [")?;
+        for (i, result) in self.results.iter().enumerate() {
+            result.write(&mut w)?;
+            if i + 2 <= self.results.len() {
+                w.write_str(", ")?;
+            }
+        }
+        w.write_char(']')
+    }
+}
+
+impl WasmDisplay for Import {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        write!(&mut w, "{:30} ", self.module.value.clone() + "." + &self.name.value)?;
+        self.type_.write(&mut w)
+    }
+}
+
+impl WasmDisplay for ImportType {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        match *self {
+            ImportType::Function(ref type_) => type_.write(&mut w),
+            ImportType::Table(ref table) => table.write(&mut w),
+            ImportType::Memory(ref memory) => memory.write(&mut w),
+            ImportType::Global(ref global) => global.write(&mut w),
+        }
+    }
+}
+
+impl WasmDisplay for Export {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        write!(&mut w, "{:30} ", self.name.value)?;
+        self.type_.write(&mut w)
+    }
+}
+
+impl WasmDisplay for ExportType {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        match *self {
+            ExportType::Function(ref type_) => type_.write(&mut w),
+            ExportType::Table(ref table) => table.write(&mut w),
+            ExportType::Memory(ref memory) => memory.write(&mut w),
+            ExportType::Global(ref global) => global.write(&mut w),
+        }
+    }
+}
+
+impl WasmDisplay for TypeIdx {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        write!(&mut w, "type #{}", self.0.value)
+    }
+}
+
+impl WasmDisplay for FuncIdx {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        write!(&mut w, "function #{}", self.0.value)
+    }
+}
+
+impl WasmDisplay for TableIdx {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        write!(&mut w, "table #{}", self.0.value)
+    }
+}
+
+impl WasmDisplay for MemoryIdx {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        write!(&mut w, "memory #{}", self.0.value)
+    }
+}
+
+impl WasmDisplay for GlobalIdx {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        write!(&mut w, "global #{}", self.0.value)
+    }
+}
+
+impl WasmDisplay for LocalIdx {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        write!(&mut w, "local #{}", self.0.value)
+    }
+}
+
+impl WasmDisplay for LabelIdx {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        write!(&mut w, "label #{}", self.0.value)
+    }
+}
+
+impl WasmDisplay for TableType {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        w.write_str("table ")?;
+        self.1.write(&mut w)
+    }
+}
+
+impl WasmDisplay for MemoryType {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        w.write_str("memory ")?;
+        self.0.write(&mut w)
+    }
+}
+
+impl WasmDisplay for Limits {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        match *self {
+            Limits::Min(ref min) => write!(&mut w, "[{}, ∞)", min.value),
+            Limits::MinMax(ref min, ref max) => write!(&mut w, "[{}, {})", min.value, max.value),
+        }
+    }
+}
+
+impl WasmDisplay for GlobalType {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        w.write_str("global ")?;
+        match self.1 {
+            Mut::Const => w.write_str("const "),
+            Mut::Var => w.write_str("mut "),
+        }?;
+        self.0.write(&mut w)
+    }
+}
+
+/* generic combinators */
+
+impl<T: WasmDisplay> WasmDisplay for Leb128<T> {
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        self.value.write(w)
+    }
+}
+
+impl<T: WasmDisplay> WasmDisplay for WithSize<T> {
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        self.content.write(w)
+    }
+}
+
+impl<T: WasmDisplay> WasmDisplay for Vec<T> {
+    default fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        let mut w = w.indent();
+        for element in self {
+            w.write_char('\n')?;
+            element.write(&mut w)?;
+        }
+        Ok(())
+    }
+}
+
+/// helper for displaying enumerated vecs
+fn write_enumerated<T: WasmDisplay>(vec: &Vec<T>, mut w: &mut fmt::Write) -> fmt::Result {
+    let mut w = w.indent();
+    for (i, element) in vec.iter().enumerate() {
+        write!(&mut w, "\n#{:<4} ", i)?;
+        element.write(&mut w)?;
+    }
+    Ok(())
+}
+
+/// specialization to display Vec<u8> on a single line and as hex
+impl WasmDisplay for Vec<u8> {
+    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+        w.write_char('[')?;
+        for (i, byte) in self.iter().enumerate() {
+            write!(&mut w, "0x{:02x}", byte)?;
+            if i + 2 <= self.len() { // FIXME why +2??
+                w.write_str(", ")?;
+            }
+        }
+        w.write_char(']')
+    }
+}
