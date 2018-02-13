@@ -53,6 +53,8 @@ fn encoding_speed(bencher: &mut Bencher) {
     })
 }
 
+// TODO add test with wasm-validator that all output files are valid
+
 
 /* Convenience functions */
 

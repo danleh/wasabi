@@ -6,6 +6,8 @@ use WasmBinary;
 pub struct Module {
     // the number of sections is not encoded
     pub sections: ::std::vec::Vec<Section>,
+    // TODO maybe let-go of the round-trip idea and save sections explicitly
+    // as in abstract specification? Then we could also get rid of WithSize<T> and Leb128<T>
 }
 
 
