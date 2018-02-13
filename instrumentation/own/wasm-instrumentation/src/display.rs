@@ -1,39 +1,15 @@
-use ast::Data;
-use ast::Element;
-use ast::Export;
-use ast::ExportType;
-use ast::Expr;
-use ast::Func;
-use ast::FuncIdx;
-use ast::FuncType;
-use ast::Global;
-use ast::GlobalIdx;
-use ast::GlobalType;
-use ast::Import;
-use ast::ImportType;
-use ast::LabelIdx;
-use ast::Limits;
-use ast::LocalIdx;
-use ast::Locals;
-use ast::MemoryIdx;
-use ast::MemoryType;
-use ast::Module;
-use ast::Mut;
-use ast::Section;
-use ast::TableIdx;
-use ast::TableType;
-use ast::TypeIdx;
-use ast::ValType;
-use ast::WithSize;
-use binary::WasmBinary;
+use ast::{Data, Element, Export, ExportType, Expr, Func, FuncIdx, FuncType, Global, GlobalIdx, GlobalType, Import, ImportType, LabelIdx, Limits, LocalIdx, Locals, MemoryIdx, MemoryType, Module, Mut, Section, TableIdx, TableType, TypeIdx, ValType, WithSize};
 use leb128::Leb128;
 use std::fmt::{self, Write};
 use std::io;
-use std::process::Command;
-use tempfile::NamedTempFile;
+use utils::IndentExt;
 
 impl Module {
     pub fn wat(&self) -> io::Result<String> {
+        use binary::WasmBinary;
+        use tempfile::NamedTempFile;
+        use std::process::Command;
+
         let mut tmpfile = NamedTempFile::new().unwrap();
         self.encode(&mut tmpfile).unwrap();
 
@@ -56,31 +32,6 @@ impl Module {
         buf
     }
 }
-
-// TODO move indentation wrapper stuff to utils module
-
-pub struct IndentationWrite<'w>(&'w mut fmt::Write);
-
-impl<'w> fmt::Write for IndentationWrite<'w> {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        let indented_lines = s.replace('\n', "\n  ");
-        self.0.write_str(&indented_lines)
-    }
-}
-
-pub trait IndentExt {
-    /// Wraps the fmt::Write self into an IndentationWrite, which indents every following
-    /// newline by two spaces.
-    /// The current line is not indented, so make sure to write a '\n' after calling this.
-    fn indent(&mut self) -> IndentationWrite;
-}
-
-impl<W: fmt::Write> IndentExt for W {
-    fn indent(&mut self) -> IndentationWrite {
-        IndentationWrite(self)
-    }
-}
-
 
 trait WasmDisplay {
     fn write(&self, w: &mut fmt::Write) -> fmt::Result;
@@ -355,7 +306,7 @@ impl WasmDisplay for GlobalType {
     }
 }
 
-/* generic combinators */
+/* Generic "AST combinators" */
 
 impl<T: WasmDisplay> WasmDisplay for Leb128<T> {
     fn write(&self, w: &mut fmt::Write) -> fmt::Result {
@@ -380,17 +331,7 @@ impl<T: WasmDisplay> WasmDisplay for Vec<T> {
     }
 }
 
-/// helper for displaying enumerated vecs
-fn write_enumerated<T: WasmDisplay>(vec: &Vec<T>, mut w: &mut fmt::Write) -> fmt::Result {
-    let mut w = w.indent();
-    for (i, element) in vec.iter().enumerate() {
-        write!(&mut w, "\n#{:<4} ", i)?;
-        element.write(&mut w)?;
-    }
-    Ok(())
-}
-
-/// specialization to display Vec<u8> on a single line and as hex
+/// Specialization to display Vec<u8> on a single line and as hex.
 impl WasmDisplay for Vec<u8> {
     fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
         w.write_char('[')?;
@@ -402,4 +343,14 @@ impl WasmDisplay for Vec<u8> {
         }
         w.write_char(']')
     }
+}
+
+/// Helper for displaying Vecs with indices.
+fn write_enumerated<T: WasmDisplay>(vec: &Vec<T>, mut w: &mut fmt::Write) -> fmt::Result {
+    let mut w = w.indent();
+    for (i, element) in vec.iter().enumerate() {
+        write!(&mut w, "\n#{:<4} ", i)?;
+        element.write(&mut w)?;
+    }
+    Ok(())
 }

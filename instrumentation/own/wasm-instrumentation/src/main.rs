@@ -20,6 +20,7 @@ mod ast;
 mod binary;
 mod instrument;
 mod display;
+mod utils;
 #[cfg(test)]
 mod tests;
 
