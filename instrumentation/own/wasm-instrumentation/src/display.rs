@@ -162,7 +162,7 @@ impl WasmDisplay for Global {
 
 impl WasmDisplay for Expr {
     fn write(&self, w: &mut fmt::Write) -> fmt::Result {
-        // FIXME
+        // TODO impl
         w.write_str("TODO")
     }
 }
@@ -183,14 +183,14 @@ impl WasmDisplay for FuncType {
         w.write_char('[')?;
         for (i, param) in self.params.iter().enumerate() {
             param.write(&mut w)?;
-            if i + 2 <= self.params.len() {
+            if i < self.params.len() - 1 {
                 w.write_str(", ")?;
             }
         }
         w.write_str("] -> [")?;
         for (i, result) in self.results.iter().enumerate() {
             result.write(&mut w)?;
-            if i + 2 <= self.results.len() {
+            if i < self.results.len() - 1 {
                 w.write_str(", ")?;
             }
         }
@@ -341,7 +341,7 @@ impl WasmDisplay for Vec<u8> {
         w.write_char('[')?;
         for (i, byte) in self.iter().enumerate() {
             write!(&mut w, "0x{:02x}", byte)?;
-            if i + 2 <= self.len() { // FIXME why +2??
+            if i < self.len() - 1 {
                 w.write_str(", ")?;
             }
         }
