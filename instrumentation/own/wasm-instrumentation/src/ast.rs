@@ -167,8 +167,13 @@ pub enum Limits {
 }
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
-#[tag = 0x70]
-pub struct TableType(pub Limits);
+pub struct TableType(pub ElemType, pub Limits);
+
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+pub enum ElemType {
+    #[tag = 0x70]
+    Anyfunc,
+}
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
 pub struct GlobalType(pub ValType, pub Mut);
