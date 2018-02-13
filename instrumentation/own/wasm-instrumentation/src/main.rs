@@ -8,10 +8,6 @@ extern crate walkdir;
 extern crate clap;
 extern crate test;
 extern crate tempfile;
-#[macro_use]
-extern crate serde_derive;
-extern crate serde;
-extern crate serde_json;
 
 use ast::Module;
 use binary::WasmBinary;
@@ -51,11 +47,11 @@ fn main() {
     std::process::exit(match || -> io::Result<()> {
         let mut module = Module::decode(&mut BufReader::new(File::open(input)?))?;
 
-        if !silent {
-            println!("Before:");
-            println!("{:#?}", module);
-            println!("{}", module.wat()?);
-        }
+//        if !silent {
+//            println!("Before:");
+//            println!("{:#?}", module);
+//            println!("{}", module.wat()?);
+//        }
 
         if !silent {
             println!("running instrumentation {}...\n", args.value_of("instrumentation").unwrap());
@@ -64,8 +60,11 @@ fn main() {
 
         if !silent {
             println!("After:");
-            println!("{:#?}", module);
-            println!("{}", module.wat()?);
+//            println!("{:#?}", module);
+//            println!("{}", module.json()?);
+//            use std::io::Write;
+//            write!(File::create("debug.json")?, "{}", module.json()?)?;
+            println!("{}", module.display());
         }
 
         let bytes_written = module.encode(&mut BufWriter::new(File::create(output)?))?;

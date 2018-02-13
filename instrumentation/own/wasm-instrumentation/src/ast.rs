@@ -1,9 +1,8 @@
 use leb128::Leb128;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::ops::{Deref, DerefMut};
 use WasmBinary;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct Module {
     // the number of sections is not encoded
     pub sections: ::std::vec::Vec<Section>,
@@ -59,24 +58,10 @@ impl<T> From<T> for WithSize<Leb128<T>> {
     }
 }
 
-impl<T: Serialize> Serialize for WithSize<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where
-        S: Serializer {
-        self.content.serialize(serializer)
-    }
-}
-
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for WithSize<T> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where
-        D: Deserializer<'de> {
-        Ok(T::deserialize(deserializer)?.into())
-    }
-}
-
 
 /* Sections */
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 // FIXME manual impl of PartialOrt where Custom < any == None, so that own custom sections are always appended to the end
 pub enum Section {
     #[tag = 0] Custom(Vec<u8>),
@@ -101,13 +86,13 @@ pub enum Section {
 //    }
 //}
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct Global {
     pub type_: GlobalType,
     pub init: Expr,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct Element {
     // always 0x00 in WASM version 1
     pub table: TableIdx,
@@ -115,7 +100,7 @@ pub struct Element {
     pub init: Vec<FuncIdx>,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct Data {
     // always 0x00 in WASM version 1
     pub memory: MemoryIdx,
@@ -123,14 +108,14 @@ pub struct Data {
     pub init: Vec<u8>,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct Import {
     pub module: String,
     pub name: String,
     pub type_: ImportType,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct Export {
     pub name: String,
     pub type_: ExportType,
@@ -139,7 +124,7 @@ pub struct Export {
 
 /* Types */
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub enum ValType {
     #[tag = 0x7f] I32,
     #[tag = 0x7e] I64,
@@ -147,17 +132,17 @@ pub enum ValType {
     #[tag = 0x7c] F64,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 #[tag = 0x60]
 pub struct FuncType {
     pub params: Vec<ValType>,
     pub results: Vec<ValType>,
 }
 
-#[derive(Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialOrd, PartialEq)]
 pub struct BlockType(pub Option<ValType>);
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 // TODO change to struct with fields
 // min: Leb128<u32>,
 // max: Option<Leb128<u32>>
@@ -166,28 +151,28 @@ pub enum Limits {
     #[tag = 0x01] MinMax(Leb128<u32>, Leb128<u32>),
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct TableType(pub ElemType, pub Limits);
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub enum ElemType {
     #[tag = 0x70]
     Anyfunc,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct MemoryType(pub Limits);
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct GlobalType(pub ValType, pub Mut);
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub enum Mut {
     #[tag = 0x00] Const,
     #[tag = 0x01] Var,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub enum ImportType {
     #[tag = 0x0] Function(TypeIdx),
     #[tag = 0x1] Table(TableType),
@@ -195,7 +180,7 @@ pub enum ImportType {
     #[tag = 0x3] Global(GlobalType),
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub enum ExportType {
     #[tag = 0x0] Function(FuncIdx),
     #[tag = 0x1] Table(TableIdx),
@@ -206,49 +191,49 @@ pub enum ExportType {
 
 /* Indices */
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
 pub struct TypeIdx(pub Leb128<u32>);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
 // TODO rename FunctionIdx (all other Idx are full names)
 pub struct FuncIdx(pub Leb128<u32>);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
 pub struct TableIdx(pub Leb128<u32>);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
 pub struct MemoryIdx(pub Leb128<u32>);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
 pub struct GlobalIdx(pub Leb128<u32>);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
 pub struct LocalIdx(pub Leb128<u32>);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
 pub struct LabelIdx(pub Leb128<u32>);
 
 
 /* Code */
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 // TODO rename to Function, all others also have full names
 pub struct Func {
     pub locals: Vec<Locals>,
     pub body: Expr,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct Locals {
     pub count: Leb128<u32>,
     pub type_: ValType,
 }
 
-#[derive(Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialOrd, PartialEq)]
 // the number of instructions is not encoded
 pub struct Expr(pub ::std::vec::Vec<Instr>);
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub enum Instr {
     #[tag = 0x00] Unreachable,
     #[tag = 0x01] Nop,
@@ -433,7 +418,7 @@ pub enum Instr {
     #[tag = 0xbf] F64ReinterpretI64,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct Memarg {
     pub alignment: Leb128<u32>,
     pub offset: Leb128<u32>,

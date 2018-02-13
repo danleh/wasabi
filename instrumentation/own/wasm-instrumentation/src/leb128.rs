@@ -1,7 +1,6 @@
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::io;
 use std::ops::{Deref, DerefMut};
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
 
 #[derive(Debug, PartialOrd, PartialEq)]
 pub struct Leb128<T> {
@@ -12,20 +11,6 @@ pub struct Leb128<T> {
     /// This way, reading and writing an `Leb128<T>` always results in the same number of bytes,
     /// i.e., it round-trips.
     pub byte_count: u8,
-}
-
-impl<T: Serialize> Serialize for Leb128<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where
-        S: Serializer {
-        self.value.serialize(serializer)
-    }
-}
-
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Leb128<T> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where
-        D: Deserializer<'de> {
-        Ok(T::deserialize(deserializer)?.into())
-    }
 }
 
 

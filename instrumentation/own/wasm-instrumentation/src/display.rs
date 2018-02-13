@@ -27,7 +27,6 @@ use ast::ValType;
 use ast::WithSize;
 use binary::WasmBinary;
 use leb128::Leb128;
-use serde_json;
 use std::fmt::{self, Write};
 use std::io;
 use std::process::Command;
@@ -49,12 +48,6 @@ impl Module {
         } else {
             Ok(stdout)
         }
-    }
-
-    // TODO remove once the display() is done
-    pub fn json(&self) -> io::Result<String> {
-        serde_json::to_string(&self).map_err(|err|
-            io::Error::new(io::ErrorKind::InvalidData, err.to_string()))
     }
 
     pub fn display(&self) -> String {
