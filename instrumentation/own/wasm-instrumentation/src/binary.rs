@@ -241,7 +241,7 @@ impl WasmBinary for Module {
             };
         }
 
-        Ok(Module { version, sections })
+        Ok(Module { sections })
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_all(b"\0asm")?;

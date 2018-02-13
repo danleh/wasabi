@@ -5,7 +5,6 @@ use WasmBinary;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Module {
-    pub version: u32,
     // the number of sections is not encoded
     pub sections: ::std::vec::Vec<Section>,
 }
