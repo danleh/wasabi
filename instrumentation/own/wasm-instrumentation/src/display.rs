@@ -107,11 +107,15 @@ impl WasmDisplay for Function {
     fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
         let mut w = w.indent();
 
-        w.write_str("\nlocals:")?;
-        if self.locals.is_empty() {
-            w.write_str(" none")?;
+        w.write_str("\nlocals: ")?;
+        if let Some((first, rest)) = self.locals.split_first() {
+            first.write(&mut w)?;
+            for local in rest {
+                w.write_str("\n        ")?;
+                local.write(&mut w)?;
+            }
         } else {
-            self.locals.write(&mut w)?;
+            w.write_str("none")?;
         }
 
         w.write_str("\nbody: ")?;
