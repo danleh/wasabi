@@ -79,14 +79,11 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for WithSize<T> {
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
 // FIXME manual impl of PartialOrt where Custom < any == None, so that own custom sections are always appended to the end
 pub enum Section {
-    // untested
     #[tag = 0] Custom(Vec<u8>),
     #[tag = 1] Type(WithSize<Vec<FuncType>>),
     #[tag = 2] Import(WithSize<Vec<Import>>),
     #[tag = 3] Function(WithSize<Vec<TypeIdx>>),
-    // untested
     #[tag = 4] Table(WithSize<Vec<TableType>>),
-    // untested
     #[tag = 5] Memory(WithSize<Vec<Limits>>),
     #[tag = 6] Global(WithSize<Vec<Global>>),
     #[tag = 7] Export(WithSize<Vec<Export>>),
@@ -161,6 +158,9 @@ pub struct FuncType {
 pub struct BlockType(pub Option<ValType>);
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
+// TODO change to struct with fields
+// min: Leb128<u32>,
+// max: Option<Leb128<u32>>
 pub enum Limits {
     #[tag = 0x00] Min(Leb128<u32>),
     #[tag = 0x01] MinMax(Leb128<u32>, Leb128<u32>),
