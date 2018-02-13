@@ -114,7 +114,7 @@ pub struct Global {
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
 pub struct Element {
     // always 0x00 in WASM version 1
-    pub _unused: TableIdx,
+    pub table: TableIdx,
     pub offset: Expr,
     pub init: Vec<FuncIdx>,
 }
@@ -122,7 +122,7 @@ pub struct Element {
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq, Serialize, Deserialize)]
 pub struct Data {
     // always 0x00 in WASM version 1
-    pub _unused: MemoryIdx,
+    pub memory: MemoryIdx,
     pub offset: Expr,
     pub init: Vec<u8>,
 }
