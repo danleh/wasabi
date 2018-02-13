@@ -1,4 +1,4 @@
-use ast::{Data, Element, Export, ExportType, Expr, Func, FuncIdx, FuncType, Global, GlobalIdx, GlobalType, Import, ImportType, LabelIdx, Limits, LocalIdx, Locals, MemoryIdx, MemoryType, Module, Mut, Section, TableIdx, TableType, TypeIdx, ValType, WithSize};
+use ast::{Data, Element, Export, ExportType, Expr, Function, FunctionIdx, FuncType, Global, GlobalIdx, GlobalType, Import, ImportType, LabelIdx, Limits, LocalIdx, Locals, MemoryIdx, MemoryType, Module, Mut, Section, TableIdx, TableType, TypeIdx, ValType, WithSize};
 use leb128::Leb128;
 use std::fmt::{self, Write};
 use std::io;
@@ -103,7 +103,7 @@ impl WasmDisplay for Section {
     }
 }
 
-impl WasmDisplay for Func {
+impl WasmDisplay for Function {
     fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
         let mut w = w.indent();
 
@@ -236,7 +236,7 @@ impl WasmDisplay for TypeIdx {
     }
 }
 
-impl WasmDisplay for FuncIdx {
+impl WasmDisplay for FunctionIdx {
     fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
         write!(&mut w, "function #{}", self.0.value)
     }

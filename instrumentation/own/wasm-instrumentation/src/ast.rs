@@ -74,9 +74,9 @@ pub enum Section {
     #[tag = 5] Memory(WithSize<Vec<MemoryType>>),
     #[tag = 6] Global(WithSize<Vec<Global>>),
     #[tag = 7] Export(WithSize<Vec<Export>>),
-    #[tag = 8] Start(WithSize<FuncIdx>),
+    #[tag = 8] Start(WithSize<FunctionIdx>),
     #[tag = 9] Element(WithSize<Vec<Element>>),
-    #[tag = 10] Code(WithSize<Vec<WithSize<Func>>>),
+    #[tag = 10] Code(WithSize<Vec<WithSize<Function>>>),
     // to benchmark how much faster it gets without instruction decoding
 //    #[tag = 10] Code(WithSize<Vec<Vec<u8>>>),
     #[tag = 11] Data(WithSize<Vec<Data>>),
@@ -99,7 +99,7 @@ pub struct Element {
     // always 0x00 in WASM version 1
     pub table: TableIdx,
     pub offset: Expr,
-    pub init: Vec<FuncIdx>,
+    pub init: Vec<FunctionIdx>,
 }
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
@@ -184,7 +184,7 @@ pub enum ImportType {
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub enum ExportType {
-    #[tag = 0x0] Function(FuncIdx),
+    #[tag = 0x0] Function(FunctionIdx),
     #[tag = 0x1] Table(TableIdx),
     #[tag = 0x2] Memory(MemoryIdx),
     #[tag = 0x3] Global(GlobalIdx),
@@ -197,8 +197,7 @@ pub enum ExportType {
 pub struct TypeIdx(pub Leb128<u32>);
 
 #[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
-// TODO rename FunctionIdx (all other Idx are full names)
-pub struct FuncIdx(pub Leb128<u32>);
+pub struct FunctionIdx(pub Leb128<u32>);
 
 #[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
 pub struct TableIdx(pub Leb128<u32>);
@@ -219,8 +218,7 @@ pub struct LabelIdx(pub Leb128<u32>);
 /* Code */
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
-// TODO rename to Function, all others also have full names
-pub struct Func {
+pub struct Function {
     pub locals: Vec<Locals>,
     pub body: Expr,
 }
@@ -252,7 +250,7 @@ pub enum Instr {
     #[tag = 0x0e] BrTable(Vec<LabelIdx>, LabelIdx),
 
     #[tag = 0x0f] Return,
-    #[tag = 0x10] Call(FuncIdx),
+    #[tag = 0x10] Call(FunctionIdx),
     #[tag = 0x11] CallIndirect(TypeIdx, /* unused, always 0x00 in WASM version 1 */ TableIdx),
 
     #[tag = 0x1a] Drop,
