@@ -1,5 +1,6 @@
 use leb128::Leb128;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::ops::{Deref, DerefMut};
 use WasmBinary;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -24,6 +25,19 @@ pub struct WithSize<T> {
     /// encoding the size will round-trip.
     pub size: Leb128<()>,
     pub content: T,
+}
+
+impl<T> Deref for WithSize<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.content
+    }
+}
+
+impl<T> DerefMut for WithSize<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.content
+    }
 }
 
 /// convenience
