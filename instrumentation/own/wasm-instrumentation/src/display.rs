@@ -4,6 +4,7 @@ use std::fmt::{self, Write};
 use std::io;
 use utils::IndentExt;
 
+#[allow(dead_code)]
 impl Module {
     pub fn wat(&self) -> io::Result<String> {
         use binary::WasmBinary;
@@ -542,7 +543,7 @@ impl WasmDisplay for BlockType {
 
 impl WasmDisplay for Import {
     fn write(&self, w: &mut fmt::Write) -> fmt::Result {
-        write!(w, "{:30} ", self.module.value.clone() + "." + &self.name.value)?;
+        write!(w, "{:50} ", self.module.value.clone() + "." + &self.name.value)?;
         self.type_.write(w)
     }
 }
@@ -560,7 +561,7 @@ impl WasmDisplay for ImportType {
 
 impl WasmDisplay for Export {
     fn write(&self, w: &mut fmt::Write) -> fmt::Result {
-        write!(w, "{:30} ", self.name.value)?;
+        write!(w, "{:50} ", self.name.value)?;
         self.type_.write(w)
     }
 }
