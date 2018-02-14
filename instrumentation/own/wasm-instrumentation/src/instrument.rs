@@ -1,12 +1,4 @@
-use ast::FuncType;
-use ast::Module;
-use ast::Section;
-use ast::Global;
-use ast::GlobalType;
-use ast::ValType;
-use ast::Mut;
-use ast::Instr;
-use ast::Expr;
+use ast::*;
 
 pub fn identity(_: &mut Module) {}
 

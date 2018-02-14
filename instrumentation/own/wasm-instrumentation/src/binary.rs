@@ -1,7 +1,6 @@
-use ast::{BlockType, Expr, Instr, Module, Section, ValType, WithSize};
-use ast::Limits;
+use ast::*;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use leb128::{Leb128, ReadLeb128, WriteLeb128};
+use leb128::*;
 use rayon::prelude::*;
 use std::error::Error;
 use std::io;
@@ -326,12 +325,12 @@ impl WasmBinary for Limits {
             None => {
                 bytes_written += 0x00u8.encode(writer)?;
                 bytes_written += self.initial_size.encode(writer)?;
-            },
+            }
             Some(ref max_size) => {
                 bytes_written += 0x01u8.encode(writer)?;
                 bytes_written += self.initial_size.encode(writer)?;
                 bytes_written += max_size.encode(writer)?;
-            },
+            }
         }
         Ok(bytes_written)
     }

@@ -1,4 +1,4 @@
-use ast::{BlockType, Data, Element, Export, ExportType, Expr, Function, FunctionIdx, FuncType, Global, GlobalIdx, GlobalType, Import, ImportType, Instr, LabelIdx, Limits, LocalIdx, Locals, Memarg, MemoryIdx, MemoryType, Module, Mut, Section, TableIdx, TableType, TypeIdx, ValType, WithSize};
+use ast::*;
 use leb128::Leb128;
 use std::fmt::{self, Write};
 use std::io;
