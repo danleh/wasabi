@@ -183,25 +183,25 @@ pub enum ExportType {
 /* Indices */
 
 #[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
-pub struct TypeIdx(pub Leb128<u32>);
+pub struct TypeIdx(pub Leb128<usize>);
 
 #[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
-pub struct FunctionIdx(pub Leb128<u32>);
+pub struct FunctionIdx(pub Leb128<usize>);
 
 #[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
-pub struct TableIdx(pub Leb128<u32>);
+pub struct TableIdx(pub Leb128<usize>);
 
 #[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
-pub struct MemoryIdx(pub Leb128<u32>);
+pub struct MemoryIdx(pub Leb128<usize>);
 
 #[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
-pub struct GlobalIdx(pub Leb128<u32>);
+pub struct GlobalIdx(pub Leb128<usize>);
 
 #[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
-pub struct LocalIdx(pub Leb128<u32>);
+pub struct LocalIdx(pub Leb128<usize>);
 
 #[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
-pub struct LabelIdx(pub Leb128<u32>);
+pub struct LabelIdx(pub Leb128<usize>);
 
 
 /* Code */
