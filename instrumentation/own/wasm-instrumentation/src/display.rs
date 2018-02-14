@@ -82,11 +82,9 @@ impl WasmDisplay for Section {
             }
             Section::Start(ref func_idx) => {
                 w.write_str("start section:")?;
-                {
-                    let mut w = w.indent();
-                    func_idx.write(&mut w)?;
-                    w.write_char('\n')
-                }
+                let mut w = w.indent();
+                w.write_char('\n')?;
+                func_idx.write(&mut w)
             }
             Section::Element(ref elements) => {
                 w.write_str("element section:")?;
