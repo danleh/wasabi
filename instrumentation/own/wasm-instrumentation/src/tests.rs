@@ -9,6 +9,15 @@ use test::Bencher;
 use walkdir::WalkDir;
 
 #[test]
+#[ignore]
+fn quick_output() {
+    let path = "test/input/hello-manual.wasm";
+    let mut module = Module::decode(&mut BufReader::new(File::open(path).unwrap())).unwrap();
+    instrument::add_trivial_type(&mut module);
+    println!("{}", module.display());
+}
+
+#[test]
 fn decoding_valid_files_doesnt_panic() {
     for path in wasm_files("test/input") {
         Module::decode(&mut BufReader::new(File::open(path).unwrap())).unwrap();
