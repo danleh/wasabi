@@ -2,7 +2,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::io;
 use std::ops::{Deref, DerefMut};
 
-#[derive(Debug, PartialOrd, PartialEq)]
+#[derive(Debug, PartialOrd, PartialEq, Copy, Clone)]
 pub struct Leb128<T> {
     pub value: T,
     /// When reading an `Leb128<T>`, the number of bytes in which `value` was encoded.

@@ -182,25 +182,25 @@ pub enum ExportType {
 
 /* Indices */
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub struct TypeIdx(pub Leb128<usize>);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub struct FunctionIdx(pub Leb128<usize>);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub struct TableIdx(pub Leb128<usize>);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub struct MemoryIdx(pub Leb128<usize>);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub struct GlobalIdx(pub Leb128<usize>);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub struct LocalIdx(pub Leb128<usize>);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub struct LabelIdx(pub Leb128<usize>);
 
 
