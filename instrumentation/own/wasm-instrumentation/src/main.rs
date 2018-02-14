@@ -24,9 +24,6 @@ mod utils;
 #[cfg(test)]
 mod tests;
 
-// TODO "streaming AST" API: return Module {} after reading only the first 8 bytes, implement
-// Iterator<Item = Section> for Module -> Module must somehow retain the reader to do so...
-
 fn main() {
     let args = App::new("wasm-instrument")
         .arg(Arg::with_name("silent").short("s").long("silent"))

@@ -6,8 +6,6 @@ use WasmBinary;
 pub struct Module {
     // the number of sections is not encoded
     pub sections: Vec<Section>,
-    // TODO maybe let-go of the round-trip idea and save sections explicitly
-    // as in abstract specification? Then we could also get rid of WithSize<T> and Leb128<T>
 }
 
 
@@ -17,6 +15,7 @@ pub struct Module {
 type Leb128Vec<T> = Leb128<Vec<T>>;
 type Leb128String = Leb128<String>;
 
+
 #[derive(Debug, PartialOrd, PartialEq)]
 pub struct WithSize<T> {
     /// Do not save the size of the contents, since it might change through AST transformations anyway.
@@ -25,6 +24,8 @@ pub struct WithSize<T> {
     pub size: Leb128<()>,
     pub content: T,
 }
+
+// some convenience for WithSize<T>...
 
 impl<T> Deref for WithSize<T> {
     type Target = T;
@@ -39,7 +40,6 @@ impl<T> DerefMut for WithSize<T> {
     }
 }
 
-/// convenience
 impl<T> From<T> for WithSize<T> {
     fn from(content: T) -> Self {
         WithSize {
@@ -49,7 +49,6 @@ impl<T> From<T> for WithSize<T> {
     }
 }
 
-/// convenience
 impl<T> From<T> for WithSize<Leb128<T>> {
     fn from(content: T) -> Self {
         WithSize {
@@ -63,7 +62,6 @@ impl<T> From<T> for WithSize<Leb128<T>> {
 /* Sections */
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
-// FIXME manual impl of PartialOrt where Custom < any == None, so that own custom sections are always appended to the end
 pub enum Section {
     #[tag = 0] Custom(Leb128Vec<u8>),
     #[tag = 1] Type(WithSize<Leb128Vec<FuncType>>),
@@ -80,12 +78,6 @@ pub enum Section {
 //    #[tag = 10] Code(WithSize<Leb128Vec<Leb128Vec<u8>>>),
     #[tag = 11] Data(WithSize<Leb128Vec<Data>>),
 }
-
-//impl PartialOrd for Section {
-//    fn partial_cmp(&self, other: &Rhs) -> Option<Ordering> {
-//        match
-//    }
-//}
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct Global {
