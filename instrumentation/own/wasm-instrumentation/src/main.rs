@@ -48,11 +48,11 @@ fn main() {
     std::process::exit(match || -> io::Result<()> {
         let mut module = Module::decode(&mut BufReader::new(File::open(input)?))?;
 
-//        if !silent {
-//            println!("Before:");
+        if !silent {
+            println!("Before:");
 //            println!("{:#?}", module);
-//            println!("{}", module.wat()?);
-//        }
+            println!("{}", module.display());
+        }
 
         if !silent {
             println!("running instrumentation {}...\n", args.value_of("instrumentation").unwrap());
@@ -62,9 +62,6 @@ fn main() {
         if !silent {
             println!("After:");
 //            println!("{:#?}", module);
-//            println!("{}", module.json()?);
-//            use std::io::Write;
-//            write!(File::create("debug.json")?, "{}", module.json()?)?;
             println!("{}", module.display());
         }
 
