@@ -12,7 +12,9 @@ use ast::*;
 // - no explicit TypeIdx, all types are inlined and the Type section is built upon serialization
 //   with a HashMap to still avoid type duplication, then all inlined types are replaced with idx
 //   into the "HashMap".
-// - functions combines Type and Code section
+// -> TODO We cannot get completely rid of *Idx, because globals, locals, functions can and must still
+//    be referenced from code. Maybe we should thus still have Type section and TypeIdx explicitly available?
+// - functions combines Function and Code section
 // - table combines Table and Element (initialization of tables) section
 // - memory combines Memory and Data (initialization of memory) section
 struct HighLevelModule {
@@ -21,7 +23,9 @@ struct HighLevelModule {
     imports: Vec<Import>,
     exports: Vec<Export>,
 
-    functions: Vec<(FuncType, Locals, Expr)>,
+    types: Vec<Type>,
+    functions: Vec<(Type, Locals, Expr)>,
+    // NOTE simplified through assumption that there only ever is one table and memory (true in WASM version 1)
     table: (TableType, Vec<(Expr, Vec<FunctionIdx>)>),
     memory: (MemoryType, Vec<(Expr, Vec<u8>)>),
     globals: Vec<Global>,
