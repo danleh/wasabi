@@ -321,16 +321,18 @@ impl WasmBinary for Limits {
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        let mut bytes_written = 0;
         match self.max_size {
             None => {
-                0x00u8.encode(writer)?;
-                self.initial_size.encode(writer)
+                bytes_written += 0x00u8.encode(writer)?;
+                bytes_written += self.initial_size.encode(writer)?;
             },
             Some(ref max_size) => {
-                0x01u8.encode(writer)?;
-                self.initial_size.encode(writer)?;
-                max_size.encode(writer)
+                bytes_written += 0x01u8.encode(writer)?;
+                bytes_written += self.initial_size.encode(writer)?;
+                bytes_written += max_size.encode(writer)?;
             },
         }
+        Ok(bytes_written)
     }
 }
