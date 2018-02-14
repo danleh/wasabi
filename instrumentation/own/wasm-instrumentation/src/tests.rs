@@ -1,13 +1,15 @@
 use ast::Module;
 use binary::WasmBinary;
-use std::fs::File;
-use std::io::{BufReader, Cursor, Read, sink, Write};
+use instrument;
+use std::fs::{create_dir_all, File};
+use std::io::{BufReader, BufWriter, Cursor, Read, sink, Write};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use test::Bencher;
 use walkdir::WalkDir;
 
 #[test]
-fn decoding_valid_files_works() {
+fn decoding_valid_files_doesnt_panic() {
     for path in wasm_files("test/input") {
         Module::decode(&mut BufReader::new(File::open(path).unwrap())).unwrap();
     }
@@ -16,8 +18,6 @@ fn decoding_valid_files_works() {
 #[test]
 fn decoding_and_encoding_roundtrips() {
     for path in wasm_files("test/input") {
-        println!("round-trip test for {}", path.display());
-
         let mut wasm_binary_input = Vec::new();
         File::open(&path).unwrap().read_to_end(&mut wasm_binary_input).unwrap();
 
@@ -33,6 +33,31 @@ fn decoding_and_encoding_roundtrips() {
                 "{}: encoding and decoding did not round-trip", path.display());
     }
 }
+
+#[test]
+fn count_calls_produces_valid_wasm() {
+    for path in wasm_files("test/input") {
+        let mut module = Module::decode(&mut BufReader::new(File::open(&path).unwrap())).unwrap();
+        instrument::count_call_instructions(&mut module);
+
+        let output_path = path.to_string_lossy().replace("input", "output/count-calls");
+        create_dir_all(Path::new(&output_path).parent().unwrap()).unwrap();
+        module.encode(&mut BufWriter::new(File::create(&output_path).unwrap())).unwrap();
+
+        let validate_output = Command::new("wasm-validate")
+            .arg(output_path)
+            .output()
+            .unwrap();
+
+        assert!(validate_output.status.success(),
+                "count-calls instrumentation does not validate for {}\n{}",
+                path.display(),
+                String::from_utf8(validate_output.stderr).unwrap());
+    }
+}
+
+
+/* Test encoding/decoding speed (without any instrumentation) on "large" wasm file (~2MB) */
 
 #[bench]
 fn decoding_speed(bencher: &mut Bencher) {
@@ -52,8 +77,6 @@ fn encoding_speed(bencher: &mut Bencher) {
         module.encode(&mut sink()).unwrap();
     })
 }
-
-// TODO add test with wasm-validator that all output files are valid
 
 
 /* Convenience functions */
