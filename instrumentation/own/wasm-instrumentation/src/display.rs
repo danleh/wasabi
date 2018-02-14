@@ -38,9 +38,9 @@ trait WasmDisplay {
 }
 
 impl WasmDisplay for Module {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
         w.write_str("Module:")?;
-        self.sections.write(&mut w)
+        self.sections.write(w)
     }
 }
 
@@ -49,35 +49,35 @@ impl WasmDisplay for Section {
         match *self {
             Section::Custom(ref bytes) => {
                 w.write_str("custom section: ")?;
-                bytes.write(&mut w)
+                bytes.write(w)
             }
             Section::Type(ref func_types) => {
                 w.write_str("type section:")?;
-                write_enumerated(func_types, &mut w)
+                write_enumerated(func_types, w)
             }
             Section::Import(ref imports) => {
                 w.write_str("import section:")?;
-                imports.write(&mut w)
+                imports.write(w)
             }
             Section::Function(ref funcs) => {
                 w.write_str("function section:")?;
-                write_enumerated(funcs, &mut w)
+                write_enumerated(funcs, w)
             }
             Section::Table(ref tables) => {
                 w.write_str("table section:")?;
-                write_enumerated(tables, &mut w)
+                write_enumerated(tables, w)
             }
             Section::Memory(ref mems) => {
                 w.write_str("memory section:")?;
-                write_enumerated(mems, &mut w)
+                write_enumerated(mems, w)
             }
             Section::Global(ref globals) => {
                 w.write_str("global section:")?;
-                write_enumerated(globals, &mut w)
+                write_enumerated(globals, w)
             }
             Section::Export(ref exports) => {
                 w.write_str("export section:")?;
-                exports.write(&mut w)
+                exports.write(w)
             }
             Section::Start(ref func_idx) => {
                 w.write_str("start section:")?;
@@ -89,15 +89,15 @@ impl WasmDisplay for Section {
             }
             Section::Element(ref elements) => {
                 w.write_str("element section:")?;
-                elements.write(&mut w)
+                elements.write(w)
             }
             Section::Code(ref funcs) => {
                 w.write_str("code section:")?;
-                write_enumerated(funcs, &mut w)
+                write_enumerated(funcs, w)
             }
             Section::Data(ref data) => {
                 w.write_str("data section:")?;
-                data.write(&mut w)
+                data.write(w)
             }
         }
     }
@@ -124,15 +124,15 @@ impl WasmDisplay for Function {
 }
 
 impl WasmDisplay for Locals {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        self.type_.write(&mut w)?;
-        write!(&mut w, " × {}", self.count.value)
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        self.type_.write(w)?;
+        write!(w, " × {}", self.count.value)
     }
 }
 
 impl WasmDisplay for Element {
     fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        self.table.write(&mut w)?;
+        self.table.write(w)?;
         let mut w = w.indent();
         w.write_str("\nat offset: ")?;
         write_const_expr(&self.offset, &mut w)?;
@@ -143,7 +143,7 @@ impl WasmDisplay for Element {
 
 impl WasmDisplay for Data {
     fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        self.memory.write(&mut w)?;
+        self.memory.write(w)?;
         let mut w = w.indent();
         w.write_str("\nat offset: ")?;
         write_const_expr(&self.offset, &mut w)?;
@@ -153,16 +153,16 @@ impl WasmDisplay for Data {
 }
 
 impl WasmDisplay for Global {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        self.type_.write(&mut w)?;
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        self.type_.write(w)?;
         w.write_str(" = ")?;
-        write_const_expr(&self.init, &mut w)
+        write_const_expr(&self.init, w)
     }
 }
 
 impl WasmDisplay for Expr {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        self.0.write(&mut w)
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        self.0.write(w)
     }
 }
 
@@ -179,57 +179,57 @@ fn write_const_expr(expr: &Expr, w: &mut fmt::Write) -> fmt::Result {
 
 
 impl WasmDisplay for Instr {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
         match *self {
             Instr::Unreachable => w.write_str("Unreachable"),
             Instr::Nop => w.write_str("Nop"),
 
             Instr::Block(ref blockty, ref expr) => {
                 w.write_str("Block with type ")?;
-                blockty.write(&mut w)?;
-                expr.write(&mut w)
+                blockty.write(w)?;
+                expr.write(w)
             }
             Instr::Loop(ref blockty, ref expr) => {
                 w.write_str("Loop with type ")?;
-                blockty.write(&mut w)?;
-                expr.write(&mut w)
+                blockty.write(w)?;
+                expr.write(w)
             }
             Instr::If(ref blockty, ref expr) => {
                 w.write_str("If with type ")?;
-                blockty.write(&mut w)?;
-                expr.write(&mut w)
+                blockty.write(w)?;
+                expr.write(w)
             }
             Instr::Else(ref expr) => {
                 w.write_str("Else ")?;
-                expr.write(&mut w)
+                expr.write(w)
             }
             Instr::End => w.write_str("End"),
 
             Instr::Br(ref idx) => {
                 w.write_str("Br ")?;
-                idx.write(&mut w)
+                idx.write(w)
             }
             Instr::BrIf(ref idx) => {
                 w.write_str("BrIf ")?;
-                idx.write(&mut w)
+                idx.write(w)
             }
             Instr::BrTable(ref vec_idx, ref idx) => {
                 w.write_str("BrTable, default: ")?;
-                idx.write(&mut w)?;
+                idx.write(w)?;
                 w.write_str(" table:")?;
-                vec_idx.write(&mut w)
+                vec_idx.write(w)
             }
 
             Instr::Return => w.write_str("Return"),
             Instr::Call(ref idx) => {
                 w.write_str("Call ")?;
-                idx.write(&mut w)
+                idx.write(w)
             }
             Instr::CallIndirect(ref type_idx, ref table_idx) => {
                 w.write_str("CallIndirect ")?;
-                table_idx.write(&mut w)?;
+                table_idx.write(w)?;
                 w.write_str(" with ")?;
-                type_idx.write(&mut w)
+                type_idx.write(w)
             }
 
             Instr::Drop => w.write_str("Drop"),
@@ -237,131 +237,131 @@ impl WasmDisplay for Instr {
 
             Instr::GetLocal(ref idx) => {
                 w.write_str("GetLocal ")?;
-                idx.write(&mut w)
+                idx.write(w)
             }
             Instr::SetLocal(ref idx) => {
                 w.write_str("SetLocal ")?;
-                idx.write(&mut w)
+                idx.write(w)
             }
             Instr::TeeLocal(ref idx) => {
                 w.write_str("TeeLocal ")?;
-                idx.write(&mut w)
+                idx.write(w)
             }
             Instr::GetGlobal(ref idx) => {
                 w.write_str("GetGlobal ")?;
-                idx.write(&mut w)
+                idx.write(w)
             }
             Instr::SetGlobal(ref idx) => {
                 w.write_str("SetGlobal ")?;
-                idx.write(&mut w)
+                idx.write(w)
             }
 
             Instr::I32Load(ref memarg) => {
                 w.write_str("I32Load ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I64Load(ref memarg) => {
                 w.write_str("I64Load ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::F32Load(ref memarg) => {
                 w.write_str("F32Load ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::F64Load(ref memarg) => {
                 w.write_str("F64Load ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I32Load8S(ref memarg) => {
                 w.write_str("I32Load8S ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I32Load8U(ref memarg) => {
                 w.write_str("I32Load8U ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I32Load16S(ref memarg) => {
                 w.write_str("I32Load16S ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I32Load16U(ref memarg) => {
                 w.write_str("I32Load16U ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I64Load8S(ref memarg) => {
                 w.write_str("I64Load8S ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I64Load8U(ref memarg) => {
                 w.write_str("I64Load8U ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I64Load16S(ref memarg) => {
                 w.write_str("I64Load16S ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I64Load16U(ref memarg) => {
                 w.write_str("I64Load16U ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I64Load32S(ref memarg) => {
                 w.write_str("I64Load32S ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I64Load32U(ref memarg) => {
                 w.write_str("I64Load32U ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I32Store(ref memarg) => {
                 w.write_str("I32Store ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I64Store(ref memarg) => {
                 w.write_str("I64Store ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::F32Store(ref memarg) => {
                 w.write_str("F32Store ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::F64Store(ref memarg) => {
                 w.write_str("F64Store ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I32Store8(ref memarg) => {
                 w.write_str("I32Store8 ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I32Store16(ref memarg) => {
                 w.write_str("I32Store16 ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I64Store8(ref memarg) => {
                 w.write_str("I64Store8 ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I64Store16(ref memarg) => {
                 w.write_str("I64Store16 ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
             Instr::I64Store32(ref memarg) => {
                 w.write_str("I64Store32 ")?;
-                memarg.write(&mut w)
+                memarg.write(w)
             }
 
             Instr::CurrentMemory(ref idx) => {
                 w.write_str("CurrentMemory ")?;
-                idx.write(&mut w)
+                idx.write(w)
             }
             Instr::GrowMemory(ref idx) => {
                 w.write_str("GrowMemory ")?;
-                idx.write(&mut w)
+                idx.write(w)
             }
 
-            Instr::I32Const(ref imm) => write!(&mut w, "I32Const {}", imm.value),
-            Instr::I64Const(ref imm) => write!(&mut w, "I64Const {}", imm.value),
-            Instr::F32Const(ref imm) => write!(&mut w, "F32Const {}", imm),
-            Instr::F64Const(ref imm) => write!(&mut w, "F64Const {}", imm),
+            Instr::I32Const(ref imm) => write!(w, "I32Const {}", imm.value),
+            Instr::I64Const(ref imm) => write!(w, "I64Const {}", imm.value),
+            Instr::F32Const(ref imm) => write!(w, "F32Const {}", imm),
+            Instr::F64Const(ref imm) => write!(w, "F64Const {}", imm),
 
             Instr::I32Eqz => w.write_str("I32Eqz"),
             Instr::I32Eq => w.write_str("I32Eq"),
@@ -508,17 +508,17 @@ impl WasmDisplay for ValType {
 }
 
 impl WasmDisplay for FuncType {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
         w.write_char('[')?;
         for (i, param) in self.params.iter().enumerate() {
-            param.write(&mut w)?;
+            param.write(w)?;
             if i < self.params.len() - 1 {
                 w.write_str(", ")?;
             }
         }
         w.write_str("] -> [")?;
         for (i, result) in self.results.iter().enumerate() {
-            result.write(&mut w)?;
+            result.write(w)?;
             if i < self.results.len() - 1 {
                 w.write_str(", ")?;
             }
@@ -540,105 +540,103 @@ impl WasmDisplay for BlockType {
     }
 }
 
-// TODO change all of those &mut w for mut w reborrows to plan ws
-
 impl WasmDisplay for Import {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        write!(&mut w, "{:30} ", self.module.value.clone() + "." + &self.name.value)?;
-        self.type_.write(&mut w)
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        write!(w, "{:30} ", self.module.value.clone() + "." + &self.name.value)?;
+        self.type_.write(w)
     }
 }
 
 impl WasmDisplay for ImportType {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
         match *self {
-            ImportType::Function(ref type_) => type_.write(&mut w),
-            ImportType::Table(ref table) => table.write(&mut w),
-            ImportType::Memory(ref memory) => memory.write(&mut w),
-            ImportType::Global(ref global) => global.write(&mut w),
+            ImportType::Function(ref type_) => type_.write(w),
+            ImportType::Table(ref table) => table.write(w),
+            ImportType::Memory(ref memory) => memory.write(w),
+            ImportType::Global(ref global) => global.write(w),
         }
     }
 }
 
 impl WasmDisplay for Export {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        write!(&mut w, "{:30} ", self.name.value)?;
-        self.type_.write(&mut w)
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        write!(w, "{:30} ", self.name.value)?;
+        self.type_.write(w)
     }
 }
 
 impl WasmDisplay for ExportType {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
         match *self {
-            ExportType::Function(ref type_) => type_.write(&mut w),
-            ExportType::Table(ref table) => table.write(&mut w),
-            ExportType::Memory(ref memory) => memory.write(&mut w),
-            ExportType::Global(ref global) => global.write(&mut w),
+            ExportType::Function(ref type_) => type_.write(w),
+            ExportType::Table(ref table) => table.write(w),
+            ExportType::Memory(ref memory) => memory.write(w),
+            ExportType::Global(ref global) => global.write(w),
         }
     }
 }
 
 impl WasmDisplay for TypeIdx {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        write!(&mut w, "type #{}", self.0.value)
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        write!(w, "type #{}", self.0.value)
     }
 }
 
 impl WasmDisplay for FunctionIdx {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        write!(&mut w, "function #{}", self.0.value)
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        write!(w, "function #{}", self.0.value)
     }
 }
 
 impl WasmDisplay for TableIdx {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        write!(&mut w, "table #{}", self.0.value)
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        write!(w, "table #{}", self.0.value)
     }
 }
 
 impl WasmDisplay for MemoryIdx {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        write!(&mut w, "memory #{}", self.0.value)
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        write!(w, "memory #{}", self.0.value)
     }
 }
 
 impl WasmDisplay for GlobalIdx {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        write!(&mut w, "global #{}", self.0.value)
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        write!(w, "global #{}", self.0.value)
     }
 }
 
 impl WasmDisplay for LocalIdx {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        write!(&mut w, "local #{}", self.0.value)
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        write!(w, "local #{}", self.0.value)
     }
 }
 
 impl WasmDisplay for LabelIdx {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        write!(&mut w, "label #{}", self.0.value)
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        write!(w, "label #{}", self.0.value)
     }
 }
 
 impl WasmDisplay for TableType {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
         w.write_str("table  ")?;
-        self.1.write(&mut w)
+        self.1.write(w)
     }
 }
 
 impl WasmDisplay for MemoryType {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
         w.write_str("memory ")?;
-        self.0.write(&mut w)
+        self.0.write(w)
     }
 }
 
 impl WasmDisplay for Limits {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
-        write!(&mut w, "of size: (initial: {}, max: ", self.initial_size.value)?;
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
+        write!(w, "of size: (initial: {}, max: ", self.initial_size.value)?;
         if let Some(ref max) = self.max_size {
-            write!(&mut w, "{})", max.value)
+            write!(w, "{})", max.value)
         } else {
             w.write_str("unlimited)")
         }
@@ -646,13 +644,13 @@ impl WasmDisplay for Limits {
 }
 
 impl WasmDisplay for GlobalType {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
         w.write_str("global ")?;
         match self.1 {
             Mut::Const => w.write_str("const "),
             Mut::Var => w.write_str("mut "),
         }?;
-        self.0.write(&mut w)
+        self.0.write(w)
     }
 }
 
@@ -683,10 +681,10 @@ impl<T: WasmDisplay> WasmDisplay for Vec<T> {
 
 /// Specialization to display Vec<u8> on a single line and as hex.
 impl WasmDisplay for Vec<u8> {
-    fn write(&self, mut w: &mut fmt::Write) -> fmt::Result {
+    fn write(&self, w: &mut fmt::Write) -> fmt::Result {
         w.write_char('[')?;
         for (i, byte) in self.iter().enumerate() {
-            write!(&mut w, "0x{:02x}", byte)?;
+            write!(w, "0x{:02x}", byte)?;
             if i < self.len() - 1 {
                 w.write_str(", ")?;
             }
