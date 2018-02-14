@@ -10,10 +10,10 @@ use walkdir::WalkDir;
 
 #[test]
 #[ignore]
-fn quick_output() {
+fn debug() {
     let path = "test/input/hello-manual.wasm";
     let mut module = Module::decode(&mut BufReader::new(File::open(path).unwrap())).unwrap();
-    instrument::add_trivial_type(&mut module);
+    instrument::count_calls(&mut module);
     println!("{}", module.display());
 }
 
@@ -50,6 +50,28 @@ fn add_trivial_type_produces_valid_wasm() {
         instrument::add_trivial_type(&mut module);
 
         let output_path = path.to_string_lossy().replace("input", "output/add-trivial-type");
+        create_dir_all(Path::new(&output_path).parent().unwrap()).unwrap();
+        module.encode(&mut BufWriter::new(File::create(&output_path).unwrap())).unwrap();
+
+        let validate_output = Command::new("wasm-validate")
+            .arg(output_path)
+            .output()
+            .unwrap();
+
+        assert!(validate_output.status.success(),
+                "invalid instrumented wasm file for {}\n{}",
+                path.display(),
+                String::from_utf8(validate_output.stderr).unwrap());
+    }
+}
+
+#[test]
+fn count_calls_produces_valid_wasm() {
+    for path in wasm_files("test/input") {
+        let mut module = Module::decode(&mut BufReader::new(File::open(&path).unwrap())).unwrap();
+        instrument::count_calls(&mut module);
+
+        let output_path = path.to_string_lossy().replace("input", "output/count-calls");
         create_dir_all(Path::new(&output_path).parent().unwrap()).unwrap();
         module.encode(&mut BufWriter::new(File::create(&output_path).unwrap())).unwrap();
 

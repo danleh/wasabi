@@ -24,6 +24,8 @@ mod utils;
 #[cfg(test)]
 mod tests;
 
+// TODO make own crate for library
+
 fn main() {
     let args = App::new("wasm-instrument")
         .arg(Arg::with_name("silent").short("s").long("silent"))
@@ -37,8 +39,8 @@ fn main() {
     let output = args.value_of("output").unwrap();
     let instrument = match args.value_of("instrumentation").unwrap() {
         "identity" => instrument::identity,
-        "add" => instrument::add_trivial_type,
-        "count-calls" => instrument::count_call_instructions,
+        "add-trivial-type" => instrument::add_trivial_type,
+        "count-calls" => instrument::count_calls,
         instrumentation => unimplemented!("instrumentation {}", instrumentation)
     };
 
