@@ -99,6 +99,13 @@ add_section_element!(add_function, Function, TypeIdx, FunctionIdx);
 add_section_element!(add_code, Code, WithSize<Function>, FunctionIdx);
 add_section_element!(add_global, Global, Global, GlobalIdx);
 add_section_element!(add_export, Export, Export);
+// FIXME indices of imports (tables, memory, globals, but most importantly functions) count towards the
+// index space, in particular BEFORE the functions, globals etc. defined inside the module!
+// this means that
+// 1. FIXME the returned indices of add_function and add_global are wrong and need to be offset by the imports inside the module
+// 2. FIXME calling add_import invalidates ALL indices into functions etc., since their offset might change
+// -> FIXME we need a high level AST format!!
+// -> FIXME we cannot use static/const indices, but must take the import indices into account, i.e. get idx as a function from module?
 add_section_element!(add_import, Import, Import);
 
 /// convenience instead of calling add_type, add_function, add_code manually

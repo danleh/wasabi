@@ -1,3 +1,5 @@
+// FIXME remove and rather use wasm-objdump
+
 use ast::*;
 use leb128::Leb128;
 use std::fmt::{self, Write};
