@@ -44,12 +44,12 @@ fn decoding_and_encoding_roundtrips() {
 }
 
 #[test]
-fn count_calls_produces_valid_wasm() {
+fn add_trivial_type_produces_valid_wasm() {
     for path in wasm_files("test/input") {
         let mut module = Module::decode(&mut BufReader::new(File::open(&path).unwrap())).unwrap();
-        instrument::count_call_instructions(&mut module);
+        instrument::add_trivial_type(&mut module);
 
-        let output_path = path.to_string_lossy().replace("input", "output/count-calls");
+        let output_path = path.to_string_lossy().replace("input", "output/add-trivial-type");
         create_dir_all(Path::new(&output_path).parent().unwrap()).unwrap();
         module.encode(&mut BufWriter::new(File::create(&output_path).unwrap())).unwrap();
 
@@ -59,7 +59,7 @@ fn count_calls_produces_valid_wasm() {
             .unwrap();
 
         assert!(validate_output.status.success(),
-                "count-calls instrumentation does not validate for {}\n{}",
+                "invalid instrumented wasm file for {}\n{}",
                 path.display(),
                 String::from_utf8(validate_output.stderr).unwrap());
     }
