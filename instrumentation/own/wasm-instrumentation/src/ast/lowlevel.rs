@@ -155,12 +155,12 @@ pub struct Limits {
 }
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
-pub struct GlobalType(pub ValType, pub Mut);
+pub struct GlobalType(pub ValType, pub Mutability);
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
-pub enum Mut {
+pub enum Mutability {
     #[tag = 0x00] Const,
-    #[tag = 0x01] Var,
+    #[tag = 0x01] Mut,
 }
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]

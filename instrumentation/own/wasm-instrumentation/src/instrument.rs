@@ -16,7 +16,7 @@ pub fn add_trivial_type(module: &mut Module) {
 pub fn count_calls(module: &mut Module) {
     let counter: GlobalIdx = add_global(&mut module.sections,
                                         Global {
-                                            type_: GlobalType(ValType::I32, Mut::Var),
+                                            type_: GlobalType(ValType::I32, Mutability::Mut),
                                             init: Expr(vec![I32Const(0.into()), End]),
                                         });
 
