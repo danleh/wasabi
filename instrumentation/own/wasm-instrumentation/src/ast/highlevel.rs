@@ -21,27 +21,26 @@
 
 use std::marker::PhantomData;
 
-struct HighLevelModule {
-    start: Option<Idx<Function>>,
+struct HighLevelModule<'a> {
+    start: Option<Idx<'a, Function<'a>>>,
 
     imports: Vec<Import>,
-    exports: Vec<Export>,
+    exports: Vec<Export<'a>>,
 
-    globals: Vec<Global>,
-    functions: Vec<Function>,
-
-    table: Table,
-    memory: Memory,
+    functions: Vec<Function<'a>>,
+    tables: Vec<Table<'a>>,
+    memories: Vec<Memory<'a>>,
+    globals: Vec<Global<'a>>,
 
     custom_sections: Vec<Vec<u8>>,
 }
 
-pub struct Idx<T>(pub usize, PhantomData<T>);
+pub struct Idx<'a, T: 'a>(&'a T);
 
-pub struct Function {
+pub struct Function<'a> {
     type_: FunctionType,
     locals: Vec<Local>,
-    body: Expr,
+    body: Expr<'a>,
 }
 
 type Local = ValType;
@@ -52,9 +51,9 @@ pub struct Import {
     type_: ImportType,
 }
 
-pub struct Export {
+pub struct Export<'a> {
     name: String,
-    type_: ExportType,
+    type_: ExportType<'a>,
 }
 
 pub enum ImportType {
@@ -64,32 +63,32 @@ pub enum ImportType {
     Global(GlobalType),
 }
 
-pub enum ExportType {
-    Function(Idx<Function>),
-    Table(Idx<Table>),
-    Memory(Idx<Memory>),
-    Global(Idx<Global>),
+pub enum ExportType<'a> {
+    Function(Idx<'a, Function<'a>>),
+    Table(Idx<'a, Table<'a>>),
+    Memory(Idx<'a, Memory<'a>>),
+    Global(Idx<'a, Global<'a>>),
 }
 
-pub struct Table {
+pub struct Table<'a> {
     type_: TableType,
-    inits: Vec<Element>,
+    inits: Vec<Element<'a>>,
 }
 
-pub struct Memory {
+pub struct Memory<'a> {
     type_: MemoryType,
-    inits: Vec<Data>,
+    inits: Vec<Data<'a>>,
 }
 
 // == TableInit
-pub struct Element {
-    offset: ConstExpr,
-    functions: Vec<Idx<Function>>,
+pub struct Element<'a> {
+    offset: ConstExpr<'a>,
+    functions: Vec<Idx<'a, Function<'a>>>,
 }
 
 // == MemoryInit
-pub struct Data {
-    offset: ConstExpr,
+pub struct Data<'a> {
+    offset: ConstExpr<'a>,
     bytes: Vec<u8>,
 }
 
@@ -108,9 +107,9 @@ pub struct Limits {
     pub max_size: Option<u32>,
 }
 
-pub struct Global {
+pub struct Global<'a> {
     type_: GlobalType,
-    init: ConstExpr,
+    init: ConstExpr<'a>,
 }
 
 pub struct GlobalType(ValType, Mutability);
@@ -130,35 +129,35 @@ pub enum Mutability {
 pub struct Label;
 
 pub type BlockType = Option<ValType>;
-pub type Expr = Vec<Instr>;
-pub type ConstExpr = Vec<Instr>;
+pub type Expr<'a> = Vec<Instr<'a>>;
+pub type ConstExpr<'a> = Vec<Instr<'a>>;
 
-pub enum Instr {
+pub enum Instr<'a> {
     Unreachable,
     Nop,
 
-    Block(BlockType, Expr),
-    Loop(BlockType, Expr),
-    If(BlockType, Expr),
-    Else(Expr),
+    Block(BlockType, Expr<'a>),
+    Loop(BlockType, Expr<'a>),
+    If(BlockType, Expr<'a>),
+    Else(Expr<'a>),
     End,
 
-    Br(Idx<Label>),
-    BrIf(Idx<Label>),
-    BrTable(Vec<Idx<Label>>, Idx<Label>),
+    Br(Idx<'a, Label>),
+    BrIf(Idx<'a, Label>),
+    BrTable(Vec<Idx<'a, Label>>, Idx<'a, Label>),
 
     Return,
-    Call(Idx<Function>),
-    CallIndirect(FunctionType, /* unused, always 0x00 in WASM version 1 */ Idx<Table>),
+    Call(Idx<'a, Function<'a>>),
+    CallIndirect(FunctionType, /* unused, always 0x00 in WASM version 1 */ Idx<'a, Table<'a>>),
 
     Drop,
     Select,
 
-    GetLocal(Idx<Local>),
-    SetLocal(Idx<Local>),
-    TeeLocal(Idx<Local>),
-    GetGlobal(Idx<Global>),
-    SetGlobal(Idx<Global>),
+    GetLocal(Idx<'a, Local>),
+    SetLocal(Idx<'a, Local>),
+    TeeLocal(Idx<'a, Local>),
+    GetGlobal(Idx<'a, Global<'a>>),
+    SetGlobal(Idx<'a, Global<'a>>),
 
     I32Load(Memarg),
     I64Load(Memarg),
@@ -184,8 +183,8 @@ pub enum Instr {
     I64Store16(Memarg),
     I64Store32(Memarg),
 
-    CurrentMemory(/* unused, always 0x00 in WASM version 1 */ Idx<Memory>),
-    GrowMemory(/* unused, always 0x00 in WASM version 1 */ Idx<Memory>),
+    CurrentMemory(/* unused, always 0x00 in WASM version 1 */ Idx<'a, Memory<'a>>),
+    GrowMemory(/* unused, always 0x00 in WASM version 1 */ Idx<'a, Memory<'a>>),
 
     I32Const(i32),
     I64Const(i64),
