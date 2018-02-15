@@ -1,4 +1,5 @@
 #![feature(attr_literals, specialization, universal_impl_trait, conservative_impl_trait, test)]
+#![allow(dead_code)]
 
 #[macro_use]
 extern crate custom_derive;

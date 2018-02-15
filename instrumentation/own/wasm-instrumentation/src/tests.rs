@@ -1,89 +1,57 @@
 use ast::lowlevel::Module;
 use binary::WasmBinary;
-use instrument;
+use instrument::*;
 use std::fs::{create_dir_all, File};
-use std::io::{BufReader, BufWriter, Cursor, Read, sink, Write};
+use std::io::{self, Cursor, Read, sink};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use test::Bencher;
-use walkdir::WalkDir;
 
+/// "main"-like for quick and dirty testing
 #[test]
 #[ignore]
 fn debug() {
-    let path = "test/input/hello-manual.wasm";
-    let mut module = Module::decode(&mut BufReader::new(File::open(path).unwrap())).unwrap();
-    instrument::count_calls(&mut module);
-//    println!("{}", module.display()); // FIXME
+    let file = "test/input/hello-manual.wasm";
+    instrument(&Path::new(file), count_calls, "count-calls").unwrap();
 }
 
+
+/* Correctness tests */
+
 #[test]
-fn decoding_valid_files_doesnt_panic() {
+fn decode_valid() {
     for path in wasm_files("test/input") {
-        Module::decode(&mut BufReader::new(File::open(path).unwrap())).unwrap();
+        Module::from_file(path).expect("files in test/input are valid wasm, so decoding should not panic");
     }
 }
 
 #[test]
-fn decoding_and_encoding_roundtrips() {
+fn identity_roundtrip() {
     for path in wasm_files("test/input") {
-        let mut wasm_binary_input = Vec::new();
-        File::open(&path).unwrap().read_to_end(&mut wasm_binary_input).unwrap();
+        let output_path = instrument(&path, identity, "identity").unwrap();
 
-        let module = Module::decode(&mut Cursor::new(&wasm_binary_input)).unwrap();
+        let mut input_bytes = Vec::new();
+        File::open(&path).unwrap().read_to_end(&mut input_bytes).unwrap();
 
-        let mut wasm_binary_output = Vec::new();
-        module.encode(&mut wasm_binary_output).unwrap();
+        let mut output_bytes = Vec::new();
+        File::open(&output_path).unwrap().read_to_end(&mut output_bytes).unwrap();
 
-        let mut output_file = File::create(path.to_string_lossy().replace("input", "output/identity")).unwrap();
-        output_file.write_all(&mut &wasm_binary_output[..]).unwrap();
-
-        assert!(wasm_binary_input == wasm_binary_output,
-                "{}: encoding and decoding did not round-trip", path.display());
+        assert!(input_bytes == output_bytes, "{}: encoding and decoding did not round-trip", path.display());
     }
 }
 
 #[test]
-fn add_trivial_type_produces_valid_wasm() {
+fn add_trivial_type_valid() {
     for path in wasm_files("test/input") {
-        let mut module = Module::decode(&mut BufReader::new(File::open(&path).unwrap())).unwrap();
-        instrument::add_trivial_type(&mut module);
-
-        let output_path = path.to_string_lossy().replace("input", "output/add-trivial-type");
-        create_dir_all(Path::new(&output_path).parent().unwrap()).unwrap();
-        module.encode(&mut BufWriter::new(File::create(&output_path).unwrap())).unwrap();
-
-        let validate_output = Command::new("wasm-validate")
-            .arg(output_path)
-            .output()
-            .unwrap();
-
-        assert!(validate_output.status.success(),
-                "invalid instrumented wasm file for {}\n{}",
-                path.display(),
-                String::from_utf8(validate_output.stderr).unwrap());
+        let output = instrument(&path, add_trivial_type, "add-trivial-type").unwrap();
+        wasm_validate(&output).unwrap();
     }
 }
 
 #[test]
-fn count_calls_produces_valid_wasm() {
+fn count_calls_valid() {
     for path in wasm_files("test/input") {
-        let mut module = Module::decode(&mut BufReader::new(File::open(&path).unwrap())).unwrap();
-        instrument::count_calls(&mut module);
-
-        let output_path = path.to_string_lossy().replace("input", "output/count-calls");
-        create_dir_all(Path::new(&output_path).parent().unwrap()).unwrap();
-        module.encode(&mut BufWriter::new(File::create(&output_path).unwrap())).unwrap();
-
-        let validate_output = Command::new("wasm-validate")
-            .arg(output_path)
-            .output()
-            .unwrap();
-
-        assert!(validate_output.status.success(),
-                "invalid instrumented wasm file for {}\n{}",
-                path.display(),
-                String::from_utf8(validate_output.stderr).unwrap());
+        let output = instrument(&path, count_calls, "count-calls").unwrap();
+        wasm_validate(&output).unwrap();
     }
 }
 
@@ -91,7 +59,7 @@ fn count_calls_produces_valid_wasm() {
 /* Test encoding/decoding speed (without any instrumentation) on "large" wasm file (~2MB) */
 
 #[bench]
-fn decoding_speed(bencher: &mut Bencher) {
+fn decode_speed(bencher: &mut Bencher) {
     let mut buf = Vec::new();
     File::open("test/input/bananabread/bb.wasm").unwrap().read_to_end(&mut buf).unwrap();
 
@@ -101,8 +69,8 @@ fn decoding_speed(bencher: &mut Bencher) {
 }
 
 #[bench]
-fn encoding_speed(bencher: &mut Bencher) {
-    let module = Module::decode(&mut BufReader::new(File::open("test/input/bananabread/bb.wasm").unwrap())).unwrap();
+fn encode_speed(bencher: &mut Bencher) {
+    let module = Module::from_file("test/input/bananabread/bb.wasm").unwrap();
 
     bencher.iter(|| {
         module.encode(&mut sink()).unwrap();
@@ -113,8 +81,37 @@ fn encoding_speed(bencher: &mut Bencher) {
 /* Convenience functions */
 
 fn wasm_files<P: AsRef<Path>>(dir: P) -> impl Iterator<Item=PathBuf> {
+    use walkdir::WalkDir;
     WalkDir::new(dir.as_ref()).into_iter()
         .map(Result::unwrap)
         .map(|entry| entry.path().to_owned())
         .filter(|path| path.extension() == Some("wasm".as_ref()))
+}
+
+fn instrument(test_file: &Path, instrument: impl Fn(&mut Module), instrument_str: &str) -> io::Result<PathBuf> {
+    assert!(test_file.to_string_lossy().contains("test/input"),
+            "otherwise creating the output file and directories could fail/overwrite other stuff");
+    let output_dir = "output/".to_string() + instrument_str;
+    let output_file = PathBuf::from(test_file.to_string_lossy().replace("input", &output_dir));
+    create_dir_all(output_file.parent().unwrap_or(&output_file))?;
+
+    let mut module = Module::from_file(test_file)?;
+    instrument(&mut module);
+    module.to_file(&output_file)?;
+    Ok(output_file)
+}
+
+fn wasm_validate(path: &Path) -> Result<(), String> {
+    use std::process::Command;
+    let validate_output = Command::new("wasm-validate")
+        .arg(path)
+        .output()
+        .map_err(|err| err.to_string())
+        .unwrap();
+    if validate_output.status.success() {
+        Ok(())
+    } else {
+        Err(format!("invalid wasm file {}\n", path.display()) +
+            &String::from_utf8(validate_output.stderr).unwrap())
+    }
 }
