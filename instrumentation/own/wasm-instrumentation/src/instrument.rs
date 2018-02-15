@@ -20,7 +20,7 @@ pub fn count_calls(module: &mut Module) {
                                             init: Expr(vec![I32Const(0.into()), End]),
                                         });
 
-    let getter: FunctionIdx = add_function_with_type(
+    let _getter: FunctionIdx = add_function_with_type(
         &mut module.sections,
         FuncType {
             params: Vec::new().into(),
@@ -32,7 +32,7 @@ pub fn count_calls(module: &mut Module) {
             End
         ]));
 
-    let increment: FunctionIdx = add_function_with_type(
+    let _increment: FunctionIdx = add_function_with_type(
         &mut module.sections,
         FuncType {
             params: Vec::new().into(),
