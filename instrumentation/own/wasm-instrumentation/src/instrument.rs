@@ -1,5 +1,5 @@
-use ast::*;
-use ast::Instr::*;
+use ast::lowlevel::*;
+use ast::lowlevel::Instr::*;
 use std::mem::discriminant;
 
 pub fn identity(_: &mut Module) {}

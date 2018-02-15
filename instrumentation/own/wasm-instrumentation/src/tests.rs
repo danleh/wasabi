@@ -1,4 +1,4 @@
-use ast::Module;
+use ast::lowlevel::Module;
 use binary::WasmBinary;
 use instrument;
 use std::fs::{create_dir_all, File};
@@ -14,7 +14,7 @@ fn debug() {
     let path = "test/input/hello-manual.wasm";
     let mut module = Module::decode(&mut BufReader::new(File::open(path).unwrap())).unwrap();
     instrument::count_calls(&mut module);
-    println!("{}", module.display());
+//    println!("{}", module.display()); // FIXME
 }
 
 #[test]
