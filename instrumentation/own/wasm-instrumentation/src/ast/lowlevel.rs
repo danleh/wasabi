@@ -25,8 +25,6 @@ pub enum Section {
     #[tag = 8] Start(WithSize<FunctionIdx>),
     #[tag = 9] Element(WithSize<Vec<Element>>),
     #[tag = 10] Code(WithSize<Vec<WithSize<Function>>>),
-    // to benchmark how much faster it gets without instruction decoding
-//    #[tag = 10] Code(WithSize<Vec<Vec<u8>>>),
     #[tag = 11] Data(WithSize<Vec<Data>>),
 }
 
@@ -68,7 +66,7 @@ pub struct Export {
 
 /* Types */
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone, Copy)]
+#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub enum ValType {
     #[tag = 0x7f] I32,
     #[tag = 0x7e] I64,
@@ -86,7 +84,7 @@ pub struct BlockType(pub Option<ValType>);
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct TableType(pub ElemType, pub Limits);
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub enum ElemType {
     // only value in WASM version 1
     #[tag = 0x70]
@@ -96,16 +94,16 @@ pub enum ElemType {
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct MemoryType(pub Limits);
 
-#[derive(Debug, PartialOrd, PartialEq)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct Limits {
     pub initial_size: u32,
     pub max_size: Option<u32>,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct GlobalType(pub ValType, pub Mutability);
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub enum Mutability {
     #[tag = 0x00] Const,
     #[tag = 0x01] Mut,
@@ -119,7 +117,7 @@ pub enum ImportType {
     #[tag = 0x3] Global(GlobalType),
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum ExportType {
     #[tag = 0x0] Function(FunctionIdx),
     #[tag = 0x1] Table(TableIdx),
@@ -130,26 +128,26 @@ pub enum ExportType {
 
 /* Indices */
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
+#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct TypeIdx(pub usize);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
+#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct FunctionIdx(pub usize);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
+#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct TableIdx(pub usize);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
+#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct MemoryIdx(pub usize);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
+#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct GlobalIdx(pub usize);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
+#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct LocalIdx(pub usize);
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
-pub struct LabelIdx(pub usize);
+#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+pub struct Label(pub usize);
 
 
 /* Code */
@@ -160,15 +158,20 @@ pub struct Function {
     pub body: Expr,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct Locals {
     pub count: u32,
     pub type_: ValType,
 }
 
 #[derive(Debug, PartialOrd, PartialEq)]
-// the number of instructions is not encoded
 pub struct Expr(pub Vec<Instr>);
+
+#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+pub struct Memarg {
+    pub alignment: u32,
+    pub offset: u32,
+}
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub enum Instr {
@@ -182,9 +185,9 @@ pub enum Instr {
     #[tag = 0x05] Else(Expr),
     #[tag = 0x0b] End,
 
-    #[tag = 0x0c] Br(LabelIdx),
-    #[tag = 0x0d] BrIf(LabelIdx),
-    #[tag = 0x0e] BrTable(Vec<LabelIdx>, LabelIdx),
+    #[tag = 0x0c] Br(Label),
+    #[tag = 0x0d] BrIf(Label),
+    #[tag = 0x0e] BrTable(Vec<Label>, Label),
 
     #[tag = 0x0f] Return,
     #[tag = 0x10] Call(FunctionIdx),
@@ -354,10 +357,4 @@ pub enum Instr {
     #[tag = 0xbd] I64ReinterpretF64,
     #[tag = 0xbe] F32ReinterpretI32,
     #[tag = 0xbf] F64ReinterpretI64,
-}
-
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
-pub struct Memarg {
-    pub alignment: u32,
-    pub offset: u32,
 }
