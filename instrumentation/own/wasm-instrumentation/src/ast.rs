@@ -1,6 +1,6 @@
 use leb128::Leb128;
 use std::ops::{Deref, DerefMut};
-use WasmBinary;
+use binary::WasmBinary;
 
 #[derive(Debug)]
 pub struct Module {
