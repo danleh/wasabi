@@ -1,5 +1,4 @@
 use binary::WasmBinary;
-use std::ops::{Deref, DerefMut};
 
 #[derive(Debug)]
 pub struct Module {
@@ -9,25 +8,6 @@ pub struct Module {
 /// Just a marker; does not save the size itself since that changes during transformations anyway.
 #[derive(Debug, PartialOrd, PartialEq)]
 pub struct WithSize<T>(pub T);
-
-impl<T> Deref for WithSize<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T> DerefMut for WithSize<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl<T> From<T> for WithSize<T> {
-    fn from(content: T) -> Self {
-        WithSize(content)
-    }
-}
 
 
 /* Sections */
@@ -88,7 +68,7 @@ pub struct Export {
 
 /* Types */
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone, Copy)]
 pub enum ValType {
     #[tag = 0x7f] I32,
     #[tag = 0x7e] I64,
@@ -96,7 +76,7 @@ pub enum ValType {
     #[tag = 0x7c] F64,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone)]
 #[tag = 0x60]
 pub struct FunctionType(pub Vec<ValType>, pub Vec<ValType>);
 
