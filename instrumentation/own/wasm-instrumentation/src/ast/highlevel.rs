@@ -23,10 +23,17 @@ use super::lowlevel as ll;
 // these are either plain enums or structs that do not contain Leb128 or indices
 use super::lowlevel::BlockType;
 use super::lowlevel::ElemType;
+use super::lowlevel::FunctionType;
 use super::lowlevel::GlobalType;
+use super::lowlevel::Label;
+use super::lowlevel::Limits;
+use super::lowlevel::Memarg;
+use super::lowlevel::MemoryType;
 use super::lowlevel::Mutability;
+use super::lowlevel::TableType;
 use super::lowlevel::ValType;
 use typed_arena::Arena;
+use std::collections::HashMap;
 
 fn test() {
     let mut empty_module = Module {
@@ -59,7 +66,8 @@ Instr::End
     })
 }
 
-impl<'a> From<ll::Module> for Module<'a> {
+impl From<ll::Module> for Module {
+    #[allow(unused_mut)]
     fn from(module: ll::Module) -> Self {
         let mut start = None;
 
@@ -73,39 +81,91 @@ impl<'a> From<ll::Module> for Module<'a> {
 
         let mut custom_sections = Vec::new();
 
+        /* only necessary during build-up, then discarded/connected with other sections */
+
         let mut types: Vec<FunctionType> = Vec::new();
+
+        let mut function_idx_to_ref = Vec::new();
+        let mut table_idx_to_ref = Vec::new();
+        let mut memory_idx_to_ref = Vec::new();
+        let mut global_idx_to_ref = Vec::new();
 
         for section in module.sections {
             match section {
-                ll::Section::Custom(vec) => custom_sections.push(vec.value),
-                ll::Section::Type(vec) => types = vec.content.value.into_iter().map(Into::into).collect(),
+                ll::Section::Custom(vec) => custom_sections.push(vec),
+                ll::Section::Type(vec) => types = vec.0,
                 ll::Section::Import(vec) => {
-                    vec.content.value.into_iter().map(|import| {
-                        Import {
-                            module: import.module.value,
-                            name: import.name.value,
+                    for import in vec.0 {
+                        imports.push(Import {
+                            module: import.module,
+                            name: import.name,
                             type_: match import.type_ {
-                                ll::ImportType::Function(type_idx) => ImportType::Function(types[type_idx.0.value]),
-                                ll::ImportType::Table(table_type) => ImportType::Table(table_type.into()),
-                                ll::ImportType::Memory(_) => unimplemented!(),
-                                ll::ImportType::Global(_) => unimplemented!(),
+                                ll::ImportType::Function(type_idx) => ImportType::Function(types[type_idx.0].clone()),
+                                ll::ImportType::Table(table_type) => ImportType::Table(table_type),
+                                ll::ImportType::Memory(memory_type) => ImportType::Memory(memory_type),
+                                ll::ImportType::Global(global_type) => ImportType::Global(global_type),
                             },
-                        }
-                    })
+                        });
+                    }
                 }
-                ll::Section::Function(_) => {}
-                ll::Section::Table(_) => {}
-                ll::Section::Memory(_) => {}
-                ll::Section::Global(_) => {}
-                ll::Section::Export(_) => {}
-                ll::Section::Start(_) => {}
+                ll::Section::Function(vec) => {
+                    for function_type in vec.0 {
+                        let reference = functions.alloc(Function {
+                            type_: types[function_type.0].clone(),
+                            locals: Vec::new(),
+                            body: Vec::new()
+                        });
+                        function_idx_to_ref.push(reference);
+                    }
+                }
+                ll::Section::Table(vec) => {
+                    for table_type in vec.0 {
+                        let reference = tables.alloc(Table {
+                            type_: table_type,
+                            inits: Vec::new(),
+                        });
+                        table_idx_to_ref.push(reference);
+                    }
+                }
+                ll::Section::Memory(vec) => {
+                    for memory_type in vec.0 {
+                        let reference = memories.alloc(Memory {
+                            type_: memory_type,
+                            inits: Vec::new(),
+                        });
+                        memory_idx_to_ref.push(reference);
+                    }
+                }
+                ll::Section::Global(vec) => {
+                    for global in vec.0 {
+                        let reference = globals.alloc(Global {
+                            type_: global.type_,
+                            init: Vec::new(), // FIXME transform exprs
+                        });
+                        global_idx_to_ref.push(reference);
+                    }
+                }
+                ll::Section::Export(vec) => {
+                    for export in vec.0 {
+                        exports.push(Export {
+                            name: export.name,
+                            type_: match export.type_ {
+                                ll::ExportType::Function(idx) => ExportType::Function(function_idx_to_ref[idx.0]),
+                                ll::ExportType::Table(idx) => ExportType::Table(table_idx_to_ref[idx.0]),
+                                ll::ExportType::Memory(idx) => ExportType::Memory(memory_idx_to_ref[idx.0]),
+                                ll::ExportType::Global(idx) => ExportType::Global(global_idx_to_ref[idx.0]),
+                            },
+                        })
+                    }
+                }
+                ll::Section::Start(idx) => start = Some(&*function_idx_to_ref[(idx.0).0]),
                 ll::Section::Element(_) => {}
                 ll::Section::Code(_) => {}
                 ll::Section::Data(_) => {}
             }
         }
 
-        Module {
+        Module::<'a> {
             start,
             imports,
             exports,
@@ -202,44 +262,9 @@ pub struct Data<'a> {
     bytes: Vec<u8>,
 }
 
-
-pub struct FunctionType(Vec<ValType>, Vec<ValType>);
-
-impl From<ll::FuncType> for FunctionType {
-    fn from(func_type: ll::FuncType) -> Self {
-        FunctionType(func_type.params.value, func_type.results.value)
-    }
-}
-
-pub struct TableType(ElemType, Limits);
-
-
-pub struct MemoryType(Limits);
-
-
-pub struct Limits {
-    pub initial_size: u32,
-    pub max_size: Option<u32>,
-}
-
-//impl From<ll::Limits> for Limits {
-//    fn from(limits: ll::Limits) -> Self {
-//        unimplemented!()
-//    }
-//}
-
-
 pub struct Global<'a> {
     type_: GlobalType,
     init: ConstExpr<'a>,
-}
-
-pub struct Label(usize);
-
-
-pub struct Memarg {
-    pub alignment: u32,
-    pub offset: u32,
 }
 
 pub type Expr<'a> = Vec<Instr<'a>>;
