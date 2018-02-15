@@ -19,7 +19,37 @@
 // TODO "streaming AST" API: return Module {} after reading only the first 8 bytes, implement
 // Iterator<Item = Section> for Module -> Module must somehow retain the reader to do so...
 
-use std::marker::PhantomData;
+//use std::marker::PhantomData;
+use std::cell::Cell;
+use typed_arena::Arena;
+
+fn test() {
+    let empty_module = HighLevelModule {
+        start: None,
+        imports: Vec::new(),
+        exports: Vec::new(),
+        functions: Arena::new(),
+        tables: Vec::new(),
+        memories: Vec::new(),
+        globals: Vec::new(),
+        custom_sections: Vec::new(),
+    };
+
+    let function = empty_module.functions.alloc(
+        Function {
+            type_: FunctionType(vec![ValType::I32], vec![]),
+            locals: Vec::new(),
+            body: Vec::new(), // needs to be replaced
+        }
+    );
+
+    let function_idx = Idx(Cell::new(function));
+
+//    function.body.set(vec![
+//        Instr::Call(Idx(function)),
+//        Instr::End
+//    ]);
+}
 
 struct HighLevelModule<'a> {
     start: Option<Idx<'a, Function<'a>>>,
@@ -27,7 +57,7 @@ struct HighLevelModule<'a> {
     imports: Vec<Import>,
     exports: Vec<Export<'a>>,
 
-    functions: Vec<Function<'a>>,
+    functions: Arena<Function<'a>>,
     tables: Vec<Table<'a>>,
     memories: Vec<Memory<'a>>,
     globals: Vec<Global<'a>>,
@@ -35,8 +65,10 @@ struct HighLevelModule<'a> {
     custom_sections: Vec<Vec<u8>>,
 }
 
-pub struct Idx<'a, T: 'a>(&'a T);
+#[derive(Clone)]
+pub struct Idx<'a, T: 'a + Clone>(Cell<&'a T>);
 
+#[derive(Clone)]
 pub struct Function<'a> {
     type_: FunctionType,
     locals: Vec<Local>,
@@ -45,17 +77,20 @@ pub struct Function<'a> {
 
 type Local = ValType;
 
+#[derive(Clone)]
 pub struct Import {
     module: String,
     name: String,
     type_: ImportType,
 }
 
+#[derive(Clone)]
 pub struct Export<'a> {
     name: String,
     type_: ExportType<'a>,
 }
 
+#[derive(Clone)]
 pub enum ImportType {
     Function(FunctionType),
     Table(TableType),
@@ -63,6 +98,7 @@ pub enum ImportType {
     Global(GlobalType),
 }
 
+#[derive(Clone)]
 pub enum ExportType<'a> {
     Function(Idx<'a, Function<'a>>),
     Table(Idx<'a, Table<'a>>),
@@ -70,50 +106,62 @@ pub enum ExportType<'a> {
     Global(Idx<'a, Global<'a>>),
 }
 
+#[derive(Clone)]
 pub struct Table<'a> {
     type_: TableType,
     inits: Vec<Element<'a>>,
 }
 
+#[derive(Clone)]
 pub struct Memory<'a> {
     type_: MemoryType,
     inits: Vec<Data<'a>>,
 }
 
 // == TableInit
+#[derive(Clone)]
 pub struct Element<'a> {
     offset: ConstExpr<'a>,
     functions: Vec<Idx<'a, Function<'a>>>,
 }
 
 // == MemoryInit
+#[derive(Clone)]
 pub struct Data<'a> {
     offset: ConstExpr<'a>,
     bytes: Vec<u8>,
 }
 
+#[derive(Clone)]
 pub struct FunctionType(Vec<ValType>, Vec<ValType>);
 
+#[derive(Clone)]
 pub struct TableType(ElemType, Limits);
 
+#[derive(Clone)]
 pub enum ElemType {
     Anyfunc,
 }
 
+#[derive(Clone)]
 pub struct MemoryType(Limits);
 
+#[derive(Clone)]
 pub struct Limits {
     pub initial_size: u32,
     pub max_size: Option<u32>,
 }
 
+#[derive(Clone)]
 pub struct Global<'a> {
     type_: GlobalType,
     init: ConstExpr<'a>,
 }
 
+#[derive(Clone)]
 pub struct GlobalType(ValType, Mutability);
 
+#[derive(Clone)]
 pub enum ValType {
     I32,
     I64,
@@ -121,17 +169,26 @@ pub enum ValType {
     F64,
 }
 
+#[derive(Clone)]
 pub enum Mutability {
     Const,
     Mut,
 }
 
+#[derive(Clone)]
 pub struct Label;
+
+#[derive(Clone)]
+pub struct Memarg {
+    pub alignment: u32,
+    pub offset: u32,
+}
 
 pub type BlockType = Option<ValType>;
 pub type Expr<'a> = Vec<Instr<'a>>;
 pub type ConstExpr<'a> = Vec<Instr<'a>>;
 
+#[derive(Clone)]
 pub enum Instr<'a> {
     Unreachable,
     Nop,
@@ -274,7 +331,7 @@ pub enum Instr<'a> {
     F32Div,
     F32Min,
     F32Max,
-    F32Copysign,
+    F32Clonesign,
     F64Abs,
     F64Neg,
     F64Ceil,
@@ -288,7 +345,7 @@ pub enum Instr<'a> {
     F64Div,
     F64Min,
     F64Max,
-    F64Copysign,
+    F64Clonesign,
     I32WrapI64,
     I32TruncSF32,
     I32TruncUF32,
@@ -314,9 +371,4 @@ pub enum Instr<'a> {
     I64ReinterpretF64,
     F32ReinterpretI32,
     F64ReinterpretI64,
-}
-
-pub struct Memarg {
-    pub alignment: u32,
-    pub offset: u32,
 }

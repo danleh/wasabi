@@ -7,6 +7,7 @@ extern crate byteorder;
 extern crate rayon;
 extern crate test;
 extern crate walkdir;
+extern crate typed_arena;
 
 use ast::lowlevel::Module;
 use binary::WasmBinary;
