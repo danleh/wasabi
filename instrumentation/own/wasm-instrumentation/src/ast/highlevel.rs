@@ -21,58 +21,68 @@
 
 //use std::marker::PhantomData;
 use std::cell::Cell;
+use std::cell::RefCell;
+use std::rc::{Rc, Weak};
 use typed_arena::Arena;
 
+//lazy_static! {
+//    // marker for the function that is in the process of being created
+//    static ref SELF_FUNCTION: Function<'static> = Function {
+//        type_: FunctionType(vec![], vec![]),
+//        locals: vec![],
+//        body: vec![],
+//    };
+//}
+
 fn test() {
-    let empty_module = HighLevelModule {
+    let self_function = Function {
+        type_: FunctionType(vec![], vec![]),
+        locals: vec![],
+        body: vec![],
+    };
+
+    let mut empty_module = HighLevelModule {
         start: None,
         imports: Vec::new(),
         exports: Vec::new(),
-        functions: Arena::new(),
+        functions: Vec::new(),
         tables: Vec::new(),
         memories: Vec::new(),
         globals: Vec::new(),
         custom_sections: Vec::new(),
     };
 
-    let function = empty_module.functions.alloc(
-        Function {
-            type_: FunctionType(vec![ValType::I32], vec![]),
-            locals: Vec::new(),
-            body: Vec::new(), // needs to be replaced
-        }
-    );
+    let function = Rc::new(Function {
+        type_: FunctionType(vec![ValType::I32], vec![]),
+        locals: Vec::new(),
+        body: vec![
+            Instr::Call(None), // will be replaced by an index to this function itself during encoding
+            Instr::End
+        ],
+    });
 
-    let function_idx = Idx(Cell::new(function));
-
-//    function.body.set(vec![
-//        Instr::Call(Idx(function)),
-//        Instr::End
-//    ]);
+    empty_module.functions.push(function);
 }
 
-struct HighLevelModule<'a> {
-    start: Option<Idx<'a, Function<'a>>>,
+struct HighLevelModule {
+    start: Option<Rc<Function>>,
 
     imports: Vec<Import>,
-    exports: Vec<Export<'a>>,
+    exports: Vec<Export>,
 
-    functions: Arena<Function<'a>>,
-    tables: Vec<Table<'a>>,
-    memories: Vec<Memory<'a>>,
-    globals: Vec<Global<'a>>,
+    functions: Vec<Rc<Function>>,
+    tables: Vec<Rc<Table>>,
+    memories: Vec<Rc<Memory>>,
+    globals: Vec<Rc<Global>>,
 
     custom_sections: Vec<Vec<u8>>,
 }
 
 #[derive(Clone)]
-pub struct Idx<'a, T: 'a + Clone>(Cell<&'a T>);
-
-#[derive(Clone)]
-pub struct Function<'a> {
+pub struct Function {
     type_: FunctionType,
-    locals: Vec<Local>,
-    body: Expr<'a>,
+    locals: Vec<Rc<Local>>,
+    body: Expr,
 }
 
 type Local = ValType;
@@ -85,9 +95,9 @@ pub struct Import {
 }
 
 #[derive(Clone)]
-pub struct Export<'a> {
+pub struct Export {
     name: String,
-    type_: ExportType<'a>,
+    type_: ExportType,
 }
 
 #[derive(Clone)]
@@ -99,36 +109,36 @@ pub enum ImportType {
 }
 
 #[derive(Clone)]
-pub enum ExportType<'a> {
-    Function(Idx<'a, Function<'a>>),
-    Table(Idx<'a, Table<'a>>),
-    Memory(Idx<'a, Memory<'a>>),
-    Global(Idx<'a, Global<'a>>),
+pub enum ExportType {
+    Function(Idx<Function>),
+    Table(Idx<Table>),
+    Memory(Idx<Memory>),
+    Global(Idx<Global>),
 }
 
 #[derive(Clone)]
-pub struct Table<'a> {
+pub struct Table {
     type_: TableType,
-    inits: Vec<Element<'a>>,
+    inits: Vec<Element>,
 }
 
 #[derive(Clone)]
-pub struct Memory<'a> {
+pub struct Memory {
     type_: MemoryType,
-    inits: Vec<Data<'a>>,
+    inits: Vec<Data>,
 }
 
 // == TableInit
 #[derive(Clone)]
-pub struct Element<'a> {
-    offset: ConstExpr<'a>,
-    functions: Vec<Idx<'a, Function<'a>>>,
+pub struct Element {
+    offset: ConstExpr,
+    functions: Vec<Idx<Function>>,
 }
 
 // == MemoryInit
 #[derive(Clone)]
-pub struct Data<'a> {
-    offset: ConstExpr<'a>,
+pub struct Data {
+    offset: ConstExpr,
     bytes: Vec<u8>,
 }
 
@@ -153,9 +163,9 @@ pub struct Limits {
 }
 
 #[derive(Clone)]
-pub struct Global<'a> {
+pub struct Global {
     type_: GlobalType,
-    init: ConstExpr<'a>,
+    init: ConstExpr,
 }
 
 #[derive(Clone)]
@@ -176,7 +186,7 @@ pub enum Mutability {
 }
 
 #[derive(Clone)]
-pub struct Label;
+pub struct Label(usize);
 
 #[derive(Clone)]
 pub struct Memarg {
@@ -185,36 +195,40 @@ pub struct Memarg {
 }
 
 pub type BlockType = Option<ValType>;
-pub type Expr<'a> = Vec<Instr<'a>>;
-pub type ConstExpr<'a> = Vec<Instr<'a>>;
+pub type Expr = Vec<Instr>;
+pub type ConstExpr = Vec<Instr>;
+
+/// None indicates a self referential index which will be patched during serialization
+pub type RecursiveIdx<T> = Option<Rc<T>>;
+pub type Idx<T> = Rc<T>;
 
 #[derive(Clone)]
-pub enum Instr<'a> {
+pub enum Instr {
     Unreachable,
     Nop,
 
-    Block(BlockType, Expr<'a>),
-    Loop(BlockType, Expr<'a>),
-    If(BlockType, Expr<'a>),
-    Else(Expr<'a>),
+    Block(BlockType, Expr),
+    Loop(BlockType, Expr),
+    If(BlockType, Expr),
+    Else(Expr),
     End,
 
-    Br(Idx<'a, Label>),
-    BrIf(Idx<'a, Label>),
-    BrTable(Vec<Idx<'a, Label>>, Idx<'a, Label>),
+    Br(Label),
+    BrIf(Label),
+    BrTable(Vec<Label>, Label),
 
     Return,
-    Call(Idx<'a, Function<'a>>),
-    CallIndirect(FunctionType, /* unused, always 0x00 in WASM version 1 */ Idx<'a, Table<'a>>),
+    Call(RecursiveIdx<Function>),
+    CallIndirect(FunctionType, /* unused, always 0x00 in WASM version 1 */ Idx<Table>),
 
     Drop,
     Select,
 
-    GetLocal(Idx<'a, Local>),
-    SetLocal(Idx<'a, Local>),
-    TeeLocal(Idx<'a, Local>),
-    GetGlobal(Idx<'a, Global<'a>>),
-    SetGlobal(Idx<'a, Global<'a>>),
+    GetLocal(Idx<Local>),
+    SetLocal(Idx<Local>),
+    TeeLocal(Idx<Local>),
+    GetGlobal(Idx<Global>),
+    SetGlobal(Idx<Global>),
 
     I32Load(Memarg),
     I64Load(Memarg),
@@ -240,8 +254,8 @@ pub enum Instr<'a> {
     I64Store16(Memarg),
     I64Store32(Memarg),
 
-    CurrentMemory(/* unused, always 0x00 in WASM version 1 */ Idx<'a, Memory<'a>>),
-    GrowMemory(/* unused, always 0x00 in WASM version 1 */ Idx<'a, Memory<'a>>),
+    CurrentMemory(/* unused, always 0x00 in WASM version 1 */ Idx<Memory>),
+    GrowMemory(/* unused, always 0x00 in WASM version 1 */ Idx<Memory>),
 
     I32Const(i32),
     I64Const(i64),
@@ -372,3 +386,44 @@ pub enum Instr<'a> {
     F32ReinterpretI32,
     F64ReinterpretI64,
 }
+
+//trait SelfIndices {
+//    fn patch_self_indices(&self, replacement: &Rc<Function>);
+//}
+//
+//impl SelfIndices for Expr {
+//    fn patch_self_indices(&self, replacement: &Rc<Function>) {
+//        for instr in self.iter() {
+//            instr.patch_self_indices(replacement);
+//        }
+//    }
+//}
+//
+//impl SelfIndices for Instr {
+//    fn patch_self_indices(&self, replacement: &Rc<Function>) {
+//        match *self {
+//            Instr::Block(_, ref expr) => expr.patch_self_indices(replacement),
+//            Instr::Loop(_, ref expr) => expr.patch_self_indices(replacement),
+//            Instr::If(_, ref expr) => expr.patch_self_indices(replacement),
+//            Instr::Else(ref expr) => expr.patch_self_indices(replacement),
+//
+////            Instr::Br(_) => {},
+////            Instr::BrIf(_) => {},
+////            Instr::BrTable(_, _) => {},
+//
+//            Instr::Call(ref idx) if idx.borrow().is_none() => *idx.borrow_mut() = Some(replacement.clone()),
+////            Instr::CallIndirect(_, _) => {},
+//
+////            Instr::GetLocal(_) => {},
+////            Instr::SetLocal(_) => {},
+////            Instr::TeeLocal(_) => {},
+////            Instr::GetGlobal(_) => {},
+////            Instr::SetGlobal(_) => {},
+//
+////            Instr::CurrentMemory(_) => {},
+////            Instr::GrowMemory(_) => {},
+//
+//            _ => {}
+//        }
+//    }
+//}
