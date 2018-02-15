@@ -31,42 +31,42 @@ impl WasmBinary for u8 {
     }
 }
 
-impl WasmBinary for Leb128<u32> {
+impl WasmBinary for u32 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         reader.read_leb128()
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        writer.write_leb128(self)
+        writer.write_leb128(*self)
     }
 }
 
-impl WasmBinary for Leb128<usize> {
+impl WasmBinary for usize {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         reader.read_leb128()
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        if self.value > u32::max_value() as usize {
+        if *self > u32::max_value() as usize {
             Self::error("WASM spec does not allow unsigned larger than u32")?;
         }
-        writer.write_leb128(self)
+        writer.write_leb128(*self)
     }
 }
 
-impl WasmBinary for Leb128<i32> {
+impl WasmBinary for i32 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         reader.read_leb128()
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        writer.write_leb128(self)
+        writer.write_leb128(*self)
     }
 }
 
-impl WasmBinary for Leb128<i64> {
+impl WasmBinary for i64 {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         reader.read_leb128()
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        writer.write_leb128(self)
+        writer.write_leb128(*self)
     }
 }
 
@@ -95,18 +95,16 @@ impl WasmBinary for f64 {
 
 impl<T: WasmBinary> WasmBinary for WithSize<T> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Ok(WithSize {
-            size: Leb128::with_byte_count((), &Leb128::<u32>::decode(reader)?),
-            content: T::decode(reader)?,
-        })
+        let _forget_original_size = u32::decode(reader)?;
+        Ok(WithSize(T::decode(reader)?))
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         let mut buf = Vec::new();
-        let new_size = self.content.encode(&mut buf)?;
+        let new_size = self.0.encode(&mut buf)?;
 
         // write new size, then contents from buffer to actual writer
-        let mut bytes_written = Leb128::with_byte_count(new_size, &self.size).encode(writer)?;
+        let mut bytes_written = new_size.encode(writer)?;
         writer.write_all(&buf)?;
         bytes_written += new_size;
 
@@ -114,102 +112,86 @@ impl<T: WasmBinary> WasmBinary for WithSize<T> {
     }
 }
 
-impl<T: WasmBinary> WasmBinary for Leb128<Vec<T>> {
+impl<T: WasmBinary> WasmBinary for Vec<T> {
     default fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let size = Leb128::decode(reader)?;
+        let size = usize::decode(reader)?;
 
-        let mut vec: Vec<T> = Vec::with_capacity(size.value * size_of::<T>());
-        for _ in 0..size.value {
+        let mut vec: Vec<T> = Vec::with_capacity(size * size_of::<T>());
+        for _ in 0..size {
             vec.push(T::decode(reader)?);
         };
 
-        Ok(Leb128::with_byte_count(vec, &size))
+        Ok(vec)
     }
 
     default fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        let new_size = self.len();
-
-        let mut bytes_written = Leb128::with_byte_count(new_size, self).encode(writer)?;
+        let mut bytes_written = self.len().encode(writer)?;
         for element in self.iter() {
             bytes_written += element.encode(writer)?;
         }
-
         Ok(bytes_written)
     }
 }
 
-impl WasmBinary for Leb128<String> {
+impl WasmBinary for String {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        // reuse Vec<u8> implementation, and then consume buf so no re-allocation is necessary.
-        let buf: Leb128<Vec<u8>> = Leb128::decode(reader)?;
-        match String::from_utf8(buf.value) {
-            Ok(string) => Ok(Leb128 {
-                value: string,
-                byte_count: buf.byte_count,
-            }),
-            Err(e) => Self::error(format!("utf-8 conversion error: {}", e.to_string())),
-        }
+        // reuse Vec<u8> implementation, then consume buf so no re-allocation is necessary
+        let buf: Vec<u8> = Vec::decode(reader)?;
+        String::from_utf8(buf).map_err(|e| io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("utf-8 conversion error: {}", e.to_string())))
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        let new_size = self.len();
-
-        let mut bytes_written = Leb128::with_byte_count(new_size, &self).encode(writer)?;
+        let mut bytes_written = self.len().encode(writer)?;
         for byte in self.bytes() {
             bytes_written += byte.encode(writer)?;
         }
-
         Ok(bytes_written)
     }
 }
 
 /// Uses trait specialization (https://github.com/rust-lang/rfcs/blob/master/text/1210-impl-specialization.md)
 /// to provide parallel decoding/encoding (right now only Code section has the necessary Vec<WithSize<T>> structure).
-impl<T: WasmBinary + Send + Sync> WasmBinary for Leb128<Vec<WithSize<T>>> {
+impl<T: WasmBinary + Send + Sync> WasmBinary for Vec<WithSize<T>> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let num_elements = Leb128::decode(reader)?;
+        let num_elements = usize::decode(reader)?;
 
         // read all elements into buffers of the given size (non-parallel, but hopefully fast)
-        let mut bufs = Vec::with_capacity(num_elements.value * size_of::<Leb128<Vec<u8>>>());
-        for _ in 0..num_elements.value {
-            let num_bytes = Leb128::decode(reader)?;
-            let mut buf = vec![0u8; num_bytes.value];
+        let mut bufs = Vec::with_capacity(num_elements * size_of::<Vec<u8>>());
+        for _ in 0..num_elements {
+            let num_bytes = usize::decode(reader)?;
+            let mut buf = vec![0u8; num_bytes];
             reader.read_exact(&mut buf)?;
-            bufs.push(Leb128::with_byte_count(buf, &num_bytes));
+            bufs.push(buf);
         }
 
         // parallel decode of each buffer
         let decoded: io::Result<Vec<WithSize<T>>> = bufs.into_par_iter()
-            .map(|buf| {
-                Ok(WithSize {
-                    size: Leb128::with_byte_count((), &buf),
-                    content: T::decode(&mut &buf.value[..])?,
-                })
+            .map(|buf| -> io::Result<WithSize<T>> {
+                Ok(WithSize(T::decode(&mut &buf[..])?))
             })
             .collect();
 
-        Ok(Leb128::with_byte_count(decoded?, &num_elements))
+        Ok(decoded?)
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        let new_size = Leb128::with_byte_count(self.len(), self);
+        let new_size = self.len();
         let mut bytes_written = new_size.encode(writer)?;
 
         // encode elements to buffers in parallel
-        let encoded: io::Result<Vec<Leb128<Vec<u8>>>> = self.par_iter()
+        let encoded: io::Result<Vec<Vec<u8>>> = self.par_iter()
             .map(|element: &WithSize<T>| {
                 let mut buf = Vec::new();
-                element.content.encode(&mut buf)?;
-                Ok(Leb128::with_byte_count(buf, &element.size))
+                element.0.encode(&mut buf)?;
+                Ok(buf)
             })
             .collect();
 
         // write sizes and buffer contents to actual writer (non-parallel, but hopefully fast)
         for buf in encoded? {
-            let size = Leb128::with_byte_count(buf.len(), &buf);
-            bytes_written += size.encode(writer)?;
-            writer.write_all(&buf)?;
-            bytes_written += size.value;
+            bytes_written += buf.encode(writer)?;
         }
 
         Ok(bytes_written)
@@ -308,12 +290,12 @@ impl WasmBinary for Limits {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         Ok(match u8::decode(reader)? {
             0x00 => Limits {
-                initial_size: Leb128::decode(reader)?,
+                initial_size: u32::decode(reader)?,
                 max_size: None,
             },
             0x01 => Limits {
-                initial_size: Leb128::decode(reader)?,
-                max_size: Some(Leb128::decode(reader)?),
+                initial_size: u32::decode(reader)?,
+                max_size: Some(u32::decode(reader)?),
             },
             byte => Self::error(format!("expected tag for Limits, got 0x{:02x}", byte))?
         })
