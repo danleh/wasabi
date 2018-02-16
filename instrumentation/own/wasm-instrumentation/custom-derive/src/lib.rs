@@ -55,8 +55,9 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
         _ => unimplemented!("can only derive(WasmBinary) for structs and enums")
     };
 
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     quote!(
-        impl WasmBinary for #data_name {
+        impl #impl_generics WasmBinary for #data_name #ty_generics #where_clause {
             fn decode<R: ::std::io::Read>(reader: &mut R) -> ::std::io::Result<Self> {
                 Ok(#decode_expr)
             }
