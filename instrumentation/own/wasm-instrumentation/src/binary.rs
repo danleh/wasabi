@@ -4,6 +4,7 @@ use leb128::*;
 use rayon::prelude::*;
 use std::error::Error;
 use std::io;
+use std::marker::PhantomData;
 use std::mem::size_of;
 
 pub trait WasmBinary: Sized {
@@ -316,4 +317,9 @@ impl WasmBinary for Limits {
         }
         Ok(bytes_written)
     }
+}
+
+impl<T> WasmBinary for PhantomData<T> {
+    fn decode<R: io::Read>(_: &mut R) -> io::Result<Self> { Ok(PhantomData) }
+    fn encode<W: io::Write>(&self, _: &mut W) -> io::Result<usize> { Ok(0) }
 }

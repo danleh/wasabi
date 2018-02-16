@@ -1,4 +1,5 @@
 use binary::WasmBinary;
+use std::marker::PhantomData;
 
 #[derive(Debug)]
 pub struct Module {
@@ -17,18 +18,18 @@ pub enum Section {
     #[tag = 0] Custom(Vec<u8>),
     #[tag = 1] Type(WithSize<Vec<FunctionType>>),
     #[tag = 2] Import(WithSize<Vec<Import>>),
-    #[tag = 3] Function(WithSize<Vec<TypeIdx>>),
+    #[tag = 3] Function(WithSize<Vec<Idx<FunctionType>>>),
     #[tag = 4] Table(WithSize<Vec<TableType>>),
     #[tag = 5] Memory(WithSize<Vec<MemoryType>>),
     #[tag = 6] Global(WithSize<Vec<Global>>),
     #[tag = 7] Export(WithSize<Vec<Export>>),
-    #[tag = 8] Start(WithSize<FunctionIdx>),
+    #[tag = 8] Start(WithSize<Idx<Function>>),
     #[tag = 9] Element(WithSize<Vec<Element>>),
     #[tag = 10] Code(WithSize<Vec<WithSize<Function>>>),
     #[tag = 11] Data(WithSize<Vec<Data>>),
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone)]
 pub struct Global {
     pub type_: GlobalType,
     pub init: Expr,
@@ -37,15 +38,15 @@ pub struct Global {
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct Element {
     // always 0x00 in WASM version 1
-    pub table: TableIdx,
+    pub table: Idx<Table>,
     pub offset: Expr,
-    pub init: Vec<FunctionIdx>,
+    pub init: Vec<Idx<Function>>,
 }
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct Data {
     // always 0x00 in WASM version 1
-    pub memory: MemoryIdx,
+    pub memory: Idx<Memory>,
     pub offset: Expr,
     pub init: Vec<u8>,
 }
@@ -66,7 +67,7 @@ pub struct Export {
 
 /* Types */
 
-#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub enum ValType {
     #[tag = 0x7f] I32,
     #[tag = 0x7e] I64,
@@ -78,13 +79,13 @@ pub enum ValType {
 #[tag = 0x60]
 pub struct FunctionType(pub Vec<ValType>, pub Vec<ValType>);
 
-#[derive(Debug, PartialOrd, PartialEq)]
+#[derive(Debug, PartialOrd, PartialEq, Clone)]
 pub struct BlockType(pub Option<ValType>);
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct TableType(pub ElemType, pub Limits);
 
-#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub enum ElemType {
     // only value in WASM version 1
     #[tag = 0x70]
@@ -94,16 +95,16 @@ pub enum ElemType {
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct MemoryType(pub Limits);
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub struct Limits {
     pub initial_size: u32,
     pub max_size: Option<u32>,
 }
 
-#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub struct GlobalType(pub ValType, pub Mutability);
 
-#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub enum Mutability {
     #[tag = 0x00] Const,
     #[tag = 0x01] Mut,
@@ -111,69 +112,67 @@ pub enum Mutability {
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub enum ImportType {
-    #[tag = 0x0] Function(TypeIdx),
+    #[tag = 0x0] Function(Idx<FunctionType>),
     #[tag = 0x1] Table(TableType),
     #[tag = 0x2] Memory(MemoryType),
     #[tag = 0x3] Global(GlobalType),
 }
 
-#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Clone)]
 pub enum ExportType {
-    #[tag = 0x0] Function(FunctionIdx),
-    #[tag = 0x1] Table(TableIdx),
-    #[tag = 0x2] Memory(MemoryIdx),
-    #[tag = 0x3] Global(GlobalIdx),
+    #[tag = 0x0] Function(Idx<Function>),
+    #[tag = 0x1] Table(Idx<Table>),
+    #[tag = 0x2] Memory(Idx<Memory>),
+    #[tag = 0x3] Global(Idx<Global>),
 }
 
 
 /* Indices */
 
-#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct TypeIdx(pub usize);
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
+pub struct Idx<T>(pub usize, PhantomData<T>);
 
-#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct FunctionIdx(pub usize);
+impl<T> From<usize> for Idx<T> {
+    fn from(u: usize) -> Self { Idx(u, PhantomData) }
+}
 
-#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct TableIdx(pub usize);
+/// just markers for Idx
+#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
+pub struct Table;
 
-#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct MemoryIdx(pub usize);
+#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
+pub struct Memory;
 
-#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct GlobalIdx(pub usize);
+#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
+pub struct Local;
 
-#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct LocalIdx(pub usize);
-
-#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct Label(pub usize);
-
+#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
+pub struct Label;
 
 /* Code */
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone)]
 pub struct Function {
     pub locals: Vec<Locals>,
     pub body: Expr,
 }
 
-#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub struct Locals {
     pub count: u32,
     pub type_: ValType,
 }
 
-#[derive(Debug, PartialOrd, PartialEq)]
+#[derive(Debug, PartialOrd, PartialEq,Clone)]
 pub struct Expr(pub Vec<Instr>);
 
-#[derive(WasmBinary, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub struct Memarg {
     pub alignment: u32,
     pub offset: u32,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone)]
 pub enum Instr {
     #[tag = 0x00] Unreachable,
     #[tag = 0x01] Nop,
@@ -185,22 +184,22 @@ pub enum Instr {
     #[tag = 0x05] Else(Expr),
     #[tag = 0x0b] End,
 
-    #[tag = 0x0c] Br(Label),
-    #[tag = 0x0d] BrIf(Label),
-    #[tag = 0x0e] BrTable(Vec<Label>, Label),
+    #[tag = 0x0c] Br(Idx<Label>),
+    #[tag = 0x0d] BrIf(Idx<Label>),
+    #[tag = 0x0e] BrTable(Vec<Idx<Label>>, Idx<Label>),
 
     #[tag = 0x0f] Return,
-    #[tag = 0x10] Call(FunctionIdx),
-    #[tag = 0x11] CallIndirect(TypeIdx, /* unused, always 0x00 in WASM version 1 */ TableIdx),
+    #[tag = 0x10] Call(Idx<Function>),
+    #[tag = 0x11] CallIndirect(Idx<FunctionType>, /* unused, always 0x00 in WASM version 1 */ Idx<Table>),
 
     #[tag = 0x1a] Drop,
     #[tag = 0x1b] Select,
 
-    #[tag = 0x20] GetLocal(LocalIdx),
-    #[tag = 0x21] SetLocal(LocalIdx),
-    #[tag = 0x22] TeeLocal(LocalIdx),
-    #[tag = 0x23] GetGlobal(GlobalIdx),
-    #[tag = 0x24] SetGlobal(GlobalIdx),
+    #[tag = 0x20] GetLocal(Idx<Local>),
+    #[tag = 0x21] SetLocal(Idx<Local>),
+    #[tag = 0x22] TeeLocal(Idx<Local>),
+    #[tag = 0x23] GetGlobal(Idx<Global>),
+    #[tag = 0x24] SetGlobal(Idx<Global>),
 
     #[tag = 0x28] I32Load(Memarg),
     #[tag = 0x29] I64Load(Memarg),
@@ -226,8 +225,8 @@ pub enum Instr {
     #[tag = 0x3d] I64Store16(Memarg),
     #[tag = 0x3e] I64Store32(Memarg),
 
-    #[tag = 0x3f] CurrentMemory(/* unused, always 0x00 in WASM version 1 */ MemoryIdx),
-    #[tag = 0x40] GrowMemory(/* unused, always 0x00 in WASM version 1 */ MemoryIdx),
+    #[tag = 0x3f] CurrentMemory(/* unused, always 0x00 in WASM version 1 */ Idx<Memory>),
+    #[tag = 0x40] GrowMemory(/* unused, always 0x00 in WASM version 1 */ Idx<Memory>),
 
     #[tag = 0x41] I32Const(i32),
     #[tag = 0x42] I64Const(i64),
