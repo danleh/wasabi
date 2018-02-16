@@ -10,7 +10,13 @@ use test::Bencher;
 #[test]
 #[ignore]
 fn debug() {
-    let file = "test/input/hello-manual.wasm";
+    let file = "test/input/hello-emcc.wasm";
+    use std::mem::size_of;
+    println!("{} bytes", size_of::<::ast::highlevel::Function>());
+
+//    let module: ::ast::highlevel::Module = Module::from_file(file).unwrap().into();
+//    println!("{:#?}", module);
+
 //    instrument(&Path::new(file), count_calls, "count-calls").unwrap();
 }
 
@@ -18,14 +24,14 @@ fn debug() {
 /* Correctness tests */
 
 #[test]
-fn decode_valid() {
+fn can_decode_valid_wasm() {
     for path in wasm_files("test/input") {
         Module::from_file(&path).expect(&format!("could not decode valid wasm file {}", path.display()));
     }
 }
 
 #[test]
-fn identity_valid() {
+fn identity_instrumentation_produces_valid_wasm() {
     for path in wasm_files("test/input") {
         let output = instrument(&path, identity, "identity").unwrap();
         wasm_validate(&output).unwrap();
@@ -34,7 +40,7 @@ fn identity_valid() {
 
 // FIXME
 //#[test]
-//fn add_trivial_type_valid() {
+//fn add_trivial_type_instrumentation_produces_valid_wasm() {
 //    for path in wasm_files("test/input") {
 //        let output = instrument(&path, add_trivial_type, "add-trivial-type").unwrap();
 //        wasm_validate(&output).unwrap();
@@ -42,7 +48,7 @@ fn identity_valid() {
 //}
 //
 //#[test]
-//fn count_calls_valid() {
+//fn count_calls_instrumentation_produces_valid_wasm() {
 //    for path in wasm_files("test/input") {
 //        let output = instrument(&path, count_calls, "count-calls").unwrap();
 //        wasm_validate(&output).unwrap();
