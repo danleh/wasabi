@@ -6,13 +6,16 @@ use std::io::{self, Cursor, Read, sink};
 use std::path::{Path, PathBuf};
 use test::Bencher;
 
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
 /// "main"-like for quick and dirty testing
 #[test]
 #[ignore]
 fn debug() {
     let file = "test/input/hello-emcc.wasm";
     use std::mem::size_of;
-    println!("{} bytes", size_of::<::ast::highlevel::Function>());
+    println!("{} bytes", size_of::<Cell<Option<Rc<RefCell<::ast::highlevel::Function>>>>>());
 
 //    let module: ::ast::highlevel::Module = Module::from_file(file).unwrap().into();
 //    println!("{:#?}", module);
