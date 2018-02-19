@@ -1,26 +1,59 @@
 use ast::lowlevel::Module;
 use binary::WasmBinary;
 use instrument::*;
+use std::cell::{Cell, RefCell};
 use std::fs::{create_dir_all, File};
 use std::io::{self, Cursor, Read, sink};
 use std::path::{Path, PathBuf};
 use test::Bencher;
-
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+use ast::lowlevel::FunctionType;
+use ast::lowlevel::ValType;
+use std::collections::HashMap;
 
 /// "main"-like for quick and dirty testing
 #[test]
 #[ignore]
 fn debug() {
-    let file = "test/input/hello-emcc.wasm";
-    use std::mem::size_of;
-    println!("{} bytes", size_of::<Cell<Option<Rc<RefCell<::ast::highlevel::Function>>>>>());
+//    let file = "test/input/hello-emcc.wasm";
+//    use std::mem::size_of;
+//    println!("{} bytes", size_of::<Cell<Option<Rc<RefCell<::ast::highlevel::Function>>>>>());
 
 //    let module: ::ast::highlevel::Module = Module::from_file(file).unwrap().into();
 //    println!("{:#?}", module);
 
 //    instrument(&Path::new(file), count_calls, "count-calls").unwrap();
+}
+
+const SIZE: usize = 10;
+
+#[bench]
+fn vector_linear_search(bencher: &mut Bencher) {
+    let vec = vec![
+        FunctionType(vec![], vec![]),
+        FunctionType(vec![ValType::I32], vec![]),
+        FunctionType(vec![ValType::F32], vec![]),
+        FunctionType(vec![ValType::I32], vec![ValType::I32]),
+        FunctionType(vec![ValType::I32, ValType::I32, ValType::I32], vec![ValType::I32]),
+        FunctionType(vec![ValType::F32, ValType::F32, ValType::I32], vec![ValType::I32]),
+    ];
+    bencher.iter(|| {
+        vec.iter().position(|ty| ty == &FunctionType(vec![ValType::I32], vec![ValType::I32]))
+    })
+}
+
+#[bench]
+fn hashmap_search(bencher: &mut Bencher) {
+    let mut map = HashMap::new();
+    map.insert(FunctionType(vec![], vec![]), 0);
+    map.insert(FunctionType(vec![ValType::I32], vec![]), 1);
+    map.insert(FunctionType(vec![ValType::F32], vec![]), 2);
+    map.insert(FunctionType(vec![ValType::I32], vec![ValType::I32]), 3);
+    map.insert(FunctionType(vec![ValType::I32, ValType::I32, ValType::I32], vec![ValType::I32]), 4);
+    map.insert(FunctionType(vec![ValType::F32, ValType::F32, ValType::I32], vec![ValType::I32]), 5);
+
+    bencher.iter(|| {
+        map.get(&FunctionType(vec![ValType::I32], vec![ValType::I32]))
+    })
 }
 
 
