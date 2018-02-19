@@ -1,6 +1,8 @@
 use binary::WasmBinary;
 use std::marker::PhantomData;
 
+// TODO remove as many of the derives as possible
+
 #[derive(Debug)]
 pub struct Module {
     pub sections: Vec<Section>,
@@ -25,7 +27,7 @@ pub enum Section {
     #[tag = 7] Export(WithSize<Vec<Export>>),
     #[tag = 8] Start(WithSize<Idx<Function>>),
     #[tag = 9] Element(WithSize<Vec<Element>>),
-    #[tag = 10] Code(WithSize<Vec<WithSize<Function>>>),
+    #[tag = 10] Code(WithSize<Vec<WithSize<Code>>>),
     #[tag = 11] Data(WithSize<Vec<Data>>),
 }
 
@@ -38,7 +40,7 @@ pub struct Global {
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct Element {
     // always 0x00 in WASM version 1
-    pub table: Idx<Table>,
+    pub table_idx: Idx<Table>,
     pub offset: Expr,
     pub init: Vec<Idx<Function>>,
 }
@@ -46,7 +48,7 @@ pub struct Element {
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
 pub struct Data {
     // always 0x00 in WASM version 1
-    pub memory: Idx<Memory>,
+    pub memory_idx: Idx<Memory>,
     pub offset: Expr,
     pub init: Vec<u8>,
 }
@@ -67,7 +69,7 @@ pub struct Export {
 
 /* Types */
 
-#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
+#[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone, Eq, Hash)]
 pub enum ValType {
     #[tag = 0x7f] I32,
     #[tag = 0x7e] I64,
@@ -75,14 +77,14 @@ pub enum ValType {
     #[tag = 0x7c] F64,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Eq, Clone, Hash)]
 #[tag = 0x60]
 pub struct FunctionType(pub Vec<ValType>, pub Vec<ValType>);
 
 #[derive(Debug, PartialOrd, PartialEq, Clone)]
 pub struct BlockType(pub Option<ValType>);
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone)]
 pub struct TableType(pub ElemType, pub Limits);
 
 #[derive(WasmBinary, Debug, PartialEq, PartialOrd, Copy, Clone)]
@@ -92,7 +94,7 @@ pub enum ElemType {
     Anyfunc,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone)]
 pub struct MemoryType(pub Limits);
 
 #[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
@@ -136,7 +138,11 @@ impl<T> From<usize> for Idx<T> {
     fn from(u: usize) -> Self { Idx(u, PhantomData) }
 }
 
-/// just markers for Idx
+// Markers for Idx<T>
+// Unit structs since the low-level format splits Function, Table and Memory over multiple sections.
+#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
+pub struct Function;
+
 #[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub struct Table;
 
@@ -152,7 +158,7 @@ pub struct Label;
 /* Code */
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone)]
-pub struct Function {
+pub struct Code {
     pub locals: Vec<Locals>,
     pub body: Expr,
 }
