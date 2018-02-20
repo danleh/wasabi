@@ -137,14 +137,22 @@ impl<T> From<usize> for Idx<T> {
     fn from(u: usize) -> Self { Idx(u, PhantomData) }
 }
 
-// implement manually, since derive(Clone, Copy) adds requirement T: Clone,
-// which we do not want (T is only a marker and not actually contained)
+// implement some traits manually, since derive(Copy/Eq) add requirements like T: Clone/PartialEq,
+// which we do not want (T is only a marker and not actually contained).
 impl<T> Clone for Idx<T> {
     #[inline]
     fn clone(&self) -> Self { self.0.into() }
 }
 
 impl<T> Copy for Idx<T> {}
+
+impl<T> PartialEq for Idx<T> {
+    fn eq(&self, other: &Idx<T>) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T> Eq for Idx<T> {}
 
 // Markers for Idx<T>
 // Unit structs since the low-level format splits Function, Table and Memory over multiple sections.
