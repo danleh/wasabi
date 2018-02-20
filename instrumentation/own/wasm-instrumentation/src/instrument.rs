@@ -1,19 +1,23 @@
-use ast::lowlevel::*;
-use ast::lowlevel::Instr::*;
-use std::mem::discriminant;
+use ast::highlevel::*;
+use ast::lowlevel::FunctionType;
 
 pub fn identity(_: &mut Module) {}
 
+pub fn add_empty_function(module: &mut Module) {
+    module.functions.push(Function {
+        type_: FunctionType(vec![], vec![]),
+        import: None,
+        code: Some(Code {
+            locals: vec![],
+            body: vec![
+                Instr::End
+            ],
+        }),
+        export: None,
+    })
+}
+
 // FIXME
-//pub fn add_trivial_type(module: &mut Module) {
-//    add_type(&mut module.sections,
-//             FunctionType {
-//                 params: Vec::new().into(),
-//                 results: Vec::new().into(),
-//             },
-//    );
-//}
-//
 //pub fn count_calls(module: &mut Module) {
 //    let counter: GlobalIdx = add_global(&mut module.sections,
 //                                        Global {

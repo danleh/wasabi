@@ -1,8 +1,6 @@
 use binary::WasmBinary;
 use ast::*;
 use instrument::*;
-use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::fs::{create_dir_all, File};
 use std::io::{self, Cursor, Read, sink};
 use std::path::{Path, PathBuf};
@@ -40,23 +38,23 @@ fn can_highlevel_decode_valid_wasm() {
     }
 }
 
+#[test]
+fn identity_instrumentation_produces_valid_wasm() {
+    for path in wasm_files("test/input") {
+        let output = instrument(&path, identity, "identity").unwrap();
+        wasm_validate(&output).unwrap();
+    }
+}
+
+#[test]
+fn add_empty_function_produces_valid_wasm() {
+    for path in wasm_files("test/input") {
+        let output = instrument(&path, add_empty_function, "add-empty-function").unwrap();
+        wasm_validate(&output).unwrap();
+    }
+}
+
 // FIXME
-//#[test]
-//fn identity_instrumentation_produces_valid_wasm() {
-//    for path in wasm_files("test/input") {
-//        let output = instrument(&path, identity, "identity").unwrap();
-//        wasm_validate(&output).unwrap();
-//    }
-//}
-//
-//#[test]
-//fn add_trivial_type_instrumentation_produces_valid_wasm() {
-//    for path in wasm_files("test/input") {
-//        let output = instrument(&path, add_trivial_type, "add-trivial-type").unwrap();
-//        wasm_validate(&output).unwrap();
-//    }
-//}
-//
 //#[test]
 //fn count_calls_instrumentation_produces_valid_wasm() {
 //    for path in wasm_files("test/input") {
@@ -136,10 +134,9 @@ fn instrument(test_file: &Path, instrument: impl Fn(&mut highlevel::Module), ins
     let output_file = PathBuf::from(test_file.to_string_lossy().replace("input", &output_dir));
     create_dir_all(output_file.parent().unwrap_or(&output_file))?;
 
-    // FIXME should instrumentation work on highlevel::Module? -> change signature of instrument()
-//    let mut module = Module::from_file(test_file)?;
-//    instrument(&mut module);
-//    module.to_file(&output_file)?;
+    let mut module = highlevel::Module::from_file(test_file)?;
+    instrument(&mut module);
+    module.to_file(&output_file)?;
     Ok(output_file)
 }
 
