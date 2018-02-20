@@ -11,14 +11,9 @@ use test::Bencher;
 #[ignore]
 fn debug() {
     let file = "test/input/hello-manual.wasm";
-//    use std::mem::size_of;
-//    println!("{} bytes", size_of::<Cell<Option<Rc<RefCell<::ast::highlevel::Function>>>>>());
-
-//    let module: highlevel::Module = Module::from_file(file).unwrap().into();
-//    let module: lowlevel::Module = module.into();
+    let module = highlevel::Module::from_file(file).unwrap();
 //    println!("{:#?}", module);
-
-//    instrument(&Path::new(file), count_calls, "count-calls").unwrap();
+    instrument(&Path::new(file), count_calls, "count-calls").unwrap();
 }
 
 
@@ -54,14 +49,13 @@ fn add_empty_function_produces_valid_wasm() {
     }
 }
 
-// FIXME
-//#[test]
-//fn count_calls_instrumentation_produces_valid_wasm() {
-//    for path in wasm_files("test/input") {
-//        let output = instrument(&path, count_calls, "count-calls").unwrap();
-//        wasm_validate(&output).unwrap();
-//    }
-//}
+#[test]
+fn count_calls_instrumentation_produces_valid_wasm() {
+    for path in wasm_files("test/input") {
+        let output = instrument(&path, count_calls, "count-calls").unwrap();
+        wasm_validate(&output).unwrap();
+    }
+}
 
 
 /* Test encoding/decoding speed (without any instrumentation) on "large" wasm file (~2MB) */
