@@ -1,4 +1,4 @@
-use ast::highlevel::{Code, Instr, Module, visit_expr};
+use ast::highlevel::{Code, Instr, Module, VisitExpr};
 use ast::highlevel::Expr;
 use ast::highlevel::Instr::*;
 use ast::lowlevel::{FunctionType, GlobalType};
@@ -40,7 +40,7 @@ pub fn count_calls(module: &mut Module) {
         // ignore the functions we added
         if i != getter && i != increment {
             if let Some(Code { ref mut body, .. }) = function.code {
-                visit_expr(body, &|instrs: &mut Expr| {
+                VisitExpr::bottom_up(body, &|instrs: &mut Expr| {
                     let mut last_call_instr_idx = 0;
                     while let Some(call_instr_idx) = instrs[last_call_instr_idx..].iter().position(Instr::is_call) {
                         instrs.insert(call_instr_idx, Call(increment));

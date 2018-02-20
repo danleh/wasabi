@@ -306,62 +306,50 @@ pub enum Instr {
    TODO down_up: does first top_down, then bottom_up (i.e., taking two closures)
 */
 
-pub fn visit_expr(expr: &mut Expr, f: &Fn(&mut Expr)) {
-    for instr in expr.iter_mut() {
-        match *instr {
-            Instr::Block(_, ref mut expr) => visit_expr(expr, f),
-            Instr::Loop(_, ref mut expr) => visit_expr(expr, f),
-            Instr::If(_, ref mut expr) => visit_expr(expr, f),
-            Instr::Else(ref mut expr) => visit_expr(expr, f),
-            _ => {}
-        }
-    }
-    f(expr)
+// FIXME I don't understand why we need f to be behind a reference, with impl Fn... I seem to get an inifinite type!?
+pub trait VisitExpr {
+    fn bottom_up(&mut self, f: &Fn(&mut Expr));
 }
 
-//pub trait VisitExpr {
-//    fn bottom_up(&mut self, f: impl Fn(&mut Expr));
-//}
-//
-//impl VisitExpr for Expr {
-//    fn bottom_up(&mut self, f: impl Fn(&mut Expr)) {
-//        for instr in self.iter_mut() {
-//            match *instr {
-//                Instr::Block(_, ref mut expr) => VisitExpr::bottom_up(expr, |e| f(e)),
-//                Instr::Loop(_, ref mut expr) => VisitExpr::bottom_up(expr, |e| f(e)),
-//                Instr::If(_, ref mut expr) => VisitExpr::bottom_up(expr, |e| f(e)),
-//                Instr::Else(ref mut expr) => VisitExpr::bottom_up(expr, |e| f(e)),
-//                _ => {}
-//            }
-//        }
-//        f(self)
-//    }
-//}
-//
-//pub trait VisitInstr {
-//    fn bottom_up(&mut self, f: impl Fn(&mut Instr));
-//}
-//
-//impl VisitInstr for Expr {
-//    fn bottom_up(&mut self, f: impl Fn(&mut Instr)) {
-//        for instr in self.iter_mut() {
-//            instr.bottom_up(|instr| f(instr))
-//        }
-//    }
-//}
-//
-//impl VisitInstr for Instr {
-//    fn bottom_up(&mut self, f: impl Fn(&mut Instr)) {
-//        match *self {
-//            Instr::Block(_, ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
-//            Instr::Loop(_, ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
-//            Instr::If(_, ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
-//            Instr::Else(ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
-//            _ => {}
-//        }
-//        f(self);
-//    }
-//}
+impl VisitExpr for Expr {
+    fn bottom_up(&mut self, f: &Fn(&mut Expr)) {
+        for instr in self.iter_mut() {
+            match *instr {
+                Instr::Block(_, ref mut expr) => VisitExpr::bottom_up(expr, f),
+                Instr::Loop(_, ref mut expr) => VisitExpr::bottom_up(expr, f),
+                Instr::If(_, ref mut expr) => VisitExpr::bottom_up(expr, f),
+                Instr::Else(ref mut expr) => VisitExpr::bottom_up(expr, f),
+                _ => {}
+            }
+        }
+        f(self)
+    }
+}
+
+pub trait VisitInstr {
+    fn bottom_up(&mut self, f: impl Fn(&mut Instr));
+}
+
+impl VisitInstr for Expr {
+    fn bottom_up(&mut self, f: impl Fn(&mut Instr)) {
+        for instr in self.iter_mut() {
+            instr.bottom_up(|instr| f(instr))
+        }
+    }
+}
+
+impl VisitInstr for Instr {
+    fn bottom_up(&mut self, f: impl Fn(&mut Instr)) {
+        match *self {
+            Instr::Block(_, ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
+            Instr::Loop(_, ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
+            Instr::If(_, ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
+            Instr::Else(ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
+            _ => {}
+        }
+        f(self);
+    }
+}
 
 
 /* Other helpful functions on highlevel AST */

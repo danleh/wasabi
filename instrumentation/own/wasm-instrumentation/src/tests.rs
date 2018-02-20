@@ -6,14 +6,24 @@ use std::io::{self, Cursor, Read, sink};
 use std::path::{Path, PathBuf};
 use test::Bencher;
 
+//struct Bla;
+//type BlaVec = Vec<Bla>;
+//fn apply_recursive(bla: &mut BlaVec, f: impl Fn(&mut Bla)) {
+//    for recursive in bla.iter_mut() {
+//        apply_recursive(recursive, |b| f(b))
+//    }
+//}
+
 /// "main"-like for quick and dirty testing
 #[test]
 #[ignore]
 fn debug() {
-    let file = "test/input/hello-manual.wasm";
-    let module = highlevel::Module::from_file(file).unwrap();
-//    println!("{:#?}", module);
-    instrument(&Path::new(file), count_calls, "count-calls").unwrap();
+
+
+//    let file = "test/input/hello-manual.wasm";
+//    let module = highlevel::Module::from_file(file).unwrap();
+////    println!("{:#?}", module);
+//    instrument(&Path::new(file), count_calls, "count-calls").unwrap();
 }
 
 
