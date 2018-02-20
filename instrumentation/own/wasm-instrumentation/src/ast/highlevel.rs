@@ -3,6 +3,10 @@ use super::lowlevel as ll;
 // reuse as much as possible from low-level AST
 use super::lowlevel::{BlockType, ElemType, FunctionType, GlobalType, Idx, Label, Limits, Local, Memarg, MemoryType, Mutability, Section, TableType, ValType, WithSize};
 
+// TODO parallelize conversion from/to low-level AST with rayon
+// TODO streaming AST: replace Vec's with iterators, where possible, in particular: Expr
+// TODO avoid high-level/low-level split, read to high-level directly
+
 /* High-level AST:
     - types are inlined instead of referenced by type idx (i.e., no manual handling of Type "pool")
     - Function + Code sections are merged into one list of functions,
@@ -76,7 +80,6 @@ pub struct Data {
     pub bytes: Vec<u8>,
 }
 
-// TODO if Expr is an iterator instead of a Vec, we could lazily parse instructions
 pub type Expr = Vec<Instr>;
 
 #[derive(Debug, Clone)]
