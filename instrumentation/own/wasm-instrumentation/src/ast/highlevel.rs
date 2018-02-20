@@ -7,6 +7,37 @@ use super::lowlevel::{BlockType, ElemType, FunctionType, GlobalType, Idx, Label,
 // TODO streaming AST: replace Vec's with iterators, where possible, in particular: Expr
 // TODO avoid high-level/low-level split, read to high-level directly
 
+/// convenience for adding elements
+impl Module {
+    pub fn add_function(&mut self, type_: FunctionType, locals: Vec<ValType>, body: Vec<Instr>) -> Idx<Function> {
+        self.functions.push(Function {
+            type_,
+            import: None,
+            code: Some(Code {
+                locals,
+                body,
+            }),
+            export: None,
+        });
+        (self.functions.len() - 1).into()
+    }
+
+    pub fn add_global(&mut self, type_: GlobalType, init: Vec<Instr>) -> Idx<Global> {
+        self.globals.push(Global {
+            type_,
+            import: None,
+            init: Some(init),
+            export: None,
+        });
+        (self.globals.len() - 1).into()
+    }
+
+    pub fn function(&mut self, idx: Idx<Function>) -> &mut Function { &mut self.functions[idx.0] }
+    pub fn functions(&mut self) -> impl Iterator<Item=(Idx<Function>, &mut Function)> {
+        self.functions.iter_mut().enumerate().map(|(i, f)| (i.into(), f))
+    }
+}
+
 /* High-level AST:
     - types are inlined instead of referenced by type idx (i.e., no manual handling of Type "pool")
     - Function + Code sections are merged into one list of functions,
@@ -17,10 +48,10 @@ use super::lowlevel::{BlockType, ElemType, FunctionType, GlobalType, Idx, Label,
 
 #[derive(Debug, Clone)]
 pub struct Module {
-    pub functions: Vec<Function>,
-    pub tables: Vec<Table>,
-    pub memories: Vec<Memory>,
-    pub globals: Vec<Global>,
+    functions: Vec<Function>,
+    tables: Vec<Table>,
+    memories: Vec<Memory>,
+    globals: Vec<Global>,
 
     pub start: Option<Idx<Function>>,
 
@@ -267,6 +298,86 @@ pub enum Instr {
     F64ReinterpretI64,
 }
 
+
+/* Visitors for transforming instructions without having to recurse manually over the tree.
+   bottom_up: goes first into the leaves (i.e., instrs or exprs) and applies f,
+              and then applies f to the current level again (== post-order).
+   TODO top_down
+   TODO down_up: does first top_down, then bottom_up (i.e., taking two closures)
+*/
+
+pub fn visit_expr(expr: &mut Expr, f: &Fn(&mut Expr)) {
+    for instr in expr.iter_mut() {
+        match *instr {
+            Instr::Block(_, ref mut expr) => visit_expr(expr, f),
+            Instr::Loop(_, ref mut expr) => visit_expr(expr, f),
+            Instr::If(_, ref mut expr) => visit_expr(expr, f),
+            Instr::Else(ref mut expr) => visit_expr(expr, f),
+            _ => {}
+        }
+    }
+    f(expr)
+}
+
+//pub trait VisitExpr {
+//    fn bottom_up(&mut self, f: impl Fn(&mut Expr));
+//}
+//
+//impl VisitExpr for Expr {
+//    fn bottom_up(&mut self, f: impl Fn(&mut Expr)) {
+//        for instr in self.iter_mut() {
+//            match *instr {
+//                Instr::Block(_, ref mut expr) => VisitExpr::bottom_up(expr, |e| f(e)),
+//                Instr::Loop(_, ref mut expr) => VisitExpr::bottom_up(expr, |e| f(e)),
+//                Instr::If(_, ref mut expr) => VisitExpr::bottom_up(expr, |e| f(e)),
+//                Instr::Else(ref mut expr) => VisitExpr::bottom_up(expr, |e| f(e)),
+//                _ => {}
+//            }
+//        }
+//        f(self)
+//    }
+//}
+//
+//pub trait VisitInstr {
+//    fn bottom_up(&mut self, f: impl Fn(&mut Instr));
+//}
+//
+//impl VisitInstr for Expr {
+//    fn bottom_up(&mut self, f: impl Fn(&mut Instr)) {
+//        for instr in self.iter_mut() {
+//            instr.bottom_up(|instr| f(instr))
+//        }
+//    }
+//}
+//
+//impl VisitInstr for Instr {
+//    fn bottom_up(&mut self, f: impl Fn(&mut Instr)) {
+//        match *self {
+//            Instr::Block(_, ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
+//            Instr::Loop(_, ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
+//            Instr::If(_, ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
+//            Instr::Else(ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
+//            _ => {}
+//        }
+//        f(self);
+//    }
+//}
+
+
+/* Other helpful functions on highlevel AST */
+
+impl Instr {
+    pub fn is_call(&self) -> bool {
+        match *self {
+            Instr::Call(_) => true,
+            Instr::CallIndirect(_, _) => true,
+            _ => false
+        }
+    }
+}
+
+
+// TODO move conversions between high and low-level into own convert module
 
 /* Convert from low-level to high-level AST. */
 
