@@ -872,8 +872,8 @@ fn to_lowlevel_instr(instr: &Instr, state: &EncodeState) -> ll::Instr {
         Instr::BrTable(ref label_idx_table, default) => ll::Instr::BrTable(label_idx_table.clone(), default),
 
         Instr::Return => ll::Instr::Return,
-        Instr::Call(ref function_idx) => ll::Instr::Call(state.map_function_idx(function_idx.0)),
-        Instr::CallIndirect(ref type_, ref table_idx) => ll::Instr::CallIndirect(state.get_type_idx(&type_), state.map_table_idx(table_idx.0)),
+        Instr::Call(function_idx) => ll::Instr::Call(state.map_function_idx(function_idx.0)),
+        Instr::CallIndirect(ref type_, table_idx) => ll::Instr::CallIndirect(state.get_type_idx(&type_), state.map_table_idx(table_idx.0)),
 
         Instr::Drop => ll::Instr::Drop,
         Instr::Select => ll::Instr::Select,
@@ -881,8 +881,8 @@ fn to_lowlevel_instr(instr: &Instr, state: &EncodeState) -> ll::Instr {
         Instr::GetLocal(local_idx) => ll::Instr::GetLocal(local_idx.0.into()),
         Instr::SetLocal(local_idx) => ll::Instr::SetLocal(local_idx.0.into()),
         Instr::TeeLocal(local_idx) => ll::Instr::TeeLocal(local_idx.0.into()),
-        Instr::GetGlobal(ref global_idx) => ll::Instr::GetGlobal(state.map_global_idx(global_idx.0)),
-        Instr::SetGlobal(ref global_idx) => ll::Instr::SetGlobal(state.map_global_idx(global_idx.0)),
+        Instr::GetGlobal(global_idx) => ll::Instr::GetGlobal(state.map_global_idx(global_idx.0)),
+        Instr::SetGlobal(global_idx) => ll::Instr::SetGlobal(state.map_global_idx(global_idx.0)),
 
         Instr::I32Load(memarg) => ll::Instr::I32Load(memarg),
         Instr::I64Load(memarg) => ll::Instr::I64Load(memarg),
@@ -908,8 +908,8 @@ fn to_lowlevel_instr(instr: &Instr, state: &EncodeState) -> ll::Instr {
         Instr::I64Store16(memarg) => ll::Instr::I64Store16(memarg),
         Instr::I64Store32(memarg) => ll::Instr::I64Store32(memarg),
 
-        Instr::CurrentMemory(ref memory_idx) => ll::Instr::CurrentMemory(state.map_memory_idx(memory_idx.0)),
-        Instr::GrowMemory(ref memory_idx) => ll::Instr::GrowMemory(state.map_memory_idx(memory_idx.0)),
+        Instr::CurrentMemory(memory_idx) => ll::Instr::CurrentMemory(state.map_memory_idx(memory_idx.0)),
+        Instr::GrowMemory(memory_idx) => ll::Instr::GrowMemory(state.map_memory_idx(memory_idx.0)),
 
         Instr::I32Const(immediate) => ll::Instr::I32Const(immediate),
         Instr::I64Const(immediate) => ll::Instr::I64Const(immediate),

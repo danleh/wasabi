@@ -129,28 +129,38 @@ pub enum ExportType {
 
 /* Indices */
 
-#[derive(WasmBinary, Debug, Copy, Clone)]
+#[derive(WasmBinary, Debug)]
 pub struct Idx<T>(pub usize, PhantomData<T>);
 
 impl<T> From<usize> for Idx<T> {
+    #[inline]
     fn from(u: usize) -> Self { Idx(u, PhantomData) }
 }
 
+// implement manually, since derive(Clone, Copy) adds requirement T: Clone,
+// which we do not want (T is only a marker and not actually contained)
+impl<T> Clone for Idx<T> {
+    #[inline]
+    fn clone(&self) -> Self { self.0.into() }
+}
+
+impl<T> Copy for Idx<T> {}
+
 // Markers for Idx<T>
 // Unit structs since the low-level format splits Function, Table and Memory over multiple sections.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct Function;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct Table;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct Memory;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct Local;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct Label;
 
 /* Code */
