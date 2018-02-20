@@ -1,5 +1,5 @@
 use binary::WasmBinary;
-use std::marker::PhantomData;
+use super::*;
 
 #[derive(Debug, Clone)]
 pub struct Module {
@@ -9,7 +9,6 @@ pub struct Module {
 /// Just a marker; does not save the size itself since that changes during transformations anyway.
 #[derive(Debug, Clone)]
 pub struct WithSize<T>(pub T);
-
 
 /* Sections */
 
@@ -64,52 +63,6 @@ pub struct Export {
     pub type_: ExportType,
 }
 
-
-/* Types */
-
-#[derive(WasmBinary, Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum ValType {
-    #[tag = 0x7f] I32,
-    #[tag = 0x7e] I64,
-    #[tag = 0x7d] F32,
-    #[tag = 0x7c] F64,
-}
-
-#[derive(WasmBinary, Debug, PartialEq, Eq, Clone, Hash)]
-#[tag = 0x60]
-pub struct FunctionType(pub Vec<ValType>, pub Vec<ValType>);
-
-#[derive(Debug, Clone, Copy)]
-pub struct BlockType(pub Option<ValType>);
-
-#[derive(WasmBinary, Debug, Clone)]
-pub struct TableType(pub ElemType, pub Limits);
-
-#[derive(WasmBinary, Debug, Copy, Clone)]
-pub enum ElemType {
-    // only value in WASM version 1
-    #[tag = 0x70]
-    Anyfunc,
-}
-
-#[derive(WasmBinary, Debug, Clone)]
-pub struct MemoryType(pub Limits);
-
-#[derive(Debug, Copy, Clone)]
-pub struct Limits {
-    pub initial_size: u32,
-    pub max_size: Option<u32>,
-}
-
-#[derive(WasmBinary, Debug, Copy, Clone)]
-pub struct GlobalType(pub ValType, pub Mutability);
-
-#[derive(WasmBinary, Debug, Copy, Clone)]
-pub enum Mutability {
-    #[tag = 0x00] Const,
-    #[tag = 0x01] Mut,
-}
-
 #[derive(WasmBinary, Debug, Clone)]
 pub enum ImportType {
     #[tag = 0x0] Function(Idx<FunctionType>),
@@ -126,36 +79,9 @@ pub enum ExportType {
     #[tag = 0x3] Global(Idx<Global>),
 }
 
+// Markers for Idx<T>, since in low-level format Function, Table and Memory have not one type, but
+// are split over multiple sections.
 
-/* Indices */
-
-#[derive(WasmBinary, Debug)]
-pub struct Idx<T>(pub usize, PhantomData<T>);
-
-impl<T> From<usize> for Idx<T> {
-    #[inline]
-    fn from(u: usize) -> Self { Idx(u, PhantomData) }
-}
-
-// implement some traits manually, since derive(Copy/Eq) add requirements like T: Clone/PartialEq,
-// which we do not want (T is only a marker and not actually contained).
-impl<T> Clone for Idx<T> {
-    #[inline]
-    fn clone(&self) -> Self { self.0.into() }
-}
-
-impl<T> Copy for Idx<T> {}
-
-impl<T> PartialEq for Idx<T> {
-    fn eq(&self, other: &Idx<T>) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<T> Eq for Idx<T> {}
-
-// Markers for Idx<T>
-// Unit structs since the low-level format splits Function, Table and Memory over multiple sections.
 #[derive(Debug)]
 pub struct Function;
 
@@ -165,11 +91,6 @@ pub struct Table;
 #[derive(Debug)]
 pub struct Memory;
 
-#[derive(Debug)]
-pub struct Local;
-
-#[derive(Debug)]
-pub struct Label;
 
 /* Code */
 
@@ -187,12 +108,6 @@ pub struct Locals {
 
 #[derive(Debug, Clone)]
 pub struct Expr(pub Vec<Instr>);
-
-#[derive(WasmBinary, Debug, Copy, Clone)]
-pub struct Memarg {
-    pub alignment: u32,
-    pub offset: u32,
-}
 
 #[derive(WasmBinary, Debug, Clone)]
 pub enum Instr {

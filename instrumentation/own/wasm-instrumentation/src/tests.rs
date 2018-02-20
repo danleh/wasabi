@@ -1,5 +1,5 @@
-use binary::WasmBinary;
 use ast::*;
+use binary::WasmBinary;
 use instrument::*;
 use std::fs::{create_dir_all, File};
 use std::io::{self, Cursor, Read, sink};

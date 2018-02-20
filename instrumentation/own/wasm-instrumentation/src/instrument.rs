@@ -1,9 +1,9 @@
 use ast::highlevel::{Code, Instr, Module, VisitExpr};
 use ast::highlevel::Expr;
 use ast::highlevel::Instr::*;
-use ast::lowlevel::{FunctionType, GlobalType};
-use ast::lowlevel::Mutability::*;
-use ast::lowlevel::ValType::*;
+use ast::{FunctionType, GlobalType};
+use ast::Mutability::*;
+use ast::ValType::*;
 
 pub fn identity(_: &mut Module) {}
 

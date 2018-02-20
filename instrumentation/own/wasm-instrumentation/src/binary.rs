@@ -1,3 +1,4 @@
+use ast::*;
 use ast::lowlevel::*;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use leb128::*;
