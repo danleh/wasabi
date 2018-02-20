@@ -81,7 +81,7 @@ pub enum ValType {
 #[tag = 0x60]
 pub struct FunctionType(pub Vec<ValType>, pub Vec<ValType>);
 
-#[derive(Debug, PartialOrd, PartialEq, Clone)]
+#[derive(Debug, PartialOrd, PartialEq, Clone, Copy)]
 pub struct BlockType(pub Option<ValType>);
 
 #[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone)]
