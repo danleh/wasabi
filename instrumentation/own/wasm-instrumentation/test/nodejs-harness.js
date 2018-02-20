@@ -27,4 +27,4 @@ const instance = new WebAssembly.Instance(wasmModule, importObject);
 
 // instance.exports."start"() is automatically called
 
-// TODO call instrumentation functions, e.g., to retrieve counters
+console.log(`call/call_indirect instructions executed: ${instance.exports.get_counter()}`);
