@@ -307,8 +307,6 @@ impl Instr {
 /* Visitors for transforming instructions without having to recurse manually over the tree.
    bottom_up: goes first into the leaves (i.e., instrs or exprs) and applies f,
               and then applies f to the current level again (== post-order).
-   TODO top_down
-   TODO down_up: does first top_down, then bottom_up (i.e., taking two closures)
 */
 
 // FIXME I don't understand why we need f to be behind a reference, with impl Fn... I seem to get an inifinite type!?
