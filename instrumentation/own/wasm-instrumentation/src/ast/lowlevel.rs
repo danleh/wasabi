@@ -3,19 +3,19 @@ use std::marker::PhantomData;
 
 // TODO remove as many of the derives as possible
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Module {
     pub sections: Vec<Section>,
 }
 
 /// Just a marker; does not save the size itself since that changes during transformations anyway.
-#[derive(Debug, PartialOrd, PartialEq)]
+#[derive(Debug, PartialOrd, PartialEq, Clone)]
 pub struct WithSize<T>(pub T);
 
 
 /* Sections */
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone)]
 pub enum Section {
     #[tag = 0] Custom(Vec<u8>),
     #[tag = 1] Type(WithSize<Vec<FunctionType>>),
@@ -37,7 +37,7 @@ pub struct Global {
     pub init: Expr,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone)]
 pub struct Element {
     // always 0x00 in WASM version 1
     pub table_idx: Idx<Table>,
@@ -45,7 +45,7 @@ pub struct Element {
     pub init: Vec<Idx<Function>>,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone)]
 pub struct Data {
     // always 0x00 in WASM version 1
     pub memory_idx: Idx<Memory>,
@@ -53,14 +53,14 @@ pub struct Data {
     pub init: Vec<u8>,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone)]
 pub struct Import {
     pub module: String,
     pub name: String,
     pub type_: ImportType,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone)]
 pub struct Export {
     pub name: String,
     pub type_: ExportType,
@@ -112,7 +112,7 @@ pub enum Mutability {
     #[tag = 0x01] Mut,
 }
 
-#[derive(WasmBinary, Debug, PartialOrd, PartialEq)]
+#[derive(WasmBinary, Debug, PartialOrd, PartialEq, Clone)]
 pub enum ImportType {
     #[tag = 0x0] Function(Idx<FunctionType>),
     #[tag = 0x1] Table(TableType),

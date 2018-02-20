@@ -11,7 +11,7 @@ use super::lowlevel::{BlockType, ElemType, FunctionType, GlobalType, Idx, Label,
       their item by index.
 */
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Module {
     pub functions: Vec<Function>,
     pub tables: Vec<Table>,
@@ -23,7 +23,7 @@ pub struct Module {
     custom_sections: Vec<Vec<u8>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
     // type is inlined here compared to low-level/binary/spec representation
     pub type_: FunctionType,
@@ -33,7 +33,7 @@ pub struct Function {
     pub export: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Global {
     pub type_: GlobalType,
     // import and init are mutually exclusive, i.e., exactly one of both must be Some(...)
@@ -42,7 +42,7 @@ pub struct Global {
     pub export: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Table {
     pub type_: TableType,
     pub import: Option<(String, String)>,
@@ -50,7 +50,7 @@ pub struct Table {
     pub export: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Memory {
     pub type_: MemoryType,
     pub import: Option<(String, String)>,
@@ -58,19 +58,19 @@ pub struct Memory {
     pub export: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Code {
     pub locals: Vec<ValType>,
     pub body: Expr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Element {
     pub offset: Expr,
     pub functions: Vec<Idx<Function>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Data {
     pub offset: Expr,
     pub bytes: Vec<u8>,
@@ -79,7 +79,7 @@ pub struct Data {
 // TODO if Expr is an iterator instead of a Vec, we could lazily parse instructions
 pub type Expr = Vec<Instr>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Instr {
     Unreachable,
     Nop,
