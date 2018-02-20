@@ -1,45 +1,7 @@
-// TODO "streaming AST" API: return Module {} after reading only the first 8 bytes, implement
-// Iterator<Item = Section> for Module -> Module must somehow retain the reader to do so...
-
-// used, but not re-exported
-use binary::WasmBinary;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::marker::PhantomData;
-// reuse as much as possible from the low-level AST
-use super::lowlevel::{BlockType, ElemType, FunctionType, GlobalType, Idx, Label, Limits, Local, Memarg, MemoryType, Mutability, Section, TableType, ValType, WithSize};
 use super::lowlevel as ll;
-
-//fn test() {
-//    let mut empty_module = Module {
-//        start: None,
-//        imports: Vec::new(),
-//        exports: Vec::new(),
-//
-//        functions: Arena::new(),
-//        tables: Arena::new(),
-//        memories: Arena::new(),
-//        globals: Arena::new(),
-//
-//        custom_sections: Vec::new(),
-//    };
-//
-//    let function = Function {
-//        type_: FunctionType(vec![ValType::I32], vec![]),
-//        locals: Vec::new(),
-//        body: vec![
-////            Instr::Call(None), // will be replaced by an index to this function itself during encoding
-//Instr::End
-//        ],
-//    };
-//
-//    let function = empty_module.functions.alloc(function);
-//
-//    empty_module.exports.push(Export {
-//        name: "newfunc".to_string(),
-//        type_: ExportType::Function(function),
-//    })
-//}
+// reuse as much as possible from low-level AST
+use super::lowlevel::{BlockType, ElemType, FunctionType, GlobalType, Idx, Label, Limits, Local, Memarg, MemoryType, Mutability, Section, TableType, ValType, WithSize};
 
 /* High-level AST:
     - types are inlined instead of referenced by type idx (i.e., no manual handling of Type "pool")
@@ -301,6 +263,7 @@ pub enum Instr {
     F32ReinterpretI32,
     F64ReinterpretI64,
 }
+
 
 /* Convert from low-level to high-level AST. */
 
@@ -655,66 +618,130 @@ fn from_lowlevel_instr(instr: ll::Instr, types: &[FunctionType]) -> Instr {
     }
 }
 
+
 /* Convert from high-level to low-level AST. */
+
+struct EncodeState {
+    types: HashMap<FunctionType, usize>,
+    function_idx: HashMap<usize, usize>,
+    table_idx: HashMap<usize, usize>,
+    memory_idx: HashMap<usize, usize>,
+    global_idx: HashMap<usize, usize>,
+}
+
+macro_rules! element_idx_fns {
+    ($insert_fn: ident, $map_fn: ident, $field: ident, $ll_ty: ty) => {
+        fn $insert_fn(&mut self, old_idx: usize) {
+            let new_idx = self.$field.len();
+            self.$field.insert(old_idx, new_idx);
+        }
+        fn $map_fn(&self, old_idx: usize) -> Idx<$ll_ty> {
+            self.$field[&old_idx].into()
+        }
+    };
+}
+
+impl EncodeState {
+    fn get_or_insert_type(&mut self, type_: FunctionType) -> Idx<FunctionType> {
+        let new_idx = self.types.len();
+        (*self.types.entry(type_).or_insert(new_idx)).into()
+    }
+    fn get_type_idx(&self, type_: &FunctionType) -> Idx<FunctionType> {
+        (*self.types.get(type_).unwrap()).into()
+    }
+
+    element_idx_fns!(insert_function_idx, map_function_idx, function_idx, ll::Function);
+    element_idx_fns!(insert_table_idx, map_table_idx, table_idx, ll::Table);
+    element_idx_fns!(insert_memory_idx, map_memory_idx, memory_idx, ll::Memory);
+    element_idx_fns!(insert_global_idx, map_global_idx, global_idx, ll::Global);
+}
 
 impl From<Module> for ll::Module {
     fn from(module: Module) -> Self {
         let mut sections = Vec::new();
 
-        {
-            let mut types = HashMap::new();
+        let mut state = EncodeState {
+            types: HashMap::new(),
+            function_idx: HashMap::new(),
+            table_idx: HashMap::new(),
+            memory_idx: HashMap::new(),
+            global_idx: HashMap::new(),
+        };
 
-            let mut function_idx_patch = HashMap::new();
-            let mut tables_idx_patch = HashMap::new();
-            let mut memories_idx_patch = HashMap::new();
-            let mut globals_idx_patch = HashMap::new();
+        let imports = to_lowlevel_imports(&module, &mut state);
+        let functions = to_lowlevel_functions(&module.functions, &mut state);
+        let tables = to_lowlevel_tables(&module.tables, &mut state);
+        let memories = to_lowlevel_memories(&module.memories, &mut state);
+        let globals = to_lowlevel_globals(&module.globals, &mut state);
 
-            let imports = to_lowlevel_imports(&module, &mut types,
-                                              &mut function_idx_patch, &mut tables_idx_patch, &mut memories_idx_patch, &mut globals_idx_patch);
-            let functions = to_lowlevel_functions(&module.functions, &mut types, &mut function_idx_patch);
-            let tables = to_lowlevel_tables(&module.tables, &mut tables_idx_patch);
-            let memories = to_lowlevel_memories(&module.memories, &mut memories_idx_patch);
-            let globals = to_lowlevel_globals(&module.globals, &mut globals_idx_patch);
+        /* All types and indices are now determined, so we can start writing out sections... */
 
-            /* All types and indices are now determined, so we can start writing out sections... */
+        // Type
+        let mut types = state.types.iter().collect::<Vec<_>>();
+        types.sort_unstable_by_key(|&(_, idx)| idx);
+        let types = types.into_iter()
+            .map(|(type_, _)| type_.clone())
+            .collect::<Vec<FunctionType>>();
+        sections.push(Section::Type(WithSize(types)));
 
-            // Type
-            let mut types = types.into_iter().collect::<Vec<_>>();
-            types.sort_unstable_by_key(|&(_, idx)| idx);
-            let types = types.into_iter()
-                .map(|(type_, _)| type_.clone())
-                .collect::<Vec<FunctionType>>();
-            sections.push(Section::Type(WithSize(types)));
+        // Import
+        sections.push(Section::Import(WithSize(imports)));
 
-            // Import
-            sections.push(Section::Import(WithSize(imports)));
+        // Function
+        sections.push(Section::Function(WithSize(functions)));
 
-            // Function
-            sections.push(Section::Function(WithSize(functions)));
+        // Table
+        sections.push(Section::Table(WithSize(tables)));
 
-            // Table
-            sections.push(Section::Table(WithSize(tables)));
+        // Memory
+        sections.push(Section::Memory(WithSize(memories)));
 
-            // Memory
-            sections.push(Section::Memory(WithSize(memories)));
+        // Global
+        sections.push(Section::Global(WithSize(globals)));
 
-            // Global
-            sections.push(Section::Global(WithSize(globals)));
+        // Export
+        let exports = to_lowlevel_exports(&module, &state);
+        sections.push(Section::Export(WithSize(exports)));
 
-            // Export
-            let exports = to_lowlevel_exports(&module, &function_idx_patch, &tables_idx_patch, &memories_idx_patch, &globals_idx_patch);
-            sections.push(Section::Export(WithSize(exports)));
-
-            // Start
-            for start in &module.start {
-                sections.push(Section::Start(WithSize(function_idx_patch[&start.0].into())));
-            }
-
-            // Element, Code, Data
-            // TODO
-
+        // Start
+        for start in module.start {
+            sections.push(Section::Start(WithSize(state.map_function_idx(start.0))));
         }
 
+        // Element
+        let elements = module.tables.into_iter()
+            .enumerate()
+            .flat_map(|(i, table)| table.elements.into_iter()
+                .map(|element| ll::Element {
+                    table_idx: state.map_table_idx(i),
+                    offset: to_lowlevel_expr(&element.offset, &state),
+                    init: element.functions.iter().map(|fn_idx| state.map_function_idx(fn_idx.0)).collect(),
+                })
+                .collect::<Vec<_>>())
+            .collect();
+        sections.push(Section::Element(WithSize(elements)));
+
+        // Code
+        let code = module.functions.into_iter()
+            .filter_map(|function|
+                function.code.map(|code| WithSize(to_lowlevel_code(code, &state))))
+            .collect();
+        sections.push(Section::Code(WithSize(code)));
+
+        // Data
+        let data = module.memories.into_iter()
+            .enumerate()
+            .flat_map(|(i, memory)| memory.data.into_iter()
+                .map(|data| ll::Data {
+                    memory_idx: state.map_memory_idx(i),
+                    offset: to_lowlevel_expr(&data.offset, &state),
+                    init: data.bytes,
+                })
+                .collect::<Vec<_>>())
+            .collect();
+        sections.push(Section::Data(WithSize(data)));
+
+        // Custom
         for custom in module.custom_sections {
             sections.push(Section::Custom(custom));
         }
@@ -723,182 +750,291 @@ impl From<Module> for ll::Module {
     }
 }
 
-fn to_lowlevel_type_idx<'a>(function_type: &'a FunctionType, types: &mut HashMap<&'a FunctionType, usize>) -> Idx<FunctionType> {
-    let new_idx = types.len();
-    let &mut idx = types.entry(function_type).or_insert(new_idx);
-    idx.into()
-}
-
-fn to_lowlevel_imports<'a>(module: &'a Module,
-                           types: &mut HashMap<&'a FunctionType, usize>,
-                           function_idx_patch: &mut HashMap<usize, usize>,
-                           tables_idx_patch: &mut HashMap<usize, usize>,
-                           memories_idx_patch: &mut HashMap<usize, usize>,
-                           globals_idx_patch: &mut HashMap<usize, usize>,
-) -> Vec<ll::Import> {
+fn to_lowlevel_imports(module: &Module, state: &mut EncodeState) -> Vec<ll::Import> {
     let mut imports = Vec::new();
 
-    imports.extend(module.functions.iter()
-        .enumerate()
-        .filter_map(|(i, func)|
-            func.import.as_ref().map(|&(ref module, ref name)| {
-                let new_idx = function_idx_patch.len();
-                function_idx_patch.insert(i, new_idx);
-                ll::Import {
-                    module: module.clone(),
-                    name: name.clone(),
-                    type_: ll::ImportType::Function(to_lowlevel_type_idx(&func.type_, types)),
-                }
-            })));
-
-    imports.extend(module.tables.iter()
-        .enumerate()
-        .filter_map(|(i, table)|
-            table.import.as_ref().map(|&(ref module, ref name)| {
-                let new_idx = tables_idx_patch.len();
-                tables_idx_patch.insert(i, new_idx);
-                ll::Import {
-                    module: module.clone(),
-                    name: name.clone(),
-                    type_: ll::ImportType::Table(table.type_.clone()),
-                }
-            })));
-
-    imports.extend(module.memories.iter()
-        .enumerate()
-        .filter_map(|(i, memory)|
-            memory.import.as_ref().map(|&(ref module, ref name)| {
-                let new_idx = memories_idx_patch.len();
-                memories_idx_patch.insert(i, new_idx);
-                ll::Import {
-                    module: module.clone(),
-                    name: name.clone(),
-                    type_: ll::ImportType::Memory(memory.type_.clone()),
-                }
-            })));
-
-    imports.extend(module.globals.iter()
-        .enumerate()
-        .filter_map(|(i, global)|
-            global.import.as_ref().map(|&(ref module, ref name)| {
-                let new_idx = globals_idx_patch.len();
-                globals_idx_patch.insert(i, new_idx);
-                ll::Import {
-                    module: module.clone(),
-                    name: name.clone(),
-                    type_: ll::ImportType::Global(global.type_.clone()),
-                }
-            })));
+    macro_rules! add_imports {
+        ($elems: ident, $insert_idx_fn: ident, $import_ty_variant: ident, $ty_transform: expr) => {
+            imports.extend(module.$elems.iter()
+                .enumerate()
+                .filter_map(|(i, element)|
+                    element.import.as_ref().map(|&(ref module, ref name)| {
+                        state.$insert_idx_fn(i);
+                        ll::Import {
+                            module: module.clone(),
+                            name: name.clone(),
+                            type_: ll::ImportType::$import_ty_variant($ty_transform(element.type_.clone())),
+                        }
+                    })));
+        };
+    }
+    add_imports!(functions, insert_function_idx, Function, |ty| state.get_or_insert_type(ty));
+    add_imports!(tables, insert_table_idx, Table, |ty| ty);
+    add_imports!(memories, insert_memory_idx, Memory, |ty| ty);
+    add_imports!(globals, insert_global_idx, Global, |ty| ty);
 
     imports
 }
 
-fn to_lowlevel_functions<'a>(functions: &'a [Function],
-                             types: &mut HashMap<&'a FunctionType, usize>,
-                             function_idx_patch: &mut HashMap<usize, usize>,
-) -> Vec<Idx<FunctionType>> {
-    functions.iter()
-        .enumerate()
-        .filter(|&(_, func)| func.import.is_none())
-        .map(|(i, func)| {
-            let new_idx = function_idx_patch.len();
-            function_idx_patch.insert(i, new_idx);
-            to_lowlevel_type_idx(&func.type_, types)
-        })
-        .collect()
-}
-
-fn to_lowlevel_tables<'a>(tables: &'a [Table],
-                          tables_idx_patch: &mut HashMap<usize, usize>) -> Vec<TableType> {
-    tables.iter()
-        .enumerate()
-        .filter(|&(_, table)| table.import.is_none())
-        .map(|(i, table)| {
-            let new_idx = tables_idx_patch.len();
-            tables_idx_patch.insert(i, new_idx);
-            table.type_.clone()
-        })
-        .collect()
-}
-
-fn to_lowlevel_memories<'a>(memories: &'a [Memory],
-                            memories_idx_patch: &mut HashMap<usize, usize>) -> Vec<MemoryType> {
-    memories.iter()
-        .enumerate()
-        .filter(|&(_, memory)| memory.import.is_none())
-        .map(|(i, memory)| {
-            let new_idx = memories_idx_patch.len();
-            memories_idx_patch.insert(i, new_idx);
-            memory.type_.clone()
-        })
-        .collect()
-}
-
-
-fn to_lowlevel_globals<'a>(globals: &'a [Global],
-                           globals_idx_patch: &mut HashMap<usize, usize>) -> Vec<ll::Global> {
-    globals.iter()
-        .enumerate()
-        .filter_map(|(i, global)| {
-            let type_ = global.type_;
-            global.init.as_ref().map(|init| {
-                let new_idx = globals_idx_patch.len();
-                globals_idx_patch.insert(i, new_idx);
-                ll::Global {
-                    type_,
-                    init: to_lowlevel_expr(init),
-                }
+macro_rules! to_lowlevel_elements {
+    ($elems: expr, $state: ident, $insert_idx_fn: ident, $elem_transform: expr) => {
+        $elems.iter()
+            .enumerate()
+            .filter(|&(_, element)| element.import.is_none())
+            .map(|(i, element)| {
+                $state.$insert_idx_fn(i);
+                $elem_transform(&element)
             })
-        })
-        .collect()
+            .collect()
+    };
 }
 
-fn to_lowlevel_expr(expr: &[Instr]) -> ll::Expr {
-    ll::Expr(vec![]) // FIXME
+fn to_lowlevel_functions(functions: &[Function], state: &mut EncodeState) -> Vec<Idx<FunctionType>> {
+    to_lowlevel_elements!(functions, state, insert_function_idx, |func: &Function| state.get_or_insert_type(func.type_.clone()))
 }
 
-fn to_lowlevel_exports<'a>(module: &'a Module,
-                           // TODO move all of this into a helper struct, then simplify all fn signatures above
-                           // TODO singular for tables memories and globals
-                           // TODO add API /struct/impl that looks up or inserts a mapping in a hash map, use for all patch maps
-                           function_idx_patch: &HashMap<usize, usize>,
-                           tables_idx_patch: &HashMap<usize, usize>,
-                           memories_idx_patch: &HashMap<usize, usize>,
-                           globals_idx_patch: &HashMap<usize, usize>,
-) -> Vec<ll::Export> {
+fn to_lowlevel_tables(tables: &[Table], state: &mut EncodeState) -> Vec<TableType> {
+    to_lowlevel_elements!(tables, state, insert_table_idx, |table: &Table| table.type_.clone())
+}
+
+fn to_lowlevel_memories(memories: &[Memory], state: &mut EncodeState) -> Vec<MemoryType> {
+    to_lowlevel_elements!(memories, state, insert_memory_idx, |memory: &Memory| memory.type_.clone())
+}
+
+fn to_lowlevel_globals(globals: &[Global], state: &mut EncodeState) -> Vec<ll::Global> {
+    to_lowlevel_elements!(globals, state, insert_global_idx, |global: &Global| ll::Global {
+        type_: global.type_,
+        init: to_lowlevel_expr(&global.init.as_ref().unwrap(), state),
+    })
+}
+
+fn to_lowlevel_exports(module: &Module, state: &EncodeState) -> Vec<ll::Export> {
     let mut exports = Vec::new();
 
-    exports.extend(module.functions.iter()
-        .enumerate()
-        .filter_map(|(i, func)|
-            func.export.as_ref().map(|name | ll::Export {
-                name: name.clone(),
-                type_: ll::ExportType::Function(function_idx_patch[&i].into()),
-            })));
-
-    exports.extend(module.tables.iter()
-        .enumerate()
-        .filter_map(|(i, table)|
-            table.export.as_ref().map(|name | ll::Export {
-                name: name.clone(),
-                type_: ll::ExportType::Table(tables_idx_patch[&i].into()),
-            })));
-
-    exports.extend(module.memories.iter()
-        .enumerate()
-        .filter_map(|(i, memory)|
-            memory.export.as_ref().map(|name | ll::Export {
-                name: name.clone(),
-                type_: ll::ExportType::Memory(memories_idx_patch[&i].into()),
-            })));
-
-    exports.extend(module.globals.iter()
-        .enumerate()
-        .filter_map(|(i, global)|
-            global.export.as_ref().map(|name | ll::Export {
-                name: name.clone(),
-                type_: ll::ExportType::Global(globals_idx_patch[&i].into()),
-            })));
+    macro_rules! add_exports {
+        ($elems: ident, $map_idx_fn: ident, $export_ty_variant: ident) => {
+            exports.extend(module.$elems.iter()
+                .enumerate()
+                .filter_map(|(i, element)|
+                    element.export.as_ref().map(|name| ll::Export {
+                        name: name.clone(),
+                        type_: ll::ExportType::$export_ty_variant(state.$map_idx_fn(i)),
+                    })));
+        };
+    }
+    add_exports!(functions, map_function_idx, Function);
+    add_exports!(tables, map_table_idx, Table);
+    add_exports!(memories, map_memory_idx, Memory);
+    add_exports!(globals, map_global_idx, Global);
 
     exports
+}
+
+fn to_lowlevel_code(code: Code, state: &EncodeState) -> ll::Code {
+    let mut locals = Vec::new();
+    for type_ in code.locals {
+        if locals.first().map(|locals: &ll::Locals| locals.type_ == type_).unwrap_or(false) {
+            locals[0].count += 1;
+        } else {
+            locals.push(ll::Locals {
+                count: 1,
+                type_,
+            })
+        }
+    }
+
+    ll::Code {
+        locals,
+        body: to_lowlevel_expr(&code.body, state),
+    }
+}
+
+fn to_lowlevel_expr(expr: &[Instr], state: &EncodeState) -> ll::Expr {
+    ll::Expr(expr.iter().map(|instr| to_lowlevel_instr(instr, state)).collect())
+}
+
+fn to_lowlevel_instr(instr: &Instr, state: &EncodeState) -> ll::Instr {
+    match *instr {
+        Instr::Unreachable => ll::Instr::Unreachable,
+        Instr::Nop => ll::Instr::Nop,
+
+        Instr::Block(block_type, ref expr) => ll::Instr::Block(block_type, to_lowlevel_expr(&expr, state)),
+        Instr::Loop(block_type, ref expr) => ll::Instr::Loop(block_type, to_lowlevel_expr(&expr, state)),
+        Instr::If(block_type, ref expr) => ll::Instr::If(block_type, to_lowlevel_expr(&expr, state)),
+        Instr::Else(ref expr) => ll::Instr::Else(to_lowlevel_expr(&expr, state)),
+        Instr::End => ll::Instr::End,
+
+        Instr::Br(label_idx) => ll::Instr::Br(label_idx),
+        Instr::BrIf(label_idx) => ll::Instr::BrIf(label_idx),
+        Instr::BrTable(ref label_idx_table, default) => ll::Instr::BrTable(label_idx_table.clone(), default),
+
+        Instr::Return => ll::Instr::Return,
+        Instr::Call(ref function_idx) => ll::Instr::Call(state.map_function_idx(function_idx.0)),
+        Instr::CallIndirect(ref type_, ref table_idx) => ll::Instr::CallIndirect(state.get_type_idx(&type_), state.map_table_idx(table_idx.0)),
+
+        Instr::Drop => ll::Instr::Drop,
+        Instr::Select => ll::Instr::Select,
+
+        Instr::GetLocal(local_idx) => ll::Instr::GetLocal(local_idx.0.into()),
+        Instr::SetLocal(local_idx) => ll::Instr::SetLocal(local_idx.0.into()),
+        Instr::TeeLocal(local_idx) => ll::Instr::TeeLocal(local_idx.0.into()),
+        Instr::GetGlobal(ref global_idx) => ll::Instr::GetGlobal(state.map_global_idx(global_idx.0)),
+        Instr::SetGlobal(ref global_idx) => ll::Instr::SetGlobal(state.map_global_idx(global_idx.0)),
+
+        Instr::I32Load(memarg) => ll::Instr::I32Load(memarg),
+        Instr::I64Load(memarg) => ll::Instr::I64Load(memarg),
+        Instr::F32Load(memarg) => ll::Instr::F32Load(memarg),
+        Instr::F64Load(memarg) => ll::Instr::F64Load(memarg),
+        Instr::I32Load8S(memarg) => ll::Instr::I32Load8S(memarg),
+        Instr::I32Load8U(memarg) => ll::Instr::I32Load8U(memarg),
+        Instr::I32Load16S(memarg) => ll::Instr::I32Load16S(memarg),
+        Instr::I32Load16U(memarg) => ll::Instr::I32Load16U(memarg),
+        Instr::I64Load8S(memarg) => ll::Instr::I64Load8S(memarg),
+        Instr::I64Load8U(memarg) => ll::Instr::I64Load8U(memarg),
+        Instr::I64Load16S(memarg) => ll::Instr::I64Load16S(memarg),
+        Instr::I64Load16U(memarg) => ll::Instr::I64Load16U(memarg),
+        Instr::I64Load32S(memarg) => ll::Instr::I64Load32S(memarg),
+        Instr::I64Load32U(memarg) => ll::Instr::I64Load32U(memarg),
+        Instr::I32Store(memarg) => ll::Instr::I32Store(memarg),
+        Instr::I64Store(memarg) => ll::Instr::I64Store(memarg),
+        Instr::F32Store(memarg) => ll::Instr::F32Store(memarg),
+        Instr::F64Store(memarg) => ll::Instr::F64Store(memarg),
+        Instr::I32Store8(memarg) => ll::Instr::I32Store8(memarg),
+        Instr::I32Store16(memarg) => ll::Instr::I32Store16(memarg),
+        Instr::I64Store8(memarg) => ll::Instr::I64Store8(memarg),
+        Instr::I64Store16(memarg) => ll::Instr::I64Store16(memarg),
+        Instr::I64Store32(memarg) => ll::Instr::I64Store32(memarg),
+
+        Instr::CurrentMemory(ref memory_idx) => ll::Instr::CurrentMemory(state.map_memory_idx(memory_idx.0)),
+        Instr::GrowMemory(ref memory_idx) => ll::Instr::GrowMemory(state.map_memory_idx(memory_idx.0)),
+
+        Instr::I32Const(immediate) => ll::Instr::I32Const(immediate),
+        Instr::I64Const(immediate) => ll::Instr::I64Const(immediate),
+        Instr::F32Const(immediate) => ll::Instr::F32Const(immediate),
+        Instr::F64Const(immediate) => ll::Instr::F64Const(immediate),
+
+        Instr::I32Eqz => ll::Instr::I32Eqz,
+        Instr::I32Eq => ll::Instr::I32Eq,
+        Instr::I32Ne => ll::Instr::I32Ne,
+        Instr::I32LtS => ll::Instr::I32LtS,
+        Instr::I32LtU => ll::Instr::I32LtU,
+        Instr::I32GtS => ll::Instr::I32GtS,
+        Instr::I32GtU => ll::Instr::I32GtU,
+        Instr::I32LeS => ll::Instr::I32LeS,
+        Instr::I32LeU => ll::Instr::I32LeU,
+        Instr::I32GeS => ll::Instr::I32GeS,
+        Instr::I32GeU => ll::Instr::I32GeU,
+        Instr::I64Eqz => ll::Instr::I64Eqz,
+        Instr::I64Eq => ll::Instr::I64Eq,
+        Instr::I64Ne => ll::Instr::I64Ne,
+        Instr::I64LtS => ll::Instr::I64LtS,
+        Instr::I64LtU => ll::Instr::I64LtU,
+        Instr::I64GtS => ll::Instr::I64GtS,
+        Instr::I64GtU => ll::Instr::I64GtU,
+        Instr::I64LeS => ll::Instr::I64LeS,
+        Instr::I64LeU => ll::Instr::I64LeU,
+        Instr::I64GeS => ll::Instr::I64GeS,
+        Instr::I64GeU => ll::Instr::I64GeU,
+        Instr::F32Eq => ll::Instr::F32Eq,
+        Instr::F32Ne => ll::Instr::F32Ne,
+        Instr::F32Lt => ll::Instr::F32Lt,
+        Instr::F32Gt => ll::Instr::F32Gt,
+        Instr::F32Le => ll::Instr::F32Le,
+        Instr::F32Ge => ll::Instr::F32Ge,
+        Instr::F64Eq => ll::Instr::F64Eq,
+        Instr::F64Ne => ll::Instr::F64Ne,
+        Instr::F64Lt => ll::Instr::F64Lt,
+        Instr::F64Gt => ll::Instr::F64Gt,
+        Instr::F64Le => ll::Instr::F64Le,
+        Instr::F64Ge => ll::Instr::F64Ge,
+        Instr::I32Clz => ll::Instr::I32Clz,
+        Instr::I32Ctz => ll::Instr::I32Ctz,
+        Instr::I32Popcnt => ll::Instr::I32Popcnt,
+        Instr::I32Add => ll::Instr::I32Add,
+        Instr::I32Sub => ll::Instr::I32Sub,
+        Instr::I32Mul => ll::Instr::I32Mul,
+        Instr::I32DivS => ll::Instr::I32DivS,
+        Instr::I32DivU => ll::Instr::I32DivU,
+        Instr::I32RemS => ll::Instr::I32RemS,
+        Instr::I32RemU => ll::Instr::I32RemU,
+        Instr::I32And => ll::Instr::I32And,
+        Instr::I32Or => ll::Instr::I32Or,
+        Instr::I32Xor => ll::Instr::I32Xor,
+        Instr::I32Shl => ll::Instr::I32Shl,
+        Instr::I32ShrS => ll::Instr::I32ShrS,
+        Instr::I32ShrU => ll::Instr::I32ShrU,
+        Instr::I32Rotl => ll::Instr::I32Rotl,
+        Instr::I32Rotr => ll::Instr::I32Rotr,
+        Instr::I64Clz => ll::Instr::I64Clz,
+        Instr::I64Ctz => ll::Instr::I64Ctz,
+        Instr::I64Popcnt => ll::Instr::I64Popcnt,
+        Instr::I64Add => ll::Instr::I64Add,
+        Instr::I64Sub => ll::Instr::I64Sub,
+        Instr::I64Mul => ll::Instr::I64Mul,
+        Instr::I64DivS => ll::Instr::I64DivS,
+        Instr::I64DivU => ll::Instr::I64DivU,
+        Instr::I64RemS => ll::Instr::I64RemS,
+        Instr::I64RemU => ll::Instr::I64RemU,
+        Instr::I64And => ll::Instr::I64And,
+        Instr::I64Or => ll::Instr::I64Or,
+        Instr::I64Xor => ll::Instr::I64Xor,
+        Instr::I64Shl => ll::Instr::I64Shl,
+        Instr::I64ShrS => ll::Instr::I64ShrS,
+        Instr::I64ShrU => ll::Instr::I64ShrU,
+        Instr::I64Rotl => ll::Instr::I64Rotl,
+        Instr::I64Rotr => ll::Instr::I64Rotr,
+        Instr::F32Abs => ll::Instr::F32Abs,
+        Instr::F32Neg => ll::Instr::F32Neg,
+        Instr::F32Ceil => ll::Instr::F32Ceil,
+        Instr::F32Floor => ll::Instr::F32Floor,
+        Instr::F32Trunc => ll::Instr::F32Trunc,
+        Instr::F32Nearest => ll::Instr::F32Nearest,
+        Instr::F32Sqrt => ll::Instr::F32Sqrt,
+        Instr::F32Add => ll::Instr::F32Add,
+        Instr::F32Sub => ll::Instr::F32Sub,
+        Instr::F32Mul => ll::Instr::F32Mul,
+        Instr::F32Div => ll::Instr::F32Div,
+        Instr::F32Min => ll::Instr::F32Min,
+        Instr::F32Max => ll::Instr::F32Max,
+        Instr::F32Copysign => ll::Instr::F32Copysign,
+        Instr::F64Abs => ll::Instr::F64Abs,
+        Instr::F64Neg => ll::Instr::F64Neg,
+        Instr::F64Ceil => ll::Instr::F64Ceil,
+        Instr::F64Floor => ll::Instr::F64Floor,
+        Instr::F64Trunc => ll::Instr::F64Trunc,
+        Instr::F64Nearest => ll::Instr::F64Nearest,
+        Instr::F64Sqrt => ll::Instr::F64Sqrt,
+        Instr::F64Add => ll::Instr::F64Add,
+        Instr::F64Sub => ll::Instr::F64Sub,
+        Instr::F64Mul => ll::Instr::F64Mul,
+        Instr::F64Div => ll::Instr::F64Div,
+        Instr::F64Min => ll::Instr::F64Min,
+        Instr::F64Max => ll::Instr::F64Max,
+        Instr::F64Copysign => ll::Instr::F64Copysign,
+        Instr::I32WrapI64 => ll::Instr::I32WrapI64,
+        Instr::I32TruncSF32 => ll::Instr::I32TruncSF32,
+        Instr::I32TruncUF32 => ll::Instr::I32TruncUF32,
+        Instr::I32TruncSF64 => ll::Instr::I32TruncSF64,
+        Instr::I32TruncUF64 => ll::Instr::I32TruncUF64,
+        Instr::I64ExtendSI32 => ll::Instr::I64ExtendSI32,
+        Instr::I64ExtendUI32 => ll::Instr::I64ExtendUI32,
+        Instr::I64TruncSF32 => ll::Instr::I64TruncSF32,
+        Instr::I64TruncUF32 => ll::Instr::I64TruncUF32,
+        Instr::I64TruncSF64 => ll::Instr::I64TruncSF64,
+        Instr::I64TruncUF64 => ll::Instr::I64TruncUF64,
+        Instr::F32ConvertSI32 => ll::Instr::F32ConvertSI32,
+        Instr::F32ConvertUI32 => ll::Instr::F32ConvertUI32,
+        Instr::F32ConvertSI64 => ll::Instr::F32ConvertSI64,
+        Instr::F32ConvertUI64 => ll::Instr::F32ConvertUI64,
+        Instr::F32DemoteF64 => ll::Instr::F32DemoteF64,
+        Instr::F64ConvertSI32 => ll::Instr::F64ConvertSI32,
+        Instr::F64ConvertUI32 => ll::Instr::F64ConvertUI32,
+        Instr::F64ConvertSI64 => ll::Instr::F64ConvertSI64,
+        Instr::F64ConvertUI64 => ll::Instr::F64ConvertUI64,
+        Instr::F64PromoteF32 => ll::Instr::F64PromoteF32,
+        Instr::I32ReinterpretF32 => ll::Instr::I32ReinterpretF32,
+        Instr::I64ReinterpretF64 => ll::Instr::I64ReinterpretF64,
+        Instr::F32ReinterpretI32 => ll::Instr::F32ReinterpretI32,
+        Instr::F64ReinterpretI64 => ll::Instr::F64ReinterpretI64,
+    }
 }
