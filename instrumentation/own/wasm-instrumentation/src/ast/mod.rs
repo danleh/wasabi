@@ -1,4 +1,5 @@
 use binary::WasmBinary;
+use std::fmt::{self, Write};
 use std::marker::PhantomData;
 
 pub mod highlevel;
@@ -59,7 +60,7 @@ pub enum Mutability {
 
 /* Indices */
 
-#[derive(WasmBinary, Debug)]
+#[derive(WasmBinary)]
 pub struct Idx<T>(pub usize, PhantomData<T>);
 
 impl<T> From<usize> for Idx<T> {
@@ -67,9 +68,19 @@ impl<T> From<usize> for Idx<T> {
     fn from(u: usize) -> Self { Idx(u, PhantomData) }
 }
 
+// custom Debug: print index type T, don't print PhantomData
+impl<T> fmt::Debug for Idx<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let type_name = unsafe { ::std::intrinsics::type_name::<T>() };
+        let type_name = type_name.split("::").last().unwrap();
+        f.write_str(type_name)?;
+        f.write_char(' ')?;
+        self.0.fmt(f)
+    }
+}
+
 // implement some traits manually, since derive(Copy/Eq) add requirements like T: Clone/PartialEq,
 // which we do not want (T is only a marker and not actually contained).
-
 impl<T> Clone for Idx<T> {
     #[inline]
     fn clone(&self) -> Self { self.0.into() }

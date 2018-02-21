@@ -1,4 +1,4 @@
-#![feature(attr_literals, specialization, universal_impl_trait, conservative_impl_trait, test)]
+#![feature(attr_literals, specialization, universal_impl_trait, conservative_impl_trait, test, core_intrinsics)]
 #![allow(dead_code, unused_variables, unused_imports)]
 
 extern crate byteorder;
