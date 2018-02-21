@@ -10,17 +10,7 @@ use super::lowlevel as ll;
 
 impl From<ll::Module> for hl::Module {
     fn from(ll::Module { sections }: ll::Module) -> Self {
-        let mut module = hl::Module {
-            functions: Vec::new(),
-            tables: Vec::new(),
-            memories: Vec::new(),
-            globals: Vec::new(),
-
-            start: None,
-
-            custom_sections: Vec::new(),
-        };
-
+        let mut module = hl::Module::new();
         let mut types: Vec<FunctionType> = Vec::new();
 
         for section in sections {

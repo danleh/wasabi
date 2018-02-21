@@ -18,12 +18,9 @@ use test::Bencher;
 #[test]
 #[ignore]
 fn debug() {
-
-
-//    let file = "test/input/hello-manual.wasm";
-//    let module = highlevel::Module::from_file(file).unwrap();
-////    println!("{:#?}", module);
-//    instrument(&Path::new(file), count_calls, "count-calls").unwrap();
+    let file = "test/input/hello-manual.wasm";
+//    println!("{:#?}", module);
+    instrument(&Path::new(file), count_calls, "count-calls").unwrap();
 }
 
 
@@ -131,6 +128,7 @@ fn wasm_files<P: AsRef<Path>>(dir: P) -> impl Iterator<Item=PathBuf> {
         .filter(|path| path.extension() == Some("wasm".as_ref()))
 }
 
+/// Read wasm module from test_file, instrument it, and write out to test/output/ directory
 fn instrument(test_file: &Path, instrument: impl Fn(&mut highlevel::Module), instrument_str: &str) -> io::Result<PathBuf> {
     assert!(test_file.to_string_lossy().contains("test/input"),
             "otherwise creating the output file and directories could fail/overwrite other stuff");
