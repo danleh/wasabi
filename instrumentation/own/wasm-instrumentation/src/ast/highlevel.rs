@@ -1,3 +1,5 @@
+use std::iter::empty;
+use std::slice::Iter;
 use super::*;
 
 /* High-level AST:
@@ -80,6 +82,7 @@ pub enum Instr {
     Unreachable,
     Nop,
 
+    // TODO maybe it is easier if we flatten the instructions in highlevel code?
     Block(BlockType, Expr),
     Loop(BlockType, Expr),
     If(BlockType, Expr),
@@ -107,6 +110,7 @@ pub enum Instr {
     I64Load(Memarg),
     F32Load(Memarg),
     F64Load(Memarg),
+
     I32Load8S(Memarg),
     I32Load8U(Memarg),
     I32Load16S(Memarg),
@@ -117,6 +121,7 @@ pub enum Instr {
     I64Load16U(Memarg),
     I64Load32S(Memarg),
     I64Load32U(Memarg),
+
     I32Store(Memarg),
     I64Store(Memarg),
     F32Store(Memarg),
@@ -146,6 +151,7 @@ pub enum Instr {
     I32LeU,
     I32GeS,
     I32GeU,
+
     I64Eqz,
     I64Eq,
     I64Ne,
@@ -157,18 +163,21 @@ pub enum Instr {
     I64LeU,
     I64GeS,
     I64GeU,
+
     F32Eq,
     F32Ne,
     F32Lt,
     F32Gt,
     F32Le,
     F32Ge,
+
     F64Eq,
     F64Ne,
     F64Lt,
     F64Gt,
     F64Le,
     F64Ge,
+
     I32Clz,
     I32Ctz,
     I32Popcnt,
@@ -187,6 +196,7 @@ pub enum Instr {
     I32ShrU,
     I32Rotl,
     I32Rotr,
+
     I64Clz,
     I64Ctz,
     I64Popcnt,
@@ -205,6 +215,7 @@ pub enum Instr {
     I64ShrU,
     I64Rotl,
     I64Rotr,
+
     F32Abs,
     F32Neg,
     F32Ceil,
@@ -219,6 +230,7 @@ pub enum Instr {
     F32Min,
     F32Max,
     F32Copysign,
+
     F64Abs,
     F64Neg,
     F64Ceil,
@@ -233,27 +245,32 @@ pub enum Instr {
     F64Min,
     F64Max,
     F64Copysign,
+
     I32WrapI64,
     I32TruncSF32,
     I32TruncUF32,
     I32TruncSF64,
     I32TruncUF64,
+
     I64ExtendSI32,
     I64ExtendUI32,
     I64TruncSF32,
     I64TruncUF32,
     I64TruncSF64,
     I64TruncUF64,
+
     F32ConvertSI32,
     F32ConvertUI32,
     F32ConvertSI64,
     F32ConvertUI64,
     F32DemoteF64,
+
     F64ConvertSI32,
     F64ConvertUI32,
     F64ConvertSI64,
     F64ConvertUI64,
     F64PromoteF32,
+
     I32ReinterpretF32,
     I64ReinterpretF64,
     F32ReinterpretI32,
@@ -312,6 +329,70 @@ impl Instr {
             _ => false
         }
     }
+
+    /// returns nested Expr in block instructions
+    pub fn recursive(&self) -> Option<&Expr> {
+        Some(match *self {
+            Instr::Block(_, ref expr) => expr,
+            Instr::Loop(_, ref expr) => expr,
+            Instr::If(_, ref expr) => expr,
+            Instr::Else(ref expr) => expr,
+            _ => return None
+        })
+    }
+
+    /// returns nested Expr in block instructions, mutably
+    pub fn recursive_mut(&mut self) -> Option<&mut Expr> {
+        Some(match *self {
+            Instr::Block(_, ref mut expr) => expr,
+            Instr::Loop(_, ref mut expr) => expr,
+            Instr::If(_, ref mut expr) => expr,
+            Instr::Else(ref mut expr) => expr,
+            _ => return None
+        })
+    }
+}
+
+impl Function {
+    // TODO doc: iterates over instructions in a flat manner
+    pub fn instructions_flat(&self) -> impl Iterator<Item=(Idx<Instr>, &Instr)> {
+        self.code.iter()
+            .flat_map(|code| FlatInstrIter {
+                iter: code.body.iter(),
+                inner_iter: None,
+            })
+            .enumerate()
+            .map(|(i, instr)| (i.into(), instr))
+    }
+}
+
+// TODO NOTE this is essentially a top-down iterator
+struct FlatInstrIter<'a> {
+    // TODO use Vec<Iter> instead of this linked list of options...
+    iter: Iter<'a, Instr>,
+    inner_iter: Option<Box<FlatInstrIter<'a>>>,
+}
+
+impl<'a> Iterator for FlatInstrIter<'a> {
+    type Item = &'a Instr;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(ref mut inner_iter) = self.inner_iter {
+            if let Some(ref inner_instr) = inner_iter.next() {
+                return Some(inner_instr);
+            }
+        }
+
+        self.iter.next().map(|instr| {
+            for expr in instr.recursive() {
+                self.inner_iter = Some(Box::new(FlatInstrIter {
+                    iter: expr.iter(),
+                    inner_iter: None,
+                }));
+            }
+            instr
+        })
+    }
 }
 
 
@@ -328,13 +409,7 @@ pub trait VisitExpr {
 impl VisitExpr for Expr {
     fn bottom_up(&mut self, f: &Fn(&mut Expr)) {
         for instr in self.iter_mut() {
-            match *instr {
-                Instr::Block(_, ref mut expr) => VisitExpr::bottom_up(expr, f),
-                Instr::Loop(_, ref mut expr) => VisitExpr::bottom_up(expr, f),
-                Instr::If(_, ref mut expr) => VisitExpr::bottom_up(expr, f),
-                Instr::Else(ref mut expr) => VisitExpr::bottom_up(expr, f),
-                _ => {}
-            }
+            instr.recursive_mut().map(|expr| VisitExpr::bottom_up(expr, f));
         }
         f(self)
     }
@@ -354,13 +429,7 @@ impl VisitInstr for Expr {
 
 impl VisitInstr for Instr {
     fn bottom_up(&mut self, f: impl Fn(&mut Instr)) {
-        match *self {
-            Instr::Block(_, ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
-            Instr::Loop(_, ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
-            Instr::If(_, ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
-            Instr::Else(ref mut expr) => VisitInstr::bottom_up(expr, |instr| f(instr)),
-            _ => {}
-        }
+        self.recursive_mut().map(|expr| VisitInstr::bottom_up(expr, |instr| f(instr)));
         f(self);
     }
 }
