@@ -238,28 +238,31 @@ impl WasmBinary for Module {
     }
 }
 
-/// needs manual impl because of Else/End handling
+/// needs manual impl because of block handling
 impl WasmBinary for Expr {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let mut instructions = Vec::new();
 
-        let mut found_end = false;
-        while !found_end {
+        let mut block_depth = 0;
+        while block_depth >= 0 {
             let instr = Instr::decode(reader)?;
 
-            match instr {
-                Instr::Else(..) | Instr::End => found_end = true,
-                _ => {}
+            block_depth += match instr {
+                Instr::Block(..) | Instr::Loop(..) | Instr::If(..) => 1,
+                // Else ends a block, but also starts a new one
+                Instr::Else => -1 + 1,
+                Instr::End => -1,
+                _ => 0
             };
 
             instructions.push(instr);
         }
 
-        Ok(Expr(instructions))
+        Ok(instructions)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         let mut bytes_written = 0;
-        for instruction in &self.0 {
+        for instruction in self {
             bytes_written += instruction.encode(writer)?;
         }
         Ok(bytes_written)

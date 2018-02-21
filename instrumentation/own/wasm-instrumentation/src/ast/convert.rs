@@ -159,7 +159,7 @@ fn from_lowlevel_code(code: ll::Code, types: &[FunctionType]) -> hl::Code {
 }
 
 fn from_lowlevel_expr(expr: ll::Expr, types: &[FunctionType]) -> hl::Expr {
-    expr.0.into_iter().map(|instr| from_lowlevel_instr(instr, types)).collect()
+    expr.into_iter().map(|instr| from_lowlevel_instr(instr, types)).collect()
 }
 
 fn from_lowlevel_instr(instr: ll::Instr, types: &[FunctionType]) -> hl::Instr {
@@ -167,10 +167,10 @@ fn from_lowlevel_instr(instr: ll::Instr, types: &[FunctionType]) -> hl::Instr {
         ll::Instr::Unreachable => hl::Instr::Unreachable,
         ll::Instr::Nop => hl::Instr::Nop,
 
-        ll::Instr::Block(block_type, expr) => hl::Instr::Block(block_type, from_lowlevel_expr(expr, &types)),
-        ll::Instr::Loop(block_type, expr) => hl::Instr::Loop(block_type, from_lowlevel_expr(expr, &types)),
-        ll::Instr::If(block_type, expr) => hl::Instr::If(block_type, from_lowlevel_expr(expr, &types)),
-        ll::Instr::Else(expr) => hl::Instr::Else(from_lowlevel_expr(expr, &types)),
+        ll::Instr::Block(block_type) => hl::Instr::Block(block_type),
+        ll::Instr::Loop(block_type) => hl::Instr::Loop(block_type),
+        ll::Instr::If(block_type) => hl::Instr::If(block_type),
+        ll::Instr::Else => hl::Instr::Else,
         ll::Instr::End => hl::Instr::End,
 
         ll::Instr::Br(label_idx) => hl::Instr::Br(label_idx),
@@ -580,7 +580,7 @@ fn to_lowlevel_code(code: hl::Code, state: &EncodeState) -> ll::Code {
 }
 
 fn to_lowlevel_expr(expr: &[hl::Instr], state: &EncodeState) -> ll::Expr {
-    ll::Expr(expr.iter().map(|instr| to_lowlevel_instr(instr, state)).collect())
+    expr.iter().map(|instr| to_lowlevel_instr(instr, state)).collect()
 }
 
 fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
@@ -588,10 +588,10 @@ fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
         hl::Instr::Unreachable => ll::Instr::Unreachable,
         hl::Instr::Nop => ll::Instr::Nop,
 
-        hl::Instr::Block(block_type, ref expr) => ll::Instr::Block(block_type, to_lowlevel_expr(&expr, state)),
-        hl::Instr::Loop(block_type, ref expr) => ll::Instr::Loop(block_type, to_lowlevel_expr(&expr, state)),
-        hl::Instr::If(block_type, ref expr) => ll::Instr::If(block_type, to_lowlevel_expr(&expr, state)),
-        hl::Instr::Else(ref expr) => ll::Instr::Else(to_lowlevel_expr(&expr, state)),
+        hl::Instr::Block(block_type) => ll::Instr::Block(block_type),
+        hl::Instr::Loop(block_type) => ll::Instr::Loop(block_type),
+        hl::Instr::If(block_type) => ll::Instr::If(block_type),
+        hl::Instr::Else => ll::Instr::Else,
         hl::Instr::End => ll::Instr::End,
 
         hl::Instr::Br(label_idx) => ll::Instr::Br(label_idx),

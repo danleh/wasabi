@@ -1,11 +1,11 @@
 use ast::{FunctionType, GlobalType};
-use ast::highlevel::{Code, Expr, Function, Instr, Module, VisitExpr};
+use ast::highlevel::{Code, Expr, Function, Instr, Module};
 use ast::highlevel::Instr::*;
-use ast::Mutability::*;
-use ast::ValType::*;
 use ast::highlevel::Memory;
 use ast::Limits;
 use ast::MemoryType;
+use ast::Mutability::*;
+use ast::ValType::*;
 
 // TODO Idea: provide two options of connecting user analysis (i.e., client instrumentation code)
 // with the instrumented binary (i.e., the "host" code + hooks + import of callbacks):
@@ -34,14 +34,14 @@ pub fn instrumentation_module() -> Module {
     let mut module = Module::new();
 
     module.memories.push(Memory {
-        type_: MemoryType(Limits{ initial_size: 10, max_size: None }),
+        type_: MemoryType(Limits { initial_size: 10, max_size: None }),
         import: None,
         data: Vec::new(),
         export: None,
     });
 
     module.memories.push(Memory {
-        type_: MemoryType(Limits{ initial_size: 2, max_size: None }),
+        type_: MemoryType(Limits { initial_size: 2, max_size: None }),
         import: Some(("bla".into(), "blub".into())),
         data: Vec::new(),
         export: None,
@@ -54,7 +54,7 @@ pub fn instrumentation_module() -> Module {
 
 // TODO to be compiled with target = wasm-unknown-unkown
 mod analysis_api {
-    use ast::{Idx, highlevel::Function, highlevel::Instr};
+    use ast::{highlevel::Function, highlevel::Instr, Idx};
     use ast::ValType;
 
     #[derive(Copy, Clone)]
@@ -68,10 +68,12 @@ mod analysis_api {
     struct InstructionLocation(Idx<Function>, Idx<Instr>);
 
     fn call(i: InstructionLocation, target: Idx<Function>) {}
+
     fn return_(i: InstructionLocation, results: &[Val]) {}
 
     // function gives the Idx<Function>, implicitly Idx<Instr> == 0
     fn function_begin(function: Idx<Function>, arguments: &[Val]) {}
+
     fn function_end(function: Idx<Function>, results: &[Val]) {}
 
 
@@ -82,7 +84,6 @@ mod analysis_api {
     // etc...
 
 //    fn const_(val: Val) {}
-
 }
 
 pub fn identity(_: &mut Module) {}
@@ -119,14 +120,13 @@ pub fn count_calls(module: &mut Module) {
     for (i, function) in module.functions() {
         // ignore the functions we added
         if i != getter && i != increment {
+            // FIXME endless loop on tests????
             if let Some(Code { ref mut body, .. }) = function.code {
-                VisitExpr::bottom_up(body, &|instrs: &mut Expr| {
-                    let mut last_call_instr_idx = 0;
-                    while let Some(call_instr_idx) = instrs[last_call_instr_idx..].iter().position(Instr::is_call) {
-                        instrs.insert(call_instr_idx, Call(increment));
-                        last_call_instr_idx = call_instr_idx + 2;
-                    }
-                });
+                let mut last_call_instr_idx = 0;
+                while let Some(call_instr_idx) = body[last_call_instr_idx..].iter().position(Instr::is_call) {
+                    body.insert(call_instr_idx, Call(increment));
+                    last_call_instr_idx = call_instr_idx + 2;
+                }
             }
         }
     }

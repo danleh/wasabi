@@ -106,19 +106,18 @@ pub struct Locals {
     pub type_: ValType,
 }
 
-#[derive(Debug, Clone)]
-pub struct Expr(pub Vec<Instr>);
+pub type Expr = Vec<Instr>;
 
 #[derive(WasmBinary, Debug, Clone)]
 pub enum Instr {
     #[tag = 0x00] Unreachable,
     #[tag = 0x01] Nop,
 
-    // NOTE block nesting is handled by Expr::decode which returns as soon as an Else or End is found
-    #[tag = 0x02] Block(BlockType, Expr),
-    #[tag = 0x03] Loop(BlockType, Expr),
-    #[tag = 0x04] If(BlockType, Expr),
-    #[tag = 0x05] Else(Expr),
+    // NOTE block nesting is handled by Expr::decode
+    #[tag = 0x02] Block(BlockType),
+    #[tag = 0x03] Loop(BlockType),
+    #[tag = 0x04] If(BlockType),
+    #[tag = 0x05] Else,
     #[tag = 0x0b] End,
 
     #[tag = 0x0c] Br(Idx<Label>),

@@ -82,11 +82,10 @@ pub enum Instr {
     Unreachable,
     Nop,
 
-    // TODO maybe it is easier if we flatten the instructions in highlevel code?
-    Block(BlockType, Expr),
-    Loop(BlockType, Expr),
-    If(BlockType, Expr),
-    Else(Expr),
+    Block(BlockType),
+    Loop(BlockType),
+    If(BlockType),
+    Else,
     End,
 
     Br(Idx<Label>),
@@ -321,6 +320,12 @@ impl Module {
     }
 }
 
+impl Function {
+    pub fn instructions(&mut self) -> impl Iterator<Item=(Idx<Instr>, &mut Instr)> {
+        self.code.iter_mut().flat_map(|code| code.body.iter_mut().enumerate().map(|(i, f)| (i.into(), f)))
+    }
+}
+
 impl Instr {
     pub fn is_call(&self) -> bool {
         match *self {
@@ -328,108 +333,5 @@ impl Instr {
             Instr::CallIndirect(_, _) => true,
             _ => false
         }
-    }
-
-    /// returns nested Expr in block instructions
-    pub fn recursive(&self) -> Option<&Expr> {
-        Some(match *self {
-            Instr::Block(_, ref expr) => expr,
-            Instr::Loop(_, ref expr) => expr,
-            Instr::If(_, ref expr) => expr,
-            Instr::Else(ref expr) => expr,
-            _ => return None
-        })
-    }
-
-    /// returns nested Expr in block instructions, mutably
-    pub fn recursive_mut(&mut self) -> Option<&mut Expr> {
-        Some(match *self {
-            Instr::Block(_, ref mut expr) => expr,
-            Instr::Loop(_, ref mut expr) => expr,
-            Instr::If(_, ref mut expr) => expr,
-            Instr::Else(ref mut expr) => expr,
-            _ => return None
-        })
-    }
-}
-
-impl Function {
-    // TODO doc: iterates over instructions in a flat manner
-    pub fn instructions_flat(&self) -> impl Iterator<Item=(Idx<Instr>, &Instr)> {
-        self.code.iter()
-            .flat_map(|code| FlatInstrIter {
-                iter: code.body.iter(),
-                inner_iter: None,
-            })
-            .enumerate()
-            .map(|(i, instr)| (i.into(), instr))
-    }
-}
-
-// TODO NOTE this is essentially a top-down iterator
-struct FlatInstrIter<'a> {
-    // TODO use Vec<Iter> instead of this linked list of options...
-    iter: Iter<'a, Instr>,
-    inner_iter: Option<Box<FlatInstrIter<'a>>>,
-}
-
-impl<'a> Iterator for FlatInstrIter<'a> {
-    type Item = &'a Instr;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(ref mut inner_iter) = self.inner_iter {
-            if let Some(ref inner_instr) = inner_iter.next() {
-                return Some(inner_instr);
-            }
-        }
-
-        self.iter.next().map(|instr| {
-            for expr in instr.recursive() {
-                self.inner_iter = Some(Box::new(FlatInstrIter {
-                    iter: expr.iter(),
-                    inner_iter: None,
-                }));
-            }
-            instr
-        })
-    }
-}
-
-
-/* Visitors for transforming instructions without having to recurse manually over the tree.
-   bottom_up: goes first into the leaves (i.e., instrs or exprs) and applies f,
-              and then applies f to the current level again (== post-order).
-*/
-
-// FIXME I don't understand why we need f to be behind a reference, with impl Fn... I seem to get an inifinite type!?
-pub trait VisitExpr {
-    fn bottom_up(&mut self, f: &Fn(&mut Expr));
-}
-
-impl VisitExpr for Expr {
-    fn bottom_up(&mut self, f: &Fn(&mut Expr)) {
-        for instr in self.iter_mut() {
-            instr.recursive_mut().map(|expr| VisitExpr::bottom_up(expr, f));
-        }
-        f(self)
-    }
-}
-
-pub trait VisitInstr {
-    fn bottom_up(&mut self, f: impl Fn(&mut Instr));
-}
-
-impl VisitInstr for Expr {
-    fn bottom_up(&mut self, f: impl Fn(&mut Instr)) {
-        for instr in self.iter_mut() {
-            instr.bottom_up(|instr| f(instr))
-        }
-    }
-}
-
-impl VisitInstr for Instr {
-    fn bottom_up(&mut self, f: impl Fn(&mut Instr)) {
-        self.recursive_mut().map(|expr| VisitInstr::bottom_up(expr, |instr| f(instr)));
-        f(self);
     }
 }
