@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+ 	<head><meta charset="utf-8"></head>
+ 	<body>
+		<h1>Output</h1>
+		<pre id="output"></pre>
+
+		<h1>Source</h1>
+		<pre id="source"></pre>
+
+		<script type="text/javascript">
+			function output(string) {
+				document.getElementById("output").innerHTML += string;
+			}
+
+			// "async main"
+			(async function() {
+				document.getElementById("source").innerHTML = 
+					await fetch("hello.gc.opt.wat")
+						.then(response => response.text());
+
+				let importObject = {
+					imports: {
+						output,
+					}
+				};
+
+				let {module, instance} = await fetch("hello.gc.opt.wasm")
+					.then(response => response.arrayBuffer())
+					.then(arrayBuffer => WebAssembly.instantiate(arrayBuffer, importObject));
+
+				let result = instance.exports.start();
+				output(result);
+			})();
+		</script>
+	</body>
+</html>
