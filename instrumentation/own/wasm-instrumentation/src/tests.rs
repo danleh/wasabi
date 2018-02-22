@@ -18,8 +18,16 @@ use test::Bencher;
 #[test]
 #[ignore]
 fn debug() {
-    let file = "test/input/hello-manual.wasm";
+    let file = "test/input/hello-emcc.wasm";
+//    let mut module = highlevel::Module::from_file(file).unwrap();
+//    for (i, func) in module.functions() {
+//        println!("{:#?}", func.instructions().collect::<Vec<_>>());
+//    }
+
+//    let module = instrumentation_module();
 //    println!("{:#?}", module);
+//    module.to_file("test/multiple-memories.wasm").unwrap();
+
     instrument(&Path::new(file), count_calls, "count-calls").unwrap();
 }
 

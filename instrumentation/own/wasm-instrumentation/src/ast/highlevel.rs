@@ -324,14 +324,14 @@ impl Function {
     pub fn instructions(&mut self) -> impl Iterator<Item=(Idx<Instr>, &mut Instr)> {
         self.code.iter_mut().flat_map(|code| code.body.iter_mut().enumerate().map(|(i, f)| (i.into(), f)))
     }
-}
 
-impl Instr {
-    pub fn is_call(&self) -> bool {
-        match *self {
-            Instr::Call(_) => true,
-            Instr::CallIndirect(_, _) => true,
-            _ => false
+    pub fn modify_instr(&mut self, f: impl Fn(Instr) -> Vec<Instr>) {
+        if let Some(Code { ref mut body, .. }) = self.code {
+            let new_body = Vec::with_capacity(body.len());
+            let old_body = ::std::mem::replace(body, new_body);
+            for instr in old_body.into_iter() {
+                body.append(&mut f(instr));
+            }
         }
     }
 }

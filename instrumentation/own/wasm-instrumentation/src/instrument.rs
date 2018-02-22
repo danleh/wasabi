@@ -120,14 +120,10 @@ pub fn count_calls(module: &mut Module) {
     for (i, function) in module.functions() {
         // ignore the functions we added
         if i != getter && i != increment {
-            // FIXME endless loop on tests????
-            if let Some(Code { ref mut body, .. }) = function.code {
-                let mut last_call_instr_idx = 0;
-                while let Some(call_instr_idx) = body[last_call_instr_idx..].iter().position(Instr::is_call) {
-                    body.insert(call_instr_idx, Call(increment));
-                    last_call_instr_idx = call_instr_idx + 2;
-                }
-            }
+            function.modify_instr(|instr| match instr {
+                Call(..) | CallIndirect(..) => vec![Call(increment), instr],
+                instr => vec![instr]
+            })
         }
     }
 }
