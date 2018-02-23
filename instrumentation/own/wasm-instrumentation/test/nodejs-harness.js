@@ -27,4 +27,5 @@ const instance = new WebAssembly.Instance(wasmModule, importObject);
 
 // instance.exports."start"() is automatically called
 
-console.log(`call/call_indirect instructions executed: ${instance.exports.get_counter()}`);
+// console.log(`call/call_indirect instructions executed: ${instance.exports.get_counter()}`);
+console.log(instance.exports.i64_function());
