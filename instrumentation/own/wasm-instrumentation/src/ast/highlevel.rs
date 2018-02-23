@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::iter::empty;
 use std::slice::Iter;
 use super::*;
@@ -304,9 +305,19 @@ impl Module {
         (self.functions.len() - 1).into()
     }
 
-    pub fn add_global(&mut self, type_: GlobalType, init: Vec<Instr>) -> Idx<Global> {
-        self.globals.push(Global {
+    pub fn add_function_import(&mut self, type_: FunctionType, module: String, name: String) -> Idx<Function> {
+        self.functions.push(Function {
             type_,
+            import: Some((module, name)),
+            code: None,
+            export: None,
+        });
+        (self.functions.len() - 1).into()
+    }
+
+    pub fn add_global(&mut self, type_: ValType, mut_: Mutability, init: Vec<Instr>) -> Idx<Global> {
+        self.globals.push(Global {
+            type_: GlobalType(type_, mut_),
             import: None,
             init: Some(init),
             export: None,
@@ -317,6 +328,14 @@ impl Module {
     pub fn function(&mut self, idx: Idx<Function>) -> &mut Function { &mut self.functions[idx.0] }
     pub fn functions(&mut self) -> impl Iterator<Item=(Idx<Function>, &mut Function)> {
         self.functions.iter_mut().enumerate().map(|(i, f)| (i.into(), f))
+    }
+
+    pub fn types(&self) -> HashSet<&FunctionType> {
+        let mut types = HashSet::new();
+        for function in &self.functions {
+            types.insert(&function.type_);
+        }
+        types
     }
 }
 
