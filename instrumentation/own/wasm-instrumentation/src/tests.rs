@@ -28,7 +28,7 @@ fn debug() {
 //    println!("{:#?}", module);
 //    module.to_file("test/multiple-memories.wasm").unwrap();
 
-    instrument(&Path::new(file), count_calls, "count-calls").unwrap();
+    instrument(&Path::new(file), add_hooks, "add-hooks").unwrap();
 }
 
 
