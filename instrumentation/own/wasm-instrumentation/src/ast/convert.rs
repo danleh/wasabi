@@ -563,8 +563,9 @@ fn to_lowlevel_exports(module: &hl::Module, state: &EncodeState) -> Vec<ll::Expo
 fn to_lowlevel_code(code: hl::Code, state: &EncodeState) -> ll::Code {
     let mut locals = Vec::new();
     for type_ in code.locals {
-        if locals.first().map(|locals: &ll::Locals| locals.type_ == type_).unwrap_or(false) {
-            locals[0].count += 1;
+        if locals.last().map(|locals: &ll::Locals| locals.type_ == type_).unwrap_or(false) {
+            let last = locals.len() - 1;
+            locals[last].count += 1;
         } else {
             locals.push(ll::Locals {
                 count: 1,
