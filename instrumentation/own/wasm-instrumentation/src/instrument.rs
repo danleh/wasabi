@@ -1,8 +1,11 @@
-use ast::{FunctionType, GlobalType, Idx, Limits, MemoryType};
+use ast::{FunctionType, GlobalType, Idx, Limits, MemoryType, ValType};
 use ast::highlevel::{Code, Expr, Function, Instr, Memory, Module};
 use ast::highlevel::Instr::*;
+use ast::Local;
 use ast::Mutability::*;
 use ast::ValType::*;
+use std::collections::HashMap;
+use std::collections::HashSet;
 
 // TODO Idea: provide two options of connecting user analysis (i.e., client instrumentation code)
 // with the instrumented binary (i.e., the "host" code + hooks + import of callbacks):
@@ -86,24 +89,101 @@ mod analysis_api {
 //    fn const_(val: Val) {}
 }
 
-fn add_hook(module: &mut Module, type_: FunctionType, name: String) -> Idx<Function> {
-    module.add_function_import(type_, "hooks".into(), name)
+fn expand_i64_type(v: &ValType) -> &[ValType] {
+    match v {
+        &I64 => &[I32, I32],
+        v => ::std::slice::from_ref(v),
+    }
+}
+
+fn val_type_char(v: &ValType) -> char {
+    match *v {
+        I32 => 'i',
+        I64 => 'I',
+        F32 => 'f',
+        F64 => 'F',
+    }
+}
+
+fn types_string(v: &[ValType]) -> String {
+    v.iter().map(val_type_char).collect()
+}
+
+fn fresh_local(locals: &mut Vec<ValType>, type_: ValType) -> Idx<Local> {
+    let idx = locals.len().into();
+    locals.push(type_);
+    idx
 }
 
 pub fn add_hooks(module: &mut Module) {
-    for type_ in module.types() {
-        println!("{:?}", type_);
+    /* add hooks: one imported function per occurring result type */
+    let result_tys: HashSet<_> = module.types().iter()
+        .map(|function_ty| function_ty.1.clone())
+        .collect();
+    let return_hooks: HashMap<Vec<ValType>, Idx<Function>> = result_tys.into_iter()
+        .map(|return_ty| {
+            // prepend two I32 for (function idx, instr idx)
+            let mut hook_arg_tys = vec![I32, I32];
+            hook_arg_tys.extend(return_ty.iter().flat_map(expand_i64_type));
+
+            let hook_name = "_return_".to_string() + &types_string(&return_ty);
+            let idx = module.add_function_import(
+                FunctionType(hook_arg_tys, vec![]),
+                "hooks".into(),
+                hook_name);
+
+            (return_ty, idx)
+        })
+        .collect();
+    println!("{:?}", return_hooks);
+
+    /* add call to hooks: setup code that copies the returned value, instruction location, call */
+    for (fidx, function) in module.functions() {
+        if let Some(ref mut code) = function.code {
+            let result_tys = function.type_.1.clone();
+            let locals = &mut code.locals;
+            code.body = code.body.iter().cloned().enumerate()
+                .flat_map(|(iidx, instr)| match instr {
+                    Return => {
+                        // add locals for duplicating hook arguments on stack
+                        let result_duplicate_tmps: Vec<_> = result_tys.iter()
+                            .map(|result_ty| fresh_local(locals, *result_ty))
+                            .collect();
+
+                        let mut instrumented_return = Vec::new();
+
+                        // copy results into tmp locals
+                        for &dup_tmp in result_duplicate_tmps.iter() {
+                            instrumented_return.push(TeeLocal(dup_tmp));
+                        }
+                        // instruction location
+                        instrumented_return.push(I32Const(fidx.0 as i32));
+                        instrumented_return.push(I32Const(iidx as i32));
+                        // duplicate results from tmp locals
+                        for (&dup_tmp, result_ty) in result_duplicate_tmps.iter().zip(result_tys.iter()) {
+                            if result_ty == &I64 {
+                                instrumented_return.extend_from_slice(&[
+                                    GetLocal(dup_tmp),
+                                    I32WrapI64, // low bits
+                                    GetLocal(dup_tmp),
+                                    I64Const(32),
+                                    I64ShrS,
+                                    I32WrapI64, // high bits
+                                ]);
+                            } else {
+                                instrumented_return.push(GetLocal(dup_tmp));
+                            }
+                        }
+
+                        instrumented_return.push(Call(*return_hooks.get(&result_tys).unwrap()));
+                        instrumented_return.push(Return);
+                        instrumented_return
+                    }
+                    _ => vec![instr]
+                })
+                .collect();
+        }
     }
-//    let call_hook = add_hook(module, FunctionType(vec![I32, I32], vec![]), "call");
-//
-//    for (i, function) in module.functions() {
-//        if let Some(Code { ref mut body, .. }) = function.code {}
-//
-//        function.modify_instr(|instr| match instr {
-//            Call(..) | CallIndirect(..) => vec![Call(increment), instr],
-//            instr => vec![instr]
-//        })
-//    }
 }
 
 pub fn identity(_: &mut Module) {}
