@@ -109,10 +109,10 @@ fn types_string(v: &[ValType]) -> String {
     v.iter().map(val_type_char).collect()
 }
 
-fn fresh_local(locals: &mut Vec<ValType>, type_: ValType) -> Idx<Local> {
-    let idx = locals.len().into();
+fn fresh_local(locals: &mut Vec<ValType>, function_ty: &FunctionType, type_: ValType) -> Idx<Local> {
+    let idx = locals.len() + function_ty.0.len();
     locals.push(type_);
-    idx
+    idx.into()
 }
 
 pub fn add_hooks(module: &mut Module) {
@@ -141,21 +141,26 @@ pub fn add_hooks(module: &mut Module) {
     for (fidx, function) in module.functions() {
         if let Some(ref mut code) = function.code {
             let result_tys = function.type_.1.clone();
+            let function_type = &function.type_;
             let locals = &mut code.locals;
             code.body = code.body.iter().cloned().enumerate()
                 .flat_map(|(iidx, instr)| match instr {
                     Return => {
-                        // add locals for duplicating hook arguments on stack
                         let result_duplicate_tmps: Vec<_> = result_tys.iter()
-                            .map(|result_ty| fresh_local(locals, *result_ty))
+                            .map(|result_ty| fresh_local(locals, function_type, *result_ty))
                             .collect();
 
                         let mut instrumented_return = Vec::new();
 
                         // copy results into tmp locals
                         for &dup_tmp in result_duplicate_tmps.iter() {
-                            instrumented_return.push(TeeLocal(dup_tmp));
+                            instrumented_return.push(SetLocal(dup_tmp));
                         }
+                        // and restore (saving has removed them from the stack)
+                        for &dup_tmp in result_duplicate_tmps.iter() {
+                            instrumented_return.push(GetLocal(dup_tmp));
+                        }
+
                         // instruction location
                         instrumented_return.push(I32Const(fidx.0 as i32));
                         instrumented_return.push(I32Const(iidx as i32));
@@ -183,6 +188,7 @@ pub fn add_hooks(module: &mut Module) {
                 })
                 .collect();
         }
+        println!("{:?}", function);
     }
 }
 
