@@ -3,14 +3,14 @@ const fs = require("fs");
 const Long = require("long");
 
 if (typeof WebAssembly !== "object") {
-    console.error("WebAssembly object not available, make sure to run Node version >= 8.");
+    console.error("WebAssembly object not available, make sure to run Node version >= 8");
     process.exit(1);
 }
 
-// 0 is node itself, 1 is the script, only 2 is then the wasm file
+// 0 is node itself, 1 is the script, 2 is the wasm file
 const wasmFilename = process.argv[2];
 if (typeof wasmFilename !== "string") {
-    console.error("No wasm file to execute given, script argument wasm", wasmFilename);
+    console.error("expected wasm file to execute, got ", wasmFilename);
     process.exit(1);
 }
 
@@ -19,7 +19,7 @@ const wasmModule = new WebAssembly.Module(wasmBinaryBuffer);
 
 function return_(location, values) {
     console.log("return @", location);
-    console.log("values:", values);
+    console.log("values:", values.map(v => v.toString()));
 }
 
 const importObject = {
