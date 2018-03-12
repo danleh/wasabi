@@ -72,6 +72,14 @@ fn count_calls_instrumentation_produces_valid_wasm() {
     }
 }
 
+#[test]
+fn add_hooks_instrumentation_produces_valid_wasm() {
+    for path in wasm_files("test/input") {
+        let output = instrument(&path, count_calls, "add-hooks").unwrap();
+        wasm_validate(&output).unwrap();
+    }
+}
+
 
 /* Test encoding/decoding speed (without any instrumentation) on "large" wasm file (~2MB) */
 
