@@ -1,6 +1,6 @@
 #!/opt/node-v9.4.0-linux-x64/bin/node
-
 const fs = require("fs");
+const Long = require("long");
 
 if (typeof WebAssembly !== "object") {
     console.error("WebAssembly object not available, make sure to run Node version >= 8.");
@@ -17,15 +17,20 @@ if (typeof wasmFilename !== "string") {
 const wasmBinaryBuffer = fs.readFileSync(wasmFilename);
 const wasmModule = new WebAssembly.Module(wasmBinaryBuffer);
 
+function return_(location, values) {
+    console.log("return @", location);
+    console.log("values:", values);
+}
+
 const importObject = {
-    imports: {
-        output: console.log
+    hooks: {
+        _return_: function (func, instr) {
+            return_({func, instr}, []);
+        },
+        _return_I: function (func, instr, low, high) {
+            return_({func, instr}, [new Long(low, high)]);
+        }
     }
 };
 
 const instance = new WebAssembly.Instance(wasmModule, importObject);
-
-// instance.exports."start"() is automatically called
-
-// console.log(`call/call_indirect instructions executed: ${instance.exports.get_counter()}`);
-console.log(instance.exports.i64_function());
