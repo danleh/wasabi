@@ -1678,30 +1678,11 @@ function integrateWasmJS() {
     },
   };
 
-    function return_(location, values) {
-        console.log("return @", location);
-        console.log("values:", values.map(v => v.toString()));
-    }
-
   var info = {
     'global': null,
     'env': null,
     'asm2wasm': asm2wasmImports,
-    'parent': Module, // Module inside wasm-js.cpp refers to wasm-js.cpp; this allows access to the outside program.
-    'hooks': {
-        _return_: function (func, instr) {
-              return_({func, instr}, []);
-          },
-        _return_I: function (func, instr, low, high) {
-            return_({func, instr}, [new Long(low, high)]);
-        },
-        _return_i: function (func, instr, i) {
-            return_({func, instr}, [i]);
-        },
-        _return_F: function (func, instr, f) {
-            return_({func, instr}, [f]);
-        },
-      }
+    'parent': Module // Module inside wasm-js.cpp refers to wasm-js.cpp; this allows access to the outside program.
   };
 
   var exports = null;
@@ -2119,26 +2100,26 @@ function copyTempDouble(ptr) {
 // {{PRE_LIBRARY}}
 
 
-
+  
   function ___setErrNo(value) {
       if (Module['___errno_location']) HEAP32[((Module['___errno_location']())>>2)]=value;
       else Module.printErr('failed to set errno from JS');
       return value;
-    }
+    } 
 
-
+   
 
   function ___lock() {}
 
-
+  
   function _emscripten_memcpy_big(dest, src, num) {
       HEAPU8.set(HEAPU8.subarray(src, src+num), dest);
       return dest;
-    }
+    } 
 
+   
 
-
-
+  
   var SYSCALLS={varargs:0,get:function (varargs) {
         SYSCALLS.varargs += 4;
         var ret = HEAP32[(((SYSCALLS.varargs)-(4))>>2)];
