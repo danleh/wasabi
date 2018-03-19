@@ -412,26 +412,40 @@ impl From<hl::Module> for ll::Module {
         let types = types.into_iter()
             .map(|(type_, _)| type_.clone())
             .collect::<Vec<FunctionType>>();
-        sections.push(ll::Section::Type(ll::WithSize(types)));
+        if !types.is_empty() {
+            sections.push(ll::Section::Type(ll::WithSize(types)));
+        }
 
         // Import
-        sections.push(ll::Section::Import(ll::WithSize(imports)));
+        if !imports.is_empty() {
+            sections.push(ll::Section::Import(ll::WithSize(imports)));
+        }
 
         // Function
-        sections.push(ll::Section::Function(ll::WithSize(functions)));
+        if !functions.is_empty() {
+            sections.push(ll::Section::Function(ll::WithSize(functions)));
+        }
 
         // Table
-        sections.push(ll::Section::Table(ll::WithSize(tables)));
+        if !tables.is_empty() {
+            sections.push(ll::Section::Table(ll::WithSize(tables)));
+        }
 
         // Memory
-        sections.push(ll::Section::Memory(ll::WithSize(memories)));
+        if !memories.is_empty() {
+            sections.push(ll::Section::Memory(ll::WithSize(memories)));
+        }
 
         // Global
-        sections.push(ll::Section::Global(ll::WithSize(globals)));
+        if !globals.is_empty() {
+            sections.push(ll::Section::Global(ll::WithSize(globals)));
+        }
 
         // Export
         let exports = to_lowlevel_exports(&module, &state);
-        sections.push(ll::Section::Export(ll::WithSize(exports)));
+        if !exports.is_empty() {
+            sections.push(ll::Section::Export(ll::WithSize(exports)));
+        }
 
         // Start
         for start in module.start {
@@ -439,7 +453,7 @@ impl From<hl::Module> for ll::Module {
         }
 
         // Element
-        let elements = module.tables.into_iter()
+        let elements: Vec<ll::Element> = module.tables.into_iter()
             .enumerate()
             .flat_map(|(i, table)| table.elements.into_iter()
                 .map(|element| ll::Element {
@@ -449,17 +463,21 @@ impl From<hl::Module> for ll::Module {
                 })
                 .collect::<Vec<_>>())
             .collect();
-        sections.push(ll::Section::Element(ll::WithSize(elements)));
+        if !elements.is_empty() {
+            sections.push(ll::Section::Element(ll::WithSize(elements)));
+        }
 
         // Code
-        let code = module.functions.into_iter()
+        let code: Vec<ll::WithSize<ll::Code>> = module.functions.into_iter()
             .filter_map(|function|
                 function.code.map(|code| ll::WithSize(to_lowlevel_code(code, &state))))
             .collect();
-        sections.push(ll::Section::Code(ll::WithSize(code)));
+        if !code.is_empty() {
+            sections.push(ll::Section::Code(ll::WithSize(code)));
+        }
 
         // Data
-        let data = module.memories.into_iter()
+        let data: Vec<ll::Data> = module.memories.into_iter()
             .enumerate()
             .flat_map(|(i, memory)| memory.data.into_iter()
                 .map(|data| ll::Data {
@@ -469,7 +487,9 @@ impl From<hl::Module> for ll::Module {
                 })
                 .collect::<Vec<_>>())
             .collect();
-        sections.push(ll::Section::Data(ll::WithSize(data)));
+        if !data.is_empty() {
+            sections.push(ll::Section::Data(ll::WithSize(data)));
+        }
 
         // Custom
         for custom in module.custom_sections {
