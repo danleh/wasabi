@@ -12,10 +12,14 @@ pub trait WriteLeb128<T>: io::Write {
     fn write_leb128(&mut self, value: T) -> io::Result<usize>;
 }
 
+fn sign_bit(byte: u8) -> bool {
+    byte & 0x40 == 0x40
+}
+
 // Need to write this as a macro, not a generic impl because num_traits are quite lacking, e.g.,
 // there is no "U as T" for primitive integers.
 macro_rules! impl_leb128_integer {
-    ($T:ident) => {
+    ($T: ident) => {
         impl<R: io::Read> ReadLeb128<$T> for R {
             fn read_leb128(&mut self) -> io::Result<$T> {
                 let mut value = 0;
@@ -51,9 +55,14 @@ macro_rules! impl_leb128_integer {
                     value >>= 7;
                     bytes_written += 1;
 
-                    // for unsigned integers, min_value and 0 are the same, but for signed ones the
-                    // double check of value is important: -1 (all 1's) and 0 (all 0's) stop writing
-                    more_bytes = value > $T::min_value() && value > 0;
+                    let signed = $T::min_value() != 0;
+                    if signed {
+                        more_bytes = (value != 0 || sign_bit(byte_to_write))
+                            // cannot use "value != -1" since -1 is not valid when $T is unsigned
+                            && (value + 1 != 0 || !sign_bit(byte_to_write));
+                    } else {
+                        more_bytes = value != 0;
+                    }
                     if more_bytes {
                         byte_to_write |= 0x80;
                     }
