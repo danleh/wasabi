@@ -4,6 +4,9 @@
 extern crate byteorder;
 #[macro_use]
 extern crate custom_derive;
+extern crate itertools;
+#[macro_use]
+extern crate maplit;
 extern crate rayon;
 extern crate test;
 extern crate walkdir;
