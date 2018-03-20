@@ -18,17 +18,20 @@ WebAssembly.instantiate = function () {
         return_F: function (func, instr, v) {
             return_({func, instr}, [v]);
         },
-        const_i: function (func, instr, v) {
-            const_({func, instr}, [v]);
+        i32_const: function (func, instr, v) {
+            const_({func, instr}, v);
         },
-        const_I: function (func, instr, low, high) {
-            const_({func, instr}, [new Long(low, high)]);
+        i64_const: function (func, instr, low, high) {
+            const_({func, instr}, new Long(low, high));
         },
-        const_f: function (func, instr, v) {
-            const_({func, instr}, [v]);
+        f32_const: function (func, instr, v) {
+            const_({func, instr}, v);
         },
-        const_F: function (func, instr, v) {
-            const_({func, instr}, [v]);
+        f64_const: function (func, instr, v) {
+            const_({func, instr}, v);
+        },
+        i32_eqz: function (func, instr, input, result) {
+            unary({func, instr}, "i32.eqz", input, result);
         },
     };
     console.log(importsObject);
@@ -37,34 +40,38 @@ WebAssembly.instantiate = function () {
     return oldInstantiate.apply(this, arguments);
 };
 
-const staticModuleInfo = {
-    functions: [
-        {
-            import: ["env", "bla"],
-            export: "exportedname",
-            type: {
-                params: ["i32", "i32"],
-                results: [],
-            },
-            locals: ["i32", "i32"],
-            instructions: 100,
-        }
-    ]
-};
+// const staticModuleInfo = {
+//     functions: [
+//         {
+//             import: ["env", "bla"],
+//             export: "exportedname",
+//             type: {
+//                 params: ["i32", "i32"],
+//                 results: [],
+//             },
+//             locals: ["i32", "i32"],
+//             instructions: 100,
+//         }
+//     ]
+// };
 
 // your instrumentation goes here...
-const coverageData = [];
+// const coverageData = [];
 
 function return_(location, values) {
-    if (coverageData[location.func] === undefined) {
-        coverageData[location.func] = new Set();
-    }
-    coverageData[location.func].add(location.instr);
+    // if (coverageData[location.func] === undefined) {
+    //     coverageData[location.func] = new Set();
+    // }
+    // coverageData[location.func].add(location.instr);
     // if (coverageData[location.func][location.instr] === undefined) {
     //     coverageData[location.func][location.instr] = true;
     // }
 }
 
 function const_(location, value) {
-    console.log(value);
+    console.log("const @", location, ":", value);
+}
+
+function unary(location, op, input, result) {
+    console.log(op, "@", location, ":", input, "->", result);
 }
