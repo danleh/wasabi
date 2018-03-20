@@ -4,8 +4,8 @@ use ast::highlevel::Instr::*;
 use ast::Local;
 use ast::Mutability::*;
 use ast::ValType::*;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use itertools::Itertools;
+use std::collections::{HashMap, HashSet};
 
 // TODO Idea: provide two options of connecting user analysis (i.e., client instrumentation code)
 // with the instrumented binary (i.e., the "host" code + hooks + import of callbacks):
@@ -56,7 +56,7 @@ fn fresh_local(locals: &mut Vec<ValType>, function_ty: &FunctionType, type_: Val
     idx.into()
 }
 
-fn add_hook(module: &mut Module, name: String, arg_tys_: &[ValType]) -> Idx<Function> {
+fn add_hook(module: &mut Module, name: impl Into<String>, arg_tys_: &[ValType]) -> Idx<Function> {
     // prepend two I32 for (function idx, instr idx)
     let mut arg_tys = vec![I32, I32];
     arg_tys.extend(arg_tys_.iter()
@@ -67,7 +67,7 @@ fn add_hook(module: &mut Module, name: String, arg_tys_: &[ValType]) -> Idx<Func
         // hooks do not return anything
         FunctionType(arg_tys, vec![]),
         "hooks".into(),
-        name)
+        name.into())
 }
 
 pub fn add_hooks(module: &mut Module) {
@@ -75,66 +75,99 @@ pub fn add_hooks(module: &mut Module) {
     let result_tys: HashSet<Vec<ValType>> = module.types().iter()
         .map(|function_ty| function_ty.1.clone())
         .collect();
-    let return_hooks: HashMap<&[ValType], Idx<Function>> = result_tys.iter()
+    let return_hooks: HashMap<Vec<ValType>, Idx<Function>> = result_tys.into_iter()
         .map(|return_ty| {
             let hook_idx = add_hook(
                 module,
                 "return_".to_string() + &types_string(&return_ty),
                 return_ty.as_slice());
-            (return_ty.as_slice(), hook_idx)
+            (return_ty, hook_idx)
         })
         .collect();
-    println!("{:?}", return_hooks);
+    let const_hooks: HashMap<ValType, Idx<Function>> = hashmap! {
+        I32 => add_hook(module, "const_i", &[I32]),
+        I64 => add_hook(module, "const_I", &[I64]),
+        F32 => add_hook(module, "const_f", &[F32]),
+        F64 => add_hook(module, "const_F", &[F64]),
+    };
 
     /* add call to hooks: setup code that copies the returned value, instruction location, call */
+    // NOTE we do not need to filter out functions since all hooks are imports and thus won't have
+    // Code to instrument anyway...
     for (fidx, function) in module.functions() {
         if let Some(ref mut code) = function.code {
             let result_tys = function.type_.1.as_slice();
             let function_type = &function.type_;
             let locals = &mut code.locals;
             code.body = code.body.iter().cloned().enumerate()
-                .flat_map(|(iidx, instr)| match instr {
-                    Return => {
-                        let result_duplicate_tmps: Vec<_> = result_tys.iter()
-                            .map(|result_ty| fresh_local(locals, function_type, *result_ty))
-                            .collect();
+                .flat_map(|(iidx, instr)| {
+                    let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
+                    match instr {
+                        Return => {
+                            let result_duplicate_tmps: Vec<_> = result_tys.iter()
+                                .map(|result_ty| fresh_local(locals, function_type, *result_ty))
+                                .collect();
 
-                        let mut instrumented_return = Vec::new();
+                            let mut instrumented_return = Vec::new();
 
-                        // copy results into tmp locals
-                        for &dup_tmp in result_duplicate_tmps.iter() {
-                            instrumented_return.push(SetLocal(dup_tmp));
+                            // copy results into tmp locals
+                            for &dup_tmp in result_duplicate_tmps.iter() {
+                                instrumented_return.push(SetLocal(dup_tmp));
+                            }
+                            // and restore (saving has removed them from the stack)
+                            for &dup_tmp in result_duplicate_tmps.iter() {
+                                instrumented_return.push(GetLocal(dup_tmp));
+                            }
+
+                            // instruction location
+                            instrumented_return.push(location.0);
+                            instrumented_return.push(location.1);
+                            // duplicate results from tmp locals
+                            for (&dup_tmp, result_ty) in result_duplicate_tmps.iter().zip(result_tys.iter()) {
+                                if result_ty == &I64 {
+                                    // FIXME generalize this into a helper function, see also below
+                                    instrumented_return.extend_from_slice(&[
+                                        GetLocal(dup_tmp),
+                                        I32WrapI64, // low bits
+                                        GetLocal(dup_tmp),
+                                        I64Const(32),
+                                        I64ShrS,
+                                        I32WrapI64, // high bits
+                                    ]);
+                                } else {
+                                    instrumented_return.push(GetLocal(dup_tmp));
+                                }
+                            }
+
+                            instrumented_return.push(Call(*return_hooks.get(result_tys).unwrap()));
+                            instrumented_return.push(Return);
+                            instrumented_return
                         }
-                        // and restore (saving has removed them from the stack)
-                        for &dup_tmp in result_duplicate_tmps.iter() {
-                            instrumented_return.push(GetLocal(dup_tmp));
-                        }
-
-                        // instruction location
-                        instrumented_return.push(I32Const(fidx.0 as i32));
-                        instrumented_return.push(I32Const(iidx as i32));
-                        // duplicate results from tmp locals
-                        for (&dup_tmp, result_ty) in result_duplicate_tmps.iter().zip(result_tys.iter()) {
-                            if result_ty == &I64 {
-                                instrumented_return.extend_from_slice(&[
-                                    GetLocal(dup_tmp),
+                        _ if instr.const_ty().is_some() => {
+                            let const_ty = instr.const_ty().unwrap();
+                            let mut instrs = vec![
+                                location.0,
+                                location.1,
+                            ];
+                            instrs.append(&mut if const_ty == I64 {
+                                vec![
+                                    instr.clone(),
                                     I32WrapI64, // low bits
-                                    GetLocal(dup_tmp),
+                                    instr.clone(),
                                     I64Const(32),
                                     I64ShrS,
                                     I32WrapI64, // high bits
-                                ]);
+                                ]
                             } else {
-                                instrumented_return.push(GetLocal(dup_tmp));
-                            }
+                                vec![instr.clone()]
+                            });
+                            instrs.extend_from_slice(&[
+                                Call(*const_hooks.get(&instr.const_ty().unwrap()).unwrap()),
+                                instr,
+                            ]);
+                            instrs
                         }
-
-                        instrumented_return.push(Call(*return_hooks.get(result_tys).unwrap()));
-                        instrumented_return.push(Return);
-                        instrumented_return
-                    }
-                    instr => {
-                        vec![instr]
+                        instr => vec![instr],
                     }
                 })
                 .collect();
@@ -142,6 +175,7 @@ pub fn add_hooks(module: &mut Module) {
 //        println!("{:?}", function);
     }
 }
+
 
 /* trivial or "low-level" instrumentations, i.e., where the byte code is manually modified and not
    a higher-level, Jalangi-style "instrumentation hook API" is provided. */
