@@ -89,13 +89,17 @@ function call_indirect(i: InstructionLocation, tableIndex: number, args: Val[]) 
 function call(i: InstructionLocation, targetFunc: number, indirect: boolean, args: Val[]) {
 }
 
+// FIXME add
+function call_result(i: InstructionLocation, result: Val[]) {
+}
+
 function return_(i: InstructionLocation, results: Val[]) {
 }
 
-function function_begin(func: number, args: Val[]) {
+function function_begin(i: InstructionLocation, args: Val[]) {
 }
 
-function function_end(func: number, results: Val[]) {
+function function_end(i: InstructionLocation, results: Val[]) {
 }
 
 // blocks
