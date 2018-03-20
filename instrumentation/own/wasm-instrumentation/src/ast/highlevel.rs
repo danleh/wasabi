@@ -357,15 +357,60 @@ impl Function {
     }
 }
 
+pub enum InstrGroup {
+    Const(ValType),
+    Unary {
+        input: ValType,
+        result: ValType,
+    },
+    Other,
+}
+
 impl Instr {
-    pub fn const_ty(&self) -> Option<ValType> {
-        use self::Instr::*;
+    pub fn group(&self) -> InstrGroup {
+        use self::{Instr::*, InstrGroup::*};
         match *self {
-            I32Const(_) => Some(I32),
-            I64Const(_) => Some(I64),
-            F32Const(_) => Some(F32),
-            F64Const(_) => Some(F64),
-            _ => None
+            I32Const(_) => Const(I32),
+            I64Const(_) => Const(I64),
+            F32Const(_) => Const(F32),
+            F64Const(_) => Const(F64),
+
+            I32Eqz => Unary { input: I32, result: I32 },
+            I64Eqz => Unary { input: I64, result: I32 },
+
+            I32Clz | I32Ctz | I32Popcnt => Unary { input: I32, result: I32 },
+            I64Clz | I64Ctz | I64Popcnt => Unary { input: I64, result: I64 },
+
+            F32Abs | F32Neg | F32Ceil | F32Floor | F32Trunc | F32Nearest => Unary { input: F32, result: F32 },
+            F64Abs | F64Neg | F64Ceil | F64Floor | F64Trunc | F64Nearest => Unary { input: F64, result: F64 },
+
+            // TODO should conversions also be unary?
+//            Instr::I32WrapI64 => {},
+//            Instr::I32TruncSF32 => {},
+//            Instr::I32TruncUF32 => {},
+//            Instr::I32TruncSF64 => {},
+//            Instr::I32TruncUF64 => {},
+//            Instr::I64ExtendSI32 => {},
+//            Instr::I64ExtendUI32 => {},
+//            Instr::I64TruncSF32 => {},
+//            Instr::I64TruncUF32 => {},
+//            Instr::I64TruncSF64 => {},
+//            Instr::I64TruncUF64 => {},
+//            Instr::F32ConvertSI32 => {},
+//            Instr::F32ConvertUI32 => {},
+//            Instr::F32ConvertSI64 => {},
+//            Instr::F32ConvertUI64 => {},
+//            Instr::F32DemoteF64 => {},
+//            Instr::F64ConvertSI32 => {},
+//            Instr::F64ConvertUI32 => {},
+//            Instr::F64ConvertSI64 => {},
+//            Instr::F64ConvertUI64 => {},
+//            Instr::F64PromoteF32 => {},
+//            Instr::I32ReinterpretF32 => {},
+//            Instr::I64ReinterpretF64 => {},
+//            Instr::F32ReinterpretI32 => {},
+//            Instr::F64ReinterpretI64 => {},
+            _ => Other,
         }
     }
 }

@@ -1,10 +1,5 @@
-use ast::{FunctionType, GlobalType, Idx, Limits, MemoryType, ValType};
-use ast::highlevel::{Code, Expr, Function, Instr, Memory, Module};
-use ast::highlevel::Instr::*;
-use ast::Local;
-use ast::Mutability::*;
-use ast::ValType::*;
-use itertools::Itertools;
+use ast::{FunctionType, GlobalType, Idx, Limits, MemoryType, ValType, Local, Mutability, ValType::*};
+use ast::highlevel::{Code, Expr, Function, Instr, Memory, Module, Instr::*, InstrGroup::*};
 use std::collections::{HashMap, HashSet};
 
 // TODO Idea: provide two options of connecting user analysis (i.e., client instrumentation code)
@@ -102,8 +97,8 @@ pub fn add_hooks(module: &mut Module) {
             code.body = code.body.iter().cloned().enumerate()
                 .flat_map(|(iidx, instr)| {
                     let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
-                    match instr {
-                        Return => {
+                    match (instr.group(), instr) {
+                        (_, Return) => {
                             let result_duplicate_tmps: Vec<_> = result_tys.iter()
                                 .map(|result_ty| fresh_local(locals, function_type, *result_ty))
                                 .collect();
@@ -143,13 +138,12 @@ pub fn add_hooks(module: &mut Module) {
                             instrumented_return.push(Return);
                             instrumented_return
                         }
-                        _ if instr.const_ty().is_some() => {
-                            let const_ty = instr.const_ty().unwrap();
+                        (Const(ty), instr) => {
                             let mut instrs = vec![
                                 location.0,
                                 location.1,
                             ];
-                            instrs.append(&mut if const_ty == I64 {
+                            instrs.append(&mut if ty == I64 {
                                 vec![
                                     instr.clone(),
                                     I32WrapI64, // low bits
@@ -162,12 +156,15 @@ pub fn add_hooks(module: &mut Module) {
                                 vec![instr.clone()]
                             });
                             instrs.extend_from_slice(&[
-                                Call(*const_hooks.get(&instr.const_ty().unwrap()).unwrap()),
+                                Call(*const_hooks.get(&ty).unwrap()),
                                 instr,
                             ]);
                             instrs
                         }
-                        instr => vec![instr],
+//                        _ if instr.unary_ty().is_some() => {
+//
+//                        }
+                        (_, instr) => vec![instr],
                     }
                 })
                 .collect();
@@ -190,7 +187,7 @@ pub fn add_empty_function(module: &mut Module) {
 }
 
 pub fn count_calls(module: &mut Module) {
-    let counter = module.add_global(I32, Mut, vec![I32Const(0), End]);
+    let counter = module.add_global(I32, Mutability::Mut, vec![I32Const(0), End]);
 
     let getter = module.add_function(
         FunctionType(vec![], vec![I32]),
