@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::iter::empty;
 use std::slice::Iter;
 use super::*;
+use super::ValType::*;
 
 /* High-level AST:
     - types are inlined instead of referenced by type idx (i.e., no manual handling of Type "pool")
@@ -126,6 +127,7 @@ pub enum Instr {
     I64Store(Memarg),
     F32Store(Memarg),
     F64Store(Memarg),
+
     I32Store8(Memarg),
     I32Store16(Memarg),
     I64Store8(Memarg),
@@ -351,6 +353,19 @@ impl Function {
             for instr in old_body.into_iter() {
                 body.append(&mut f(instr));
             }
+        }
+    }
+}
+
+impl Instr {
+    pub fn const_ty(&self) -> Option<ValType> {
+        use self::Instr::*;
+        match *self {
+            I32Const(_) => Some(I32),
+            I64Const(_) => Some(I64),
+            F32Const(_) => Some(F32),
+            F64Const(_) => Some(F64),
+            _ => None
         }
     }
 }
