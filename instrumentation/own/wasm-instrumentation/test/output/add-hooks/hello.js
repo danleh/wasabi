@@ -1641,7 +1641,7 @@ function integrateWasmJS() {
   Module['wasmJSMethod'] = method;
 
   var wasmTextFile = Module['wasmTextFile'] || 'hello.wast';
-  var wasmBinaryFile = Module['wasmBinaryFile'] || 'hello.wasm';
+  var wasmBinaryFile = Module['wasmBinaryFile'] || 'hello-emcc.wasm';
   var asmjsCodeFile = Module['asmjsCodeFile'] || 'hello.temp.asm.js';
 
   if (typeof Module['locateFile'] === 'function') {
