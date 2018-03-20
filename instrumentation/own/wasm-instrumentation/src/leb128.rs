@@ -44,8 +44,9 @@ macro_rules! impl_leb128_integer {
                 }
 
                 if signed!($T) {
-                    if shift < (::std::mem::size_of::<$T>() * 8) as u32 && sign_bit(byte) {
-                        value |= !0 << shift;
+                    let (sign_extend, did_overflow) = (!0 as $T).overflowing_shl(shift);
+                    if sign_bit(byte) && !did_overflow {
+                        value |= sign_extend;
                     }
                 }
 
@@ -65,13 +66,7 @@ macro_rules! impl_leb128_integer {
                     value >>= 7;
                     bytes_written += 1;
 
-                    if signed!($T) {
-                        more_bytes = (value != 0 || sign_bit(byte_to_write))
-                            // cannot use "value != -1" since -1 is not valid when $T is unsigned
-                            && (value + 1 != 0 || !sign_bit(byte_to_write));
-                    } else {
-                        more_bytes = value != 0;
-                    }
+                    more_bytes = value != if signed!($T) && sign_bit(byte_to_write) { !0 } else { 0 };
                     if more_bytes {
                         byte_to_write |= 0x80;
                     }
@@ -90,4 +85,5 @@ impl_leb128_integer!(i32);
 impl_leb128_integer!(i64);
 
 // for testing
+impl_leb128_integer!(u16);
 impl_leb128_integer!(i16);

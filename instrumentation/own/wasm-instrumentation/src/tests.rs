@@ -8,44 +8,15 @@ use std::io::{self, Cursor, Read, sink};
 use std::path::{Path, PathBuf};
 use test::Bencher;
 
-//struct Bla;
-//type BlaVec = Vec<Bla>;
-//fn apply_recursive(bla: &mut BlaVec, f: impl Fn(&mut Bla)) {
-//    for recursive in bla.iter_mut() {
-//        apply_recursive(recursive, |b| f(b))
-//    }
-//}
-
 /// "main"-like for quick and dirty testing
 #[test]
 #[ignore]
 fn debug() {
-//    let file = "test/leb.wasm";
-//    let mut module = highlevel::Module::from_file(file).unwrap();
+    let file = "test/input/hello-emcc.wasm";
+    let mut module = highlevel::Module::from_file(file).unwrap();
 //    println!("{:?}", module);
-
-    let mut module = highlevel::Module {
-        functions: Vec::new(),
-        tables: Vec::new(),
-        memories: Vec::new(),
-        globals: Vec::new(),
-        start: None,
-        custom_sections: Vec::new(),
-    };
-
-    let mut body = Vec::new();
-    use std::u16;
-    for i in -64..65 {
-        body.push(I32Const(i.into()));
-        body.push(Drop);
-    }
-    body.push(End);
-    let f = module.add_function(FunctionType(vec![], vec![]), vec![], body);
-    module.start = Some(f);
-    println!("{:#?}", module);
-    module.to_file("test/debug.wasm").unwrap();
-
-//    instrument(&Path::new(file), add_hooks, "add-hooks").unwrap();
+    instrument(&Path::new(file), add_hooks, "add-hooks").unwrap();
+//    module.to_file("test/debug.wasm").unwrap();
 }
 
 
@@ -55,10 +26,19 @@ fn debug() {
 fn leb128_signed_roundtrips() {
     use leb128::{ReadLeb128, WriteLeb128};
 
+    for u in u16::min_value() ..= u16::max_value() {
+        let mut buf: Vec<u8> = Vec::new();
+        buf.write_leb128(u).unwrap();
+        let u_decode = buf.as_slice().read_leb128().unwrap();
+        assert_eq!(u, u_decode,
+                   "\nbuffer:{}",
+                   buf.iter().map(|byte| format!(" 0x{:x}", byte)).collect::<Vec<String>>().concat());
+    }
+
     for i in i16::min_value() ..= i16::max_value() {
         let mut buf: Vec<u8> = Vec::new();
         buf.write_leb128(i).unwrap();
-        let i_decode: i16 = buf.as_slice().read_leb128().unwrap();
+        let i_decode = buf.as_slice().read_leb128().unwrap();
         assert_eq!(i, i_decode,
                    "\nbuffer:{}",
                    buf.iter().map(|byte| format!(" 0x{:x}", byte)).collect::<Vec<String>>().concat());
