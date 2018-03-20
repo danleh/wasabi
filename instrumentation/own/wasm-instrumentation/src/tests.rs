@@ -13,7 +13,7 @@ use test::Bencher;
 #[ignore]
 fn debug() {
     let file = "test/input/hello-emcc.wasm";
-    let mut module = highlevel::Module::from_file(file).unwrap();
+    let module = highlevel::Module::from_file(file).unwrap();
 //    println!("{:?}", module);
     instrument(&Path::new(file), add_hooks, "add-hooks").unwrap();
 //    module.to_file("test/debug.wasm").unwrap();
