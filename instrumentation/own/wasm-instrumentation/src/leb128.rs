@@ -16,6 +16,10 @@ fn sign_bit(byte: u8) -> bool {
     byte & 0x40 == 0x40
 }
 
+macro_rules! signed {
+    ($T: ident) => ($T::min_value() != 0)
+}
+
 // Need to write this as a macro, not a generic impl because num_traits are quite lacking, e.g.,
 // there is no "U as T" for primitive integers.
 macro_rules! impl_leb128_integer {
@@ -39,6 +43,12 @@ macro_rules! impl_leb128_integer {
                     shift += 7;
                 }
 
+                if signed!($T) {
+                    if shift < (::std::mem::size_of::<$T>() * 8) as u32 && sign_bit(byte) {
+                        value |= !0 << shift;
+                    }
+                }
+
                 Ok(value)
             }
         }
@@ -55,8 +65,7 @@ macro_rules! impl_leb128_integer {
                     value >>= 7;
                     bytes_written += 1;
 
-                    let signed = $T::min_value() != 0;
-                    if signed {
+                    if signed!($T) {
                         more_bytes = (value != 0 || sign_bit(byte_to_write))
                             // cannot use "value != -1" since -1 is not valid when $T is unsigned
                             && (value + 1 != 0 || !sign_bit(byte_to_write));
@@ -79,3 +88,6 @@ impl_leb128_integer!(u32);
 impl_leb128_integer!(usize);
 impl_leb128_integer!(i32);
 impl_leb128_integer!(i64);
+
+// for testing
+impl_leb128_integer!(i16);

@@ -1,4 +1,6 @@
 use ast::*;
+use ast::highlevel::Instr::*;
+use ast::ValType::*;
 use binary::WasmBinary;
 use instrument::*;
 use std::fs::{create_dir_all, File};
@@ -18,21 +20,50 @@ use test::Bencher;
 #[test]
 #[ignore]
 fn debug() {
-    let file = "test/input/hello-emcc.wasm";
+//    let file = "test/leb.wasm";
 //    let mut module = highlevel::Module::from_file(file).unwrap();
-//    for (i, func) in module.functions() {
-//        println!("{:#?}", func.instructions().collect::<Vec<_>>());
-//    }
+//    println!("{:?}", module);
 
-//    let module = instrumentation_module();
-//    println!("{:#?}", module);
-//    module.to_file("test/multiple-memories.wasm").unwrap();
+    let mut module = highlevel::Module {
+        functions: Vec::new(),
+        tables: Vec::new(),
+        memories: Vec::new(),
+        globals: Vec::new(),
+        start: None,
+        custom_sections: Vec::new(),
+    };
 
-    instrument(&Path::new(file), add_hooks, "add-hooks").unwrap();
+    let mut body = Vec::new();
+    use std::u16;
+    for i in -64..65 {
+        body.push(I32Const(i.into()));
+        body.push(Drop);
+    }
+    body.push(End);
+    let f = module.add_function(FunctionType(vec![], vec![]), vec![], body);
+    module.start = Some(f);
+    println!("{:#?}", module);
+    module.to_file("test/debug.wasm").unwrap();
+
+//    instrument(&Path::new(file), add_hooks, "add-hooks").unwrap();
 }
 
 
 /* Correctness tests */
+
+#[test]
+fn leb128_signed_roundtrips() {
+    use leb128::{ReadLeb128, WriteLeb128};
+
+    for i in i16::min_value() ..= i16::max_value() {
+        let mut buf: Vec<u8> = Vec::new();
+        buf.write_leb128(i).unwrap();
+        let i_decode: i16 = buf.as_slice().read_leb128().unwrap();
+        assert_eq!(i, i_decode,
+                   "\nbuffer:{}",
+                   buf.iter().map(|byte| format!(" 0x{:x}", byte)).collect::<Vec<String>>().concat());
+    }
+}
 
 #[test]
 fn can_lowlevel_decode_valid_wasm() {
