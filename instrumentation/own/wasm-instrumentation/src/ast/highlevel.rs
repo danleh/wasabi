@@ -357,11 +357,12 @@ impl Function {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub enum InstrGroup {
     Const(ValType),
     Unary {
-        input: ValType,
-        result: ValType,
+        input_ty: ValType,
+        result_ty: ValType,
     },
     Other,
 }
@@ -375,14 +376,14 @@ impl Instr {
             F32Const(_) => Const(F32),
             F64Const(_) => Const(F64),
 
-            I32Eqz => Unary { input: I32, result: I32 },
-            I64Eqz => Unary { input: I64, result: I32 },
+            I32Eqz => Unary { input_ty: I32, result_ty: I32 },
+//            I64Eqz => Unary { input_ty: I64, result_ty: I32 },
 
-            I32Clz | I32Ctz | I32Popcnt => Unary { input: I32, result: I32 },
-            I64Clz | I64Ctz | I64Popcnt => Unary { input: I64, result: I64 },
-
-            F32Abs | F32Neg | F32Ceil | F32Floor | F32Trunc | F32Nearest => Unary { input: F32, result: F32 },
-            F64Abs | F64Neg | F64Ceil | F64Floor | F64Trunc | F64Nearest => Unary { input: F64, result: F64 },
+//            I32Clz | I32Ctz | I32Popcnt => Unary { input_ty: I32, result_ty: I32 },
+//            I64Clz | I64Ctz | I64Popcnt => Unary { input_ty: I64, result_ty: I64 },
+//
+//            F32Abs | F32Neg | F32Ceil | F32Floor | F32Trunc | F32Nearest => Unary { input_ty: F32, result_ty: F32 },
+//            F64Abs | F64Neg | F64Ceil | F64Floor | F64Trunc | F64Nearest => Unary { input_ty: F64, result_ty: F64 },
 
             // TODO should conversions also be unary?
 //            Instr::I32WrapI64 => {},

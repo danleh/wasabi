@@ -1,6 +1,7 @@
-use ast::{FunctionType, GlobalType, Idx, Limits, MemoryType, ValType, Local, Mutability, ValType::*};
-use ast::highlevel::{Code, Expr, Function, Instr, Memory, Module, Instr::*, InstrGroup::*};
+use ast::{FunctionType, GlobalType, Idx, Limits, Local, MemoryType, Mutability, ValType, ValType::*};
+use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGroup::*, Memory, Module};
 use std::collections::{HashMap, HashSet};
+use std::mem::{discriminant, Discriminant};
 
 // TODO Idea: provide two options of connecting user analysis (i.e., client instrumentation code)
 // with the instrumented binary (i.e., the "host" code + hooks + import of callbacks):
@@ -79,11 +80,17 @@ pub fn add_hooks(module: &mut Module) {
             (return_ty, hook_idx)
         })
         .collect();
-    let const_hooks: HashMap<ValType, Idx<Function>> = hashmap! {
-        I32 => add_hook(module, "const_i", &[I32]),
-        I64 => add_hook(module, "const_I", &[I64]),
-        F32 => add_hook(module, "const_f", &[F32]),
-        F64 => add_hook(module, "const_F", &[F64]),
+    // TODO generate hook from instruction, not this hand-written shit
+    let other_hooks: HashMap<Discriminant<Instr>, Idx<Function>> = hashmap! {
+        discriminant(&I32Const(0)) => add_hook(module, "i32_const", &[I32]),
+        discriminant(&I64Const(0)) => add_hook(module, "i64_const", &[I64]),
+        discriminant(&F32Const(0.0)) => add_hook(module, "f32_const", &[F32]),
+        discriminant(&F64Const(0.0)) => add_hook(module, "f64_const", &[F64]),
+        discriminant(&I32Eqz) => add_hook(module, "i32_eqz", &[I32, I32]),
+//        I64Eqz => add_hook(module, "i64_eqz", &[I64]),
+    };
+    let hook_call = |instr: &Instr| -> Instr {
+        Call(*other_hooks.get(&discriminant(instr)).unwrap())
     };
 
     /* add call to hooks: setup code that copies the returned value, instruction location, call */
@@ -156,14 +163,28 @@ pub fn add_hooks(module: &mut Module) {
                                 vec![instr.clone()]
                             });
                             instrs.extend_from_slice(&[
-                                Call(*const_hooks.get(&ty).unwrap()),
+                                hook_call(&instr),
                                 instr,
                             ]);
                             instrs
                         }
-//                        _ if instr.unary_ty().is_some() => {
-//
-//                        }
+                        (Unary { input_ty, result_ty }, instr) => {
+                            // duplicate stack arguments
+                            let input_tmp = fresh_local(locals, function_type, input_ty);
+                            let result_tmp = fresh_local(locals, function_type, result_ty);
+
+                            vec![
+                                TeeLocal(input_tmp),
+                                instr.clone(),
+                                SetLocal(result_tmp),
+                                location.0,
+                                location.1,
+                                GetLocal(input_tmp),
+                                GetLocal(result_tmp), // FIXME I64
+                                hook_call(&instr),
+                                GetLocal(result_tmp),
+                            ]
+                        }
                         (_, instr) => vec![instr],
                     }
                 })
