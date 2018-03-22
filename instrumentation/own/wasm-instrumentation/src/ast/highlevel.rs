@@ -364,6 +364,11 @@ pub enum InstrGroup {
         input_ty: ValType,
         result_ty: ValType,
     },
+    Binary {
+        first_ty: ValType,
+        second_ty: ValType,
+        result_ty: ValType,
+    },
     Other,
 }
 
@@ -371,10 +376,15 @@ impl Instr {
     pub fn group(&self) -> InstrGroup {
         use self::{Instr::*, InstrGroup::*};
         match *self {
+            /* Const */
+
             I32Const(_) => Const(I32),
             I64Const(_) => Const(I64),
             F32Const(_) => Const(F32),
             F64Const(_) => Const(F64),
+
+
+            /* Unary */
 
             I32Eqz => Unary { input_ty: I32, result_ty: I32 },
             I64Eqz => Unary { input_ty: I64, result_ty: I32 },
@@ -402,6 +412,16 @@ impl Instr {
             I64ReinterpretF64 => Unary { input_ty: F64, result_ty: I64 },
             F32ReinterpretI32 => Unary { input_ty: I32, result_ty: F32 },
             F64ReinterpretI64 => Unary { input_ty: I64, result_ty: F64 },
+
+
+            /* Binary */
+
+            I32Eq | I32Ne | I32LtS | I32LtU | I32GtS | I32GtU | I32LeS | I32LeU | I32GeS | I32GeU => Binary { first_ty: I32, second_ty: I32, result_ty: I32 },
+            I64Eq | I64Ne | I64LtS | I64LtU | I64GtS | I64GtU | I64LeS | I64LeU | I64GeS | I64GeU => Binary { first_ty: I64, second_ty: I64, result_ty: I32 },
+
+            F32Eq | F32Ne | F32Lt | F32Gt | F32Le | F32Ge => Binary { first_ty: F32, second_ty: F32, result_ty: I32 },
+            F64Eq | F64Ne | F64Lt | F64Gt | F64Le | F64Ge => Binary { first_ty: F64, second_ty: F64, result_ty: I32 },
+
             _ => Other,
         }
     }
@@ -457,7 +477,15 @@ impl Instr {
                 arg("input", input_ty), arg("result", result_ty),
                 instr_str,
                 long("input", input_ty), long("result", result_ty)),
-            _ => unimplemented!()
+            (InstrGroup::Binary { first_ty, second_ty, result_ty }, instr, instr_str) => format!(
+                "{}: function (func, instr, {}, {}, {}) {{
+    binary({{func, instr}}, \"{}\", {}, {}, {});
+}},",
+                instr_str,
+                arg("first", first_ty), arg("second", second_ty), arg("result", result_ty),
+                instr_str,
+                long("first", first_ty), long("second", second_ty), long("result", result_ty)),
+            (_, _, instr) => unimplemented!("cannot generate JS hook code for instruction {}", instr)
         }
     }
 }

@@ -78,6 +78,7 @@ fn add_hook_from_instr(module: &mut Module, instr: &Instr) -> (Discriminant<Inst
     (discriminant(instr), add_hook(module, instr.to_instr_name(), &match instr.group() {
         Const(ty) => vec![ty],
         Unary { input_ty, result_ty } => vec![input_ty, result_ty],
+        Binary { first_ty, second_ty, result_ty } => vec![first_ty, second_ty, result_ty],
         Other => unreachable!("function should be only called for \"grouped\" instructions"),
     }))
 }
@@ -105,7 +106,7 @@ pub fn add_hooks(module: &mut Module) {
     // - 1 hook : 1 instruction
     // - argument/result types are directly determined from the instruction itself
     let hook_call = {
-        let monomorph_hooks: HashMap<Discriminant<Instr>, Idx<Function>> = [
+        let monomorphic_hooks: HashMap<Discriminant<Instr>, Idx<Function>> = [
             I32Const(0),
             I64Const(0),
             F32Const(0.0),
@@ -131,12 +132,16 @@ pub fn add_hooks(module: &mut Module) {
             I64ReinterpretF64,
             F32ReinterpretI32,
             F64ReinterpretI64,
+            I32Eq, I32Ne, I32LtS, I32LtU, I32GtS, I32GtU, I32LeS, I32LeU, I32GeS, I32GeU,
+            I64Eq, I64Ne, I64LtS, I64LtU, I64GtS, I64GtU, I64LeS, I64LeU, I64GeS, I64GeU,
+            F32Eq, F32Ne, F32Lt, F32Gt, F32Le, F32Ge,
+            F64Eq, F64Ne, F64Lt, F64Gt, F64Le, F64Ge,
         ].into_iter()
             .map(|i| add_hook_from_instr(module, i))
             .collect();
 
         move |instr: &Instr| -> Instr {
-            Call(*monomorph_hooks
+            Call(*monomorphic_hooks
                 .get(&discriminant(instr))
                 .expect(&format!("no hook was added for instruction {}", instr.to_instr_name())))
         }
@@ -204,16 +209,49 @@ pub fn add_hooks(module: &mut Module) {
                             let result_tmp = fresh_local(locals, function_type, result_ty);
 
                             let mut instrs = vec![
+                                // save input before
                                 TeeLocal(input_tmp),
+                                // execute original instr
                                 instr.clone(),
+                                // save result after
                                 SetLocal(result_tmp),
                                 location.0,
                                 location.1,
                             ];
+                            // restore saved input and result
                             instrs.append(&mut convert_i64_instr(GetLocal(input_tmp), input_ty));
                             instrs.append(&mut convert_i64_instr(GetLocal(result_tmp), result_ty));
                             instrs.extend_from_slice(&[
                                 hook_call(&instr),
+                                // restore result after hook call
+                                GetLocal(result_tmp),
+                            ]);
+                            instrs
+                        }
+                        (Binary { first_ty, second_ty, result_ty }, instr) => {
+                            // duplicate stack arguments
+                            let first_tmp = fresh_local(locals, function_type, first_ty);
+                            let second_tmp = fresh_local(locals, function_type, second_ty);
+                            let result_tmp = fresh_local(locals, function_type, result_ty);
+
+                            let mut instrs = vec![
+                                // save input before
+                                TeeLocal(first_tmp),
+                                TeeLocal(second_tmp),
+                                // execute original instr
+                                instr.clone(),
+                                // save result after
+                                SetLocal(result_tmp),
+                                location.0,
+                                location.1,
+                            ];
+                            // restore saved input and result
+                            instrs.append(&mut convert_i64_instr(GetLocal(first_tmp), first_ty));
+                            instrs.append(&mut convert_i64_instr(GetLocal(second_tmp), second_ty));
+                            instrs.append(&mut convert_i64_instr(GetLocal(result_tmp), result_ty));
+                            instrs.extend_from_slice(&[
+                                hook_call(&instr),
+                                // restore result after hook call
                                 GetLocal(result_tmp),
                             ]);
                             instrs
