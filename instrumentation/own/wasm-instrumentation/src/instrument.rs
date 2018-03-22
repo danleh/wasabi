@@ -59,7 +59,11 @@ fn add_hook_from_instr(module: &mut Module, instr: &Instr) -> (Discriminant<Inst
 }
 
 pub fn add_hooks(module: &mut Module) {
-    /* add hooks: one imported function per occurring result type */
+    /* add hooks (imported functions, provided by the analysis in JavaScript) */
+    // polymorphic hooks:
+    // - 1 instruction : N hooks
+    // - instruction can take stack arguments/produce results of several types
+    // - we need to "monomorphize", i.e., create one hook per occurring polymorphic type
     let result_tys: HashSet<Vec<ValType>> = module.types().iter()
         .map(|function_ty| function_ty.1.clone())
         .collect();
@@ -73,15 +77,20 @@ pub fn add_hooks(module: &mut Module) {
         })
         .collect();
 
-    // hooks where the argument/result types are directly determined from the instruction itself
+    // monomorphic hooks:
+    // - 1 hook : 1 instruction
+    // - argument/result types are directly determined from the instruction itself
     let hook_call = {
         let monomorph_hooks: HashMap<Discriminant<Instr>, Idx<Function>> = [
             I32Const(0),
             I64Const(0),
             F32Const(0.0),
             F64Const(0.0),
-            I32Eqz,
-            I64Eqz,
+            I32Eqz, I64Eqz,
+            I32Clz, I32Ctz, I32Popcnt,
+            I64Clz, I64Ctz, I64Popcnt,
+            F32Abs, F32Neg, F32Ceil, F32Floor, F32Trunc, F32Nearest,
+            F64Abs, F64Neg, F64Ceil, F64Floor, F64Trunc, F64Nearest,
         ].into_iter()
             .map(|i| add_hook_from_instr(module, i))
             .collect();
@@ -89,7 +98,7 @@ pub fn add_hooks(module: &mut Module) {
         move |instr: &Instr| -> Instr {
             Call(*monomorph_hooks
                 .get(&discriminant(instr))
-                .expect(&format!("no hook for instruction {}", instr.to_instr_name())))
+                .expect(&format!("no hook was added for instruction {}", instr.to_instr_name())))
         }
     };
 
