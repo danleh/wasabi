@@ -414,4 +414,25 @@ impl Instr {
             _ => Other,
         }
     }
+
+    pub fn to_instr_string(&self) -> String {
+        let mut s = String::new();
+        write!(&mut s, "{:?}", self).unwrap();
+        let mut result = String::new();
+        let mut last_char = ' ';
+        for c in s.split("(").next().unwrap_or("").chars() {
+            if
+                // do not prepend underscore at beginning of string
+                !result.is_empty()
+                    // prepend underscore in front of uppercase letters
+                    && c.is_uppercase()
+                    // or between lowercase and numerics
+                    || (last_char.is_lowercase() && c.is_numeric()) {
+                result.push('_');
+            }
+            last_char = c;
+            result.push_str(&c.to_ascii_lowercase().to_string());
+        }
+        result
+    }
 }
