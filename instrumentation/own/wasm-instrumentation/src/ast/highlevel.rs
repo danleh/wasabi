@@ -377,7 +377,7 @@ impl Instr {
             F64Const(_) => Const(F64),
 
             I32Eqz => Unary { input_ty: I32, result_ty: I32 },
-//            I64Eqz => Unary { input_ty: I64, result_ty: I32 },
+            I64Eqz => Unary { input_ty: I64, result_ty: I32 },
 
 //            I32Clz | I32Ctz | I32Popcnt => Unary { input_ty: I32, result_ty: I32 },
 //            I64Clz | I64Ctz | I64Popcnt => Unary { input_ty: I64, result_ty: I64 },

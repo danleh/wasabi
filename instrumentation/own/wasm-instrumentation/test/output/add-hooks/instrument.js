@@ -6,16 +6,16 @@ WebAssembly.instantiate = function () {
         return_: function (func, instr) {
             return_({func, instr}, []);
         },
-        return_I: function (func, instr, low, high) {
+        return_i32: function (func, instr, v) {
+            return_({func, instr}, [v]);
+        },
+        return_i64: function (func, instr, low, high) {
             return_({func, instr}, [new Long(low, high)]);
         },
-        return_i: function (func, instr, v) {
+        return_f32: function (func, instr, v) {
             return_({func, instr}, [v]);
         },
-        return_f: function (func, instr, v) {
-            return_({func, instr}, [v]);
-        },
-        return_F: function (func, instr, v) {
+        return_f64: function (func, instr, v) {
             return_({func, instr}, [v]);
         },
         i32_const: function (func, instr, v) {
@@ -32,6 +32,9 @@ WebAssembly.instantiate = function () {
         },
         i32_eqz: function (func, instr, input, result) {
             unary({func, instr}, "i32.eqz", input, result);
+        },
+        i64_eqz: function (func, instr, input_low, input_high, result_low, result_high) {
+            unary({func, instr}, "i64.eqz", new Long(input_low, input_high), new Long(result_low, result_high));
         },
     };
     console.log(importsObject);
