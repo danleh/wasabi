@@ -21,14 +21,17 @@ function const_(i: InstructionLocation, value: Val) {
 function unary(i: InstructionLocation, op: UnaryOp, input: Val, result: Val) {
 }
 
-function binary(i: InstructionLocation, op: BinaryOp, first: Val, second: Val, result: Val) {
+function conversion(i: InstructionLocation, op: ConversionOp, before: Val, after: Val) {
 }
 
-function conversion(i: InstructionLocation, op: ConversionOp, before: Val, after: Val) {
+function binary(i: InstructionLocation, op: BinaryOp, first: Val, second: Val, result: Val) {
 }
 
 
 /* Type-parametric instructions */
+
+// FIXME for the MVP, let us ignore the value, since handing it over to JS requires inference/static analysis of the
+// abstract stack typing.
 
 function drop(i: InstructionLocation, value: Val) {
 }
