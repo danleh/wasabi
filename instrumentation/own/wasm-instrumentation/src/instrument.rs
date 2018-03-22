@@ -36,15 +36,34 @@ fn fresh_local(locals: &mut Vec<ValType>, function_ty: &FunctionType, type_: Val
     idx.into()
 }
 
+fn convert_i64_type(ty: &ValType) -> &[ValType] {
+    match ty {
+        &I64 => &[I32, I32],
+        ty => ::std::slice::from_ref(ty),
+    }
+}
+
+// ty is necessary when the type cannot be determined only from the instr, e.g., for GetLocal
+fn convert_i64_instr(instr: Instr, ty: ValType) -> Vec<Instr> {
+    match ty {
+        I64 => vec![
+            instr.clone(),
+            I32WrapI64, // low bits
+            instr,
+            I64Const(32), // shift high bits to the right
+            I64ShrS,
+            I32WrapI64, // high bits
+        ],
+        _ => vec![instr],
+    }
+}
+
 fn add_hook(module: &mut Module, name: impl Into<String>, arg_tys_: &[ValType]) -> Idx<Function> {
     // prepend two I32 for (function idx, instr idx)
     let mut arg_tys = vec![I32, I32];
     arg_tys.extend(arg_tys_.iter()
         // and expand i64 to a tuple of (i32, i32) since there is no JS interop for i64
-        .flat_map(|ty| match ty {
-            &I64 => &[I32, I32],
-            v => ::std::slice::from_ref(v),
-        }));
+        .flat_map(convert_i64_type));
 
     module.add_function_import(
         // hooks do not return anything
@@ -96,6 +115,22 @@ pub fn add_hooks(module: &mut Module) {
             I64Clz, I64Ctz, I64Popcnt,
             F32Abs, F32Neg, F32Ceil, F32Floor, F32Trunc, F32Nearest,
             F64Abs, F64Neg, F64Ceil, F64Floor, F64Trunc, F64Nearest,
+            I32WrapI64,
+            I32TruncSF32, I32TruncUF32,
+            I32TruncSF64, I32TruncUF64,
+            I64ExtendSI32, I64ExtendUI32,
+            I64TruncSF32, I64TruncUF32,
+            I64TruncSF64, I64TruncUF64,
+            F32ConvertSI32, F32ConvertUI32,
+            F32ConvertSI64, F32ConvertUI64,
+            F32DemoteF64,
+            F64ConvertSI32, F64ConvertUI32,
+            F64ConvertSI64, F64ConvertUI64,
+            F64PromoteF32,
+            I32ReinterpretF32,
+            I64ReinterpretF64,
+            F32ReinterpretI32,
+            F64ReinterpretI64,
         ].into_iter()
             .map(|i| add_hook_from_instr(module, i))
             .collect();
@@ -136,27 +171,19 @@ pub fn add_hooks(module: &mut Module) {
                             }
 
                             // instruction location
-                            instrumented_return.push(location.0);
-                            instrumented_return.push(location.1);
+                            instrumented_return.extend_from_slice(&[
+                                location.0,
+                                location.1,
+                            ]);
                             // duplicate results from tmp locals
-                            for (&dup_tmp, result_ty) in result_duplicate_tmps.iter().zip(result_tys.iter()) {
-                                if result_ty == &I64 {
-                                    // FIXME generalize this into a helper function, see also below
-                                    instrumented_return.extend_from_slice(&[
-                                        GetLocal(dup_tmp),
-                                        I32WrapI64, // low bits
-                                        GetLocal(dup_tmp),
-                                        I64Const(32),
-                                        I64ShrS,
-                                        I32WrapI64, // high bits
-                                    ]);
-                                } else {
-                                    instrumented_return.push(GetLocal(dup_tmp));
-                                }
+                            for (&dup_tmp, &result_ty) in result_duplicate_tmps.iter().zip(result_tys.iter()) {
+                                instrumented_return.append(&mut convert_i64_instr(GetLocal(dup_tmp), result_ty));
                             }
 
-                            instrumented_return.push(Call(*return_hooks.get(result_tys).unwrap()));
-                            instrumented_return.push(Return);
+                            instrumented_return.extend_from_slice(&[
+                                Call(*return_hooks.get(result_tys).unwrap()),
+                                Return,
+                            ]);
                             instrumented_return
                         }
                         (Const(ty), instr) => {
@@ -164,18 +191,7 @@ pub fn add_hooks(module: &mut Module) {
                                 location.0,
                                 location.1,
                             ];
-                            instrs.append(&mut if ty == I64 {
-                                vec![
-                                    instr.clone(),
-                                    I32WrapI64, // low bits
-                                    instr.clone(),
-                                    I64Const(32),
-                                    I64ShrS,
-                                    I32WrapI64, // high bits
-                                ]
-                            } else {
-                                vec![instr.clone()]
-                            });
+                            instrs.append(&mut convert_i64_instr(instr.clone(), ty));
                             instrs.extend_from_slice(&[
                                 hook_call(&instr),
                                 instr,
@@ -187,17 +203,20 @@ pub fn add_hooks(module: &mut Module) {
                             let input_tmp = fresh_local(locals, function_type, input_ty);
                             let result_tmp = fresh_local(locals, function_type, result_ty);
 
-                            vec![
+                            let mut instrs = vec![
                                 TeeLocal(input_tmp),
                                 instr.clone(),
                                 SetLocal(result_tmp),
                                 location.0,
                                 location.1,
-                                GetLocal(input_tmp),
-                                GetLocal(result_tmp), // FIXME I64
+                            ];
+                            instrs.append(&mut convert_i64_instr(GetLocal(input_tmp), input_ty));
+                            instrs.append(&mut convert_i64_instr(GetLocal(result_tmp), result_ty));
+                            instrs.extend_from_slice(&[
                                 hook_call(&instr),
                                 GetLocal(result_tmp),
-                            ]
+                            ]);
+                            instrs
                         }
                         (_, instr) => vec![instr],
                     }

@@ -18,6 +18,9 @@ WebAssembly.instantiate = function () {
         return_f64: function (func, instr, v) {
             return_({func, instr}, [v]);
         },
+
+        // generated:
+
         i32_const: function (func, instr, v) {
             const_({func, instr}, v);
         },
@@ -90,6 +93,81 @@ WebAssembly.instantiate = function () {
         f64_nearest: function (func, instr, input, result) {
             unary({func, instr}, "f64_nearest", input, result);
         },
+        i32_wrap_i64: function (func, instr, input, result_low, result_high) {
+            unary({func, instr}, "i32_wrap_i64", input, new Long(result_low, result_high));
+        },
+        i32_trunc_s_f32: function (func, instr, input, result) {
+            unary({func, instr}, "i32_trunc_s_f32", input, result);
+        },
+        i32_trunc_u_f32: function (func, instr, input, result) {
+            unary({func, instr}, "i32_trunc_u_f32", input, result);
+        },
+        i32_trunc_s_f64: function (func, instr, input, result) {
+            unary({func, instr}, "i32_trunc_s_f64", input, result);
+        },
+        i32_trunc_u_f64: function (func, instr, input, result) {
+            unary({func, instr}, "i32_trunc_u_f64", input, result);
+        },
+        i64_extend_s_i32: function (func, instr, input_low, input_high, result) {
+            unary({func, instr}, "i64_extend_s_i32", new Long(input_low, input_high), result);
+        },
+        i64_extend_u_i32: function (func, instr, input_low, input_high, result) {
+            unary({func, instr}, "i64_extend_u_i32", new Long(input_low, input_high), result);
+        },
+        i64_trunc_s_f32: function (func, instr, input_low, input_high, result) {
+            unary({func, instr}, "i64_trunc_s_f32", new Long(input_low, input_high), result);
+        },
+        i64_trunc_u_f32: function (func, instr, input_low, input_high, result) {
+            unary({func, instr}, "i64_trunc_u_f32", new Long(input_low, input_high), result);
+        },
+        i64_trunc_s_f64: function (func, instr, input_low, input_high, result) {
+            unary({func, instr}, "i64_trunc_s_f64", new Long(input_low, input_high), result);
+        },
+        i64_trunc_u_f64: function (func, instr, input_low, input_high, result) {
+            unary({func, instr}, "i64_trunc_u_f64", new Long(input_low, input_high), result);
+        },
+        f32_convert_s_i32: function (func, instr, input, result) {
+            unary({func, instr}, "f32_convert_s_i32", input, result);
+        },
+        f32_convert_u_i32: function (func, instr, input, result) {
+            unary({func, instr}, "f32_convert_u_i32", input, result);
+        },
+        f32_convert_s_i64: function (func, instr, input, result_low, result_high) {
+            unary({func, instr}, "f32_convert_s_i64", input, new Long(result_low, result_high));
+        },
+        f32_convert_u_i64: function (func, instr, input, result_low, result_high) {
+            unary({func, instr}, "f32_convert_u_i64", input, new Long(result_low, result_high));
+        },
+        f32_demote_f64: function (func, instr, input, result) {
+            unary({func, instr}, "f32_demote_f64", input, result);
+        },
+        f64_convert_s_i32: function (func, instr, input, result) {
+            unary({func, instr}, "f64_convert_s_i32", input, result);
+        },
+        f64_convert_u_i32: function (func, instr, input, result) {
+            unary({func, instr}, "f64_convert_u_i32", input, result);
+        },
+        f64_convert_s_i64: function (func, instr, input, result_low, result_high) {
+            unary({func, instr}, "f64_convert_s_i64", input, new Long(result_low, result_high));
+        },
+        f64_convert_u_i64: function (func, instr, input, result_low, result_high) {
+            unary({func, instr}, "f64_convert_u_i64", input, new Long(result_low, result_high));
+        },
+        f64_promote_f32: function (func, instr, input, result) {
+            unary({func, instr}, "f64_promote_f32", input, result);
+        },
+        i32_reinterpret_f32: function (func, instr, input, result) {
+            unary({func, instr}, "i32_reinterpret_f32", input, result);
+        },
+        i64_reinterpret_f64: function (func, instr, input_low, input_high, result) {
+            unary({func, instr}, "i64_reinterpret_f64", new Long(input_low, input_high), result);
+        },
+        f32_reinterpret_i32: function (func, instr, input, result) {
+            unary({func, instr}, "f32_reinterpret_i32", input, result);
+        },
+        f64_reinterpret_i64: function (func, instr, input, result_low, result_high) {
+            unary({func, instr}, "f64_reinterpret_i64", input, new Long(result_low, result_high));
+        },
     };
     console.log(importsObject);
 
@@ -126,7 +204,7 @@ function return_(location, values) {
 }
 
 function const_(location, value) {
-    console.log("const @", location, ":", value);
+    // console.log("const @", location, ":", value);
 }
 
 function unary(location, op, input, result) {
