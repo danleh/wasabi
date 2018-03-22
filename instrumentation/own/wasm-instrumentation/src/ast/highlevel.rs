@@ -379,11 +379,11 @@ impl Instr {
             I32Eqz => Unary { input_ty: I32, result_ty: I32 },
             I64Eqz => Unary { input_ty: I64, result_ty: I32 },
 
-//            I32Clz | I32Ctz | I32Popcnt => Unary { input_ty: I32, result_ty: I32 },
-//            I64Clz | I64Ctz | I64Popcnt => Unary { input_ty: I64, result_ty: I64 },
-//
-//            F32Abs | F32Neg | F32Ceil | F32Floor | F32Trunc | F32Nearest => Unary { input_ty: F32, result_ty: F32 },
-//            F64Abs | F64Neg | F64Ceil | F64Floor | F64Trunc | F64Nearest => Unary { input_ty: F64, result_ty: F64 },
+            I32Clz | I32Ctz | I32Popcnt => Unary { input_ty: I32, result_ty: I32 },
+            I64Clz | I64Ctz | I64Popcnt => Unary { input_ty: I64, result_ty: I64 },
+
+            F32Abs | F32Neg | F32Ceil | F32Floor | F32Trunc | F32Nearest => Unary { input_ty: F32, result_ty: F32 },
+            F64Abs | F64Neg | F64Ceil | F64Floor | F64Trunc | F64Nearest => Unary { input_ty: F64, result_ty: F64 },
 
             // TODO should conversions also be unary?
 //            Instr::I32WrapI64 => {},
@@ -434,5 +434,39 @@ impl Instr {
             result.push_str(&c.to_ascii_lowercase().to_string());
         }
         result
+    }
+
+    /// "generate" quick and dirty the low-level JavaScript hook function from an instruction
+    pub fn to_js_hook(&self) -> String {
+        fn arg(name: &str, ty: ValType) -> String {
+            match ty {
+                I64 => name.to_string() + "_low, " + name + "_high",
+                _ => name.to_string()
+            }
+        }
+        fn long(name: &str, ty: ValType) -> String {
+            match ty {
+                I64 => format!("new Long({})", arg(name, ty)),
+                _ => name.to_string()
+            }
+        }
+        match (self.group(), self, self.to_instr_name()) {
+            (InstrGroup::Const(ty), instr, instr_str) => format!(
+                "{}: function (func, instr, {}) {{
+    const_({{func, instr}}, {});
+}},",
+                instr_str,
+                arg("v", ty), long("v", ty)
+            ),
+            (InstrGroup::Unary { input_ty, result_ty }, instr, instr_str) => format!(
+                "{}: function (func, instr, {}, {}) {{
+    unary({{func, instr}}, \"{}\", {}, {});
+}},",
+                instr_str,
+                arg("input", input_ty), arg("result", result_ty),
+                instr_str,
+                long("input", input_ty), long("result", result_ty)),
+            _ => unimplemented!()
+        }
     }
 }
