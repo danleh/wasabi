@@ -12,6 +12,7 @@ use test::Bencher;
 #[test]
 #[ignore]
 fn debug() {
+//    println!("{}", I64Eqz.to_js_hook());
     let file = "test/input/hello-emcc.wasm";
     let module = highlevel::Module::from_file(file).unwrap();
 //    println!("{:?}", module);

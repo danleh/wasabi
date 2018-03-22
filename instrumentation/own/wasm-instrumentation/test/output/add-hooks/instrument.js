@@ -20,7 +20,6 @@ WebAssembly.instantiate = function () {
         },
 
         // generated:
-
         i32_const: function (func, instr, v) {
             const_({func, instr}, v);
         },
@@ -402,6 +401,75 @@ WebAssembly.instantiate = function () {
         f64_copysign: function (func, instr, first, second, result) {
             binary({func, instr}, "f64_copysign", first, second, result);
         },
+        i32_load: function (func, instr, addr, offset, align, v) {
+            load({func, instr}, "i32_load", {addr, offset, align}, v);
+        },
+        i32_load_8_s: function (func, instr, addr, offset, align, v) {
+            load({func, instr}, "i32_load_8_s", {addr, offset, align}, v);
+        },
+        i32_load_8_u: function (func, instr, addr, offset, align, v) {
+            load({func, instr}, "i32_load_8_u", {addr, offset, align}, v);
+        },
+        i32_load_16_s: function (func, instr, addr, offset, align, v) {
+            load({func, instr}, "i32_load_16_s", {addr, offset, align}, v);
+        },
+        i32_load_16_u: function (func, instr, addr, offset, align, v) {
+            load({func, instr}, "i32_load_16_u", {addr, offset, align}, v);
+        },
+        i64_load: function (func, instr, addr, offset, align, v_low, v_high) {
+            load({func, instr}, "i64_load", {addr, offset, align}, new Long(v_low, v_high));
+        },
+        i64_load_8_s: function (func, instr, addr, offset, align, v_low, v_high) {
+            load({func, instr}, "i64_load_8_s", {addr, offset, align}, new Long(v_low, v_high));
+        },
+        i64_load_8_u: function (func, instr, addr, offset, align, v_low, v_high) {
+            load({func, instr}, "i64_load_8_u", {addr, offset, align}, new Long(v_low, v_high));
+        },
+        i64_load_16_s: function (func, instr, addr, offset, align, v_low, v_high) {
+            load({func, instr}, "i64_load_16_s", {addr, offset, align}, new Long(v_low, v_high));
+        },
+        i64_load_16_u: function (func, instr, addr, offset, align, v_low, v_high) {
+            load({func, instr}, "i64_load_16_u", {addr, offset, align}, new Long(v_low, v_high));
+        },
+        i64_load_32_s: function (func, instr, addr, offset, align, v_low, v_high) {
+            load({func, instr}, "i64_load_32_s", {addr, offset, align}, new Long(v_low, v_high));
+        },
+        i64_load_32_u: function (func, instr, addr, offset, align, v_low, v_high) {
+            load({func, instr}, "i64_load_32_u", {addr, offset, align}, new Long(v_low, v_high));
+        },
+        f32_load: function (func, instr, addr, offset, align, v) {
+            load({func, instr}, "f32_load", {addr, offset, align}, v);
+        },
+        f64_load: function (func, instr, addr, offset, align, v) {
+            load({func, instr}, "f64_load", {addr, offset, align}, v);
+        },
+        i32_store: function (func, instr, addr, offset, align, v) {
+            store({func, instr}, "i32_store", {addr, offset, align}, v);
+        },
+        i32_store_8: function (func, instr, addr, offset, align, v) {
+            store({func, instr}, "i32_store_8", {addr, offset, align}, v);
+        },
+        i32_store_16: function (func, instr, addr, offset, align, v) {
+            store({func, instr}, "i32_store_16", {addr, offset, align}, v);
+        },
+        i64_store: function (func, instr, addr, offset, align, v_low, v_high) {
+            store({func, instr}, "i64_store", {addr, offset, align}, new Long(v_low, v_high));
+        },
+        i64_store_8: function (func, instr, addr, offset, align, v_low, v_high) {
+            store({func, instr}, "i64_store_8", {addr, offset, align}, new Long(v_low, v_high));
+        },
+        i64_store_16: function (func, instr, addr, offset, align, v_low, v_high) {
+            store({func, instr}, "i64_store_16", {addr, offset, align}, new Long(v_low, v_high));
+        },
+        i64_store_32: function (func, instr, addr, offset, align, v_low, v_high) {
+            store({func, instr}, "i64_store_32", {addr, offset, align}, new Long(v_low, v_high));
+        },
+        f32_store: function (func, instr, addr, offset, align, v) {
+            store({func, instr}, "f32_store", {addr, offset, align}, v);
+        },
+        f64_store: function (func, instr, addr, offset, align, v) {
+            store({func, instr}, "f64_store", {addr, offset, align}, v);
+        },
     };
     console.log(importsObject);
 
@@ -448,3 +516,12 @@ function unary(location, op, input, result) {
 function binary(location, op, first, second, result) {
     console.log(op, "@", location, ":", first, ",", second, "->", result);
 }
+
+function load(location, op, memarg, value) {
+    console.log(op, "@", location, value, "from", memarg);
+}
+
+function store(location, op, memarg, value) {
+    console.log(op, "@", location, value, "to", memarg);
+}
+

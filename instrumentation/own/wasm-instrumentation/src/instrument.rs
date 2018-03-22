@@ -1,4 +1,4 @@
-use ast::{FunctionType, GlobalType, Idx, Limits, Local, MemoryType, Mutability, ValType, ValType::*};
+use ast::{FunctionType, GlobalType, Idx, Limits, Local, Memarg, MemoryType, Mutability, ValType, ValType::*};
 use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGroup::*, Memory, Module};
 use std::collections::{HashMap, HashSet};
 use std::mem::{discriminant, Discriminant};
@@ -79,6 +79,9 @@ fn add_hook_from_instr(module: &mut Module, instr: &Instr) -> (Discriminant<Inst
         Const(ty) => vec![ty],
         Unary { input_ty, result_ty } => vec![input_ty, result_ty],
         Binary { first_ty, second_ty, result_ty } => vec![first_ty, second_ty, result_ty],
+        // for address, offset and alignment
+        MemoryLoad(ty) => vec![I32, I32, I32, ty],
+        MemoryStore(ty) => vec![I32, I32, I32, ty],
         Other => unreachable!("function should be only called for \"grouped\" instructions"),
     }))
 }
@@ -111,6 +114,8 @@ pub fn add_hooks(module: &mut Module) {
             I64Const(0),
             F32Const(0.0),
             F64Const(0.0),
+
+            // Unary
             I32Eqz, I64Eqz,
             I32Clz, I32Ctz, I32Popcnt,
             I64Clz, I64Ctz, I64Popcnt,
@@ -132,6 +137,8 @@ pub fn add_hooks(module: &mut Module) {
             I64ReinterpretF64,
             F32ReinterpretI32,
             F64ReinterpretI64,
+
+            // Binary
             I32Eq, I32Ne, I32LtS, I32LtU, I32GtS, I32GtU, I32LeS, I32LeU, I32GeS, I32GeU,
             I64Eq, I64Ne, I64LtS, I64LtU, I64GtS, I64GtU, I64LeS, I64LeU, I64GeS, I64GeU,
             F32Eq, F32Ne, F32Lt, F32Gt, F32Le, F32Ge,
@@ -140,6 +147,16 @@ pub fn add_hooks(module: &mut Module) {
             I64Add, I64Sub, I64Mul, I64DivS, I64DivU, I64RemS, I64RemU, I64And, I64Or, I64Xor, I64Shl, I64ShrS, I64ShrU, I64Rotl, I64Rotr,
             F32Add, F32Sub, F32Mul, F32Div, F32Min, F32Max, F32Copysign,
             F64Add, F64Sub, F64Mul, F64Div, F64Min, F64Max, F64Copysign,
+
+            // Memory
+            I32Load(Memarg::default()), I32Load8S(Memarg::default()), I32Load8U(Memarg::default()), I32Load16S(Memarg::default()), I32Load16U(Memarg::default()),
+            I64Load(Memarg::default()), I64Load8S(Memarg::default()), I64Load8U(Memarg::default()), I64Load16S(Memarg::default()), I64Load16U(Memarg::default()), I64Load32S(Memarg::default()), I64Load32U(Memarg::default()),
+            F32Load(Memarg::default()),
+            F64Load(Memarg::default()),
+            I32Store(Memarg::default()), I32Store8(Memarg::default()), I32Store16(Memarg::default()),
+            I64Store(Memarg::default()), I64Store8(Memarg::default()), I64Store16(Memarg::default()), I64Store32(Memarg::default()),
+            F32Store(Memarg::default()),
+            F64Store(Memarg::default()),
         ].into_iter()
             .map(|i| add_hook_from_instr(module, i))
             .collect();
@@ -258,6 +275,58 @@ pub fn add_hooks(module: &mut Module) {
                                 // restore result after hook call
                                 GetLocal(result_tmp),
                             ]);
+                            instrs
+                        }
+                        (MemoryLoad(ty), instr) => {
+                            let memarg = instr.memarg().expect("memory instruction without memarg!?");
+
+                            // duplicate stack arguments
+                            let addr_tmp = fresh_local(locals, function_type, I32);
+                            let value_tmp = fresh_local(locals, function_type, ty);
+
+                            let mut instrs = vec![
+                                // save input before
+                                TeeLocal(addr_tmp),
+                                // execute original instr
+                                instr.clone(),
+                                // save result after
+                                SetLocal(value_tmp),
+                                location.0,
+                                location.1,
+                                GetLocal(addr_tmp),
+                                I32Const(memarg.offset as i32),
+                                I32Const(memarg.alignment as i32),
+                            ];
+                            instrs.append(&mut convert_i64_instr(GetLocal(value_tmp), ty));
+                            instrs.extend_from_slice(&[
+                                hook_call(&instr),
+                                // restore result after hook call
+                                GetLocal(value_tmp),
+                            ]);
+                            instrs
+                        }
+                        (MemoryStore(ty), instr) => {
+                            let memarg = instr.memarg().expect("memory instruction without memarg!?");
+
+                            // duplicate stack arguments
+                            let addr_tmp = fresh_local(locals, function_type, I32);
+                            let value_tmp = fresh_local(locals, function_type, ty);
+
+                            let mut instrs = vec![
+                                // save input before
+                                SetLocal(value_tmp),
+                                TeeLocal(addr_tmp),
+                                GetLocal(value_tmp),
+                                // execute original instr
+                                instr.clone(),
+                                location.0,
+                                location.1,
+                                GetLocal(addr_tmp),
+                                I32Const(memarg.offset as i32),
+                                I32Const(memarg.alignment as i32),
+                            ];
+                            instrs.append(&mut convert_i64_instr(GetLocal(value_tmp), ty));
+                            instrs.push(hook_call(&instr));
                             instrs
                         }
                         (_, instr) => vec![instr],

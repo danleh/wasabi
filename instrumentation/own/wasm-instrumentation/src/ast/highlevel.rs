@@ -369,10 +369,46 @@ pub enum InstrGroup {
         second_ty: ValType,
         result_ty: ValType,
     },
+    MemoryLoad(ValType),
+    MemoryStore(ValType),
     Other,
 }
 
 impl Instr {
+    pub fn memarg(&self) -> Option<Memarg> {
+        use self::Instr::*;
+        match *self {
+            I32Load(memarg) => Some(memarg),
+            I64Load(memarg) => Some(memarg),
+            F32Load(memarg) => Some(memarg),
+            F64Load(memarg) => Some(memarg),
+
+            I32Load8S(memarg) => Some(memarg),
+            I32Load8U(memarg) => Some(memarg),
+            I32Load16S(memarg) => Some(memarg),
+            I32Load16U(memarg) => Some(memarg),
+            I64Load8S(memarg) => Some(memarg),
+            I64Load8U(memarg) => Some(memarg),
+            I64Load16S(memarg) => Some(memarg),
+            I64Load16U(memarg) => Some(memarg),
+            I64Load32S(memarg) => Some(memarg),
+            I64Load32U(memarg) => Some(memarg),
+
+            I32Store(memarg) => Some(memarg),
+            I64Store(memarg) => Some(memarg),
+            F32Store(memarg) => Some(memarg),
+            F64Store(memarg) => Some(memarg),
+
+            I32Store8(memarg) => Some(memarg),
+            I32Store16(memarg) => Some(memarg),
+            I64Store8(memarg) => Some(memarg),
+            I64Store16(memarg) => Some(memarg),
+            I64Store32(memarg) => Some(memarg),
+
+            _ => None
+        }
+    }
+
     pub fn group(&self) -> InstrGroup {
         use self::{Instr::*, InstrGroup::*};
         match *self {
@@ -428,6 +464,16 @@ impl Instr {
             F64Add | F64Sub | F64Mul | F64Div | F64Min | F64Max | F64Copysign => Binary { first_ty: F64, second_ty: F64, result_ty: F64 },
 
             /* Memory */
+
+            I32Load(_) | I32Load8S(_) | I32Load8U(_) | I32Load16S(_) | I32Load16U(_) => MemoryLoad(I32),
+            I64Load(_) | I64Load8S(_) | I64Load8U(_) | I64Load16S(_) | I64Load16U(_) | I64Load32S(_) | I64Load32U(_) => MemoryLoad(I64),
+            F32Load(_) => MemoryLoad(F32),
+            F64Load(_) => MemoryLoad(F64),
+
+            I32Store(_) | I32Store8(_) | I32Store16(_) => MemoryStore(I32),
+            I64Store(_) | I64Store8(_) | I64Store16(_) | I64Store32(_) => MemoryStore(I64),
+            F32Store(_) => MemoryStore(F32),
+            F64Store(_) => MemoryStore(F64),
 
             _ => Other,
         }
@@ -492,6 +538,22 @@ impl Instr {
                 arg("first", first_ty), arg("second", second_ty), arg("result", result_ty),
                 instr_str,
                 long("first", first_ty), long("second", second_ty), long("result", result_ty)),
+            (InstrGroup::MemoryLoad(ty), instr, instr_str) => format!(
+                "{}: function (func, instr, addr, offset, align, {}) {{
+    load({{func, instr}}, \"{}\", {{addr, offset, align}}, {});
+}},",
+                instr_str,
+                arg("v", ty),
+                instr_str,
+                long("v", ty)),
+            (InstrGroup::MemoryStore(ty), instr, instr_str) => format!(
+                "{}: function (func, instr, addr, offset, align, {}) {{
+    store({{func, instr}}, \"{}\", {{addr, offset, align}}, {});
+}},",
+                instr_str,
+                arg("v", ty),
+                instr_str,
+                long("v", ty)),
             (_, _, instr) => unimplemented!("cannot generate JS hook code for instruction {}", instr)
         }
     }

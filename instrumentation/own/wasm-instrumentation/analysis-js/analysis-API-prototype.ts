@@ -57,18 +57,20 @@ function global(i: InstructionLocation, op: "get" | "set", index: number, value:
 
 /* Memory instructions */
 
-type MemArg = {
+type Memarg = {
+    addr: number,
     offset: number,
     align: number,
 }
 
+// FIXME uses instruction actually
 type LoadSize = null | "8_s" | "8_u" | "16_s" | "16_u" | "32_s" | "32_u";
 type StoreSize = null | 8 | 16 | 32;
 
-function load(i: InstructionLocation, memArg: MemArg, storageSize: LoadSize, value: Value) {
+function load(i: InstructionLocation, op: LoadSize, memarg: Memarg, value: Val) {
 }
 
-function store(i: InstructionLocation, memArg: MemArg, storageSize: StoreSize, value: Value) {
+function store(i: InstructionLocation, op: StoreSize, memarg: Memarg, value: Val) {
 }
 
 function current_memory(i: InstructionLocation, currentSizePages: number) {
