@@ -1,1 +1,2 @@
+- i64 handling: split into (i32, i32) tuple, e.g. TaintAssembly doesn't handle this case at all
 - monomorphization of hooks: necessary for "polymorphic" instructions, e.g., return and call
