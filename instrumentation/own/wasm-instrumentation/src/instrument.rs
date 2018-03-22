@@ -114,8 +114,8 @@ pub fn add_hooks(module: &mut Module) {
             I32Eqz, I64Eqz,
             I32Clz, I32Ctz, I32Popcnt,
             I64Clz, I64Ctz, I64Popcnt,
-            F32Abs, F32Neg, F32Ceil, F32Floor, F32Trunc, F32Nearest,
-            F64Abs, F64Neg, F64Ceil, F64Floor, F64Trunc, F64Nearest,
+            F32Abs, F32Neg, F32Ceil, F32Floor, F32Trunc, F32Nearest, F32Sqrt,
+            F64Abs, F64Neg, F64Ceil, F64Floor, F64Trunc, F64Nearest, F64Sqrt,
             I32WrapI64,
             I32TruncSF32, I32TruncUF32,
             I32TruncSF64, I32TruncUF64,
@@ -136,6 +136,10 @@ pub fn add_hooks(module: &mut Module) {
             I64Eq, I64Ne, I64LtS, I64LtU, I64GtS, I64GtU, I64LeS, I64LeU, I64GeS, I64GeU,
             F32Eq, F32Ne, F32Lt, F32Gt, F32Le, F32Ge,
             F64Eq, F64Ne, F64Lt, F64Gt, F64Le, F64Ge,
+            I32Add, I32Sub, I32Mul, I32DivS, I32DivU, I32RemS, I32RemU, I32And, I32Or, I32Xor, I32Shl, I32ShrS, I32ShrU, I32Rotl, I32Rotr,
+            I64Add, I64Sub, I64Mul, I64DivS, I64DivU, I64RemS, I64RemU, I64And, I64Or, I64Xor, I64Shl, I64ShrS, I64ShrU, I64Rotl, I64Rotr,
+            F32Add, F32Sub, F32Mul, F32Div, F32Min, F32Max, F32Copysign,
+            F64Add, F64Sub, F64Mul, F64Div, F64Min, F64Max, F64Copysign,
         ].into_iter()
             .map(|i| add_hook_from_instr(module, i))
             .collect();

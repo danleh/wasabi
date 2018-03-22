@@ -392,8 +392,8 @@ impl Instr {
             I32Clz | I32Ctz | I32Popcnt => Unary { input_ty: I32, result_ty: I32 },
             I64Clz | I64Ctz | I64Popcnt => Unary { input_ty: I64, result_ty: I64 },
 
-            F32Abs | F32Neg | F32Ceil | F32Floor | F32Trunc | F32Nearest => Unary { input_ty: F32, result_ty: F32 },
-            F64Abs | F64Neg | F64Ceil | F64Floor | F64Trunc | F64Nearest => Unary { input_ty: F64, result_ty: F64 },
+            F32Abs | F32Neg | F32Ceil | F32Floor | F32Trunc | F32Nearest | F32Sqrt => Unary { input_ty: F32, result_ty: F32 },
+            F64Abs | F64Neg | F64Ceil | F64Floor | F64Trunc | F64Nearest | F64Sqrt => Unary { input_ty: F64, result_ty: F64 },
 
             // conversions
             I32WrapI64 => Unary { input_ty: I64, result_ty: I32 },
@@ -421,6 +421,13 @@ impl Instr {
 
             F32Eq | F32Ne | F32Lt | F32Gt | F32Le | F32Ge => Binary { first_ty: F32, second_ty: F32, result_ty: I32 },
             F64Eq | F64Ne | F64Lt | F64Gt | F64Le | F64Ge => Binary { first_ty: F64, second_ty: F64, result_ty: I32 },
+
+            I32Add | I32Sub | I32Mul | I32DivS | I32DivU | I32RemS | I32RemU | I32And | I32Or | I32Xor | I32Shl | I32ShrS | I32ShrU | I32Rotl | I32Rotr => Binary { first_ty: I32, second_ty: I32, result_ty: I32 },
+            I64Add | I64Sub | I64Mul | I64DivS | I64DivU | I64RemS | I64RemU | I64And | I64Or | I64Xor | I64Shl | I64ShrS | I64ShrU | I64Rotl | I64Rotr => Binary { first_ty: I64, second_ty: I64, result_ty: I64 },
+            F32Add | F32Sub | F32Mul | F32Div | F32Min | F32Max | F32Copysign => Binary { first_ty: F32, second_ty: F32, result_ty: F32 },
+            F64Add | F64Sub | F64Mul | F64Div | F64Min | F64Max | F64Copysign => Binary { first_ty: F64, second_ty: F64, result_ty: F64 },
+
+            /* Memory */
 
             _ => Other,
         }
