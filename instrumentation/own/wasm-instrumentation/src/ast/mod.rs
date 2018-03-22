@@ -22,6 +22,14 @@ pub enum ValType {
     #[tag = 0x7c] F64,
 }
 
+impl fmt::Display for ValType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut s = String::with_capacity(3);
+        write!(s, "{:?}", self)?;
+        write!(f, "{}", s.to_lowercase())
+    }
+}
+
 #[derive(WasmBinary, Debug, PartialEq, Eq, Clone, Hash)]
 #[tag = 0x60]
 pub struct FunctionType(pub Vec<ValType>, pub Vec<ValType>);
@@ -108,7 +116,7 @@ pub struct Label;
 
 /* Code */
 
-#[derive(WasmBinary, Debug, Copy, Clone)]
+#[derive(WasmBinary, Debug, Copy, Clone, Default)]
 pub struct Memarg {
     pub alignment: u32,
     pub offset: u32,
