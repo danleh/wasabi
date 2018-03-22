@@ -26,6 +26,10 @@ use std::mem::{discriminant, Discriminant};
 //    Trivial inlining: if function body is empty (since most callbacks won't be used by the
 //    analysis module), remove the call to the function + setup of function arguments
 
+/// add a new local with type_
+/// We don't take whole function, but only locals and function_ty since the code itself is not
+/// touched (and we would get some errors with borrowck otherwise).
+/// function_ty is necessary since locals are indexed together with function parameters
 fn fresh_local(locals: &mut Vec<ValType>, function_ty: &FunctionType, type_: ValType) -> Idx<Local> {
     let idx = locals.len() + function_ty.0.len();
     locals.push(type_);
@@ -49,8 +53,9 @@ fn add_hook(module: &mut Module, name: impl Into<String>, arg_tys_: &[ValType]) 
         name.into())
 }
 
-/// specialized version form of the above for monomorph instructions
+/// specialized version form of the above for monomorphic instructions
 fn add_hook_from_instr(module: &mut Module, instr: &Instr) -> (Discriminant<Instr>, Idx<Function>) {
+    println!("{}", instr.to_js_hook());
     (discriminant(instr), add_hook(module, instr.to_instr_name(), &match instr.group() {
         Const(ty) => vec![ty],
         Unary { input_ty, result_ty } => vec![input_ty, result_ty],
@@ -199,7 +204,6 @@ pub fn add_hooks(module: &mut Module) {
                 })
                 .collect();
         }
-//        println!("{:?}", function);
     }
 }
 
