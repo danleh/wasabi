@@ -26,26 +26,6 @@ use std::mem::{discriminant, Discriminant};
 //    Trivial inlining: if function body is empty (since most callbacks won't be used by the
 //    analysis module), remove the call to the function + setup of function arguments
 
-fn expand_i64_type(v: &ValType) -> &[ValType] {
-    match v {
-        &I64 => &[I32, I32],
-        v => ::std::slice::from_ref(v),
-    }
-}
-
-fn val_type_char(v: &ValType) -> char {
-    match *v {
-        I32 => 'i',
-        I64 => 'I',
-        F32 => 'f',
-        F64 => 'F',
-    }
-}
-
-fn types_string(v: &[ValType]) -> String {
-    v.iter().map(val_type_char).collect()
-}
-
 fn fresh_local(locals: &mut Vec<ValType>, function_ty: &FunctionType, type_: ValType) -> Idx<Local> {
     let idx = locals.len() + function_ty.0.len();
     locals.push(type_);
@@ -57,13 +37,25 @@ fn add_hook(module: &mut Module, name: impl Into<String>, arg_tys_: &[ValType]) 
     let mut arg_tys = vec![I32, I32];
     arg_tys.extend(arg_tys_.iter()
         // and expand i64 to a tuple of (i32, i32) since there is no JS interop for i64
-        .flat_map(expand_i64_type));
+        .flat_map(|ty| match ty {
+            &I64 => &[I32, I32],
+            v => ::std::slice::from_ref(v),
+        }));
 
     module.add_function_import(
         // hooks do not return anything
         FunctionType(arg_tys, vec![]),
         "hooks".into(),
         name.into())
+}
+
+/// specialized version form of the above for monomorph instructions
+fn add_hook_from_instr(module: &mut Module, instr: &Instr) -> (Discriminant<Instr>, Idx<Function>) {
+    (discriminant(instr), add_hook(module, instr.to_instr_name(), &match instr.group() {
+        Const(ty) => vec![ty],
+        Unary { input_ty, result_ty } => vec![input_ty, result_ty],
+        Other => unreachable!("function should be only called for \"grouped\" instructions"),
+    }))
 }
 
 pub fn add_hooks(module: &mut Module) {
@@ -75,22 +67,30 @@ pub fn add_hooks(module: &mut Module) {
         .map(|return_ty| {
             let hook_idx = add_hook(
                 module,
-                "return_".to_string() + &types_string(&return_ty),
+                "return_".to_string() + &return_ty.iter().map(|ty| ty.to_string()).collect::<Vec<_>>().join("_"),
                 return_ty.as_slice());
             (return_ty, hook_idx)
         })
         .collect();
-    // TODO generate hook from instruction, not this hand-written shit
-    let other_hooks: HashMap<Discriminant<Instr>, Idx<Function>> = hashmap! {
-        discriminant(&I32Const(0)) => add_hook(module, "i32_const", &[I32]),
-        discriminant(&I64Const(0)) => add_hook(module, "i64_const", &[I64]),
-        discriminant(&F32Const(0.0)) => add_hook(module, "f32_const", &[F32]),
-        discriminant(&F64Const(0.0)) => add_hook(module, "f64_const", &[F64]),
-        discriminant(&I32Eqz) => add_hook(module, "i32_eqz", &[I32, I32]),
-//        I64Eqz => add_hook(module, "i64_eqz", &[I64]),
-    };
-    let hook_call = |instr: &Instr| -> Instr {
-        Call(*other_hooks.get(&discriminant(instr)).unwrap())
+
+    // hooks where the argument/result types are directly determined from the instruction itself
+    let hook_call = {
+        let monomorph_hooks: HashMap<Discriminant<Instr>, Idx<Function>> = [
+            I32Const(0),
+            I64Const(0),
+            F32Const(0.0),
+            F64Const(0.0),
+            I32Eqz,
+            I64Eqz,
+        ].into_iter()
+            .map(|i| add_hook_from_instr(module, i))
+            .collect();
+
+        move |instr: &Instr| -> Instr {
+            Call(*monomorph_hooks
+                .get(&discriminant(instr))
+                .expect(&format!("no hook for instruction {}", instr.to_instr_name())))
+        }
     };
 
     /* add call to hooks: setup code that copies the returned value, instruction location, call */

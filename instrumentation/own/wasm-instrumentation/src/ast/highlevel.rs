@@ -415,7 +415,7 @@ impl Instr {
         }
     }
 
-    pub fn to_instr_string(&self) -> String {
+    pub fn to_instr_name(&self) -> String {
         let mut s = String::new();
         write!(&mut s, "{:?}", self).unwrap();
         let mut result = String::new();
