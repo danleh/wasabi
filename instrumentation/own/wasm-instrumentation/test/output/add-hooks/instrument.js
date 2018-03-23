@@ -23,17 +23,17 @@ WebAssembly.instantiate = function () {
         },
 
         // generated:
-        return_i64: function (func, instr, result0_low, result0_high) {
-            return_({func, instr}, [new Long(result0_low, result0_high)]);
+        return_: function (func, instr) {
+            return_({func, instr}, []);
         },
         return_i32: function (func, instr, result0) {
             return_({func, instr}, [result0]);
         },
+        return_i64: function (func, instr, result0_low, result0_high) {
+            return_({func, instr}, [new Long(result0_low, result0_high)]);
+        },
         return_f64: function (func, instr, result0) {
             return_({func, instr}, [result0]);
-        },
-        return_: function (func, instr) {
-            return_({func, instr}, []);
         },
         get_local_i32: function (func, instr, index, v) {
             local({func, instr}, "get", index, v);
@@ -94,6 +94,39 @@ WebAssembly.instantiate = function () {
         },
         set_global_f64: function (func, instr, index, v) {
             global({func, instr}, "set", index, v);
+        },
+        call_: function (func, instr, targetFunc) {
+            call_({func, instr}, targetFunc, []);
+        },
+        call_i32: function (func, instr, targetFunc, arg0) {
+            call_({func, instr}, targetFunc, [arg0]);
+        },
+        call_i32_i32: function (func, instr, targetFunc, arg0, arg1) {
+            call_({func, instr}, targetFunc, [arg0, arg1]);
+        },
+        call_i32_i32_i32: function (func, instr, targetFunc, arg0, arg1, arg2) {
+            call_({func, instr}, targetFunc, [arg0, arg1, arg2]);
+        },
+        call_i32_i32_i32_i32: function (func, instr, targetFunc, arg0, arg1, arg2, arg3) {
+            call_({func, instr}, targetFunc, [arg0, arg1, arg2, arg3]);
+        },
+        call_i32_i32_i32_i32_i32: function (func, instr, targetFunc, arg0, arg1, arg2, arg3, arg4) {
+            call_({func, instr}, targetFunc, [arg0, arg1, arg2, arg3, arg4]);
+        },
+        call_i32_f64_i32_i32_i32_i32: function (func, instr, targetFunc, arg0, arg1, arg2, arg3, arg4, arg5) {
+            call_({func, instr}, targetFunc, [arg0, arg1, arg2, arg3, arg4, arg5]);
+        },
+        call_i64_i32: function (func, instr, targetFunc, arg0_low, arg0_high, arg1) {
+            call_({func, instr}, targetFunc, [new Long(arg0_low, arg0_high), arg1]);
+        },
+        call_i64_i32_i32: function (func, instr, targetFunc, arg0_low, arg0_high, arg1, arg2) {
+            call_({func, instr}, targetFunc, [new Long(arg0_low, arg0_high), arg1, arg2]);
+        },
+        call_f64: function (func, instr, targetFunc, arg0) {
+            call_({func, instr}, targetFunc, [arg0]);
+        },
+        call_f64_i32: function (func, instr, targetFunc, arg0, arg1) {
+            call_({func, instr}, targetFunc, [arg0, arg1]);
         },
         i32_const: function (func, instr, v) {
             const_({func, instr}, v);
@@ -640,19 +673,23 @@ WebAssembly.instantiate = function () {
 // const coverageData = [];
 
 function nop(location) {
-    console.log("nop @", location);
+    // console.log("nop @", location);
 }
 
 function unreachable(location) {
-    console.log("unreachable @", location);
+    // console.log("unreachable @", location);
 }
 
 function drop(location) {
-    console.log("drop @", location);
+    // console.log("drop @", location);
 }
 
 function select(location, cond) {
-    console.log("select @", location, "condition:", cond);
+    // console.log("select @", location, "condition:", cond);
+}
+
+function call_(location, targetFunc, args) {
+    console.log("call func #", targetFunc, "@", location, "with args:", args);
 }
 
 function return_(location, values) {
