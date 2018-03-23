@@ -11,30 +11,77 @@ WebAssembly.instantiate = function () {
         },
 
         // generated:
-
-        return_i64: function (func, instr, result0_low, result0_high) {
+        return_i64: function(func, instr, result0_low, result0_high) {
             return_({func, instr}, [new Long(result0_low, result0_high)]);
         },
-        return_f64: function (func, instr, result0) {
+        return_i32: function(func, instr, result0) {
             return_({func, instr}, [result0]);
         },
-        return_: function (func, instr) {
+        return_f64: function(func, instr, result0) {
+            return_({func, instr}, [result0]);
+        },
+        return_: function(func, instr) {
             return_({func, instr}, []);
         },
-        return_i32: function (func, instr, result0) {
-            return_({func, instr}, [result0]);
-        },
-        get_local_i32: function (func, instr, index, v) {
+        get_local_i32: function(func, instr, index, v) {
             local({func, instr}, "get", index, v);
         },
-        get_local_i64: function (func, instr, index, v_low, v_high) {
+        get_local_i64: function(func, instr, index, v_low, v_high) {
             local({func, instr}, "get", index, new Long(v_low, v_high));
         },
-        get_local_f32: function (func, instr, index, v) {
+        get_local_f32: function(func, instr, index, v) {
             local({func, instr}, "get", index, v);
         },
-        get_local_f64: function (func, instr, index, v) {
+        get_local_f64: function(func, instr, index, v) {
             local({func, instr}, "get", index, v);
+        },
+        set_local_i32: function(func, instr, index, v) {
+            local({func, instr}, "set", index, v);
+        },
+        set_local_i64: function(func, instr, index, v_low, v_high) {
+            local({func, instr}, "set", index, new Long(v_low, v_high));
+        },
+        set_local_f32: function(func, instr, index, v) {
+            local({func, instr}, "set", index, v);
+        },
+        set_local_f64: function(func, instr, index, v) {
+            local({func, instr}, "set", index, v);
+        },
+        tee_local_i32: function(func, instr, index, v) {
+            local({func, instr}, "tee", index, v);
+        },
+        tee_local_i64: function(func, instr, index, v_low, v_high) {
+            local({func, instr}, "tee", index, new Long(v_low, v_high));
+        },
+        tee_local_f32: function(func, instr, index, v) {
+            local({func, instr}, "tee", index, v);
+        },
+        tee_local_f64: function(func, instr, index, v) {
+            local({func, instr}, "tee", index, v);
+        },
+        get_global_i32: function(func, instr, index, v) {
+            global({func, instr}, "get", index, v);
+        },
+        get_global_i64: function(func, instr, index, v_low, v_high) {
+            global({func, instr}, "get", index, new Long(v_low, v_high));
+        },
+        get_global_f32: function(func, instr, index, v) {
+            global({func, instr}, "get", index, v);
+        },
+        get_global_f64: function(func, instr, index, v) {
+            global({func, instr}, "get", index, v);
+        },
+        set_global_i32: function(func, instr, index, v) {
+            global({func, instr}, "set", index, v);
+        },
+        set_global_i64: function(func, instr, index, v_low, v_high) {
+            global({func, instr}, "set", index, new Long(v_low, v_high));
+        },
+        set_global_f32: function(func, instr, index, v) {
+            global({func, instr}, "set", index, v);
+        },
+        set_global_f64: function(func, instr, index, v) {
+            global({func, instr}, "set", index, v);
         },
         i32_const: function (func, instr, v) {
             const_({func, instr}, v);
@@ -226,52 +273,28 @@ WebAssembly.instantiate = function () {
             binary({func, instr}, "i64_ne", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_lt_s: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({
-                func,
-                instr
-            }, "i64_lt_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({func, instr}, "i64_lt_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_lt_u: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({
-                func,
-                instr
-            }, "i64_lt_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({func, instr}, "i64_lt_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_gt_s: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({
-                func,
-                instr
-            }, "i64_gt_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({func, instr}, "i64_gt_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_gt_u: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({
-                func,
-                instr
-            }, "i64_gt_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({func, instr}, "i64_gt_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_le_s: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({
-                func,
-                instr
-            }, "i64_le_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({func, instr}, "i64_le_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_le_u: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({
-                func,
-                instr
-            }, "i64_le_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({func, instr}, "i64_le_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_ge_s: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({
-                func,
-                instr
-            }, "i64_ge_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({func, instr}, "i64_ge_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_ge_u: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({
-                func,
-                instr
-            }, "i64_ge_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({func, instr}, "i64_ge_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         f32_eq: function (func, instr, first, second, result) {
             binary({func, instr}, "f32_eq", first, second, result);
@@ -355,94 +378,49 @@ WebAssembly.instantiate = function () {
             binary({func, instr}, "i32_rotr", first, second, result);
         },
         i64_add: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({
-                func,
-                instr
-            }, "i64_add", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({func, instr}, "i64_add", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_sub: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({
-                func,
-                instr
-            }, "i64_sub", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({func, instr}, "i64_sub", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_mul: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({
-                func,
-                instr
-            }, "i64_mul", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({func, instr}, "i64_mul", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_div_s: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({
-                func,
-                instr
-            }, "i64_div_s", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({func, instr}, "i64_div_s", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_div_u: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({
-                func,
-                instr
-            }, "i64_div_u", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({func, instr}, "i64_div_u", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_rem_s: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({
-                func,
-                instr
-            }, "i64_rem_s", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({func, instr}, "i64_rem_s", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_rem_u: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({
-                func,
-                instr
-            }, "i64_rem_u", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({func, instr}, "i64_rem_u", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_and: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({
-                func,
-                instr
-            }, "i64_and", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({func, instr}, "i64_and", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_or: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({
-                func,
-                instr
-            }, "i64_or", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({func, instr}, "i64_or", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_xor: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({
-                func,
-                instr
-            }, "i64_xor", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({func, instr}, "i64_xor", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_shl: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({
-                func,
-                instr
-            }, "i64_shl", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({func, instr}, "i64_shl", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_shr_s: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({
-                func,
-                instr
-            }, "i64_shr_s", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({func, instr}, "i64_shr_s", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_shr_u: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({
-                func,
-                instr
-            }, "i64_shr_u", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({func, instr}, "i64_shr_u", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_rotl: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({
-                func,
-                instr
-            }, "i64_rotl", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({func, instr}, "i64_rotl", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_rotr: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({
-                func,
-                instr
-            }, "i64_rotr", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({func, instr}, "i64_rotr", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         f32_add: function (func, instr, first, second, result) {
             binary({func, instr}, "f32_add", first, second, result);
@@ -619,5 +597,9 @@ function grow_memory(location, byPages, previousSizePages) {
 }
 
 function local(location, op, index, value) {
-    console.log(op, "local #", index, "@", location, ":", value);
+    // console.log(op, "local #", index, "@", location, ":", value);
+}
+
+function global(location, op, index, value) {
+    console.log(op, "global #", index, "@", location, ":", value);
 }

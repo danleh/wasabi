@@ -67,9 +67,37 @@ impl Instr {
             GetLocal(_) => format!("{}: function(func, instr, index, {}) {{
     local({{func, instr}}, \"get\", index, {});
 }},",
-                hook_name,
-                arg("v", tys[0]),
-                long("v", tys[0])
+                                   hook_name,
+                                   arg("v", tys[0]),
+                                   long("v", tys[0])
+            ),
+            SetLocal(_) => format!("{}: function(func, instr, index, {}) {{
+    local({{func, instr}}, \"set\", index, {});
+}},",
+                                   hook_name,
+                                   arg("v", tys[0]),
+                                   long("v", tys[0])
+            ),
+            TeeLocal(_) => format!("{}: function(func, instr, index, {}) {{
+    local({{func, instr}}, \"tee\", index, {});
+}},",
+                                   hook_name,
+                                   arg("v", tys[0]),
+                                   long("v", tys[0])
+            ),
+            GetGlobal(_) => format!("{}: function(func, instr, index, {}) {{
+    global({{func, instr}}, \"get\", index, {});
+}},",
+                                   hook_name,
+                                   arg("v", tys[0]),
+                                   long("v", tys[0])
+            ),
+            SetGlobal(_) => format!("{}: function(func, instr, index, {}) {{
+    global({{func, instr}}, \"set\", index, {});
+}},",
+                                   hook_name,
+                                   arg("v", tys[0]),
+                                   long("v", tys[0])
             ),
             _ => unimplemented!("cannot generate JS hook code for instruction {}", self.to_instr_name())
         }

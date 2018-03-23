@@ -36,6 +36,14 @@ fn fresh_local(locals: &mut Vec<ValType>, function_ty: &FunctionType, type_: Val
     idx.into()
 }
 
+fn local_ty(locals: &[ValType], function_ty: &FunctionType, idx: Idx<Local>) -> ValType {
+    if (idx.0) < function_ty.0.len() {
+        function_ty.0[idx.0]
+    } else {
+        locals[idx.0 - function_ty.0.len()]
+    }
+}
+
 fn convert_i64_type(ty: &ValType) -> &[ValType] {
     match ty {
         &I64 => &[I32, I32],
@@ -126,6 +134,11 @@ pub fn add_hooks(module: &mut Module) {
 
     // locals and globals
     polymorphic_hooks.add(module, GetLocal(0.into()), &[I32], vec![vec![I32], vec![I64], vec![F32], vec![F64]]);
+    polymorphic_hooks.add(module, SetLocal(0.into()), &[I32], vec![vec![I32], vec![I64], vec![F32], vec![F64]]);
+    polymorphic_hooks.add(module, TeeLocal(0.into()), &[I32], vec![vec![I32], vec![I64], vec![F32], vec![F64]]);
+    let global_tys: Vec<ValType> = module.globals.iter().map(|g| g.type_.0).collect();
+    polymorphic_hooks.add(module, GetGlobal(0.into()), &[I32], vec![vec![I32], vec![I64], vec![F32], vec![F64]]);
+    polymorphic_hooks.add(module, SetGlobal(0.into()), &[I32], vec![vec![I32], vec![I64], vec![F32], vec![F64]]);
 
     // calls
 
@@ -135,8 +148,7 @@ pub fn add_hooks(module: &mut Module) {
     let current_memory_hook = add_hook(module, "current_memory", &[I32]);
     let grow_memory_hook = add_hook(module, "grow_memory", &[I32, I32]);
 
-//    let get_local_hook = add_hook(module, "get_local", )
-
+    // TODO make this a struct of its own, similar to PolymorphicHookMap
     let monomorphic_hook_call = {
         let monomorphic_hooks: HashMap<Discriminant<Instr>, Idx<Function>> = [
             I32Const(0),
@@ -208,8 +220,8 @@ pub fn add_hooks(module: &mut Module) {
             code.body = code.body.iter().cloned().enumerate()
                 .flat_map(|(iidx, instr)| {
                     let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
-                    match (instr.group(), instr) {
-                        (_, instr @ CurrentMemory(_ /* TODO memory idx == 0 in WASM version 1 */)) => {
+                    match (instr.group(), instr.clone()) {
+                        (_, CurrentMemory(_ /* TODO memory idx == 0 in WASM version 1 */)) => {
                             let result_tmp = fresh_local(locals, function_type, I32);
                             vec![
                                 instr,
@@ -220,7 +232,7 @@ pub fn add_hooks(module: &mut Module) {
                                 Call(current_memory_hook)
                             ]
                         }
-                        (_, instr @ GrowMemory(_ /* TODO memory idx == 0 in WASM version 1 */)) => {
+                        (_, GrowMemory(_ /* TODO memory idx == 0 in WASM version 1 */)) => {
                             let input_tmp = fresh_local(locals, function_type, I32);
                             let result_tmp = fresh_local(locals, function_type, I32);
                             vec![
@@ -234,22 +246,28 @@ pub fn add_hooks(module: &mut Module) {
                                 Call(grow_memory_hook)
                             ]
                         }
-                        (_, GetLocal(local_idx)) => {
-                            let instr = GetLocal(local_idx);
-                            let local_ty = if (local_idx.0 as usize) < function_type.0.len() {
-                                function_type.0[local_idx.0 as usize]
-                            } else {
-                                locals[local_idx.0 as usize - function_type.0.len()]
-                            };
-
+                        (_, GetLocal(local_idx)) | (_, SetLocal(local_idx)) | (_, TeeLocal(local_idx)) => {
+                            let local_ty = local_ty(locals.as_slice(), function_type, local_idx);
                             let mut instrs = vec![
                                 instr.clone(),
                                 location.0,
                                 location.1,
                                 I32Const(local_idx.0 as i32),
                             ];
-                            instrs.append(&mut convert_i64_instr(instr.clone(), local_ty));
+                            instrs.append(&mut convert_i64_instr(GetLocal(local_idx), local_ty));
                             instrs.push(polymorphic_hooks.get_call(&instr, vec![local_ty]));
+                            instrs
+                        }
+                        (_, GetGlobal(global_idx)) | (_, SetGlobal(global_idx)) => {
+                            let global_ty = global_tys[global_idx.0];
+                            let mut instrs = vec![
+                                instr.clone(),
+                                location.0,
+                                location.1,
+                                I32Const(global_idx.0 as i32),
+                            ];
+                            instrs.append(&mut convert_i64_instr(GetGlobal(global_idx), global_ty));
+                            instrs.push(polymorphic_hooks.get_call(&instr, vec![global_ty]));
                             instrs
                         }
                         (_, Return) => {
