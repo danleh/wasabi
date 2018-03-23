@@ -92,10 +92,11 @@ impl PolymorphicHookMap {
     pub fn new() -> Self {
         PolymorphicHookMap(HashMap::new())
     }
-    pub fn add(&mut self, module: &mut Module, instr: Instr, tys: impl IntoIterator<Item = Vec<ValType>>) {
+    pub fn add(&mut self, module: &mut Module, instr: Instr, non_poly_args: &[ValType], tys: impl IntoIterator<Item=Vec<ValType>>) {
         for tys in tys {
-            let hook_name = instr.to_instr_name() + "_" + &tys.iter().map(|ty| ty.to_string()).collect::<Vec<_>>().join("_");
-            let hook_idx = add_hook(module, hook_name, tys.as_slice());
+            println!("{}", instr.to_poly_js_hook(tys.as_slice()));
+            let hook_name = instr.to_monomorphized_hook_name(tys.as_slice());
+            let hook_idx = add_hook(module, hook_name, &[non_poly_args, tys.as_slice()].concat());
             self.0.insert(
                 (discriminant(&instr), tys.clone()),
                 hook_idx);
@@ -121,7 +122,10 @@ pub fn add_hooks(module: &mut Module) {
     let result_tys: HashSet<Vec<ValType>> = module.types().iter()
         .map(|function_ty| function_ty.1.clone())
         .collect();
-    polymorphic_hooks.add(module, Return, result_tys);
+    polymorphic_hooks.add(module, Return, &[], result_tys);
+
+    // locals and globals
+    polymorphic_hooks.add(module, GetLocal(0.into()), &[I32], vec![vec![I32], vec![I64], vec![F32], vec![F64]]);
 
     // calls
 
@@ -229,6 +233,24 @@ pub fn add_hooks(module: &mut Module) {
                                 GetLocal(result_tmp),
                                 Call(grow_memory_hook)
                             ]
+                        }
+                        (_, GetLocal(local_idx)) => {
+                            let instr = GetLocal(local_idx);
+                            let local_ty = if (local_idx.0 as usize) < function_type.0.len() {
+                                function_type.0[local_idx.0 as usize]
+                            } else {
+                                locals[local_idx.0 as usize - function_type.0.len()]
+                            };
+
+                            let mut instrs = vec![
+                                instr.clone(),
+                                location.0,
+                                location.1,
+                                I32Const(local_idx.0 as i32),
+                            ];
+                            instrs.append(&mut convert_i64_instr(instr.clone(), local_ty));
+                            instrs.push(polymorphic_hooks.get_call(&instr, vec![local_ty]));
+                            instrs
                         }
                         (_, Return) => {
                             let result_duplicate_tmps: Vec<_> = result_tys.iter()

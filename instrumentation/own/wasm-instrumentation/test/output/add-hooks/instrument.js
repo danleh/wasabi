@@ -10,23 +10,32 @@ WebAssembly.instantiate = function () {
             grow_memory({func, instr}, byPages, previousSizePages);
         },
 
+        // generated:
+
+        return_i64: function (func, instr, result0_low, result0_high) {
+            return_({func, instr}, [new Long(result0_low, result0_high)]);
+        },
+        return_f64: function (func, instr, result0) {
+            return_({func, instr}, [result0]);
+        },
         return_: function (func, instr) {
             return_({func, instr}, []);
         },
-        return_i32: function (func, instr, v) {
-            return_({func, instr}, [v]);
+        return_i32: function (func, instr, result0) {
+            return_({func, instr}, [result0]);
         },
-        return_i64: function (func, instr, low, high) {
-            return_({func, instr}, [new Long(low, high)]);
+        get_local_i32: function (func, instr, index, v) {
+            local({func, instr}, "get", index, v);
         },
-        return_f32: function (func, instr, v) {
-            return_({func, instr}, [v]);
+        get_local_i64: function (func, instr, index, v_low, v_high) {
+            local({func, instr}, "get", index, new Long(v_low, v_high));
         },
-        return_f64: function (func, instr, v) {
-            return_({func, instr}, [v]);
+        get_local_f32: function (func, instr, index, v) {
+            local({func, instr}, "get", index, v);
         },
-
-        // generated:
+        get_local_f64: function (func, instr, index, v) {
+            local({func, instr}, "get", index, v);
+        },
         i32_const: function (func, instr, v) {
             const_({func, instr}, v);
         },
@@ -607,4 +616,8 @@ function current_memory(location, currentSizePages) {
 
 function grow_memory(location, byPages, previousSizePages) {
     // console.log("grow_memory @", location, "delta (in pages):", byPages, "previous size (in pages):", previousSizePages);
+}
+
+function local(location, op, index, value) {
+    console.log(op, "local #", index, "@", location, ":", value);
 }
