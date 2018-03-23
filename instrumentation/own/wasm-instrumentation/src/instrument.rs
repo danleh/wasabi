@@ -86,32 +86,54 @@ fn add_hook_from_instr(module: &mut Module, instr: &Instr) -> (Discriminant<Inst
     }))
 }
 
+struct PolymorphicHookMap(HashMap<(Discriminant<Instr>, Vec<ValType>), Idx<Function>>);
+
+impl PolymorphicHookMap {
+    pub fn new() -> Self {
+        PolymorphicHookMap(HashMap::new())
+    }
+    pub fn add(&mut self, module: &mut Module, instr: Instr, tys: impl IntoIterator<Item = Vec<ValType>>) {
+        for tys in tys {
+            let hook_name = instr.to_instr_name() + "_" + &tys.iter().map(|ty| ty.to_string()).collect::<Vec<_>>().join("_");
+            let hook_idx = add_hook(module, hook_name, tys.as_slice());
+            self.0.insert(
+                (discriminant(&instr), tys.clone()),
+                hook_idx);
+        }
+    }
+    pub fn get_call(&self, instr: &Instr, tys: Vec<ValType>) -> Instr {
+        let error = format!("no hook was added for instruction {} with types {:?}", instr.to_instr_name(), tys);
+        Call(*self.0
+            .get(&(discriminant(instr), tys))
+            .expect(&error))
+    }
+}
+
 pub fn add_hooks(module: &mut Module) {
     /* add hooks (imported functions, provided by the analysis in JavaScript) */
     // polymorphic hooks:
     // - 1 instruction : N hooks
     // - instruction can take stack arguments/produce results of several types
     // - we need to "monomorphize", i.e., create one hook per occurring polymorphic type
+    let mut polymorphic_hooks = PolymorphicHookMap::new();
+
+    // returns
     let result_tys: HashSet<Vec<ValType>> = module.types().iter()
         .map(|function_ty| function_ty.1.clone())
         .collect();
-    let return_hooks: HashMap<Vec<ValType>, Idx<Function>> = result_tys.into_iter()
-        .map(|return_ty| {
-            let hook_idx = add_hook(
-                module,
-                "return_".to_string() + &return_ty.iter().map(|ty| ty.to_string()).collect::<Vec<_>>().join("_"),
-                return_ty.as_slice());
-            (return_ty, hook_idx)
-        })
-        .collect();
+    polymorphic_hooks.add(module, Return, result_tys);
 
-    let current_memory_hook = add_hook(module, "current_memory", &[I32]);
-    let grow_memory_hook = add_hook(module, "grow_memory", &[I32, I32]);
+    // calls
 
     // monomorphic hooks:
     // - 1 hook : 1 instruction
     // - argument/result types are directly determined from the instruction itself
-    let hook_call = {
+    let current_memory_hook = add_hook(module, "current_memory", &[I32]);
+    let grow_memory_hook = add_hook(module, "grow_memory", &[I32, I32]);
+
+//    let get_local_hook = add_hook(module, "get_local", )
+
+    let monomorphic_hook_call = {
         let monomorphic_hooks: HashMap<Discriminant<Instr>, Idx<Function>> = [
             I32Const(0),
             I64Const(0),
@@ -220,7 +242,7 @@ pub fn add_hooks(module: &mut Module) {
                                 instrumented_return.push(SetLocal(dup_tmp));
                             }
                             // and restore (saving has removed them from the stack)
-                            for &dup_tmp in result_duplicate_tmps.iter() {
+                            for &dup_tmp in result_duplicate_tmps.iter().rev() {
                                 instrumented_return.push(GetLocal(dup_tmp));
                             }
 
@@ -235,7 +257,7 @@ pub fn add_hooks(module: &mut Module) {
                             }
 
                             instrumented_return.extend_from_slice(&[
-                                Call(*return_hooks.get(result_tys).unwrap()),
+                                polymorphic_hooks.get_call(&Return, result_tys.to_vec()),
                                 Return,
                             ]);
                             instrumented_return
@@ -247,7 +269,7 @@ pub fn add_hooks(module: &mut Module) {
                             ];
                             instrs.append(&mut convert_i64_instr(instr.clone(), ty));
                             instrs.extend_from_slice(&[
-                                hook_call(&instr),
+                                monomorphic_hook_call(&instr),
                                 instr,
                             ]);
                             instrs
@@ -271,7 +293,7 @@ pub fn add_hooks(module: &mut Module) {
                             instrs.append(&mut convert_i64_instr(GetLocal(input_tmp), input_ty));
                             instrs.append(&mut convert_i64_instr(GetLocal(result_tmp), result_ty));
                             instrs.extend_from_slice(&[
-                                hook_call(&instr),
+                                monomorphic_hook_call(&instr),
                                 // restore result after hook call
                                 GetLocal(result_tmp),
                             ]);
@@ -299,7 +321,7 @@ pub fn add_hooks(module: &mut Module) {
                             instrs.append(&mut convert_i64_instr(GetLocal(second_tmp), second_ty));
                             instrs.append(&mut convert_i64_instr(GetLocal(result_tmp), result_ty));
                             instrs.extend_from_slice(&[
-                                hook_call(&instr),
+                                monomorphic_hook_call(&instr),
                                 // restore result after hook call
                                 GetLocal(result_tmp),
                             ]);
@@ -325,7 +347,7 @@ pub fn add_hooks(module: &mut Module) {
                             ];
                             instrs.append(&mut convert_i64_instr(GetLocal(value_tmp), ty));
                             instrs.extend_from_slice(&[
-                                hook_call(&instr),
+                                monomorphic_hook_call(&instr),
                                 // restore result after hook call
                                 GetLocal(value_tmp),
                             ]);
@@ -350,11 +372,9 @@ pub fn add_hooks(module: &mut Module) {
                                 I32Const(memarg.alignment as i32),
                             ];
                             instrs.append(&mut convert_i64_instr(GetLocal(value_tmp), ty));
-                            instrs.push(hook_call(&instr));
+                            instrs.push(monomorphic_hook_call(&instr));
                             instrs
                         }
-                        // TODO CurrentMemory
-                        // TODO GrowMemory
                         // TODO Begin(Function | Block | If | Else)
                         // TODO End(Function | Block | If | Else) (needs stack of open blocks to match with begin)
                         // TODO Get, Set, Tee Local|Global

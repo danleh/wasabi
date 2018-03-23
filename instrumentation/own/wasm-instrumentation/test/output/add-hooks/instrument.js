@@ -594,17 +594,17 @@ function binary(location, op, first, second, result) {
 }
 
 function load(location, op, memarg, value) {
-    console.log(op, "@", location, value, "from", memarg);
+    // console.log(op, "@", location, value, "from", memarg);
 }
 
 function store(location, op, memarg, value) {
-    console.log(op, "@", location, value, "to", memarg);
+    // console.log(op, "@", location, value, "to", memarg);
 }
 
 function current_memory(location, currentSizePages) {
-    console.log("current_memory @", location, "size (in pages):", currentSizePages);
+    // console.log("current_memory @", location, "size (in pages):", currentSizePages);
 }
 
 function grow_memory(location, byPages, previousSizePages) {
-    console.log("grow_memory @", location, "delta (in pages):", byPages, "previous size (in pages):", previousSizePages);
+    // console.log("grow_memory @", location, "delta (in pages):", byPages, "previous size (in pages):", previousSizePages);
 }
