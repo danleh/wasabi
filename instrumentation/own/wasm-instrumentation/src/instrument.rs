@@ -142,11 +142,16 @@ pub fn add_hooks(module: &mut Module) {
 
     // calls
 
+
     // monomorphic hooks:
     // - 1 hook : 1 instruction
     // - argument/result types are directly determined from the instruction itself
     let current_memory_hook = add_hook(module, "current_memory", &[I32]);
     let grow_memory_hook = add_hook(module, "grow_memory", &[I32, I32]);
+    // drop and select are polymorphic (even "worse" than return and call), we need to type the
+    // stack in order to find out the argument types -> FIXME for now just ignore the values
+    let drop_hook = add_hook(module, "drop", &[]);
+    let select_hook = add_hook(module, "select", &[I32]);
 
     // TODO make this a struct of its own, similar to PolymorphicHookMap
     let monomorphic_hook_call = {
@@ -244,6 +249,23 @@ pub fn add_hooks(module: &mut Module) {
                                 GetLocal(input_tmp),
                                 GetLocal(result_tmp),
                                 Call(grow_memory_hook)
+                            ]
+                        }
+                        (_, Drop) => vec![
+                            instr,
+                            location.0,
+                            location.1,
+                            Call(drop_hook),
+                        ],
+                        (_, Select) => {
+                            let cond_tmp = fresh_local(locals, function_type, I32);
+                            vec![
+                                TeeLocal(cond_tmp),
+                                instr,
+                                location.0,
+                                location.1,
+                                GetLocal(cond_tmp),
+                                Call(select_hook),
                             ]
                         }
                         (_, GetLocal(local_idx)) | (_, SetLocal(local_idx)) | (_, TeeLocal(local_idx)) => {
