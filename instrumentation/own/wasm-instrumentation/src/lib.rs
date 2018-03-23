@@ -21,6 +21,7 @@ mod leb128;
 mod ast;
 mod binary;
 mod instrument;
+mod js_codegen;
 #[cfg(test)]
 mod tests;
 

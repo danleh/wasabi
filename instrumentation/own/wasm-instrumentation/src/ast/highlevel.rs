@@ -385,7 +385,6 @@ impl Instr {
             F32Const(_) => Const(F32),
             F64Const(_) => Const(F64),
 
-
             /* Unary */
 
             I32Eqz => Unary { input_ty: I32, result_ty: I32 },
@@ -414,7 +413,6 @@ impl Instr {
             I64ReinterpretF64 => Unary { input_ty: F64, result_ty: I64 },
             F32ReinterpretI32 => Unary { input_ty: I32, result_ty: F32 },
             F64ReinterpretI64 => Unary { input_ty: I64, result_ty: F64 },
-
 
             /* Binary */
 
@@ -464,6 +462,7 @@ impl Instr {
 
     pub fn to_instr_name(&self) -> String {
         let mut s = String::new();
+        // use fmt::Debug implementation to get String repr of enum variant
         write!(&mut s, "{:?}", self).unwrap();
         let mut result = String::new();
         let mut last_char = ' ';
@@ -481,63 +480,5 @@ impl Instr {
             result.push_str(&c.to_ascii_lowercase().to_string());
         }
         result
-    }
-
-    /// "generate" quick and dirty the low-level JavaScript hook function from an instruction
-    pub fn to_js_hook(&self) -> String {
-        fn arg(name: &str, ty: ValType) -> String {
-            match ty {
-                I64 => name.to_string() + "_low, " + name + "_high",
-                _ => name.to_string()
-            }
-        }
-        fn long(name: &str, ty: ValType) -> String {
-            match ty {
-                I64 => format!("new Long({})", arg(name, ty)),
-                _ => name.to_string()
-            }
-        }
-        match (self.group(), self, self.to_instr_name()) {
-            (InstrGroup::Const(ty), instr, instr_str) => format!(
-                "{}: function (func, instr, {}) {{
-    const_({{func, instr}}, {});
-}},",
-                instr_str,
-                arg("v", ty), long("v", ty)
-            ),
-            (InstrGroup::Unary { input_ty, result_ty }, instr, instr_str) => format!(
-                "{}: function (func, instr, {}, {}) {{
-    unary({{func, instr}}, \"{}\", {}, {});
-}},",
-                instr_str,
-                arg("input", input_ty), arg("result", result_ty),
-                instr_str,
-                long("input", input_ty), long("result", result_ty)),
-            (InstrGroup::Binary { first_ty, second_ty, result_ty }, instr, instr_str) => format!(
-                "{}: function (func, instr, {}, {}, {}) {{
-    binary({{func, instr}}, \"{}\", {}, {}, {});
-}},",
-                instr_str,
-                arg("first", first_ty), arg("second", second_ty), arg("result", result_ty),
-                instr_str,
-                long("first", first_ty), long("second", second_ty), long("result", result_ty)),
-            (InstrGroup::MemoryLoad(ty, _), instr, instr_str) => format!(
-                "{}: function (func, instr, addr, offset, align, {}) {{
-    load({{func, instr}}, \"{}\", {{addr, offset, align}}, {});
-}},",
-                instr_str,
-                arg("v", ty),
-                instr_str,
-                long("v", ty)),
-            (InstrGroup::MemoryStore(ty, _), instr, instr_str) => format!(
-                "{}: function (func, instr, addr, offset, align, {}) {{
-    store({{func, instr}}, \"{}\", {{addr, offset, align}}, {});
-}},",
-                instr_str,
-                arg("v", ty),
-                instr_str,
-                long("v", ty)),
-            (_, _, instr) => unimplemented!("cannot generate JS hook code for instruction {}", instr)
-        }
     }
 }
