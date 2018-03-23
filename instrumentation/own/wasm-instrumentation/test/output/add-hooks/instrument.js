@@ -3,6 +3,12 @@ const oldInstantiate = WebAssembly.instantiate;
 WebAssembly.instantiate = function () {
     let importsObject = arguments[1] || {};
     importsObject.hooks = {
+        nop: function (func, instr) {
+            nop({func, instr});
+        },
+        unreachable: function (func, instr) {
+            unreachable({func, instr});
+        },
         drop: function (func, instr) {
             drop({func, instr});
         },
@@ -632,6 +638,14 @@ WebAssembly.instantiate = function () {
 
 // your instrumentation goes here...
 // const coverageData = [];
+
+function nop(location) {
+    console.log("nop @", location);
+}
+
+function unreachable(location) {
+    console.log("unreachable @", location);
+}
 
 function drop(location) {
     console.log("drop @", location);

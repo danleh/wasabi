@@ -146,12 +146,16 @@ pub fn add_hooks(module: &mut Module) {
     // monomorphic hooks:
     // - 1 hook : 1 instruction
     // - argument/result types are directly determined from the instruction itself
-    let current_memory_hook = add_hook(module, "current_memory", &[I32]);
-    let grow_memory_hook = add_hook(module, "grow_memory", &[I32, I32]);
+    let nop_hook = add_hook(module, "nop", &[]);
+    let unreachable_hook = add_hook(module, "unreachable", &[]);
+
     // drop and select are polymorphic (even "worse" than return and call), we need to type the
     // stack in order to find out the argument types -> FIXME for now just ignore the values
     let drop_hook = add_hook(module, "drop", &[]);
     let select_hook = add_hook(module, "select", &[I32]);
+
+    let current_memory_hook = add_hook(module, "current_memory", &[I32]);
+    let grow_memory_hook = add_hook(module, "grow_memory", &[I32, I32]);
 
     // TODO make this a struct of its own, similar to PolymorphicHookMap
     let monomorphic_hook_call = {
@@ -226,6 +230,35 @@ pub fn add_hooks(module: &mut Module) {
                 .flat_map(|(iidx, instr)| {
                     let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
                     match (instr.group(), instr.clone()) {
+                        (_, Nop) => vec![
+                            instr,
+                            location.0,
+                            location.1,
+                            Call(nop_hook),
+                        ],
+                        (_, Unreachable) => vec![
+                            instr,
+                            location.0,
+                            location.1,
+                            Call(unreachable_hook),
+                        ],
+                        (_, Drop) => vec![
+                            instr,
+                            location.0,
+                            location.1,
+                            Call(drop_hook),
+                        ],
+                        (_, Select) => {
+                            let cond_tmp = fresh_local(locals, function_type, I32);
+                            vec![
+                                TeeLocal(cond_tmp),
+                                instr,
+                                location.0,
+                                location.1,
+                                GetLocal(cond_tmp),
+                                Call(select_hook),
+                            ]
+                        }
                         (_, CurrentMemory(_ /* TODO memory idx == 0 in WASM version 1 */)) => {
                             let result_tmp = fresh_local(locals, function_type, I32);
                             vec![
@@ -249,23 +282,6 @@ pub fn add_hooks(module: &mut Module) {
                                 GetLocal(input_tmp),
                                 GetLocal(result_tmp),
                                 Call(grow_memory_hook)
-                            ]
-                        }
-                        (_, Drop) => vec![
-                            instr,
-                            location.0,
-                            location.1,
-                            Call(drop_hook),
-                        ],
-                        (_, Select) => {
-                            let cond_tmp = fresh_local(locals, function_type, I32);
-                            vec![
-                                TeeLocal(cond_tmp),
-                                instr,
-                                location.0,
-                                location.1,
-                                GetLocal(cond_tmp),
-                                Call(select_hook),
                             ]
                         }
                         (_, GetLocal(local_idx)) | (_, SetLocal(local_idx)) | (_, TeeLocal(local_idx)) => {
