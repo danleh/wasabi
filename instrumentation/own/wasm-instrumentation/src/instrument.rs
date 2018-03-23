@@ -80,8 +80,8 @@ fn add_hook_from_instr(module: &mut Module, instr: &Instr) -> (Discriminant<Inst
         Unary { input_ty, result_ty } => vec![input_ty, result_ty],
         Binary { first_ty, second_ty, result_ty } => vec![first_ty, second_ty, result_ty],
         // for address, offset and alignment
-        MemoryLoad(ty) => vec![I32, I32, I32, ty],
-        MemoryStore(ty) => vec![I32, I32, I32, ty],
+        MemoryLoad(ty, _) => vec![I32, I32, I32, ty],
+        MemoryStore(ty, _) => vec![I32, I32, I32, ty],
         Other => unreachable!("function should be only called for \"grouped\" instructions"),
     }))
 }
@@ -305,9 +305,7 @@ pub fn add_hooks(module: &mut Module) {
                             ]);
                             instrs
                         }
-                        (MemoryLoad(ty), instr) => {
-                            let memarg = instr.memarg().expect("memory instruction without memarg!?");
-
+                        (MemoryLoad(ty, memarg), instr) => {
                             // duplicate stack arguments
                             let addr_tmp = fresh_local(locals, function_type, I32);
                             let value_tmp = fresh_local(locals, function_type, ty);
@@ -333,9 +331,7 @@ pub fn add_hooks(module: &mut Module) {
                             ]);
                             instrs
                         }
-                        (MemoryStore(ty), instr) => {
-                            let memarg = instr.memarg().expect("memory instruction without memarg!?");
-
+                        (MemoryStore(ty, memarg), instr) => {
                             // duplicate stack arguments
                             let addr_tmp = fresh_local(locals, function_type, I32);
                             let value_tmp = fresh_local(locals, function_type, ty);

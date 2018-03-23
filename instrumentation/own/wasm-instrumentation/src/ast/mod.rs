@@ -116,7 +116,7 @@ pub struct Label;
 
 /* Code */
 
-#[derive(WasmBinary, Debug, Copy, Clone, Default)]
+#[derive(WasmBinary, Debug, Copy, Clone, Default, Eq, PartialEq, Hash)]
 pub struct Memarg {
     pub alignment: u32,
     pub offset: u32,

@@ -369,46 +369,12 @@ pub enum InstrGroup {
         second_ty: ValType,
         result_ty: ValType,
     },
-    MemoryLoad(ValType),
-    MemoryStore(ValType),
+    MemoryLoad(ValType, Memarg),
+    MemoryStore(ValType, Memarg),
     Other,
 }
 
 impl Instr {
-    pub fn memarg(&self) -> Option<Memarg> {
-        use self::Instr::*;
-        match *self {
-            I32Load(memarg) => Some(memarg),
-            I64Load(memarg) => Some(memarg),
-            F32Load(memarg) => Some(memarg),
-            F64Load(memarg) => Some(memarg),
-
-            I32Load8S(memarg) => Some(memarg),
-            I32Load8U(memarg) => Some(memarg),
-            I32Load16S(memarg) => Some(memarg),
-            I32Load16U(memarg) => Some(memarg),
-            I64Load8S(memarg) => Some(memarg),
-            I64Load8U(memarg) => Some(memarg),
-            I64Load16S(memarg) => Some(memarg),
-            I64Load16U(memarg) => Some(memarg),
-            I64Load32S(memarg) => Some(memarg),
-            I64Load32U(memarg) => Some(memarg),
-
-            I32Store(memarg) => Some(memarg),
-            I64Store(memarg) => Some(memarg),
-            F32Store(memarg) => Some(memarg),
-            F64Store(memarg) => Some(memarg),
-
-            I32Store8(memarg) => Some(memarg),
-            I32Store16(memarg) => Some(memarg),
-            I64Store8(memarg) => Some(memarg),
-            I64Store16(memarg) => Some(memarg),
-            I64Store32(memarg) => Some(memarg),
-
-            _ => None
-        }
-    }
-
     pub fn group(&self) -> InstrGroup {
         use self::{Instr::*, InstrGroup::*};
         match *self {
@@ -465,15 +431,32 @@ impl Instr {
 
             /* Memory */
 
-            I32Load(_) | I32Load8S(_) | I32Load8U(_) | I32Load16S(_) | I32Load16U(_) => MemoryLoad(I32),
-            I64Load(_) | I64Load8S(_) | I64Load8U(_) | I64Load16S(_) | I64Load16U(_) | I64Load32S(_) | I64Load32U(_) => MemoryLoad(I64),
-            F32Load(_) => MemoryLoad(F32),
-            F64Load(_) => MemoryLoad(F64),
+            I32Load(memarg) => MemoryLoad(I32, memarg),
+            I64Load(memarg) => MemoryLoad(I64, memarg),
+            F32Load(memarg) => MemoryLoad(F32, memarg),
+            F64Load(memarg) => MemoryLoad(F64, memarg),
 
-            I32Store(_) | I32Store8(_) | I32Store16(_) => MemoryStore(I32),
-            I64Store(_) | I64Store8(_) | I64Store16(_) | I64Store32(_) => MemoryStore(I64),
-            F32Store(_) => MemoryStore(F32),
-            F64Store(_) => MemoryStore(F64),
+            I32Load8S(memarg) => MemoryLoad(I32, memarg),
+            I32Load8U(memarg) => MemoryLoad(I32, memarg),
+            I32Load16S(memarg) => MemoryLoad(I32, memarg),
+            I32Load16U(memarg) => MemoryLoad(I32, memarg),
+            I64Load8S(memarg) => MemoryLoad(I64, memarg),
+            I64Load8U(memarg) => MemoryLoad(I64, memarg),
+            I64Load16S(memarg) => MemoryLoad(I64, memarg),
+            I64Load16U(memarg) => MemoryLoad(I64, memarg),
+            I64Load32S(memarg) => MemoryLoad(I64, memarg),
+            I64Load32U(memarg) => MemoryLoad(I64, memarg),
+
+            I32Store(memarg) => MemoryStore(I32, memarg),
+            I64Store(memarg) => MemoryStore(I64, memarg),
+            F32Store(memarg) => MemoryStore(F32, memarg),
+            F64Store(memarg) => MemoryStore(F64, memarg),
+
+            I32Store8(memarg) => MemoryStore(I32, memarg),
+            I32Store16(memarg) => MemoryStore(I32, memarg),
+            I64Store8(memarg) => MemoryStore(I64, memarg),
+            I64Store16(memarg) => MemoryStore(I64, memarg),
+            I64Store32(memarg) => MemoryStore(I64, memarg),
 
             _ => Other,
         }
@@ -538,7 +521,7 @@ impl Instr {
                 arg("first", first_ty), arg("second", second_ty), arg("result", result_ty),
                 instr_str,
                 long("first", first_ty), long("second", second_ty), long("result", result_ty)),
-            (InstrGroup::MemoryLoad(ty), instr, instr_str) => format!(
+            (InstrGroup::MemoryLoad(ty, _), instr, instr_str) => format!(
                 "{}: function (func, instr, addr, offset, align, {}) {{
     load({{func, instr}}, \"{}\", {{addr, offset, align}}, {});
 }},",
@@ -546,7 +529,7 @@ impl Instr {
                 arg("v", ty),
                 instr_str,
                 long("v", ty)),
-            (InstrGroup::MemoryStore(ty), instr, instr_str) => format!(
+            (InstrGroup::MemoryStore(ty, _), instr, instr_str) => format!(
                 "{}: function (func, instr, addr, offset, align, {}) {{
     store({{func, instr}}, \"{}\", {{addr, offset, align}}, {});
 }},",
