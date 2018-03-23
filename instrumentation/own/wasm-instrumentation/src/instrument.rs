@@ -105,6 +105,9 @@ pub fn add_hooks(module: &mut Module) {
         })
         .collect();
 
+    let current_memory_hook = add_hook(module, "current_memory", &[I32]);
+    let grow_memory_hook = add_hook(module, "grow_memory", &[I32, I32]);
+
     // monomorphic hooks:
     // - 1 hook : 1 instruction
     // - argument/result types are directly determined from the instruction itself
@@ -180,6 +183,31 @@ pub fn add_hooks(module: &mut Module) {
                 .flat_map(|(iidx, instr)| {
                     let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
                     match (instr.group(), instr) {
+                        (_, instr @ CurrentMemory(_ /* TODO memory idx == 0 in WASM version 1 */)) => {
+                            let result_tmp = fresh_local(locals, function_type, I32);
+                            vec![
+                                instr,
+                                TeeLocal(result_tmp),
+                                location.0,
+                                location.1,
+                                GetLocal(result_tmp),
+                                Call(current_memory_hook)
+                            ]
+                        }
+                        (_, instr @ GrowMemory(_ /* TODO memory idx == 0 in WASM version 1 */)) => {
+                            let input_tmp = fresh_local(locals, function_type, I32);
+                            let result_tmp = fresh_local(locals, function_type, I32);
+                            vec![
+                                TeeLocal(input_tmp),
+                                instr,
+                                TeeLocal(result_tmp),
+                                location.0,
+                                location.1,
+                                GetLocal(input_tmp),
+                                GetLocal(result_tmp),
+                                Call(grow_memory_hook)
+                            ]
+                        }
                         (_, Return) => {
                             let result_duplicate_tmps: Vec<_> = result_tys.iter()
                                 .map(|result_ty| fresh_local(locals, function_type, *result_ty))
@@ -329,6 +357,11 @@ pub fn add_hooks(module: &mut Module) {
                             instrs.push(hook_call(&instr));
                             instrs
                         }
+                        // TODO CurrentMemory
+                        // TODO GrowMemory
+                        // TODO Begin(Function | Block | If | Else)
+                        // TODO End(Function | Block | If | Else) (needs stack of open blocks to match with begin)
+                        // TODO Get, Set, Tee Local|Global
                         (_, instr) => vec![instr],
                     }
                 })

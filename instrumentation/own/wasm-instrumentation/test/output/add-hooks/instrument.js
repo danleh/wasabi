@@ -3,6 +3,13 @@ const oldInstantiate = WebAssembly.instantiate;
 WebAssembly.instantiate = function () {
     let importsObject = arguments[1] || {};
     importsObject.hooks = {
+        current_memory: function (func, instr, currentSizePages) {
+            current_memory({func, instr}, currentSizePages);
+        },
+        grow_memory: function (func, instr, byPages, previousSizePages) {
+            grow_memory({func, instr}, byPages, previousSizePages);
+        },
+
         return_: function (func, instr) {
             return_({func, instr}, []);
         },
@@ -210,28 +217,52 @@ WebAssembly.instantiate = function () {
             binary({func, instr}, "i64_ne", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_lt_s: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({func, instr}, "i64_lt_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({
+                func,
+                instr
+            }, "i64_lt_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_lt_u: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({func, instr}, "i64_lt_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({
+                func,
+                instr
+            }, "i64_lt_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_gt_s: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({func, instr}, "i64_gt_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({
+                func,
+                instr
+            }, "i64_gt_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_gt_u: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({func, instr}, "i64_gt_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({
+                func,
+                instr
+            }, "i64_gt_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_le_s: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({func, instr}, "i64_le_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({
+                func,
+                instr
+            }, "i64_le_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_le_u: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({func, instr}, "i64_le_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({
+                func,
+                instr
+            }, "i64_le_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_ge_s: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({func, instr}, "i64_ge_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({
+                func,
+                instr
+            }, "i64_ge_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         i64_ge_u: function (func, instr, first_low, first_high, second_low, second_high, result) {
-            binary({func, instr}, "i64_ge_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
+            binary({
+                func,
+                instr
+            }, "i64_ge_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
         },
         f32_eq: function (func, instr, first, second, result) {
             binary({func, instr}, "f32_eq", first, second, result);
@@ -315,49 +346,94 @@ WebAssembly.instantiate = function () {
             binary({func, instr}, "i32_rotr", first, second, result);
         },
         i64_add: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({func, instr}, "i64_add", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({
+                func,
+                instr
+            }, "i64_add", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_sub: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({func, instr}, "i64_sub", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({
+                func,
+                instr
+            }, "i64_sub", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_mul: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({func, instr}, "i64_mul", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({
+                func,
+                instr
+            }, "i64_mul", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_div_s: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({func, instr}, "i64_div_s", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({
+                func,
+                instr
+            }, "i64_div_s", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_div_u: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({func, instr}, "i64_div_u", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({
+                func,
+                instr
+            }, "i64_div_u", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_rem_s: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({func, instr}, "i64_rem_s", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({
+                func,
+                instr
+            }, "i64_rem_s", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_rem_u: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({func, instr}, "i64_rem_u", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({
+                func,
+                instr
+            }, "i64_rem_u", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_and: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({func, instr}, "i64_and", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({
+                func,
+                instr
+            }, "i64_and", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_or: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({func, instr}, "i64_or", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({
+                func,
+                instr
+            }, "i64_or", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_xor: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({func, instr}, "i64_xor", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({
+                func,
+                instr
+            }, "i64_xor", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_shl: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({func, instr}, "i64_shl", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({
+                func,
+                instr
+            }, "i64_shl", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_shr_s: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({func, instr}, "i64_shr_s", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({
+                func,
+                instr
+            }, "i64_shr_s", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_shr_u: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({func, instr}, "i64_shr_u", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({
+                func,
+                instr
+            }, "i64_shr_u", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_rotl: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({func, instr}, "i64_rotl", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({
+                func,
+                instr
+            }, "i64_rotl", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         i64_rotr: function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-            binary({func, instr}, "i64_rotr", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
+            binary({
+                func,
+                instr
+            }, "i64_rotr", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
         },
         f32_add: function (func, instr, first, second, result) {
             binary({func, instr}, "f32_add", first, second, result);
@@ -510,11 +586,11 @@ function const_(location, value) {
 }
 
 function unary(location, op, input, result) {
-    console.log(op, "@", location, ":", input, "->", result);
+    // console.log(op, "@", location, ":", input, "->", result);
 }
 
 function binary(location, op, first, second, result) {
-    console.log(op, "@", location, ":", first, ",", second, "->", result);
+    // console.log(op, "@", location, ":", first, ",", second, "->", result);
 }
 
 function load(location, op, memarg, value) {
@@ -525,3 +601,10 @@ function store(location, op, memarg, value) {
     console.log(op, "@", location, value, "to", memarg);
 }
 
+function current_memory(location, currentSizePages) {
+    console.log("current_memory @", location, "size (in pages):", currentSizePages);
+}
+
+function grow_memory(location, byPages, previousSizePages) {
+    console.log("grow_memory @", location, "delta (in pages):", byPages, "previous size (in pages):", previousSizePages);
+}
