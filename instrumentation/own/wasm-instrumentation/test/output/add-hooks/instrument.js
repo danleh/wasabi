@@ -1,4 +1,8 @@
 // low-level stuff, TODO auto-generated from WASM module to-instrument
+let resolveTableIdx = function (i) {
+    throw "internal error! the monkey-patched WebAssembly.instantiate should have replaced this function with WebAssembly.Instance.Table.get(i)"
+}
+
 const oldInstantiate = WebAssembly.instantiate;
 WebAssembly.instantiate = function () {
     let importsObject = arguments[1] || {};
@@ -96,37 +100,70 @@ WebAssembly.instantiate = function () {
             global({func, instr}, "set", index, v);
         },
         call_: function (func, instr, targetFunc) {
-            call_({func, instr}, targetFunc, []);
+            call_({func, instr}, targetFunc, false, []);
         },
         call_i32: function (func, instr, targetFunc, arg0) {
-            call_({func, instr}, targetFunc, [arg0]);
+            call_({func, instr}, targetFunc, false, [arg0]);
         },
         call_i32_i32: function (func, instr, targetFunc, arg0, arg1) {
-            call_({func, instr}, targetFunc, [arg0, arg1]);
+            call_({func, instr}, targetFunc, false, [arg0, arg1]);
         },
         call_i32_i32_i32: function (func, instr, targetFunc, arg0, arg1, arg2) {
-            call_({func, instr}, targetFunc, [arg0, arg1, arg2]);
+            call_({func, instr}, targetFunc, false, [arg0, arg1, arg2]);
         },
         call_i32_i32_i32_i32: function (func, instr, targetFunc, arg0, arg1, arg2, arg3) {
-            call_({func, instr}, targetFunc, [arg0, arg1, arg2, arg3]);
+            call_({func, instr}, targetFunc, false, [arg0, arg1, arg2, arg3]);
         },
         call_i32_i32_i32_i32_i32: function (func, instr, targetFunc, arg0, arg1, arg2, arg3, arg4) {
-            call_({func, instr}, targetFunc, [arg0, arg1, arg2, arg3, arg4]);
+            call_({func, instr}, targetFunc, false, [arg0, arg1, arg2, arg3, arg4]);
         },
         call_i32_f64_i32_i32_i32_i32: function (func, instr, targetFunc, arg0, arg1, arg2, arg3, arg4, arg5) {
-            call_({func, instr}, targetFunc, [arg0, arg1, arg2, arg3, arg4, arg5]);
+            call_({func, instr}, targetFunc, false, [arg0, arg1, arg2, arg3, arg4, arg5]);
         },
         call_i64_i32: function (func, instr, targetFunc, arg0_low, arg0_high, arg1) {
-            call_({func, instr}, targetFunc, [new Long(arg0_low, arg0_high), arg1]);
+            call_({func, instr}, targetFunc, false, [new Long(arg0_low, arg0_high), arg1]);
         },
         call_i64_i32_i32: function (func, instr, targetFunc, arg0_low, arg0_high, arg1, arg2) {
-            call_({func, instr}, targetFunc, [new Long(arg0_low, arg0_high), arg1, arg2]);
+            call_({func, instr}, targetFunc, false, [new Long(arg0_low, arg0_high), arg1, arg2]);
         },
         call_f64: function (func, instr, targetFunc, arg0) {
-            call_({func, instr}, targetFunc, [arg0]);
+            call_({func, instr}, targetFunc, false, [arg0]);
         },
         call_f64_i32: function (func, instr, targetFunc, arg0, arg1) {
-            call_({func, instr}, targetFunc, [arg0, arg1]);
+            call_({func, instr}, targetFunc, false, [arg0, arg1]);
+        },
+        call_indirect_: function (func, instr, targetTableIdx) {
+            call_({func, instr}, resolveTableIdx(targetTableIdx), true, []);
+        },
+        call_indirect_i32: function (func, instr, targetTableIdx, arg0) {
+            call_({func, instr}, resolveTableIdx(targetTableIdx), true, [arg0]);
+        },
+        call_indirect_i32_i32: function (func, instr, targetTableIdx, arg0, arg1) {
+            call_({func, instr}, resolveTableIdx(targetTableIdx), true, [arg0, arg1]);
+        },
+        call_indirect_i32_i32_i32: function (func, instr, targetTableIdx, arg0, arg1, arg2) {
+            call_({func, instr}, resolveTableIdx(targetTableIdx), true, [arg0, arg1, arg2]);
+        },
+        call_indirect_i32_i32_i32_i32: function (func, instr, targetTableIdx, arg0, arg1, arg2, arg3) {
+            call_({func, instr}, resolveTableIdx(targetTableIdx), true, [arg0, arg1, arg2, arg3]);
+        },
+        call_indirect_i32_i32_i32_i32_i32: function (func, instr, targetTableIdx, arg0, arg1, arg2, arg3, arg4) {
+            call_({func, instr}, resolveTableIdx(targetTableIdx), true, [arg0, arg1, arg2, arg3, arg4]);
+        },
+        call_indirect_i32_f64_i32_i32_i32_i32: function (func, instr, targetTableIdx, arg0, arg1, arg2, arg3, arg4, arg5) {
+            call_({func, instr}, resolveTableIdx(targetTableIdx), true, [arg0, arg1, arg2, arg3, arg4, arg5]);
+        },
+        call_indirect_i64_i32: function (func, instr, targetTableIdx, arg0_low, arg0_high, arg1) {
+            call_({func, instr}, resolveTableIdx(targetTableIdx), true, [new Long(arg0_low, arg0_high), arg1]);
+        },
+        call_indirect_i64_i32_i32: function (func, instr, targetTableIdx, arg0_low, arg0_high, arg1, arg2) {
+            call_({func, instr}, resolveTableIdx(targetTableIdx), true, [new Long(arg0_low, arg0_high), arg1, arg2]);
+        },
+        call_indirect_f64: function (func, instr, targetTableIdx, arg0) {
+            call_({func, instr}, resolveTableIdx(targetTableIdx), true, [arg0]);
+        },
+        call_indirect_f64_i32: function (func, instr, targetTableIdx, arg0, arg1) {
+            call_({func, instr}, resolveTableIdx(targetTableIdx), true, [arg0, arg1]);
         },
         i32_const: function (func, instr, v) {
             const_({func, instr}, v);
@@ -651,8 +688,16 @@ WebAssembly.instantiate = function () {
     console.log(importsObject);
 
     arguments[1] = importsObject;
-    return oldInstantiate.apply(this, arguments);
+    const result = oldInstantiate.apply(this, arguments);
+    result.then(result => {
+        // FIXME replace "table" by exported name if already exported before instrumentation
+        resolveTableIdx = tableIndex => parseInt(result.instance.exports["table"].get(tableIndex).name, 10);
+        console.log("found exported table, using this to resolve call_indirect targets...");
+    })
+    return result;
 };
+
+// TODO find out WebAssembly.Table API to retrieve stuff
 
 // const staticModuleInfo = {
 //     functions: [
@@ -688,8 +733,10 @@ function select(location, cond) {
     // console.log("select @", location, "condition:", cond);
 }
 
-function call_(location, targetFunc, args) {
-    console.log("call func #", targetFunc, "@", location, "with args:", args);
+function call_(location, targetFunc, indirect, args) {
+    if (!indirect)
+        return;
+    console.log("call", (indirect ? "(indirect)" : "(direct)"), "func #", targetFunc, "@", location, "with args:", args);
 }
 
 function return_(location, values) {

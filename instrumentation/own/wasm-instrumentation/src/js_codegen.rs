@@ -62,14 +62,21 @@ impl Instr {
 }},",
                               hook_name,
                               tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("result".to_string() + &i.to_string()), *ty))).collect::<String>(),
-                              tys.iter().enumerate().map(|(i, ty)| long(&("result".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(","),
+                              tys.iter().enumerate().map(|(i, ty)| long(&("result".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(", "),
             ),
             Call(_) => format!("{}: function(func, instr, targetFunc{}) {{
-    call_({{func, instr}}, targetFunc, [{}]);
+    call_({{func, instr}}, targetFunc, false, [{}]);
 }},",
-                              hook_name,
-                              tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("arg".to_string() + &i.to_string()), *ty))).collect::<String>(),
-                              tys.iter().enumerate().map(|(i, ty)| long(&("arg".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(","),
+                               hook_name,
+                               tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("arg".to_string() + &i.to_string()), *ty))).collect::<String>(),
+                               tys.iter().enumerate().map(|(i, ty)| long(&("arg".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(", "),
+            ),
+            CallIndirect(_, _) => format!("{}: function(func, instr, targetTableIdx{}) {{
+    call_({{func, instr}}, resolveTableIdx(targetTableIdx), true, [{}]);
+}},",
+                               hook_name,
+                               tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("arg".to_string() + &i.to_string()), *ty))).collect::<String>(),
+                               tys.iter().enumerate().map(|(i, ty)| long(&("arg".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(", "),
             ),
             GetLocal(_) => format!("{}: function(func, instr, index, {}) {{
     local({{func, instr}}, \"get\", index, {});
