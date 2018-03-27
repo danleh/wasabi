@@ -762,6 +762,10 @@ WebAssembly.instantiate = function () {
 // where type = "function" | "block" | "if" | "else"
 // and else fires both begin and end, where the end has begin_location pointing to the if
 
+function if_cond(location, type, value) {
+    console.log("condition @", location, "for", type, "=", )
+}
+
 function begin(location, type) {
     console.log("begin", type, "@", location);
 }
@@ -783,11 +787,11 @@ function drop(location) {
 }
 
 function select(location, cond) {
-    // console.log("select @", location, "condition:", cond);
+    // console.log("select @", location, "condition =", cond);
 }
 
 function call_(location, targetFunc, indirect, args) {
-    // console.log("call", (indirect ? "(indirect)" : "(direct)"), "func #", targetFunc, "@", location, "with args:", args);
+    // console.log("call", (indirect ? "(indirect)" : "(direct)"), "func #", targetFunc, "@", location, "args =", args);
 }
 
 function return_(location, values) {
@@ -801,19 +805,19 @@ function return_(location, values) {
 }
 
 function call_result_(location, values) {
-    // console.log("result from call @", location, ":", values);
+    // console.log("result from call @", location, "=", values);
 }
 
 function const_(location, value) {
-    // console.log("const @", location, ":", value);
+    // console.log("const @", location, "=", value);
 }
 
 function unary(location, op, input, result) {
-    // console.log(op, "@", location, ":", input, "->", result);
+    // console.log(op, "@", location, ":", input, "=", result);
 }
 
 function binary(location, op, first, second, result) {
-    // console.log(op, "@", location, ":", first, ",", second, "->", result);
+    // console.log(op, "@", location, ":", first, ",", second, "=", result);
 }
 
 function load(location, op, memarg, value) {
@@ -825,17 +829,17 @@ function store(location, op, memarg, value) {
 }
 
 function current_memory(location, currentSizePages) {
-    // console.log("current_memory @", location, "size (in pages):", currentSizePages);
+    // console.log("current_memory @", location, "size (in pages) =", currentSizePages);
 }
 
 function grow_memory(location, byPages, previousSizePages) {
-    // console.log("grow_memory @", location, "delta (in pages):", byPages, "previous size (in pages):", previousSizePages);
+    // console.log("grow_memory @", location, "delta (in pages) =", byPages, "previous size (in pages) =", previousSizePages);
 }
 
 function local(location, op, index, value) {
-    // console.log(op, "local #", index, "@", location, ":", value);
+    // console.log(op, "local #", index, "@", location, "=", value);
 }
 
 function global(location, op, index, value) {
-    // console.log(op, "global #", index, "@", location, ":", value);
+    // console.log(op, "global #", index, "@", location, "=", value);
 }
