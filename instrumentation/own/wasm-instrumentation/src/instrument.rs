@@ -161,7 +161,7 @@ pub fn add_hooks(module: &mut Module) {
     polymorphic_hooks.add(module, SetGlobal(0.into()), &[I32], &[vec![I32], vec![I64], vec![F32], vec![F64]]);
 
     // calls
-    polymorphic_hooks.add(module, Call(0.into()), &[I32], call_arg_tys.as_slice());
+    polymorphic_hooks.add(module, CallIndirect(FunctionType(vec![], vec![]), 0.into()), &[I32], unique_call_arg_tys.as_slice()); // I32 = target table idx
     // TODO indirect calls
     // TODO call post hook
 
