@@ -30,14 +30,26 @@ WebAssembly.instantiate = function () {
         return_: function (func, instr) {
             return_({func, instr}, []);
         },
+        call_result_: function (func, instr) {
+            call_result_({func, instr}, []);
+        },
         return_i32: function (func, instr, result0) {
             return_({func, instr}, [result0]);
+        },
+        call_result_i32: function (func, instr, result0) {
+            call_result_({func, instr}, [result0]);
         },
         return_i64: function (func, instr, result0_low, result0_high) {
             return_({func, instr}, [new Long(result0_low, result0_high)]);
         },
+        call_result_i64: function (func, instr, result0_low, result0_high) {
+            call_result_({func, instr}, [new Long(result0_low, result0_high)]);
+        },
         return_f64: function (func, instr, result0) {
             return_({func, instr}, [result0]);
+        },
+        call_result_f64: function (func, instr, result0) {
+            call_result_({func, instr}, [result0]);
         },
         get_local_i32: function (func, instr, index, v) {
             local({func, instr}, "get", index, v);

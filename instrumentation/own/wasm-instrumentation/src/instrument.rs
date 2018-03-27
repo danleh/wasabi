@@ -31,10 +31,16 @@ use std::mem::{discriminant, Discriminant};
 /// We don't take whole function, but only locals and function_ty since the code itself is not
 /// touched (and we would get some errors with borrowck otherwise).
 /// function_ty is necessary since locals are indexed together with function parameters
-fn fresh_local(locals: &mut Vec<ValType>, function_ty: &FunctionType, type_: ValType) -> Idx<Local> {
+fn add_fresh_local(locals: &mut Vec<ValType>, function_ty: &FunctionType, type_: ValType) -> Idx<Local> {
     let idx = locals.len() + function_ty.0.len();
     locals.push(type_);
     idx.into()
+}
+
+fn add_fresh_locals(locals: &mut Vec<ValType>, function_ty: &FunctionType, tys: &[ValType]) -> Vec<Idx<Local>> {
+    tys.iter()
+        .map(|ty| add_fresh_local(locals, function_ty, *ty))
+        .collect()
 }
 
 fn local_ty(locals: &[ValType], function_ty: &FunctionType, idx: Idx<Local>) -> ValType {
@@ -305,7 +311,7 @@ pub fn add_hooks(module: &mut Module) {
                             Call(drop_hook),
                         ],
                         (_, Select) => {
-                            let cond_tmp = fresh_local(locals, function_type, I32);
+                            let cond_tmp = add_fresh_local(locals, function_type, I32);
                             vec![
                                 TeeLocal(cond_tmp),
                                 instr,
@@ -316,7 +322,7 @@ pub fn add_hooks(module: &mut Module) {
                             ]
                         }
                         (_, CurrentMemory(_ /* TODO memory idx == 0 in WASM version 1 */)) => {
-                            let result_tmp = fresh_local(locals, function_type, I32);
+                            let result_tmp = add_fresh_local(locals, function_type, I32);
                             vec![
                                 instr,
                                 TeeLocal(result_tmp),
@@ -327,8 +333,8 @@ pub fn add_hooks(module: &mut Module) {
                             ]
                         }
                         (_, GrowMemory(_ /* TODO memory idx == 0 in WASM version 1 */)) => {
-                            let input_tmp = fresh_local(locals, function_type, I32);
-                            let result_tmp = fresh_local(locals, function_type, I32);
+                            let input_tmp = add_fresh_local(locals, function_type, I32);
+                            let result_tmp = add_fresh_local(locals, function_type, I32);
                             vec![
                                 TeeLocal(input_tmp),
                                 instr,
@@ -365,9 +371,7 @@ pub fn add_hooks(module: &mut Module) {
                             instrs
                         }
                         (_, Return) => {
-                            let result_tmps: Vec<_> = result_tys.iter()
-                                .map(|ty| fresh_local(locals, function_type, *ty))
-                                .collect();
+                            let result_tmps = add_fresh_locals(locals, function_type, result_tys);
 
                             let mut instrs = Vec::new();
 
@@ -387,12 +391,8 @@ pub fn add_hooks(module: &mut Module) {
                             let arg_tys = func_arg_tys[target_func_idx.0].as_slice();
                             let result_tys = func_result_tys[target_func_idx.0].as_slice();
 
-                            let arg_tmps: Vec<_> = arg_tys.iter()
-                                .map(|ty| fresh_local(locals, function_type, *ty))
-                                .collect();
-                            let result_tmps: Vec<_> = result_tys.iter()
-                                .map(|ty| fresh_local(locals, function_type, *ty))
-                                .collect();
+                            let arg_tmps = add_fresh_locals(locals, function_type, arg_tys);
+                            let result_tmps = add_fresh_locals(locals, function_type, result_tys);
 
                             let mut instrs = Vec::new();
 
@@ -413,20 +413,18 @@ pub fn add_hooks(module: &mut Module) {
                             /* post call hook */
 
                             instrs.append(&mut save_stack_to_locals(&result_tmps));
-//                            instrs.extend_from_slice(&[
+                            instrs.extend_from_slice(&[
 //                                location.0,
 //                                location.1,
-//                            ]);
+                            ]);
 
                             instrs
                         }
                         (_, CallIndirect(func_ty, _ /* TODO table idx == 0 in WASM version 1 */)) => {
                             let arg_tys = func_ty.0;
 
-                            let target_table_idx_tmp = fresh_local(locals, function_type, I32);
-                            let arg_tmps: Vec<_> = arg_tys.iter()
-                                .map(|ty| fresh_local(locals, function_type, *ty))
-                                .collect();
+                            let target_table_idx_tmp = add_fresh_local(locals, function_type, I32);
+                            let arg_tmps = add_fresh_locals(locals, function_type, &arg_tys);
 
                             let mut instrs = Vec::new();
 
@@ -473,8 +471,8 @@ pub fn add_hooks(module: &mut Module) {
                         }
                         (Unary { input_ty, result_ty }, instr) => {
                             // duplicate stack arguments
-                            let input_tmp = fresh_local(locals, function_type, input_ty);
-                            let result_tmp = fresh_local(locals, function_type, result_ty);
+                            let input_tmp = add_fresh_local(locals, function_type, input_ty);
+                            let result_tmp = add_fresh_local(locals, function_type, result_ty);
 
                             let mut instrs = vec![
                                 // save input before
@@ -498,9 +496,9 @@ pub fn add_hooks(module: &mut Module) {
                         }
                         (Binary { first_ty, second_ty, result_ty }, instr) => {
                             // duplicate stack arguments
-                            let first_tmp = fresh_local(locals, function_type, first_ty);
-                            let second_tmp = fresh_local(locals, function_type, second_ty);
-                            let result_tmp = fresh_local(locals, function_type, result_ty);
+                            let first_tmp = add_fresh_local(locals, function_type, first_ty);
+                            let second_tmp = add_fresh_local(locals, function_type, second_ty);
+                            let result_tmp = add_fresh_local(locals, function_type, result_ty);
 
                             let mut instrs = vec![
                                 // save input before
@@ -526,8 +524,8 @@ pub fn add_hooks(module: &mut Module) {
                         }
                         (MemoryLoad(ty, memarg), instr) => {
                             // duplicate stack arguments
-                            let addr_tmp = fresh_local(locals, function_type, I32);
-                            let value_tmp = fresh_local(locals, function_type, ty);
+                            let addr_tmp = add_fresh_local(locals, function_type, I32);
+                            let value_tmp = add_fresh_local(locals, function_type, ty);
 
                             let mut instrs = vec![
                                 // save input before
@@ -552,8 +550,8 @@ pub fn add_hooks(module: &mut Module) {
                         }
                         (MemoryStore(ty, memarg), instr) => {
                             // duplicate stack arguments
-                            let addr_tmp = fresh_local(locals, function_type, I32);
-                            let value_tmp = fresh_local(locals, function_type, ty);
+                            let addr_tmp = add_fresh_local(locals, function_type, I32);
+                            let value_tmp = add_fresh_local(locals, function_type, ty);
 
                             let mut instrs = vec![
                                 // save input before
