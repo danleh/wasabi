@@ -1,5 +1,6 @@
 use ast::{FunctionType, GlobalType, Idx, Limits, Local, Memarg, MemoryType, Mutability, ValType, ValType::*};
 use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGroup::*, Memory, Module};
+use js_codegen::append_mangled_tys;
 use std::collections::{HashMap, HashSet};
 use std::mem::{discriminant, Discriminant};
 
@@ -104,7 +105,7 @@ impl PolymorphicHookMap {
     pub fn add(&mut self, module: &mut Module, instr: Instr, non_poly_args: &[ValType], tys: &[Vec<ValType>]) {
         for tys in tys {
             println!("{}", instr.to_poly_js_hook(tys.as_slice()));
-            let hook_name = instr.to_monomorphized_hook_name(tys.as_slice());
+            let hook_name = append_mangled_tys(instr.to_instr_name(), tys.as_slice());
             let hook_idx = add_hook(module, hook_name, &[non_poly_args, tys.as_slice()].concat());
             self.0.insert(
                 (discriminant(&instr), tys.clone()),

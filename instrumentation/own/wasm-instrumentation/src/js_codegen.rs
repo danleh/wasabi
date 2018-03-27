@@ -49,21 +49,20 @@ impl Instr {
         }
     }
 
-    pub fn to_monomorphized_hook_name(&self, tys: &[ValType]) -> String {
-        self.to_instr_name() + "_"
-            + &tys.iter().map(|ty| ty.to_string()).collect::<Vec<_>>().join("_")
-    }
-
     pub fn to_poly_js_hook(&self, tys: &[ValType]) -> String {
-        let hook_name = self.to_monomorphized_hook_name(tys);
+        let hook_name = append_mangled_tys(self.to_instr_name(), tys);
         match *self {
-            Return => format!("{}: function(func, instr{}) {{
+            Return => {
+                // FIXME dirty hack: add also post call (call_result) hooks here, since they are based on the same type information
+                let return_hook = format!("{}: function(func, instr{}) {{
     return_({{func, instr}}, [{}]);
 }},",
-                              hook_name,
-                              tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("result".to_string() + &i.to_string()), *ty))).collect::<String>(),
-                              tys.iter().enumerate().map(|(i, ty)| long(&("result".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(", "),
-            ),
+                        hook_name,
+                        tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("result".to_string() + &i.to_string()), *ty))).collect::<String>(),
+                        tys.iter().enumerate().map(|(i, ty)| long(&("result".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(", "),
+                );
+                return_hook.clone() + "\n" + &return_hook.replace("return", "call_result")
+            },
             Call(_) => format!("{}: function(func, instr, targetFunc{}) {{
     call_({{func, instr}}, targetFunc, false, [{}]);
 }},",
@@ -120,6 +119,10 @@ impl Instr {
 
 
 /* helpers */
+
+pub fn append_mangled_tys(prefix: String, tys: &[ValType]) -> String {
+    prefix + "_" + &tys.iter().map(|ty| ty.to_string()).collect::<Vec<_>>().join("_")
+}
 
 fn arg(name: &str, ty: ValType) -> String {
     match ty {
