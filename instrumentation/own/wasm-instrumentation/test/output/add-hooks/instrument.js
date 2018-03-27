@@ -25,6 +25,36 @@ WebAssembly.instantiate = function () {
         grow_memory: function (func, instr, byPages, previousSizePages) {
             grow_memory({func, instr}, byPages, previousSizePages);
         },
+        begin_function: function (func, instr) {
+            begin({func, instr}, "function");
+        },
+        end_function: function (func, instr) {
+            end({func, instr}, "function", {func, instr: -1});
+        },
+        begin_block: function (func, instr) {
+            begin({func, instr}, "block");
+        },
+        end_block: function (func, instr, begin_instr) {
+            end({func, instr}, "block", {func, instr: begin_instr});
+        },
+        begin_loop: function (func, instr) {
+            begin({func, instr}, "loop");
+        },
+        end_loop: function (func, instr, begin_instr) {
+            end({func, instr}, "loop", {func, instr: begin_instr});
+        },
+        begin_if: function (func, instr) {
+            begin({func, instr}, "if");
+        },
+        end_if: function (func, instr, begin_instr) {
+            end({func, instr}, "if", {func, instr: begin_instr});
+        },
+        begin_else: function (func, instr) {
+            begin({func, instr}, "else");
+        },
+        end_else: function (func, instr, begin_instr) {
+            end({func, instr}, "else", {func, instr: begin_instr});
+        },
 
         // generated:
         return_: function (func, instr) {
@@ -729,6 +759,17 @@ WebAssembly.instantiate = function () {
 // your instrumentation goes here...
 // const coverageData = [];
 
+// where type = "function" | "block" | "if" | "else"
+// and else fires both begin and end, where the end has begin_location pointing to the if
+
+function begin(location, type) {
+    console.log("begin", type, "@", location);
+}
+
+function end(location, type, begin_location) {
+    console.log("end @", location, "for begin", type, "@", begin_location);
+}
+
 function nop(location) {
     // console.log("nop @", location);
 }
@@ -746,7 +787,7 @@ function select(location, cond) {
 }
 
 function call_(location, targetFunc, indirect, args) {
-    console.log("call", (indirect ? "(indirect)" : "(direct)"), "func #", targetFunc, "@", location, "with args:", args);
+    // console.log("call", (indirect ? "(indirect)" : "(direct)"), "func #", targetFunc, "@", location, "with args:", args);
 }
 
 function return_(location, values) {
@@ -760,7 +801,7 @@ function return_(location, values) {
 }
 
 function call_result_(location, values) {
-    console.log("result from call @", location, ":", values);
+    // console.log("result from call @", location, ":", values);
 }
 
 function const_(location, value) {

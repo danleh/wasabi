@@ -152,6 +152,17 @@ fn restore_locals_with_i64_handling(locals: &[Idx<Local>], local_tys: &[ValType]
     return instrs;
 }
 
+/// also keeps instruction index, needed later for End hooks
+#[derive(Debug)]
+enum Begin {
+    Function,
+    // no actual instruction, so we give it -1
+    Block(i32),
+    Loop(i32),
+    If(i32),
+    Else(i32),
+}
+
 pub fn add_hooks(module: &mut Module) {
     // export the table for the JS code to translate table indices -> function indices
     for table in &mut module.tables {
@@ -208,6 +219,20 @@ pub fn add_hooks(module: &mut Module) {
     // monomorphic hooks:
     // - 1 hook : 1 instruction
     // - argument/result types are directly determined from the instruction itself
+
+    // all end hooks also give the instruction index of the corresponding begin (except for functions,
+    // where it implicitly is -1 anyway)
+    let begin_function_hook = add_hook(module, "begin_function", &[]);
+    let end_function_hook = add_hook(module, "end_function", &[]);
+    let begin_block_hook = add_hook(module, "begin_block", &[]);
+    let end_block_hook = add_hook(module, "end_block", &[I32]);
+    let begin_loop_hook = add_hook(module, "begin_loop", &[]);
+    let end_loop_hook = add_hook(module, "end_loop", &[I32]);
+    let begin_if_hook = add_hook(module, "begin_if", &[]);
+    let end_if_hook = add_hook(module, "end_if", &[I32]);
+    let begin_else_hook = add_hook(module, "begin_else", &[]);
+    let end_else_hook = add_hook(module, "end_else", &[I32]);
+
     let nop_hook = add_hook(module, "nop", &[]);
     let unreachable_hook = add_hook(module, "unreachable", &[]);
 
@@ -288,10 +313,76 @@ pub fn add_hooks(module: &mut Module) {
             let result_tys = function.type_.1.as_slice();
             let function_type = &function.type_;
             let locals = &mut code.locals;
+            let mut begin_stack = vec![Begin::Function];
             code.body = code.body.iter().cloned().enumerate()
                 .flat_map(|(iidx, instr)| {
                     let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
                     match (instr.group(), instr.clone()) {
+                        (_, Block(_)) => {
+                            begin_stack.push(Begin::Block(iidx as i32));
+                            vec![
+                                instr,
+                                location.0,
+                                location.1,
+                                Call(begin_block_hook),
+                            ]
+                        }
+                        (_, Loop(_)) => {
+                            begin_stack.push(Begin::Loop(iidx as i32));
+                            vec![
+                                instr,
+                                location.0,
+                                location.1,
+                                Call(begin_loop_hook),
+                            ]
+                        }
+                        (_, If(_)) => {
+                            begin_stack.push(Begin::If(iidx as i32));
+                            // TODO if condition hook?
+                            vec![
+                                instr,
+                                location.0,
+                                location.1,
+                                Call(begin_if_hook),
+                            ]
+                        }
+                        (_, Else) => {
+                            let begin = begin_stack.pop()
+                                .expect(&format!("invalid begin/end nesting in function {}!", fidx.0));
+                            if let Begin::If(begin_iidx) = begin {
+                                begin_stack.push(Begin::Else(iidx as i32));
+                                vec![
+                                    location.0.clone(),
+                                    location.1.clone(),
+                                    I32Const(begin_iidx as i32),
+                                    Call(end_else_hook),
+                                    instr,
+                                    location.0,
+                                    location.1,
+                                    Call(begin_else_hook),
+                                ]
+                            } else {
+                                unreachable!("else instruction should end if block, but was {:?}", begin);
+                            }
+                        }
+                        (_, End) => {
+                            let begin = begin_stack.pop()
+                                .expect(&format!("invalid begin/end nesting in function {}!", fidx.0));
+
+                            let mut instrs = vec![
+                                location.0,
+                                location.1,
+                            ];
+                            instrs.append(&mut match begin {
+                                Begin::Function => vec![Call(end_function_hook)],
+                                Begin::Block(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_block_hook)],
+                                Begin::Loop(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_loop_hook)],
+                                Begin::If(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_if_hook)],
+                                Begin::Else(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_else_hook)],
+                            });
+                            instrs.push(instr);
+                            instrs
+                        }
                         (_, Nop) => vec![
                             instr,
                             location.0,
@@ -373,9 +464,7 @@ pub fn add_hooks(module: &mut Module) {
                         (_, Return) => {
                             let result_tmps = add_fresh_locals(locals, function_type, result_tys);
 
-                            let mut instrs = Vec::new();
-
-                            instrs.append(&mut save_stack_to_locals(&result_tmps));
+                            let mut instrs = save_stack_to_locals(&result_tmps);
                             instrs.extend_from_slice(&[
                                 location.0,
                                 location.1,
@@ -394,11 +483,9 @@ pub fn add_hooks(module: &mut Module) {
                             let arg_tmps = add_fresh_locals(locals, function_type, arg_tys);
                             let result_tmps = add_fresh_locals(locals, function_type, result_tys);
 
-                            let mut instrs = Vec::new();
-
                             /* pre call hook */
 
-                            instrs.append(&mut save_stack_to_locals(&arg_tmps));
+                            let mut instrs = save_stack_to_locals(&arg_tmps);
                             instrs.extend_from_slice(&[
                                 location.0.clone(),
                                 location.1.clone(),
@@ -430,11 +517,10 @@ pub fn add_hooks(module: &mut Module) {
                             let arg_tmps = add_fresh_locals(locals, function_type, arg_tys);
                             let result_tmps = add_fresh_locals(locals, function_type, result_tys);
 
-                            let mut instrs = Vec::new();
 
                             /* pre call hook */
 
-                            instrs.push(GetLocal(target_table_idx_tmp));
+                            let mut instrs = vec![GetLocal(target_table_idx_tmp)];
                             instrs.append(&mut save_stack_to_locals(&arg_tmps));
                             instrs.extend_from_slice(&[
                                 SetLocal(target_table_idx_tmp),
@@ -573,13 +659,22 @@ pub fn add_hooks(module: &mut Module) {
                             instrs.push(monomorphic_hook_call(&instr));
                             instrs
                         }
-                        // TODO Begin(Function | Block | If | Else)
-                        // TODO End(Function | Block | If | Else) (needs stack of open blocks to match with begin)
-                        // TODO Get, Set, Tee Local|Global
+                        // TODO branches
                         (_, instr) => vec![instr],
                     }
                 })
                 .collect();
+
+            // add function_begin hook (which does not correspond to any instruction)
+            let mut new_body = vec![
+                I32Const(fidx.0 as i32),
+                I32Const(-1),
+                Call(begin_function_hook)
+            ];
+            new_body.append(&mut code.body);
+            ::std::mem::replace(&mut code.body, new_body);
+
+            assert!(begin_stack.is_empty(), "invalid begin/end nesting in function {}", fidx.0);
         }
     }
 }
