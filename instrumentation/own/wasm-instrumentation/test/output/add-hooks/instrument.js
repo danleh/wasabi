@@ -7,24 +7,31 @@ const oldInstantiate = WebAssembly.instantiate;
 WebAssembly.instantiate = function () {
     let importsObject = arguments[1] || {};
     importsObject.hooks = {
+        // trivial
         nop: function (func, instr) {
             nop({func, instr});
         },
         unreachable: function (func, instr) {
             unreachable({func, instr});
         },
+
+        // type polymorphic
         drop: function (func, instr) {
             drop({func, instr});
         },
         select: function (func, instr, cond) {
             select({func, instr}, cond);
         },
+
+        // memory
         current_memory: function (func, instr, currentSizePages) {
             current_memory({func, instr}, currentSizePages);
         },
         grow_memory: function (func, instr, byPages, previousSizePages) {
             grow_memory({func, instr}, byPages, previousSizePages);
         },
+
+        // begin/ends
         begin_function: function (func, instr) {
             begin({func, instr}, "function");
         },
@@ -55,6 +62,15 @@ WebAssembly.instantiate = function () {
         end_else: function (func, instr, begin_instr) {
             end({func, instr}, "else", {func, instr: begin_instr});
         },
+
+        // branches/if condition
+        if_: function(func, instr, condition) {
+            if_({func, instr}, condition === 1);
+        },
+        br: function(func, instr, target_label, target_instr) {
+            br({func, instr}, target_label, {func, instr: target_instr});
+        },
+        // TODO br_if, br_table
 
         // generated:
         return_: function (func, instr) {
@@ -759,19 +775,16 @@ WebAssembly.instantiate = function () {
 // your instrumentation goes here...
 // const coverageData = [];
 
-// where type = "function" | "block" | "if" | "else"
-// and else fires both begin and end, where the end has begin_location pointing to the if
-
-function if_cond(location, type, value) {
-    console.log("condition @", location, "for", type, "=", )
+function if_(location, condition) {
+    console.log("if @", location, "condition =", condition);
 }
 
 function begin(location, type) {
-    console.log("begin", type, "@", location);
+    // console.log("begin", type, "@", location);
 }
 
 function end(location, type, begin_location) {
-    console.log("end @", location, "for begin", type, "@", begin_location);
+    // console.log("end @", location, "for begin", type, "@", begin_location);
 }
 
 function nop(location) {

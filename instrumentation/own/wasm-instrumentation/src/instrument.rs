@@ -219,6 +219,8 @@ pub fn add_hooks(module: &mut Module) {
     // monomorphic hooks:
     // - 1 hook : 1 instruction
     // - argument/result types are directly determined from the instruction itself
+    // I32 for the condition
+    let if_hook = add_hook(module, "if_", &[I32]);
 
     // all end hooks also give the instruction index of the corresponding begin (except for functions,
     // where it implicitly is -1 anyway)
@@ -338,9 +340,19 @@ pub fn add_hooks(module: &mut Module) {
                         }
                         (_, If(_)) => {
                             begin_stack.push(Begin::If(iidx as i32));
-                            // TODO if condition hook?
+
+                            let condition_tmp = add_fresh_local(locals, function_type, I32);
+
                             vec![
+                                // if_ hook for the condition (always executed on either branch)
+                                TeeLocal(condition_tmp),
+                                location.0.clone(),
+                                location.1.clone(),
+                                GetLocal(condition_tmp),
+                                Call(if_hook),
+                                // actual if block start
                                 instr,
+                                // begin hook (not executed when condition implies else branch)
                                 location.0,
                                 location.1,
                                 Call(begin_if_hook),
@@ -660,7 +672,10 @@ pub fn add_hooks(module: &mut Module) {
                             instrs
                         }
                         // TODO branches
-                        (_, instr) => vec![instr],
+                        (_, Br(label)) => vec![instr],
+                        (_, BrIf(..)) => vec![instr],
+                        (_, BrTable(..)) => vec![instr],
+                        _ => unreachable!("no hook for instruction {}", instr.to_instr_name()),
                     }
                 })
                 .collect();
