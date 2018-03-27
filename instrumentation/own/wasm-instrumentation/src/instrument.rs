@@ -120,6 +120,32 @@ impl PolymorphicHookMap {
     }
 }
 
+/// helper function to save top locals.len() values into locals with the given index
+/// types of locals must match stack, not enforced by this function!
+fn save_stack_to_locals(locals: &[Idx<Local>]) -> Vec<Instr> {
+    let mut instrs = Vec::new();
+    // copy stack values into locals
+    for &local in locals.iter().rev() {
+        instrs.push(SetLocal(local));
+    }
+    // and restore (saving has removed them from the stack)
+    for &local in locals.iter() {
+        instrs.push(GetLocal(local));
+    }
+    return instrs;
+}
+
+
+fn restore_locals_with_i64_handling(locals: &[Idx<Local>], local_tys: &[ValType]) -> Vec<Instr> {
+    assert_eq!(locals.len(), local_tys.len());
+
+    let mut instrs = Vec::new();
+    for (&local, &ty) in locals.iter().zip(local_tys.iter()) {
+        instrs.append(&mut convert_i64_instr(GetLocal(local), ty));
+    }
+    return instrs;
+}
+
 pub fn add_hooks(module: &mut Module) {
     // export the table for the JS code to translate table indices -> function indices
     for table in &mut module.tables {
@@ -132,14 +158,15 @@ pub fn add_hooks(module: &mut Module) {
     }
 
     // collect some info, necessary for monomorphization of polymorphic hooks
-    let (call_arg_tys, mut unique_result_tys): (Vec<Vec<ValType>>, Vec<Vec<ValType>>) = module.functions.iter()
+    let (func_arg_tys, func_result_tys): (Vec<Vec<ValType>>, Vec<Vec<ValType>>) = module.functions.iter()
         .map(|func| (func.type_.0.clone(), func.type_.1.clone()))
         .unzip();
+    let mut unique_result_tys = func_result_tys.clone();
     unique_result_tys.sort();
     unique_result_tys.dedup();
-    let mut unique_call_arg_tys = call_arg_tys.clone();
-    unique_call_arg_tys.sort();
-    unique_call_arg_tys.dedup();
+    let mut unique_arg_tys = func_arg_tys.clone();
+    unique_arg_tys.sort();
+    unique_arg_tys.dedup();
 
     let global_tys: Vec<ValType> = module.globals.iter().map(|g| g.type_.0).collect();
 
@@ -163,9 +190,14 @@ pub fn add_hooks(module: &mut Module) {
     polymorphic_hooks.add(module, SetGlobal(0.into()), &[I32], primitive_tys);
 
     // calls
-    polymorphic_hooks.add(module, Call(0.into()), &[I32], unique_call_arg_tys.as_slice()); // I32 = target func idx
-    polymorphic_hooks.add(module, CallIndirect(FunctionType(vec![], vec![]), 0.into()), &[I32], unique_call_arg_tys.as_slice()); // I32 = target table idx
-    // TODO call post hook
+    polymorphic_hooks.add(module, Call(0.into()), &[I32], unique_arg_tys.as_slice()); // I32 = target func idx
+    polymorphic_hooks.add(module, CallIndirect(FunctionType(vec![], vec![]), 0.into()), &[I32], unique_arg_tys.as_slice()); // I32 = target table idx
+    // manually add call_post hook since it does not directly correspond to an instruction
+    let call_result_hooks: HashMap<&[ValType], Idx<Function>> = unique_result_tys.iter()
+        .map(|tys| {
+            let tys = tys.as_slice();
+            (tys, add_hook(module, append_mangled_tys("call_result".into(), tys), tys))
+        }).collect();
 
     // monomorphic hooks:
     // - 1 hook : 1 instruction
@@ -339,24 +371,12 @@ pub fn add_hooks(module: &mut Module) {
 
                             let mut instrs = Vec::new();
 
-                            // copy results into tmp locals
-                            for &dup_tmp in result_tmps.iter().rev() {
-                                instrs.push(SetLocal(dup_tmp));
-                            }
-                            // and restore (saving has removed them from the stack)
-                            for &dup_tmp in result_tmps.iter() {
-                                instrs.push(GetLocal(dup_tmp));
-                            }
-
+                            instrs.append(&mut save_stack_to_locals(&result_tmps));
                             instrs.extend_from_slice(&[
                                 location.0,
                                 location.1,
                             ]);
-                            // duplicate results from tmp locals
-                            for (&dup_tmp, &result_ty) in result_tmps.iter().zip(result_tys.iter()) {
-                                instrs.append(&mut convert_i64_instr(GetLocal(dup_tmp), result_ty));
-                            }
-
+                            instrs.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
                             instrs.extend_from_slice(&[
                                 polymorphic_hooks.get_call(&instr, result_tys.to_vec()),
                                 instr,
@@ -364,39 +384,40 @@ pub fn add_hooks(module: &mut Module) {
                             instrs
                         }
                         (_, Call(target_func_idx)) => {
-                            let arg_tys = call_arg_tys[target_func_idx.0].as_slice();
+                            let arg_tys = func_arg_tys[target_func_idx.0].as_slice();
+                            let result_tys = func_result_tys[target_func_idx.0].as_slice();
 
                             let arg_tmps: Vec<_> = arg_tys.iter()
+                                .map(|ty| fresh_local(locals, function_type, *ty))
+                                .collect();
+                            let result_tmps: Vec<_> = result_tys.iter()
                                 .map(|ty| fresh_local(locals, function_type, *ty))
                                 .collect();
 
                             let mut instrs = Vec::new();
 
-                            // copy args into tmp locals
-                            for &dup_tmp in arg_tmps.iter().rev() {
-                                instrs.push(SetLocal(dup_tmp));
-                            }
-                            // and restore (saving has removed them from the stack)
-                            for &dup_tmp in arg_tmps.iter() {
-                                instrs.push(GetLocal(dup_tmp));
-                            }
+                            /* pre call hook */
 
+                            instrs.append(&mut save_stack_to_locals(&arg_tmps));
                             instrs.extend_from_slice(&[
-                                location.0,
-                                location.1,
+                                location.0.clone(),
+                                location.1.clone(),
                                 I32Const(target_func_idx.0 as i32),
                             ]);
-                            // duplicate args from tmp locals
-                            for (&dup_tmp, &ty) in arg_tmps.iter().zip(arg_tys.iter()) {
-                                instrs.append(&mut convert_i64_instr(GetLocal(dup_tmp), ty));
-                            }
-
+                            instrs.append(&mut restore_locals_with_i64_handling(&arg_tmps, &arg_tys));
                             instrs.extend_from_slice(&[
                                 polymorphic_hooks.get_call(&instr, arg_tys.to_vec()),
                                 instr,
                             ]);
 
-                            // TODO post hook
+                            /* post call hook */
+
+                            instrs.append(&mut save_stack_to_locals(&result_tmps));
+//                            instrs.extend_from_slice(&[
+//                                location.0,
+//                                location.1,
+//                            ]);
+
                             instrs
                         }
                         (_, CallIndirect(func_ty, _ /* TODO table idx == 0 in WASM version 1 */)) => {
