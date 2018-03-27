@@ -53,7 +53,6 @@ impl Instr {
         let hook_name = append_mangled_tys(self.to_instr_name(), tys);
         match *self {
             Return => {
-                // FIXME dirty hack: add also post call (call_result) hooks here, since they are based on the same type information
                 let return_hook = format!("{}: function(func, instr{}) {{
     return_({{func, instr}}, [{}]);
 }},",
@@ -61,6 +60,9 @@ impl Instr {
                         tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("result".to_string() + &i.to_string()), *ty))).collect::<String>(),
                         tys.iter().enumerate().map(|(i, ty)| long(&("result".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(", "),
                 );
+                // FIXME dirty hack: add also post call (call_result) hooks here, since they are based on the same type information
+                // FIXME because of replace() the hook name is "call_result_" instead of more natural "call_result"
+                // FIXME no difference between call_result and call_indirect_result
                 return_hook.clone() + "\n" + &return_hook.replace("return", "call_result")
             },
             Call(_) => format!("{}: function(func, instr, targetFunc{}) {{

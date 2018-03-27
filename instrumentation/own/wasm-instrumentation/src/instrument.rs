@@ -119,7 +119,7 @@ impl PolymorphicHookMap {
         }
     }
     pub fn get_call(&self, instr: &Instr, tys: Vec<ValType>) -> Instr {
-        let error = format!("no hook was added for instruction {} with types {:?}", instr.to_instr_name(), tys);
+        let error = format!("no hook was added for {} with types {:?}", instr.to_instr_name(), tys);
         Call(*self.0
             .get(&(discriminant(instr), tys))
             .expect(&error))
@@ -414,47 +414,50 @@ pub fn add_hooks(module: &mut Module) {
 
                             instrs.append(&mut save_stack_to_locals(&result_tmps));
                             instrs.extend_from_slice(&[
-//                                location.0,
-//                                location.1,
+                                location.0,
+                                location.1,
                             ]);
+                            instrs.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
+                            instrs.push(Call(*call_result_hooks.get(result_tys).expect("no call_result hook for tys")));
 
                             instrs
                         }
                         (_, CallIndirect(func_ty, _ /* TODO table idx == 0 in WASM version 1 */)) => {
-                            let arg_tys = func_ty.0;
+                            let arg_tys = func_ty.0.as_slice();
+                            let result_tys = func_ty.1.as_slice();
 
                             let target_table_idx_tmp = add_fresh_local(locals, function_type, I32);
-                            let arg_tmps = add_fresh_locals(locals, function_type, &arg_tys);
+                            let arg_tmps = add_fresh_locals(locals, function_type, arg_tys);
+                            let result_tmps = add_fresh_locals(locals, function_type, result_tys);
 
                             let mut instrs = Vec::new();
 
-                            // copy args into tmp locals
-                            instrs.push(GetLocal(target_table_idx_tmp));
-                            for &dup_tmp in arg_tmps.iter().rev() {
-                                instrs.push(SetLocal(dup_tmp));
-                            }
-                            // and restore (saving has removed them from the stack)
-                            for &dup_tmp in arg_tmps.iter() {
-                                instrs.push(GetLocal(dup_tmp));
-                            }
-                            instrs.push(SetLocal(target_table_idx_tmp));
+                            /* pre call hook */
 
+                            instrs.push(GetLocal(target_table_idx_tmp));
+                            instrs.append(&mut save_stack_to_locals(&arg_tmps));
                             instrs.extend_from_slice(&[
-                                location.0,
-                                location.1,
+                                SetLocal(target_table_idx_tmp),
+                                location.0.clone(),
+                                location.1.clone(),
                                 GetLocal(target_table_idx_tmp),
                             ]);
-                            // duplicate args from tmp locals
-                            for (&dup_tmp, &ty) in arg_tmps.iter().zip(arg_tys.iter()) {
-                                instrs.append(&mut convert_i64_instr(GetLocal(dup_tmp), ty));
-                            }
-
+                            instrs.append(&mut restore_locals_with_i64_handling(&arg_tmps, &arg_tys));
                             instrs.extend_from_slice(&[
                                 polymorphic_hooks.get_call(&instr, arg_tys.to_vec()),
                                 instr,
                             ]);
 
-                            // TODO post hook
+                            /* post call hook */
+
+                            instrs.append(&mut save_stack_to_locals(&result_tmps));
+                            instrs.extend_from_slice(&[
+                                location.0,
+                                location.1,
+                            ]);
+                            instrs.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
+                            instrs.push(Call(*call_result_hooks.get(result_tys).expect("no call_result hook for tys")));
+
                             instrs
                         }
                         (Const(ty), instr) => {

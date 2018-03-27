@@ -746,8 +746,6 @@ function select(location, cond) {
 }
 
 function call_(location, targetFunc, indirect, args) {
-    if (!indirect)
-        return;
     console.log("call", (indirect ? "(indirect)" : "(direct)"), "func #", targetFunc, "@", location, "with args:", args);
 }
 
@@ -759,6 +757,10 @@ function return_(location, values) {
     // if (coverageData[location.func][location.instr] === undefined) {
     //     coverageData[location.func][location.instr] = true;
     // }
+}
+
+function call_result_(location, values) {
+    console.log("result from call @", location, ":", values);
 }
 
 function const_(location, value) {
