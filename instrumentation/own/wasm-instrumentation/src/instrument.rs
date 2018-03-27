@@ -120,6 +120,16 @@ impl PolymorphicHookMap {
 }
 
 pub fn add_hooks(module: &mut Module) {
+    // export the table for the JS code to translate table indices -> function indices
+    for table in &mut module.tables {
+        if let None = table.export {
+            table.export = Some("table".into());
+        } else {
+            // FIXME What if table is already exported?
+            // We need to generate JS code that uses that exported table name, not our "table" one.
+        }
+    }
+
     // collect some info, necessary for monomorphization of polymorphic hooks
     let (mut call_arg_tys, mut result_tys): (Vec<Vec<ValType>>, Vec<Vec<ValType>>) = module.types().iter()
         .map(|function_ty| (function_ty.0.clone(), function_ty.1.clone()))
