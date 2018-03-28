@@ -1,0 +1,5 @@
+/main.pdf
+*.synctex.gz
+*.out
+*.log
+*.aux
