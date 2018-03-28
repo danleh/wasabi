@@ -19,7 +19,7 @@ fn debug() {
 //    println!("{}", I64Eqz.to_js_hook());
     let file = "test/input/hello-manual.wasm";
     let module = highlevel::Module::from_file(file).unwrap();
-    println!("{}", serde_json::to_string(&module.functions[0]).unwrap())
+    println!("{}", serde_json::to_string(&module.functions[0].to_info()).unwrap())
 
 //    println!("{:?}", module);
 //    instrument(&Path::new(file), add_hooks, "add-hooks").unwrap();

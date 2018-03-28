@@ -30,6 +30,7 @@ mod instrument;
 mod js_codegen;
 #[cfg(test)]
 mod tests;
+mod static_info;
 
 /// convenience for working files (which is the most common io::Read/Write anyway).
 impl lowlevel::Module {

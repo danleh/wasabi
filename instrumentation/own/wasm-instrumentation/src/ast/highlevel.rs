@@ -24,14 +24,12 @@ pub struct Module {
     pub custom_sections: Vec<Vec<u8>>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct Function {
-    #[serde(rename = "type")]
     // type is inlined here compared to low-level/binary/spec representation
     pub type_: FunctionType,
     // import and code are mutually exclusive, i.e., exactly one of both must be Some(...)
     pub import: Option<(String, String)>,
-    #[serde(skip_serializing)]
     pub code: Option<Code>,
     pub export: Option<String>,
 }

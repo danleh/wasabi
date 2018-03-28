@@ -721,7 +721,7 @@ pub fn add_hooks(module: &mut Module) {
                                 GetLocal(target_idx_tmp),
                                 Call(br_table_hook),
                                 instr]
-                        },
+                        }
                         _ => unreachable!("no hook for instruction {}", instr.to_instr_name()),
                     }
                 })

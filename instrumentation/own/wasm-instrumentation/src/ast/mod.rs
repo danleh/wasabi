@@ -15,6 +15,7 @@ pub mod convert;
 /* Types */
 
 #[derive(WasmBinary, Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ValType {
     #[tag = 0x7f] I32,
     #[tag = 0x7e] I64,
