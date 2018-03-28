@@ -64,13 +64,22 @@ WebAssembly.instantiate = function () {
         },
 
         // branches/if condition
-        if_: function(func, instr, condition) {
+        if_: function (func, instr, condition) {
             if_({func, instr}, condition === 1);
         },
-        br: function(func, instr, target_label, target_instr) {
-            br({func, instr}, target_label, {func, instr: target_instr});
+        br: function (func, instr, target_label, target_instr) {
+            br({func, instr}, {label: target_label, location: {func, instr: target_instr}});
         },
-        // TODO br_if, br_table
+        br_if: function (func, instr, target_label, target_instr, condition) {
+            br_if({func, instr}, {label: target_label, location: {func, instr: target_instr}}, condition === 1);
+        },
+        br_table: function (func, instr, br_table_info_idx, table_idx) {
+            // TODO use br_table_info_idx
+            // TODO get table (i.e. mapping of stack I32 idx -> label) and mapping label -> instr statically
+            const table = [{ label: 0 /* TODO extract statically */, location: { /* TODO */}}];
+            const default_ = { label: 0 /* TODO extract statically */, location: { /* TODO */}};
+            br_table({func, instr}, table, default_, table_idx);
+        },
 
         // generated:
         return_: function (func, instr) {
@@ -776,14 +785,26 @@ WebAssembly.instantiate = function () {
 // const coverageData = [];
 
 function if_(location, condition) {
-    console.log("if @", location, "condition =", condition);
+    // console.log("if @", location, "condition =", condition);
+}
+
+function br(location, target) {
+    console.log("br @", location, "to label #", target.label, " which is @", target.location);
+}
+
+function br_if(locataion, conditionalTarget, condition) {
+    console.log("br_if @", location, "possibly to label #", conditionalTarget.label, " which is @", conditionalTarget.label, "condition =", condition);
+}
+
+function br_table(location, table, defaultTarget, tableIdx) {
+    console.log("br_table @", location, "table =", table, "default target =", defaultTarget, "table index =", tableIdx);
 }
 
 function begin(location, type) {
     // console.log("begin", type, "@", location);
 }
 
-function end(location, type, begin_location) {
+function end(location, type, beginLocation) {
     // console.log("end @", location, "for begin", type, "@", begin_location);
 }
 

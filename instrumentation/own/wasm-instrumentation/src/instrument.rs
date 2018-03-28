@@ -1,4 +1,4 @@
-use ast::{FunctionType, GlobalType, Idx, Limits, Local, Memarg, MemoryType, Mutability, ValType, ValType::*};
+use ast::{FunctionType, GlobalType, Idx, Label, Limits, Local, Memarg, MemoryType, Mutability, ValType, ValType::*};
 use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGroup::*, Memory, Module};
 use js_codegen::append_mangled_tys;
 use std::collections::{HashMap, HashSet};
@@ -58,6 +58,7 @@ fn convert_i64_type(ty: &ValType) -> &[ValType] {
     }
 }
 
+// instr is assumed to have no side-effects or influences on the stack (other than pushing one value)
 // ty is necessary when the type cannot be determined only from the instr, e.g., for GetLocal
 fn convert_i64_instr(instr: Instr, ty: ValType) -> Vec<Instr> {
     match ty {
@@ -155,12 +156,24 @@ fn restore_locals_with_i64_handling(locals: &[Idx<Local>], local_tys: &[ValType]
 /// also keeps instruction index, needed later for End hooks
 #[derive(Debug)]
 enum Begin {
+    // function begins correspond to no actual instruction, so no instruction index
     Function,
-    // no actual instruction, so we give it -1
-    Block(i32),
-    Loop(i32),
-    If(i32),
-    Else(i32),
+    Block(usize),
+    Loop(usize),
+    If(usize),
+    Else(usize),
+}
+
+fn label_to_instr_idx(begin_stack: &[Begin], label: Idx<Label>) -> usize {
+    let target_block = begin_stack.iter()
+        .rev().nth(label.0)
+        .expect(&format!("cannot resolve target for {:?}", label));
+    match *target_block {
+        Begin::Function => 0,
+        Begin::Loop(begin_iidx) => begin_iidx,
+        // FIXME if/else/block (forward jump, needs forward scanning for End)
+        Begin::If(i) | Begin::Else(i) | Begin::Block(i) => i
+    }
 }
 
 pub fn add_hooks(module: &mut Module) {
@@ -186,6 +199,7 @@ pub fn add_hooks(module: &mut Module) {
     unique_arg_tys.dedup();
 
     let global_tys: Vec<ValType> = module.globals.iter().map(|g| g.type_.0).collect();
+    let mut br_table_info = Vec::new();
 
     /* add hooks (imported functions, provided by the analysis in JavaScript) */
 
@@ -219,8 +233,11 @@ pub fn add_hooks(module: &mut Module) {
     // monomorphic hooks:
     // - 1 hook : 1 instruction
     // - argument/result types are directly determined from the instruction itself
-    // I32 for the condition
-    let if_hook = add_hook(module, "if_", &[I32]);
+    let if_hook = add_hook(module, "if_", &[/* condition */ I32]);
+    // [I32, I32] for label and target instruction index (determined statically)
+    let br_hook = add_hook(module, "br", &[I32, I32]);
+    let br_if_hook = add_hook(module, "br_if", &[/* condition */ I32, /* target label and instr */ I32, I32]);
+    let br_table_hook = add_hook(module, "br_table", &[/* br_table_info_idx */ I32, /* table_idx */ I32]);
 
     // all end hooks also give the instruction index of the corresponding begin (except for functions,
     // where it implicitly is -1 anyway)
@@ -321,7 +338,7 @@ pub fn add_hooks(module: &mut Module) {
                     let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
                     match (instr.group(), instr.clone()) {
                         (_, Block(_)) => {
-                            begin_stack.push(Begin::Block(iidx as i32));
+                            begin_stack.push(Begin::Block(iidx));
                             vec![
                                 instr,
                                 location.0,
@@ -330,7 +347,7 @@ pub fn add_hooks(module: &mut Module) {
                             ]
                         }
                         (_, Loop(_)) => {
-                            begin_stack.push(Begin::Loop(iidx as i32));
+                            begin_stack.push(Begin::Loop(iidx));
                             vec![
                                 instr,
                                 location.0,
@@ -339,7 +356,7 @@ pub fn add_hooks(module: &mut Module) {
                             ]
                         }
                         (_, If(_)) => {
-                            begin_stack.push(Begin::If(iidx as i32));
+                            begin_stack.push(Begin::If(iidx));
 
                             let condition_tmp = add_fresh_local(locals, function_type, I32);
 
@@ -362,7 +379,7 @@ pub fn add_hooks(module: &mut Module) {
                             let begin = begin_stack.pop()
                                 .expect(&format!("invalid begin/end nesting in function {}!", fidx.0));
                             if let Begin::If(begin_iidx) = begin {
-                                begin_stack.push(Begin::Else(iidx as i32));
+                                begin_stack.push(Begin::Else(iidx));
                                 vec![
                                     location.0.clone(),
                                     location.1.clone(),
@@ -671,10 +688,40 @@ pub fn add_hooks(module: &mut Module) {
                             instrs.push(monomorphic_hook_call(&instr));
                             instrs
                         }
-                        // TODO branches
-                        (_, Br(label)) => vec![instr],
-                        (_, BrIf(..)) => vec![instr],
-                        (_, BrTable(..)) => vec![instr],
+                        (_, Br(target_label)) => vec![
+                            location.0,
+                            location.1,
+                            I32Const(target_label.0 as i32),
+                            I32Const(label_to_instr_idx(&begin_stack, target_label) as i32),
+                            Call(br_hook),
+                            instr
+                        ],
+                        // FIXME untested, emscripten seems to not output br_if instruction?
+                        (_, BrIf(target_label)) => {
+                            let condition_tmp = add_fresh_local(locals, function_type, I32);
+                            vec![
+                                TeeLocal(condition_tmp),
+                                location.0,
+                                location.1,
+                                I32Const(target_label.0 as i32),
+                                I32Const(label_to_instr_idx(&begin_stack, target_label) as i32),
+                                GetLocal(condition_tmp),
+                                Call(br_if_hook),
+                                instr
+                            ]
+                        }
+                        (_, BrTable(target_table, default_target)) => {
+                            br_table_info.push((target_table, default_target)); // TODO translate labels -> instr loc
+                            let target_idx_tmp = add_fresh_local(locals, function_type, I32);
+                            vec![
+                                TeeLocal(target_idx_tmp),
+                                location.0,
+                                location.1,
+                                I32Const((br_table_info.len() - 1) as i32),
+                                GetLocal(target_idx_tmp),
+                                Call(br_table_hook),
+                                instr]
+                        },
                         _ => unreachable!("no hook for instruction {}", instr.to_instr_name()),
                     }
                 })
