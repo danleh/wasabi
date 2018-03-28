@@ -178,20 +178,22 @@ fn label_to_instr_idx(begin_stack: &[Begin], label: Idx<Label>) -> usize {
 }
 
 pub fn add_hooks(module: &mut Module) {
-    let mut static_info = StaticInfo::default();
-
     // export the table for the JS code to translate table indices -> function indices
     for table in &mut module.tables {
-        static_info.table_export_name = match table.export {
-            Some(ref table_name) => table_name.clone(),
-            None => {
-                table.export = Some("table".into());
-                "table".into()
-            }
+        if let None = table.export {
+            table.export = Some("table".into());
         }
     }
 
-    static_info.functions = module.functions.iter().map(Function::to_info).collect();
+    let mut static_info: ModuleInfo = (&*module).into();
+
+    /* add hooks (imported functions, provided by the analysis in JavaScript) */
+
+    // polymorphic hooks:
+    // - 1 instruction : N hooks
+    // - instruction can take stack arguments/produce results of several types
+    // - we need to "monomorphize", i.e., create one hook per occurring polymorphic type
+    let mut polymorphic_hooks = PolymorphicHookMap::new();
 
     // collect some info, necessary for monomorphization of polymorphic hooks
     let (mut unique_arg_tys, mut unique_result_tys): (Vec<Vec<ValType>>, Vec<Vec<ValType>>) = module.functions.iter()
@@ -201,16 +203,6 @@ pub fn add_hooks(module: &mut Module) {
     unique_result_tys.dedup();
     unique_arg_tys.sort();
     unique_arg_tys.dedup();
-
-    let global_tys: Vec<ValType> = module.globals.iter().map(|g| g.type_.0).collect();
-
-    /* add hooks (imported functions, provided by the analysis in JavaScript) */
-
-    // polymorphic hooks:
-    // - 1 instruction : N hooks
-    // - instruction can take stack arguments/produce results of several types
-    // - we need to "monomorphize", i.e., create one hook per occurring polymorphic type
-    let mut polymorphic_hooks = PolymorphicHookMap::new();
 
     // returns
     polymorphic_hooks.add(module, Return, &[], unique_result_tys.as_slice());
@@ -482,7 +474,7 @@ pub fn add_hooks(module: &mut Module) {
                             instrs
                         }
                         (_, GetGlobal(global_idx)) | (_, SetGlobal(global_idx)) => {
-                            let global_ty = global_tys[global_idx.0];
+                            let global_ty = static_info.globals[global_idx.0];
                             let mut instrs = vec![
                                 instr.clone(),
                                 location.0,

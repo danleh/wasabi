@@ -15,6 +15,7 @@ use super::ValType::*;
 #[derive(Debug, Clone, Default)]
 pub struct Module {
     pub functions: Vec<Function>,
+    // TODO cleanup: only one Table and Memory supported in WASM version 1 anyway...
     pub tables: Vec<Table>,
     pub memories: Vec<Memory>,
     pub globals: Vec<Global>,

@@ -1,11 +1,22 @@
-use ast::FunctionType;
-use ast::ValType;
-use ast::highlevel::Function;
+use ast::{FunctionType, ValType};
+use ast::highlevel::{Module, Function};
 
-#[derive(Serialize, Default)]
-pub struct StaticInfo {
+impl<'a> From<&'a Module> for ModuleInfo {
+    fn from(module: &Module) -> Self {
+        ModuleInfo {
+            functions: module.functions.iter().map(Into::into).collect(),
+            globals: module.globals.iter().map(|g| g.type_.0).collect(),
+            table_export_name: module.tables.iter().next().and_then(|table| table.export.clone()),
+            br_tables: vec![],
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct ModuleInfo {
     pub functions: Vec<FunctionInfo>,
-    pub table_export_name: String,
+    pub globals: Vec<ValType>,
+    pub table_export_name: Option<String>,
     pub br_tables: Vec<BrTableInfo>,
 }
 
@@ -18,13 +29,13 @@ pub struct FunctionInfo {
     pub locals: Vec<ValType>,
 }
 
-impl Function {
-    pub fn to_info(&self) -> FunctionInfo {
+impl<'a> From<&'a Function> for FunctionInfo {
+    fn from(function: &Function) -> FunctionInfo {
         FunctionInfo {
-            type_: self.type_.clone(),
-            import: self.import.clone(),
-            export: self.export.clone(),
-            locals: self.code.iter().flat_map(|code| code.locals.clone()).collect()
+            type_: function.type_.clone(),
+            import: function.import.clone(),
+            export: function.export.clone(),
+            locals: function.code.iter().flat_map(|code| code.locals.clone()).collect()
         }
     }
 }
