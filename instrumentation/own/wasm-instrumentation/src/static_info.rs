@@ -1,5 +1,5 @@
 use ast::{FunctionType, ValType};
-use ast::highlevel::{Module, Function};
+use ast::highlevel::{Function, Module};
 
 impl<'a> From<&'a Module> for ModuleInfo {
     fn from(module: &Module) -> Self {
@@ -27,6 +27,8 @@ pub struct FunctionInfo {
     pub import: Option<(String, String)>,
     pub export: Option<String>,
     pub locals: Vec<ValType>,
+    #[serde(rename = "instrCount")]
+    pub instr_count: Option<usize>,
 }
 
 impl<'a> From<&'a Function> for FunctionInfo {
@@ -35,7 +37,8 @@ impl<'a> From<&'a Function> for FunctionInfo {
             type_: function.type_.clone(),
             import: function.import.clone(),
             export: function.export.clone(),
-            locals: function.code.iter().flat_map(|code| code.locals.clone()).collect()
+            locals: function.code.iter().flat_map(|code| code.locals.clone()).collect(),
+            instr_count: function.code.as_ref().map(|code| code.body.len()),
         }
     }
 }
