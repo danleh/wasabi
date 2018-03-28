@@ -12,7 +12,7 @@ use super::ValType::*;
       their item by index.
 */
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Module {
     pub functions: Vec<Function>,
     pub tables: Vec<Table>,
@@ -285,17 +285,6 @@ pub enum Instr {
 /* Impls/functions for typical use cases on WASM modules. */
 
 impl Module {
-    pub fn new() -> Self {
-        Module {
-            functions: Vec::new(),
-            tables: Vec::new(),
-            memories: Vec::new(),
-            globals: Vec::new(),
-            start: None,
-            custom_sections: Vec::new(),
-        }
-    }
-
     pub fn add_function(&mut self, type_: FunctionType, locals: Vec<ValType>, body: Vec<Instr>) -> Idx<Function> {
         self.functions.push(Function {
             type_,
