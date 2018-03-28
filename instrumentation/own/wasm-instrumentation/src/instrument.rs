@@ -32,7 +32,7 @@ use std::mem::{discriminant, Discriminant};
 /// touched (and we would get some errors with borrowck otherwise).
 /// function_ty is necessary since locals are indexed together with function parameters
 fn add_fresh_local(locals: &mut Vec<ValType>, function_ty: &FunctionType, type_: ValType) -> Idx<Local> {
-    let idx = locals.len() + function_ty.0.len();
+    let idx = locals.len() + function_ty.params.len();
     locals.push(type_);
     idx.into()
 }
@@ -44,10 +44,10 @@ fn add_fresh_locals(locals: &mut Vec<ValType>, function_ty: &FunctionType, tys: 
 }
 
 fn local_ty(locals: &[ValType], function_ty: &FunctionType, idx: Idx<Local>) -> ValType {
-    if (idx.0) < function_ty.0.len() {
-        function_ty.0[idx.0]
+    if (idx.0) < function_ty.params.len() {
+        function_ty.params[idx.0]
     } else {
-        locals[idx.0 - function_ty.0.len()]
+        locals[idx.0 - function_ty.params.len()]
     }
 }
 
@@ -83,7 +83,7 @@ fn add_hook(module: &mut Module, name: impl Into<String>, arg_tys_: &[ValType]) 
 
     module.add_function_import(
         // hooks do not return anything
-        FunctionType(arg_tys, vec![]),
+        FunctionType::new(arg_tys, vec![]),
         "hooks".into(),
         name.into())
 }
@@ -189,7 +189,7 @@ pub fn add_hooks(module: &mut Module) {
 
     // collect some info, necessary for monomorphization of polymorphic hooks
     let (func_arg_tys, func_result_tys): (Vec<Vec<ValType>>, Vec<Vec<ValType>>) = module.functions.iter()
-        .map(|func| (func.type_.0.clone(), func.type_.1.clone()))
+        .map(|func| (func.type_.params.clone(), func.type_.results.clone()))
         .unzip();
     let mut unique_result_tys = func_result_tys.clone();
     unique_result_tys.sort();
@@ -222,7 +222,7 @@ pub fn add_hooks(module: &mut Module) {
 
     // calls
     polymorphic_hooks.add(module, Call(0.into()), &[I32], unique_arg_tys.as_slice()); // I32 = target func idx
-    polymorphic_hooks.add(module, CallIndirect(FunctionType(vec![], vec![]), 0.into()), &[I32], unique_arg_tys.as_slice()); // I32 = target table idx
+    polymorphic_hooks.add(module, CallIndirect(FunctionType::new(vec![], vec![]), 0.into()), &[I32], unique_arg_tys.as_slice()); // I32 = target table idx
     // manually add call_post hook since it does not directly correspond to an instruction
     let call_result_hooks: HashMap<&[ValType], Idx<Function>> = unique_result_tys.iter()
         .map(|tys| {
@@ -329,7 +329,7 @@ pub fn add_hooks(module: &mut Module) {
     // Code to instrument anyway...
     for (fidx, function) in module.functions() {
         if let Some(ref mut code) = function.code {
-            let result_tys = function.type_.1.as_slice();
+            let result_tys = function.type_.results.as_slice();
             let function_type = &function.type_;
             let locals = &mut code.locals;
             let mut begin_stack = vec![Begin::Function];
@@ -539,8 +539,8 @@ pub fn add_hooks(module: &mut Module) {
                             instrs
                         }
                         (_, CallIndirect(func_ty, _ /* TODO table idx == 0 in WASM version 1 */)) => {
-                            let arg_tys = func_ty.0.as_slice();
-                            let result_tys = func_ty.1.as_slice();
+                            let arg_tys = func_ty.params.as_slice();
+                            let result_tys = func_ty.results.as_slice();
 
                             let target_table_idx_tmp = add_fresh_local(locals, function_type, I32);
                             let arg_tmps = add_fresh_locals(locals, function_type, arg_tys);
@@ -749,7 +749,7 @@ pub fn identity(_: &mut Module) {}
 
 pub fn add_empty_function(module: &mut Module) {
     module.add_function(
-        FunctionType(vec![], vec![]),
+        FunctionType::new(vec![], vec![]),
         vec![],
         vec![End]);
 }
@@ -758,13 +758,13 @@ pub fn count_calls(module: &mut Module) {
     let counter = module.add_global(I32, Mutability::Mut, vec![I32Const(0), End]);
 
     let getter = module.add_function(
-        FunctionType(vec![], vec![I32]),
+        FunctionType::new(vec![], vec![I32]),
         vec![],
         vec![GetGlobal(counter), End]);
     module.function(getter).export = Some("get_counter".into());
 
     let increment = module.add_function(
-        FunctionType(vec![], vec![]),
+        FunctionType::new(vec![], vec![]),
         vec![],
         vec![
             GetGlobal(counter),

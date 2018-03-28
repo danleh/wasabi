@@ -30,9 +30,12 @@ impl fmt::Display for ValType {
     }
 }
 
-#[derive(WasmBinary, Debug, PartialEq, Eq, Clone, Hash, Serialize)]
+#[derive(WasmBinary, Debug, PartialEq, Eq, Clone, Hash, Serialize, new)]
 #[tag = 0x60]
-pub struct FunctionType(pub Vec<ValType>, pub Vec<ValType>);
+pub struct FunctionType {
+    pub params: Vec<ValType>,
+    pub results: Vec<ValType>,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct BlockType(pub Option<ValType>);
