@@ -6,7 +6,7 @@ impl<'a> From<&'a Module> for ModuleInfo {
         ModuleInfo {
             functions: module.functions.iter().map(Into::into).collect(),
             globals: module.globals.iter().map(|g| g.type_.0).collect(),
-            table_export_name: module.tables.iter().next().and_then(|table| table.export.clone()),
+            table_export_name: module.tables[0].export.clone().unwrap(),
             br_tables: vec![],
         }
     }
@@ -16,7 +16,7 @@ impl<'a> From<&'a Module> for ModuleInfo {
 pub struct ModuleInfo {
     pub functions: Vec<FunctionInfo>,
     pub globals: Vec<ValType>,
-    pub table_export_name: Option<String>,
+    pub table_export_name: String,
     pub br_tables: Vec<BrTableInfo>,
 }
 
@@ -49,11 +49,12 @@ pub struct BrTableInfo {
 #[derive(Serialize, new)]
 pub struct LabelAndLocation {
     pub label: usize,
-// TODO
-//    pub location: Location,
+    // FIXME actually compute Location from Label during instrumentation
+    #[new(default)]
+    pub location: Location,
 }
 
-#[derive(Serialize, new)]
+#[derive(Serialize, new, Default)]
 pub struct Location {
     pub func: usize,
     pub instr: usize,

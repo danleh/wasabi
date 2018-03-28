@@ -4,6 +4,7 @@ use js_codegen::append_mangled_tys;
 use std::collections::{HashMap, HashSet};
 use std::mem::{discriminant, Discriminant};
 use static_info::*;
+use serde_json;
 
 // TODO Idea: provide two options of connecting user analysis (i.e., client instrumentation code)
 // with the instrumented binary (i.e., the "host" code + hooks + import of callbacks):
@@ -737,6 +738,8 @@ pub fn add_hooks(module: &mut Module) {
             assert!(begin_stack.is_empty(), "invalid begin/end nesting in function {}", fidx.0);
         }
     }
+
+    println!("{}", serde_json::to_string(&static_info).unwrap());
 }
 
 
