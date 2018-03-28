@@ -4,6 +4,8 @@
 extern crate byteorder;
 #[macro_use]
 extern crate custom_derive;
+#[macro_use]
+extern crate derive_new;
 extern crate itertools;
 #[macro_use]
 extern crate maplit;
