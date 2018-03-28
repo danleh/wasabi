@@ -8,15 +8,21 @@ use std::io::{self, Cursor, Read, sink};
 use std::path::{Path, PathBuf};
 use test::Bencher;
 
+use serde_json;
+
 /// "main"-like for quick and dirty testing
 #[test]
 #[ignore]
 fn debug() {
+
+
 //    println!("{}", I64Eqz.to_js_hook());
-    let file = "test/input/hello-emcc.wasm";
+    let file = "test/input/hello-manual.wasm";
     let module = highlevel::Module::from_file(file).unwrap();
+    println!("{}", serde_json::to_string(&module.functions[0]).unwrap())
+
 //    println!("{:?}", module);
-    instrument(&Path::new(file), add_hooks, "add-hooks").unwrap();
+//    instrument(&Path::new(file), add_hooks, "add-hooks").unwrap();
 //    module.to_file("test/debug.wasm").unwrap();
 }
 
@@ -30,7 +36,7 @@ fn leb128_signed_roundtrips() {
     for u in u16::min_value() ..= u16::max_value() {
         let mut buf: Vec<u8> = Vec::new();
         buf.write_leb128(u).unwrap();
-        let u_decode = buf.as_slice().read_leb128().unwrap();
+        let u_decode: u16 = buf.as_slice().read_leb128().unwrap();
         assert_eq!(u, u_decode,
                    "\nbuffer:{}",
                    buf.iter().map(|byte| format!(" 0x{:x}", byte)).collect::<Vec<String>>().concat());
@@ -39,7 +45,7 @@ fn leb128_signed_roundtrips() {
     for i in i16::min_value() ..= i16::max_value() {
         let mut buf: Vec<u8> = Vec::new();
         buf.write_leb128(i).unwrap();
-        let i_decode = buf.as_slice().read_leb128().unwrap();
+        let i_decode: i16 = buf.as_slice().read_leb128().unwrap();
         assert_eq!(i, i_decode,
                    "\nbuffer:{}",
                    buf.iter().map(|byte| format!(" 0x{:x}", byte)).collect::<Vec<String>>().concat());

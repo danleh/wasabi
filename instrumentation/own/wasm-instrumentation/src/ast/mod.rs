@@ -14,7 +14,7 @@ pub mod convert;
 
 /* Types */
 
-#[derive(WasmBinary, Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[derive(WasmBinary, Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize)]
 pub enum ValType {
     #[tag = 0x7f] I32,
     #[tag = 0x7e] I64,
@@ -30,7 +30,7 @@ impl fmt::Display for ValType {
     }
 }
 
-#[derive(WasmBinary, Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(WasmBinary, Debug, PartialEq, Eq, Clone, Hash, Serialize)]
 #[tag = 0x60]
 pub struct FunctionType(pub Vec<ValType>, pub Vec<ValType>);
 
