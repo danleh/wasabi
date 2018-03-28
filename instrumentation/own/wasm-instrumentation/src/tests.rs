@@ -14,15 +14,11 @@ use serde_json;
 #[test]
 #[ignore]
 fn debug() {
-
-
-//    println!("{}", I64Eqz.to_js_hook());
-    let file = "test/input/hello-manual.wasm";
+    let file = "test/input/hello-emcc.wasm";
     let module = highlevel::Module::from_file(file).unwrap();
-    println!("{}", serde_json::to_string(&module.functions[0].to_info()).unwrap())
-
+//    println!("{}", serde_json::to_string(&module.functions[0].to_info()).unwrap())
 //    println!("{:?}", module);
-//    instrument(&Path::new(file), add_hooks, "add-hooks").unwrap();
+    instrument(&Path::new(file), add_hooks, "add-hooks").unwrap();
 //    module.to_file("test/debug.wasm").unwrap();
 }
 

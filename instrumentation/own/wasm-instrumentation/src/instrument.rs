@@ -3,6 +3,7 @@ use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGro
 use js_codegen::append_mangled_tys;
 use std::collections::{HashMap, HashSet};
 use std::mem::{discriminant, Discriminant};
+use static_info::*;
 
 // TODO Idea: provide two options of connecting user analysis (i.e., client instrumentation code)
 // with the instrumented binary (i.e., the "host" code + hooks + import of callbacks):
@@ -177,29 +178,31 @@ fn label_to_instr_idx(begin_stack: &[Begin], label: Idx<Label>) -> usize {
 }
 
 pub fn add_hooks(module: &mut Module) {
+    let mut static_info = StaticInfo::default();
+
     // export the table for the JS code to translate table indices -> function indices
     for table in &mut module.tables {
-        if let None = table.export {
-            table.export = Some("table".into());
-        } else {
-            // FIXME What if table is already exported?
-            // We need to generate JS code that uses that exported table name, not our "table" one.
+        static_info.table_export_name = match table.export {
+            Some(ref table_name) => table_name.clone(),
+            None => {
+                table.export = Some("table".into());
+                "table".into()
+            }
         }
     }
 
+    static_info.functions = module.functions.iter().map(Function::to_info).collect();
+
     // collect some info, necessary for monomorphization of polymorphic hooks
-    let (func_arg_tys, func_result_tys): (Vec<Vec<ValType>>, Vec<Vec<ValType>>) = module.functions.iter()
+    let (mut unique_arg_tys, mut unique_result_tys): (Vec<Vec<ValType>>, Vec<Vec<ValType>>) = module.functions.iter()
         .map(|func| (func.type_.params.clone(), func.type_.results.clone()))
         .unzip();
-    let mut unique_result_tys = func_result_tys.clone();
     unique_result_tys.sort();
     unique_result_tys.dedup();
-    let mut unique_arg_tys = func_arg_tys.clone();
     unique_arg_tys.sort();
     unique_arg_tys.dedup();
 
     let global_tys: Vec<ValType> = module.globals.iter().map(|g| g.type_.0).collect();
-    let mut br_table_info = Vec::new();
 
     /* add hooks (imported functions, provided by the analysis in JavaScript) */
 
@@ -506,8 +509,8 @@ pub fn add_hooks(module: &mut Module) {
                             instrs
                         }
                         (_, Call(target_func_idx)) => {
-                            let arg_tys = func_arg_tys[target_func_idx.0].as_slice();
-                            let result_tys = func_result_tys[target_func_idx.0].as_slice();
+                            let arg_tys = static_info.functions[target_func_idx.0].type_.params.as_slice();
+                            let result_tys = static_info.functions[target_func_idx.0].type_.results.as_slice();
 
                             let arg_tmps = add_fresh_locals(locals, function_type, arg_tys);
                             let result_tmps = add_fresh_locals(locals, function_type, result_tys);
@@ -711,13 +714,16 @@ pub fn add_hooks(module: &mut Module) {
                             ]
                         }
                         (_, BrTable(target_table, default_target)) => {
-                            br_table_info.push((target_table, default_target)); // TODO translate labels -> instr loc
+                            static_info.br_tables.push(BrTableInfo::new(
+                                target_table.into_iter().map(|label| LabelAndLocation::new(label.0)).collect(),
+                                LabelAndLocation::new(default_target.0)
+                            ));
                             let target_idx_tmp = add_fresh_local(locals, function_type, I32);
                             vec![
                                 TeeLocal(target_idx_tmp),
                                 location.0,
                                 location.1,
-                                I32Const((br_table_info.len() - 1) as i32),
+                                I32Const((static_info.br_tables.len() - 1) as i32),
                                 GetLocal(target_idx_tmp),
                                 Call(br_table_hook),
                                 instr]
