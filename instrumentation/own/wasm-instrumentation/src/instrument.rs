@@ -437,7 +437,7 @@ pub fn add_hooks(module: &mut Module) {
                                 Call(select_hook),
                             ]
                         }
-                        (_, CurrentMemory(_ /* TODO memory idx == 0 in WASM version 1 */)) => {
+                        (_, CurrentMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
                             let result_tmp = add_fresh_local(locals, function_type, I32);
                             vec![
                                 instr,
@@ -448,7 +448,7 @@ pub fn add_hooks(module: &mut Module) {
                                 Call(current_memory_hook)
                             ]
                         }
-                        (_, GrowMemory(_ /* TODO memory idx == 0 in WASM version 1 */)) => {
+                        (_, GrowMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
                             let input_tmp = add_fresh_local(locals, function_type, I32);
                             let result_tmp = add_fresh_local(locals, function_type, I32);
                             vec![
@@ -534,7 +534,7 @@ pub fn add_hooks(module: &mut Module) {
 
                             instrs
                         }
-                        (_, CallIndirect(func_ty, _ /* TODO table idx == 0 in WASM version 1 */)) => {
+                        (_, CallIndirect(func_ty, _ /* table idx == 0 in WASM version 1 */)) => {
                             let arg_tys = func_ty.params.as_slice();
                             let result_tys = func_ty.results.as_slice();
 
@@ -584,71 +584,50 @@ pub fn add_hooks(module: &mut Module) {
                             instrs
                         }
                         (Unary { input_ty, result_ty }, instr) => {
-                            // duplicate stack arguments
                             let input_tmp = add_fresh_local(locals, function_type, input_ty);
                             let result_tmp = add_fresh_local(locals, function_type, result_ty);
 
                             let mut instrs = vec![
-                                // save input before
                                 TeeLocal(input_tmp),
-                                // execute original instr
                                 instr.clone(),
-                                // save result after
-                                SetLocal(result_tmp),
+                                TeeLocal(result_tmp),
                                 location.0,
                                 location.1,
                             ];
                             // restore saved input and result
                             instrs.append(&mut convert_i64_instr(GetLocal(input_tmp), input_ty));
                             instrs.append(&mut convert_i64_instr(GetLocal(result_tmp), result_ty));
-                            instrs.extend_from_slice(&[
-                                monomorphic_hook_call(&instr),
-                                // restore result after hook call
-                                GetLocal(result_tmp),
-                            ]);
+                            instrs.push(monomorphic_hook_call(&instr));
                             instrs
                         }
                         (Binary { first_ty, second_ty, result_ty }, instr) => {
-                            // duplicate stack arguments
                             let first_tmp = add_fresh_local(locals, function_type, first_ty);
                             let second_tmp = add_fresh_local(locals, function_type, second_ty);
                             let result_tmp = add_fresh_local(locals, function_type, result_ty);
 
                             let mut instrs = vec![
-                                // save input before
                                 SetLocal(second_tmp),
                                 TeeLocal(first_tmp),
                                 GetLocal(second_tmp),
-                                // execute original instr
                                 instr.clone(),
-                                // save result after
-                                SetLocal(result_tmp),
+                                TeeLocal(result_tmp),
                                 location.0,
                                 location.1,
                             ];
-                            // restore saved input and result
                             instrs.append(&mut convert_i64_instr(GetLocal(first_tmp), first_ty));
                             instrs.append(&mut convert_i64_instr(GetLocal(second_tmp), second_ty));
                             instrs.append(&mut convert_i64_instr(GetLocal(result_tmp), result_ty));
-                            instrs.extend_from_slice(&[
-                                monomorphic_hook_call(&instr),
-                                // restore result after hook call
-                                GetLocal(result_tmp),
-                            ]);
+                            instrs.push(monomorphic_hook_call(&instr));
                             instrs
                         }
                         (MemoryLoad(ty, memarg), instr) => {
-                            // duplicate stack arguments
                             let addr_tmp = add_fresh_local(locals, function_type, I32);
                             let value_tmp = add_fresh_local(locals, function_type, ty);
 
                             let mut instrs = vec![
-                                // save input before
                                 TeeLocal(addr_tmp),
-                                // execute original instr
                                 instr.clone(),
-                                // save result after
-                                SetLocal(value_tmp),
+                                TeeLocal(value_tmp),
                                 location.0,
                                 location.1,
                                 GetLocal(addr_tmp),
@@ -656,11 +635,7 @@ pub fn add_hooks(module: &mut Module) {
                                 I32Const(memarg.alignment as i32),
                             ];
                             instrs.append(&mut convert_i64_instr(GetLocal(value_tmp), ty));
-                            instrs.extend_from_slice(&[
-                                monomorphic_hook_call(&instr),
-                                // restore result after hook call
-                                GetLocal(value_tmp),
-                            ]);
+                            instrs.push(monomorphic_hook_call(&instr));
                             instrs
                         }
                         (MemoryStore(ty, memarg), instr) => {
@@ -669,11 +644,9 @@ pub fn add_hooks(module: &mut Module) {
                             let value_tmp = add_fresh_local(locals, function_type, ty);
 
                             let mut instrs = vec![
-                                // save input before
                                 SetLocal(value_tmp),
                                 TeeLocal(addr_tmp),
                                 GetLocal(value_tmp),
-                                // execute original instr
                                 instr.clone(),
                                 location.0,
                                 location.1,
