@@ -25,32 +25,54 @@ enum Instr {
     Local(LocalOp, Idx<Local>),
     Global(GlobalOp, Idx<Global>),
 
-    Load(ValType, Option<LoadSize>),
-    // FIXME can have invalid combinations
-    Store(ValType, Option<StoreSize>), // FIXME can have invalid combinations
+    Load(ValType, Option<LoadSize>, Memarg),
+    Store(ValType, Option<StoreSize>, Memarg),
 
     CurrentMemory(Idx<Memory>),
     GrowMemory(Idx<Memory>),
 
     Const(Val),
+    Unary(UnaryOp),
+    Binary(BinaryOp),
 
-    IUnary(IUnaryOp),
-    FUnary(FUnaryOp),
 }
+
+enum Signedness { Signed, Unsigned }
+
+enum MemSize { _8, _16, _32 }
+
+struct LoadSize(MemSize, Signedness);
+
+struct StoreSize(MemSize);
 
 enum LocalOp { Get, Set, Tee }
 
 enum GlobalOp { Get, Set }
 
-enum IUnaryOp { Clz, Ctz, Popcnt }
-
-enum FUnaryOp { Abs, Neg, Sqrt, Ceil, Floor, Trunc, Nearest }
+enum UnaryOp {
+    // integer
+    Clz,
+    Ctz,
+    Popcnt,
+    // float
+    Abs,
+    Neg,
+    Sqrt,
+    Ceil,
+    Floor,
+    Trunc,
+    Nearest,
+}
 
 enum Val {
     I32(i32),
     I64(i64),
     F32(f32),
     F64(f64),
+}
+
+impl Val {
+    fn to_type(&self) -> ValType {}
 }
 
 type ValType = Discriminant<Val>;
