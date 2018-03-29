@@ -616,8 +616,9 @@ pub fn add_hooks(module: &mut Module) {
 
                             let mut instrs = vec![
                                 // save input before
+                                SetLocal(second_tmp),
                                 TeeLocal(first_tmp),
-                                TeeLocal(second_tmp),
+                                GetLocal(second_tmp),
                                 // execute original instr
                                 instr.clone(),
                                 // save result after
