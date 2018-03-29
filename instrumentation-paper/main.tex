@@ -63,13 +63,13 @@
 \begin{document}
 
 %% Title information
-\title{Wasambi: WebAssembly Binary Instrumentation}         %% [Short Title] is optional;
+\title{Wasabi: WebAssembly \\Analysis and Binary Instrumentation}         %% [Short Title] is optional;
                                         %% when present, will be used in
                                         %% header instead of Full Title.
 %\titlenote{with title note}             %% \titlenote is optional;
                                         %% can be repeated if necessary;
                                         %% contents suppressed with 'anonymous'
-%\subtitle{Subtitle}                     %% \subtitle is optional
+%\subtitle{}                     %% \subtitle is optional
 %\subtitlenote{with subtitle note}       %% \subtitlenote is optional;
                                         %% can be repeated if necessary;
                                         %% contents suppressed with 'anonymous'
@@ -175,9 +175,46 @@ Text of abstract \ldots.
 
 \section{Introduction}
 
-Text of paper \ldots
+\paragraph{Name of the Tool}
+there are already 2 programs with name Wasabi, alternative: Wasambi?  sounds similar to Jalangi ;)
 
-%% Bibliography
-%\bibliography{bibfile}
+make searchable: "wasabi toolkit"?
+
+domains: (wasambi|wasabi-toolkit|wasabi-framework).(de|com|org|eu) are free
+
+crates.io names are both free: wasabi and wasambi
+
+
+\paragraph{Pros of our approach}
+Full coverage: every instruction can be observed
+
+i64 handling
+
+memory is never touched (\textrightarrow robustness), only instructions inserted are operating on stack/locals + calls
+
+(TODO) could on-the-fly instrument by compiling instrumentation itself to WASM
+
+no need to modify browser engine: works with every vendor, easier to maintain
+
+
+\section{Background}
+
+\subsection{WebAssembly}
+
+WebAssembly \cite{Haas:2017:BWU:3062341.3062363}
+
+\subsection{Binary Instrumentation and Dynamic Analysis}
+
+Jalangi \cite{Sen:2013:JSR:2491411.2491447}
+
+PIN \cite{Luk:2005:PBC:1065010.1065034}
+
+Valgrind \cite{Nethercote:2007:VFH:1250734.1250746}
+
+TaintAssembly \cite{2018arXiv180201050F}
+
+TaintDroid \cite{Enck:2014:TIT:2642648.2619091}
+
+\bibliography{references}
 
 \end{document}
