@@ -62,8 +62,10 @@
 
 \begin{document}
 
+\newcommand{\name}{Wasabi}
+
 %% Title information
-\title{Wasabi: WebAssembly \\Analysis and Binary Instrumentation}         %% [Short Title] is optional;
+\title{\name: WebAssembly \\Analysis and Binary Instrumentation}         %% [Short Title] is optional;
                                         %% when present, will be used in
                                         %% header instead of Full Title.
 %\titlenote{with title note}             %% \titlenote is optional;
@@ -196,8 +198,78 @@ memory is never touched (\textrightarrow robustness), only instructions inserted
 
 no need to modify browser engine: works with every vendor, easier to maintain
 
-
+\newpage
 \section{Background}
+
+why Wasm is interesting
+
+compilation target for languages on the client (a first since JS!)
+
+new Ethereum VM bytecode
+
+running example: WAST format, WASM bytecode
+
+\newpage
+\section{Overview}
+
+layered architecture
+
+\newpage
+\section{Design Space and Trade-Offs}
+streaming instrumentation
+
+parallel instrumentation
+
+static vs dynamic (JIT) instrumentation: dynamic not necessary since WASM can be reliably disassembled (unlike x86)
+
+in-engine vs externally
+
+instrumentation language: Rust -> WASM
+
+analysis language: JS
+
+\newpage
+\section{Implementation}
+
+\subsection{Using the \name{} Analysis API}
+
+\subsection{Limitations}
+- call\_indirect
+
+- mapping labels -> locations
+
+- drop/select
+
+- mutations
+
+\newpage
+\section{Evaluation}
+
+\subsection{Overhead}
+code size
+
+performance: SPEC CPU, Ostrich, vs. TaintAsm, SF4.0 "kernels"?
+
+\subsection{Robustness}
+compile wide range of benchmarks/test programs, see if they still work as before
+
+\subsection{Usability}
+case studies: tools/analyses written on top of \name
+
+stmt, branch coverage
+
+taint analysis
+
+memory profiler, tracer
+
+for security: reverse engineering WASM malware, especially important now that WASM takes away "view source" mentality of the web
+
+idea: reverse engineer coinhive monero miner written in WASM
+
+"enabling technology", e.g. Jalangi has been used in ... projects, cited ... times
+
+\newpage
+\section{Related Work}
 
 \subsection{WebAssembly}
 
