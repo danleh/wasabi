@@ -329,6 +329,18 @@ impl Module {
         }
         types
     }
+
+    pub fn eval_const_expr(&self, expr: &Expr) -> Instr {
+        use self::Instr::*;
+        if let &[ref instr, End] = expr.as_slice() {
+            match *instr {
+                I32Const(_) | I64Const(_) | F32Const(_) | F64Const(_) => return instr.clone(),
+                GetGlobal(idx) => return self.eval_const_expr(self.globals[idx.0].init.as_ref().unwrap()),
+                _ => {}
+            }
+        }
+        unimplemented!("currently only constant expressions with a single T.const or get_global instruction are supported, but got: {:?}", expr);
+    }
 }
 
 impl Function {

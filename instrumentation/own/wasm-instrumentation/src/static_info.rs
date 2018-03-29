@@ -1,23 +1,31 @@
 use ast::{FunctionType, ValType};
 use ast::highlevel::{Function, Module};
 
-impl<'a> From<&'a Module> for ModuleInfo {
-    fn from(module: &Module) -> Self {
-        ModuleInfo {
-            functions: module.functions.iter().map(Into::into).collect(),
-            globals: module.globals.iter().map(|g| g.type_.0).collect(),
-            table_export_name: module.tables[0].export.clone().unwrap(),
-            br_tables: vec![],
-        }
-    }
-}
-
 #[derive(Serialize)]
 pub struct ModuleInfo {
     pub functions: Vec<FunctionInfo>,
     pub globals: Vec<ValType>,
     pub table_export_name: String,
+//    pub table: Vec<usize>,
     pub br_tables: Vec<BrTableInfo>,
+}
+
+impl<'a> From<&'a Module> for ModuleInfo {
+    fn from(module: &Module) -> Self {
+        ModuleInfo {
+            functions: module.functions.iter().map(Into::into).collect(),
+            globals: module.globals.iter().map(|g| g.type_.0).collect(),
+//            table: module.tables.iter()
+//                .flat_map(|table| table.elements.clone())
+//                .map(|element| {
+//                    eprintln!("{:?}", element.offset);
+//                    eprintln!("{:?}", module.eval_const_expr(&element.offset));
+//                    0usize
+//                }).collect(),
+            table_export_name: module.tables[0].export.clone().unwrap(),
+            br_tables: vec![],
+        }
+    }
 }
 
 #[derive(Serialize)]
