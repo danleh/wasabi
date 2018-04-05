@@ -1,6 +1,6 @@
 // analysis specific
 
-// FIXME how to get 100% data, i.e., the number of possible branches? would need to know each if/br_if/br_table instr
+// TODO how to get 100% data, i.e., the number of possible branches? would need to know each if/br_if/br_table instr
 const coverageData = [];
 
 // branch can be boolean (for if and br_if) or integer (for br_table, i.e., switches)
