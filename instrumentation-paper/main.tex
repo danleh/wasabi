@@ -63,7 +63,11 @@
 
 \newcommand{\citeTodo}{[\textcolor{red}{\bfseries?}]}
 
+\usepackage{enumitem}
+
 \newcommand{\name}{Wasabi}
+
+\hyphenation{Web-As-sem-bly}
 
 \begin{document}
 
@@ -74,7 +78,7 @@
 %\titlenote{with title note}             %% \titlenote is optional;
                                         %% can be repeated if necessary;
                                         %% contents suppressed with 'anonymous'
-\subtitle{Powerful, Easy, Robust -- Pick Three.}                     %% \subtitle is optional
+\subtitle{Powerful, Robust, Easy -- Pick Three.}                     %% \subtitle is optional
 %\subtitlenote{with subtitle note}       %% \subtitlenote is optional;
                                         %% can be repeated if necessary;
                                         %% contents suppressed with 'anonymous'
@@ -140,7 +144,7 @@
 %% Note: \begin{abstract}...\end{abstract} environment must come
 %% before \maketitle command
 \begin{abstract}
-Text of abstract \ldots.
+\vspace*{10cm}
 \end{abstract}
 
 
@@ -168,7 +172,7 @@ Text of abstract \ldots.
 
 %% Keywords
 %% comma separated list
-\keywords{WebAssembly, Binary Instrumentation}  %% \keywords are mandatory in final camera-ready submission
+\keywords{WebAssembly, dynamic analysis, binary instrumentation}  %% \keywords are mandatory in final camera-ready submission
 
 
 %% \maketitle
@@ -181,54 +185,52 @@ Text of abstract \ldots.
 \section{Introduction}
 
 % Context: Set the stage, relate to reader's situation
-Up until last year, the only widely supported programming language for the Web was JavaScript. With \emph{WebAssembly} (often abbreviated \emph{Wasm})~\cite{Haas:2017:BWU:3062341.3062363, WasmWebsite} reaching cross-browser consensus~\cite{WasmConsensus}, developers finally have a safe, fast, and portable alternative to chose from for client-side execution. Wasm is also already available in the current long-term support version of Node.js~\cite{NodejsWebsite}, a widely used server-side runtime, and is being considered as the next version for the Ethereum \enquote{smart contract} virtual machine~\cite{EthereumWasm}. With all of these uses, WebAssembly will be a ubiquitous and highly important virtual instruction set for years to come.
+Up until last year, the only widely supported programming language for the Web was JavaScript. With \emph{WebAssembly} (often abbreviated \emph{Wasm})~\cite{Haas:2017:BWU:3062341.3062363, WasmWebsite} reaching cross-browser consensus~\cite{WasmConsensus}, developers finally have a safe, fast, and portable alternative to chose from for client-side execution. Wasm is also already available in the current long-term support version of Node.js~\cite{NodejsWebsite}, a widely used server-side runtime, and is being considered for the next version of the Ethereum virtual machine~\cite{EthereumWasm}. With all of these uses, WebAssembly will be a ubiquitous and highly important virtual instruction set for years to come.
 
 The central properties of WebAssembly are as much reason for its attractiveness as they are challenges for users: 
 
-\begin{enumerate}
-	\item WebAssembly is a binary instruction format, which makes it compact (thus, quick to send over the network) and fast to decode (unlike JavaScript, where parsing can be a major performance bottleneck~\citeTodo). Unfortunately, this is also the final nail in the coffin for the \enquote{view source mentality} of the Web. Users definitely need more tooling support to understand complex web applications than ever before.
+\begin{enumerate}[topsep=0pt, wide]
+	\item WebAssembly is a binary instruction format, which makes it compact (thus, quick to send over the network) and fast to decode (unlike JavaScript, where parsing can be a major performance bottleneck~\citeTodo). Unfortunately, this is also the final nail in the coffin for the \enquote{view source mentality} of the Web. Users will need more tooling than ever to understand complex web applications.
 	
-	\item Unlike previous attempts like ActiveX, Native Client~\citeTodo, or asm.js~\citeTodo, WebAssembly is supported by all major browsers%
+	\item Unlike previous attempts like ActiveX, Native Client~\citeTodo, or asm.js~\citeTodo, WebAssembly is truly portable across all major browsers%
 %	 (Chrome, Edge, Firefox, Safari)
-	 , which is an impressive social effort on top of the technical achievement. This multitude of actors (even more than for x86, for example!) makes it crucial 
+	, which is an impressive social effort on top of the technical achievement. This multitude of actors makes it crucial to not rely on a single vendor for tooling support. Developers need to be able to test on and work with any of the competing WebAssembly implementations.
+%	Developers also have to work with all of these WebAssembly implementations, if just because their visitors are using different browsers.
+	 
+	\item WebAssembly's core use-case is as a compilation target for systems programming languages like C, C++, or Rust. The low-level control over memory layout and allocations, and the close mapping to native instructions enables much of its speed, but also comes with great responsibility. Native developers are used to tools built on top of, e.g., Valgrind~\citeTodo{} or Pin~\citeTodo{} to find bugs or fix performance errors, but no dynamic analysis platform exists for WebAssembly so far.
 	
 \end{enumerate}
 
+%new possibilities, but also new challenges:
+%- (portable; good: works everywhere, bad: need tools in all of these browsers) Supported across all major browsers (Chrome, Firefox, Safari, Edge), on PCs and mobile devices
+%- (binary; good: compact and fast, bad: no view source anymore, more low-level, less accessible -> we need tools more than ever!) While the binary format makes WebAssembly programs compact and quick to decode (unlike JavaScript, where parsing can take a substantial amount of the time to first meaningful interaction), it is also the final nail in the coffin for the "view source" mentality of the web.
+%- Compilation target for systems languages like C, C++, and Rust; people are used to great analysis tools like Memcheck or UBSan, but currently there are no counterparts for this in Wasm
 
+%good: anything CPU and/or memory allocation intensive
 
+%Wasm: new performant low-level/binary stack-based VM, client side web only had JavaScript and several not or no longer widely supported extensions such as ActiveX, Java, Flash, NaCl and PNaCl, asm.js.
 
-new possibilities, but also new challenges:
-- (portable; good: works everywhere, bad: need tools in all of these browsers) Supported across all major browsers (Chrome, Firefox, Safari, Edge), on PCs and mobile devices
-- (binary; good: compact and fast, bad: no view source anymore, more low-level, less accessible -> we need tools more than ever!) While the binary format makes WebAssembly programs compact and quick to decode (unlike JavaScript, where parsing can take a substantial amount of the time to first meaningful interaction), it is also the final nail in the coffin for the "view source" mentality of the web.
-- Compilation target for systems languages like C, C++, and Rust; people are used to great analysis tools like Memcheck or UBSan, but currently there are no counterparts for this in Wasm
-
-
- good: anything CPU and/or memory allocation intensive
-
-
-Wasm: new performant low-level/binary stack-based VM, client side web only had JavaScript and several not or no longer widely supported extensions such as ActiveX, Java, Flash, NaCl and PNaCl, asm.js.
-Dynamic Analysis: very generic term, powerful techniques fall into this category, used 
+%Dynamic Analysis: very generic term, powerful techniques fall into this category, used 
 
 % Gap: What is missing, "the problem"
-True end of the "view-source" mentality (already severely limited with bundlers, minification, obfuscation)
-Very early: static analysis, like wasm explorer/wasm Studio, wasm code size profiler
-No dynamic wasm tooling at all (to the best of our knowledge)
+%True end of the "view-source" mentality (already severely limited with bundlers, minification, obfuscation)
+%Very early: static analysis, like wasm explorer/wasm Studio, wasm code size profiler
+%No dynamic wasm tooling at all (to the best of our knowledge)
 
 % Innovation: What do we do and why does it solve the problem
 
-
-
-\paragraph{Name of the Tool}
-there are already 2 programs with name Wasabi, alternative: Wasambi?  sounds similar to Jalangi ;)
-
-make searchable: "wasabi toolkit"?
-
-domains: (wasambi|wasabi-toolkit|wasabi-framework).(de|com|org|eu) are free
-
-crates.io names are both free: wasabi and wasambi
-
+%\paragraph{Name of the Tool}
+%there are already 2 programs with name Wasabi, alternative: Wasambi?  sounds similar to Jalangi ;)
+%
+%make searchable: "wasabi toolkit"?
+%
+%domains: (wasambi|wasabi-toolkit|wasabi-framework).(de|com|org|eu) are free
+%
+%crates.io names are both free: wasabi and wasambi
 
 \paragraph{Pros of our approach}
+Some of the robustness of our approach can be attributed to the great design of WebAssembly (e.g., reliable disassembly, unlike for x86), but others have involved careful design of our approach (no memory modification) and necessitated solving unique challenges (monomorphization of instrumentation hooks)
+
 Full coverage: every instruction can be observed
 
 i64 handling
