@@ -59,19 +59,22 @@
 \usepackage{subcaption} %% For complex figures with subfigures/subcaptions
                         %% http://ctan.org/pkg/subcaption
 
+\usepackage{csquotes}
 
-\begin{document}
+\newcommand{\citeTodo}{[\textcolor{red}{\bfseries?}]}
 
 \newcommand{\name}{Wasabi}
 
+\begin{document}
+
 %% Title information
-\title{\name: WebAssembly \\Analysis and Binary Instrumentation}         %% [Short Title] is optional;
+\title{\name: WebAssembly\\Analysis and Binary Instrumentation}         %% [Short Title] is optional;
                                         %% when present, will be used in
                                         %% header instead of Full Title.
 %\titlenote{with title note}             %% \titlenote is optional;
                                         %% can be repeated if necessary;
                                         %% contents suppressed with 'anonymous'
-%\subtitle{}                     %% \subtitle is optional
+\subtitle{Powerful, Easy, Robust -- Pick Three.}                     %% \subtitle is optional
 %\subtitlenote{with subtitle note}       %% \subtitlenote is optional;
                                         %% can be repeated if necessary;
                                         %% contents suppressed with 'anonymous'
@@ -177,6 +180,44 @@ Text of abstract \ldots.
 
 \section{Introduction}
 
+% Context: Set the stage, relate to reader's situation
+Up until last year, the only widely supported programming language for the Web was JavaScript. With \emph{WebAssembly} (often abbreviated \emph{Wasm})~\cite{Haas:2017:BWU:3062341.3062363, WasmWebsite} reaching cross-browser consensus~\cite{WasmConsensus}, developers finally have a safe, fast, and portable alternative to chose from for client-side execution. Wasm is also already available in the current long-term support version of Node.js~\cite{NodejsWebsite}, a widely used server-side runtime, and is being considered as the next version for the Ethereum \enquote{smart contract} virtual machine~\cite{EthereumWasm}. With all of these uses, WebAssembly will be a ubiquitous and highly important virtual instruction set for years to come.
+
+The central properties of WebAssembly are as much reason for its attractiveness as they are challenges for users: 
+
+\begin{enumerate}
+	\item WebAssembly is a binary instruction format, which makes it compact (thus, quick to send over the network) and fast to decode (unlike JavaScript, where parsing can be a major performance bottleneck~\citeTodo). Unfortunately, this is also the final nail in the coffin for the \enquote{view source mentality} of the Web. Users definitely need more tooling support to understand complex web applications than ever before.
+	
+	\item Unlike previous attempts like ActiveX, Native Client~\citeTodo, or asm.js~\citeTodo, WebAssembly is supported by all major browsers%
+%	 (Chrome, Edge, Firefox, Safari)
+	 , which is an impressive social effort on top of the technical achievement. This multitude of actors (even more than for x86, for example!) makes it crucial 
+	
+\end{enumerate}
+
+
+
+
+new possibilities, but also new challenges:
+- (portable; good: works everywhere, bad: need tools in all of these browsers) Supported across all major browsers (Chrome, Firefox, Safari, Edge), on PCs and mobile devices
+- (binary; good: compact and fast, bad: no view source anymore, more low-level, less accessible -> we need tools more than ever!) While the binary format makes WebAssembly programs compact and quick to decode (unlike JavaScript, where parsing can take a substantial amount of the time to first meaningful interaction), it is also the final nail in the coffin for the "view source" mentality of the web.
+- Compilation target for systems languages like C, C++, and Rust; people are used to great analysis tools like Memcheck or UBSan, but currently there are no counterparts for this in Wasm
+
+
+ good: anything CPU and/or memory allocation intensive
+
+
+Wasm: new performant low-level/binary stack-based VM, client side web only had JavaScript and several not or no longer widely supported extensions such as ActiveX, Java, Flash, NaCl and PNaCl, asm.js.
+Dynamic Analysis: very generic term, powerful techniques fall into this category, used 
+
+% Gap: What is missing, "the problem"
+True end of the "view-source" mentality (already severely limited with bundlers, minification, obfuscation)
+Very early: static analysis, like wasm explorer/wasm Studio, wasm code size profiler
+No dynamic wasm tooling at all (to the best of our knowledge)
+
+% Innovation: What do we do and why does it solve the problem
+
+
+
 \paragraph{Name of the Tool}
 there are already 2 programs with name Wasabi, alternative: Wasambi?  sounds similar to Jalangi ;)
 
@@ -197,6 +238,33 @@ memory is never touched (\textrightarrow robustness), only instructions inserted
 (TODO) could on-the-fly instrument by compiling instrumentation itself to WASM
 
 no need to modify browser engine: works with every vendor, easier to maintain
+
+\paragraph{Contributions}
+
+- tooling is an "enabling technology" for many more applications: performance, security, correctness
+- wasm is young, not tooling yet!
+- first binary instrumentation framework for Wasm
+- first dynamic analysis framework for Wasm whatsoever
+- heavy-weight, but very powerful and generic (unlike TaintAssembly)
+- see presentations:
+	* Complete, powerful
+	* Robust, correct
+	* Easy-to-use
+- technical: 
+	* "on-demand monomorphization", we create only the variants that actually exist in the binary (compare with all possible combinations that we would otherwise have to create)
+	* no memory changes
+	* convenient, high-level API
+		- mapping labels -> instruction locations
+		- binary/unary hooks are generic over every instruction
+		- different types handled, especially i64
+- meta execution (but lets do it in javascript for now...)
+		
+\paragraph{Open Questions}
+- how is multithreading in C/C++ actually compiled to Wasm?
+	* it cant with stable: fails with "unresolved symbol pthreads"
+	* on nightly: web workers + SAB + added WASM atomic load/store instructions
+
+- how are we different from Jalangi?
 
 \newpage
 \section{Background}
