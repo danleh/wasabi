@@ -71,6 +71,8 @@
 
 \usepackage{cleveref}
 
+\newcommand{\todo}[1]{\textcolor{red}{#1}}
+
 \begin{document}
 
 %% Title information
@@ -189,7 +191,7 @@
 %% Context: Set the stage, relate to reader's situation
 
 % Wasm is new and is here to stay
-Until last year, the only widely supported programming language for the Web was JavaScript. With \emph{WebAssembly} (or \emph{Wasm} for short)~\cite{Haas:2017:BWU:3062341.3062363, WasmWebsite} reaching cross-browser consensus~\cite{WasmConsensus}, developers finally have a fast, yet safe and portable alternative for client-side execution. Wasm is also available in Node.js~\cite{NodejsWebsite}, a widely used server-side runtime, and is being considered for the next version of the Ethereum distributed virtual machine~\cite{EthereumWasm}. With all of these uses, WebAssembly will be a ubiquitous and highly important virtual instruction set for years to come.
+Until last year, the only widely supported programming language for the Web was JavaScript. Now that \emph{WebAssembly} (or \emph{Wasm} for short)~\cite{Haas:2017:BWU:3062341.3062363, WasmWebsite} has reached cross-browser consensus~\cite{WasmConsensus}, developers finally have a fast, yet safe and portable alternative for client-side execution. Wasm is also available in Node.js~\cite{NodejsWebsite}, a widely used server-side runtime, and is being considered for the next version of the Ethereum distributed virtual machine~\cite{EthereumWasm}. With all of these uses, WebAssembly will be a ubiquitous and highly important virtual instruction set for years to come.
 
 % Wasm unique points and implications why dynamic analysis is important
 The central properties of WebAssembly are as much reason for its attractiveness as they are challenges for users: 
@@ -198,57 +200,63 @@ The central properties of WebAssembly are as much reason for its attractiveness 
 	
 	\item Unlike previous attempts like ActiveX, Native Client~\citeTodo, or asm.js~\citeTodo, WebAssembly is truly portable across all major browsers, which is an impressive social achievement on top of the technical one. The multitude of actors makes it crucial to not rely on a single vendor for WebAssembly tooling support. If just because of their users, developers need to test on and work with any of the competing WebAssembly implementations.
 	 
-	\item WebAssembly's core use-case is as a compilation target for systems programming languages like C, C++, or Rust. The low-level control over memory layout and allocations, and the close mapping to native instructions enables much of its speed, but also comes with great responsibility. Developers on x86 are used to tools built on top of, e.g., Valgrind~\citeTodo{} or Pin~\citeTodo{} to find bugs or fix performance problems, but no dynamic analysis platform exists for WebAssembly so far.
+	\item WebAssembly's core use-case is as a compilation target for systems programming languages like C, C++, or Rust. The low-level control over memory layout and allocations, and the close mapping to native instructions enables much of its speed, but also comes with great responsibility. Developers on x86 are used to dynamic analysis tools built on top of, e.g., Valgrind~\citeTodo{} or Pin~\citeTodo{} to find bugs or fix performance problems, but no such platform exists for WebAssembly so far.
 \end{enumerate}
 %new possibilities, but also new challenges:
 %- (portable; good: works everywhere, bad: need tools in all of these browsers) Supported across all major browsers (Chrome, Firefox, Safari, Edge), on PCs and mobile devices
 %- (binary; good: compact and fast, bad: no view source anymore, more low-level, less accessible -> we need tools more than ever!) While the binary format makes WebAssembly programs compact and quick to decode (unlike JavaScript, where parsing can take a substantial amount of the time to first meaningful interaction), it is also the final nail in the coffin for the "view source" mentality of the web.
 %- Compilation target for systems languages like C, C++, and Rust; people are used to great analysis tools like Memcheck or UBSan, but currently there are no counterparts for this in Wasm
 
-\noindent
-In this paper, we present \emph{Wasabi}, a framework for \underline{W}eb\-\underline{As}sembly dynamic \underline{a}nalysis through \underline{b}inary \underline{i}nstrumentation. As every dynamic analysis framework, our design has to take decisions along several broad dimensions (which we explain in more detail in \Cref{sec:design}):
+\noindent \todo{order/extent of the following parts not good yet}
+
+\noindent \todo{wording: platform vs framework vs toolkit}
+
+In this paper, we present \emph{Wasabi}, a framework for \underline{W}eb\-\underline{As}sembly dynamic \underline{a}nalysis through \underline{b}inary \underline{i}nstrumentation. As for any dynamic analysis, our design has to make trade-offs along several broad dimensions:
 
 \begin{itemize}[leftmargin=\parindent, label=$\circ$]
-	\item \emph{Heavyweight vs. lightweight}: Lightweight dynamic analysis (like TODO~\citeTodo) incurs minimal overhead, but does so at the cost of observing only a subset of the program execution, typically at the interface to the outside world, e.g., syscalls to the operating system or library function calls. On the other end of the spectrum stands full emulation (TODO~\citeTodo), which can observe any behavior. It is not only slow, but also very hard to implement correctly, i.e., such that the emulated behavior matches the real execution. We choose (binary) instrumentation, which hits a sweet spot between these extremes. No full Wasm VM has to be implemented or modified, while at the same time any single instruction of the program can be monitored.
+	\item \emph{Specialized vs. generic}: Many dynamic analyses have been written that solve one particular task, such as memory checking (Purify~\citeTodo) or taint analysis (TaintDroid~\citeTodo), and are specifically optimized for it. Especially due to the young age of Wasm, we instead aim to solve the general case first and want to enable others writing many of these specific instances of dynamic analyses on top of our framework. This principle has been tremendously successful with frameworks such as Pin, DynamoRIO, Valgrind, \todo{Java dyn. analysis framework?}, or Jalangi.
+
+	\item \emph{Heavy- vs. lightweight}: Lightweight dynamic analysis (like \texttt{strace} or \texttt{ltrace}~\citeTodo) incurs minimal overhead, but does so at the cost of observing only a small subset of the program execution, typically at the interface to the outside world, e.g., syscalls to the operating system or library function calls. On the other end of the spectrum stands full emulation (TODO~\citeTodo), which can observe any behavior. It is not only slow, but also very hard to implement correctly, i.e., such that the emulated behavior matches the real execution. We choose (binary) instrumentation, which hits a sweet spot between these extremes. No full Wasm VM has to be implemented or modified, but any instruction of the program can be monitored.
 	
-	\item \emph{Static vs. dynamic instrumentation}: In x86, variable length instructions and self-modifying code make reliable static disassembly almost impossible, necessitating dynamic instrumentation in Valgrind~\citeTodo, DynamoRIO~\citeTodo, and Pin~\citeTodo. Thankfully, WebAssembly is well designed to be decoded and verified statically, allowing us to reliably instrument the whole program in one shot before execution. Though, for developer convenience Wasabi does not have to be run externally on Wasm files before execution. Simply adding a single file to your website or Node.js project is sufficient to transparently instrument all Wasm parts of an application.
+	\item \emph{Static vs. dynamic instrumentation}: In x86, variable length instructions and self-modifying code make reliable static disassembly almost impossible, necessitating dynamic instrumentation in Valgrind~\citeTodo, DynamoRIO~\citeTodo, and Pin~\citeTodo. Thankfully, WebAssembly is well designed to be decoded and verified statically, allowing us to reliably instrument the whole program before execution. For developer convenience, Wasabi does not have to be run externally on Wasm files before execution. Simply adding a single file to a website or Node.js project is sufficient to transparently instrument all Wasm parts of an application with \name.
 	
-	\item \emph{Interaction between application and analysis code}:
-	modification/merging/inlining
-	callbacks
-	in which language should it be written	
-	Jalangi~\cite{Sen:2013:JSR:2491411.2491447}
-	
-	possible (no double memory in Wasm)
-	performance (no interop to pay)
-	usability (JS for analyses is nice)
+	\item \emph{Interaction between application and analysis}: The two contrasting choices are to inline the analysis into the original application or to keep the analysis code separate and call-out to it during execution. We chose the latter approach for several reasons: External analyses can be implemented in JavaScript, which is a convenient high-level language; using the callback model requires only minimal modification of the original program; and not having to interleave application and analysis avoids the problem that WebAssembly allows only a single linear memory per program.
+%	
+%	 it avoids having to interleave WebAssembly memory of the application with memory used by the analysis thus making the instrumentation more robust
+%	
+%	also because WebAssembly currently allows only a single linear memory for a program, making it difficult to reliably interleave memory used by the original application with memory used by the analysis code. Instead, we only insert callbacks to imported analysis hooks which also has the benefit of modifying the original program in a very confined way, making the instrumentation robust.
+%	
+%	Valgrind, for example, transforms the application into an intermediate representation (IR), inserts the analysis code into this IR, and then fully resynthesizes the instrumented binary. While this is claimed to offer less overhead to callback-based analysis frameworks (e.g., Jalangi), it is also harder to implement reliably, especially when the original application's memory is modified. In WebAssembly, only one linear memory is permitted per program, which makes it hard to interleave application and analysis code into one output program. Our framework thus uses callbacks, where the actual analysis is performed.
+%	
+%	modification/merging/inlining
+%	callbacks
+%	in which language should it be written	
+%	Jalangi~\cite{Sen:2013:JSR:2491411.2491447}
+%	
+%	possible (no double memory in Wasm)
+%	performance (no interop to pay)
+%	usability (JS for analyses is nice)
 \end{itemize}
 
 \noindent
-We have made our choices in the design space to give Wasabi three key characteristics:
+Apart from being the first dynamic analysis framework for WebAssembly whatsoever, we believe our decisions in the design space give rise to three key characteristics of Wasabi:
 
 \begin{itemize}[leftmargin=\parindent, label=$\circ$]
-	\item \emph{Powerful}: To the best of our knowledge, Wasabi is the first dynamic analysis framework for WebAssembly whatsoever. We think it is prudent to cover the general and powerful case first and only later focus on optimization and special cases.
+	\item \emph{Powerful}: Dynamic analyses based on Wasabi can observe all inputs and outputs to any instruction in the programm. 64 bit integers, even though not natively supported by JavaScript, are handled in conjunction with a runtime component. Wasabi is powerful enough to write heavy-weight dynamic analyses on top of it, such as taint analysis or memory checking.
 	
-	analyze any instruction, all inputs and results to instructions. i64. in practice: suffices to implement common analyses (coverage, profiling) as well as complex ones (memory checking, taint analysis).
-	heavy weight, not lightweight
+	\item \emph{Robust}: The instrumentation inserted into the program is minimal and does not interfere with the execution of the original instructions. In particular, memory is not altered, only calls and their arguments are inserted, and with the help of standard WebAssembly type checking and verification we can statically ensure instrumented binaries are valid.
 	
-	\item \emph{Robust}: original program semantics are not changed, memory unaltered, reliable disassembly (thanks to great spec, not us...)
-	
-	\item \emph{Easy to use}: many analysis frameworks are intimidating to use, many options, lots of code necessary. abstract away 
-	
+	\item \emph{Easy to use}: Many analysis frameworks for low-level languages require a complicated setup or special execution environments. Often, also the analyses themselves have to deal with intricate details of the underlying binary that are orthogonal to the problems the user of such frameworks wants to solve. Wasabi works with any browser (or Node.js) that has WebAssembly support, instrumentation is enabled by including a single file, and analysis code can be written conveniently in JavaScript, using a high-level API that hides irrelevant details of WebAssembly.	
 \end{itemize}
 
-Parts of Wasabi
-static vs dynamic
+\paragraph{Contributions} After some background on WebAssembly in \Cref{sec:background}, the rest of the paper presents our key points:
 
-Dynamic analyses on top of Wasabi
-- coverage
-- trace
-- memory checker
-- taint analysis
-
-Contributions
+\begin{itemize}[leftmargin=\parindent]
+	\item We systematically explore the design space for dynamic analysis of WebAssembly programs and explain the trade-offs for every decision (\Cref{sec:design}).
+	\item We present \emph{\name}, the first dynamic analysis framework for WebAssembly, built on top of binary instrumentation (\Cref{sec:wasabi}). Wasabi is powerful, robust, easy to use, and available to the public under a permissive open-source license at \url{https://github.com/danleh/wasabi}.
+	\item We implement several dynamic analyses (coverage, taint analysis, memory checking) on top of Wasabi to demonstrate its generality and usability in practice (\Cref{sec:examples}).
+	\item We perform experiments to assess Wasabi's code size, runtime, and memory overhead as well as its robustness, i.e., the faithfulness to the unaltered execution (\Cref{sec:experiments}).
+\end{itemize}
 
 %good: anything CPU and/or memory allocation intensive
 
@@ -272,45 +280,45 @@ Contributions
 %
 %crates.io names are both free: wasabi and wasambi
 
-\paragraph{Pros of our approach}
-Some of the robustness of our approach can be attributed to the great design of WebAssembly (e.g., reliable disassembly, unlike for x86), but others have involved careful design of our approach (no memory modification) and necessitated solving unique challenges (monomorphization of instrumentation hooks)
+%\paragraph{Pros of our approach}
+%Some of the robustness of our approach can be attributed to the great design of WebAssembly (e.g., reliable disassembly, unlike for x86), but others have involved careful design of our approach (no memory modification) and necessitated solving unique challenges (monomorphization of instrumentation hooks)
+%
+%Full coverage: every instruction can be observed
+%
+%i64 handling
+%
+%memory is never touched (\textrightarrow robustness), only instructions inserted are operating on stack/locals + calls
+%
+%(TODO) could on-the-fly instrument by compiling instrumentation itself to WASM
+%
+%no need to modify browser engine: works with every vendor, easier to maintain
 
-Full coverage: every instruction can be observed
-
-i64 handling
-
-memory is never touched (\textrightarrow robustness), only instructions inserted are operating on stack/locals + calls
-
-(TODO) could on-the-fly instrument by compiling instrumentation itself to WASM
-
-no need to modify browser engine: works with every vendor, easier to maintain
-
-\paragraph{Contributions}
-
-- tooling is an "enabling technology" for many more applications: performance, security, correctness
-- wasm is young, not tooling yet!
-- first binary instrumentation framework for Wasm
-- first dynamic analysis framework for Wasm whatsoever
-- heavy-weight, but very powerful and generic (unlike TaintAssembly)
-- see presentations:
-	* Complete, powerful
-	* Robust, correct
-	* Easy-to-use
-- technical: 
-	* "on-demand monomorphization", we create only the variants that actually exist in the binary (compare with all possible combinations that we would otherwise have to create)
-	* no memory changes
-	* convenient, high-level API
-		- mapping labels -> instruction locations
-		- binary/unary hooks are generic over every instruction
-		- different types handled, especially i64
-- meta execution (but lets do it in javascript for now...)
-		
-\paragraph{Open Questions}
-- how is multithreading in C/C++ actually compiled to Wasm?
-	* it cant with stable: fails with "unresolved symbol pthreads"
-	* on nightly: web workers + SAB + added WASM atomic load/store instructions
-
-- how are we different from Jalangi?
+%\paragraph{Contributions}
+%
+%- tooling is an "enabling technology" for many more applications: performance, security, correctness
+%- wasm is young, not tooling yet!
+%- first binary instrumentation framework for Wasm
+%- first dynamic analysis framework for Wasm whatsoever
+%- heavy-weight, but very powerful and generic (unlike TaintAssembly)
+%- see presentations:
+%	* Complete, powerful
+%	* Robust, correct
+%	* Easy-to-use
+%- technical: 
+%	* "on-demand monomorphization", we create only the variants that actually exist in the binary (compare with all possible combinations that we would otherwise have to create)
+%	* no memory changes
+%	* convenient, high-level API
+%		- mapping labels -> instruction locations
+%		- binary/unary hooks are generic over every instruction
+%		- different types handled, especially i64
+%- meta execution (but lets do it in javascript for now...)
+%		
+%\paragraph{Open Questions}
+%- how is multithreading in C/C++ actually compiled to Wasm?
+%	* it cant with stable: fails with "unresolved symbol pthreads"
+%	* on nightly: web workers + SAB + added WASM atomic load/store instructions
+%
+%- how are we different from Jalangi?
 
 \newpage
 \section{Background}
@@ -341,38 +349,27 @@ instrumentation language: Rust -> WASM
 analysis language: JS
 
 \newpage
-\section{Overview}
+\section {Wasabi}
+\label{sec:wasabi}
+
+\subsection{Overview}
 \label{sec:overview}
 
 layered architecture
 
-\newpage
-\section{Implementation}
-\label{sec:implementation}
+\subsection{Static Binary Instrumentation}
+\label{sec:instrumentation}
 
-\subsection{Using the \name{} Analysis API}
+\subsection{Runtime}
+\label{sec:runtime}
 
-\subsection{Limitations}
-- call\_indirect
-
-- mapping labels -> locations
-
-- drop/select
-
-- mutations
+\subsection{Using the Analysis Interface}
+\label{sec:interface}
 
 \newpage
-\section{Evaluation}
+\section{Example Dynamic Analyses}
+\label{sec:examples}
 
-\subsection{Overhead}
-code size
-
-performance: SPEC CPU, Ostrich, vs. TaintAsm, SF4.0 "kernels"?
-
-\subsection{Robustness}
-compile wide range of benchmarks/test programs, see if they still work as before
-
-\subsection{Usability and Applications}
 Classical Dynamic Analysis Triplet: Correctness, Security, Performance
 corresponding analyses to implement: memory checking tool (cf. Dr. Memory), taint analysis, profiling/coverage
 
@@ -388,7 +385,30 @@ for security: reverse engineering WASM malware, especially important now that WA
 
 idea: reverse engineer coinhive monero miner written in WASM
 
+\newpage
+\section{Experimental Evaluation}
+\label{sec:experiments}
+
+\subsection{Overhead}
+code size
+
+performance: SPEC CPU, Ostrich, vs. TaintAsm, SF4.0 "kernels"?
+
+\subsection{Robustness}
+compile wide range of benchmarks/test programs, see if they still work as before
+
+\subsection{Usability and Applications}
+
 "enabling technology", e.g. Jalangi has been used in ... projects, cited ... times
+
+\subsection{Limitations}
+- call\_indirect
+
+- mapping labels -> locations
+
+- drop/select
+
+- mutations
 
 \newpage
 \section{Related Work}
