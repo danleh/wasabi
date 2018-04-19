@@ -31,7 +31,7 @@ function if_(location, condition) {
     addBranch(location, condition);
 }
 
-function br_if(locataion, conditionalTarget, condition) {
+function br_if(location, conditionalTarget, condition) {
     addBranch(location, condition);
 }
 
