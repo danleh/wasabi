@@ -158,6 +158,10 @@ fn restore_locals_with_i64_handling(locals: &[Idx<Local>], local_tys: &[ValType]
 /// also keeps instruction index, needed later for End hooks
 #[derive(Debug)]
 enum Begin {
+    // TODO include abstract block stack (i.e. Vec<ValType>) into this enum for
+    // a) drop/select monomorphization
+    // b) type checking
+    // c) statically figuring out implicit drops during br/br_if/br_table
     // function begins correspond to no actual instruction, so no instruction index
     Function,
     Block(usize),
@@ -545,10 +549,10 @@ pub fn add_hooks(module: &mut Module) {
 
                             /* pre call hook */
 
-                            let mut instrs = vec![GetLocal(target_table_idx_tmp)];
+                            let mut instrs = vec![SetLocal(target_table_idx_tmp)];
                             instrs.append(&mut save_stack_to_locals(&arg_tmps));
                             instrs.extend_from_slice(&[
-                                SetLocal(target_table_idx_tmp),
+                                GetLocal(target_table_idx_tmp),
                                 location.0.clone(),
                                 location.1.clone(),
                                 GetLocal(target_table_idx_tmp),
