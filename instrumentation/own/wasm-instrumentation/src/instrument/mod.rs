@@ -6,6 +6,9 @@ use static_info::*;
 use std::collections::{HashMap, HashSet};
 use std::mem::{discriminant, Discriminant};
 
+mod convert_i64;
+use self::convert_i64::{convert_i64_type, convert_i64_instr};
+
 // TODO Idea: provide two options of connecting user analysis (i.e., client instrumentation code)
 // with the instrumented binary (i.e., the "host" code + hooks + import of callbacks):
 // A) "dynamic/late binding": instrument host code once, write many analyses as separate WASM
@@ -28,33 +31,6 @@ use std::mem::{discriminant, Discriminant};
 //    Step 2 inlining (possibly by external tool, WABT?):
 //    Trivial inlining: if function body is empty (since most callbacks won't be used by the
 //    analysis module), remove the call to the function + setup of function arguments
-
-// TODO move next 2 functions into instrument/convert_i64
-
-fn convert_i64_type(ty: &ValType) -> &[ValType] {
-    match ty {
-        &I64 => &[I32, I32],
-        ty => ::std::slice::from_ref(ty),
-    }
-}
-
-// TODO take instr by reference, produce not Vec<Instr> but a &'static [], as in convert_i64_type
-
-// instr is assumed to have no side-effects or influences on the stack (other than pushing one value)
-// ty is necessary when the type cannot be determined only from the instr, e.g., for GetLocal
-fn convert_i64_instr(instr: Instr, ty: ValType) -> Vec<Instr> {
-    match ty {
-        I64 => vec![
-            instr.clone(),
-            I32WrapI64, // low bits
-            instr,
-            I64Const(32), // shift high bits to the right
-            I64ShrS,
-            I32WrapI64, // high bits
-        ],
-        _ => vec![instr],
-    }
-}
 
 fn add_hook(module: &mut Module, name: impl Into<String>, arg_tys_: &[ValType]) -> Idx<Function> {
     // prepend two I32 for (function idx, instr idx)
@@ -340,7 +316,7 @@ pub fn add_hooks(module: &mut Module) {
             let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
             // TODO replace with extend_from_slice and make vec![] -> &'static [] where possible
             instrumented_body.append(&mut
-                match (instr.group(), instr.clone()) { // TODO remove that instr.clone()
+                match (instr.group(), instr.clone()) {
                     (_, Block(_)) => {
                         begin_stack.push(Begin::Block(iidx));
                         vec![
