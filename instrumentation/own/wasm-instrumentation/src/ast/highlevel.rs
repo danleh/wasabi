@@ -15,7 +15,6 @@ use super::ValType::*;
 #[derive(Debug, Clone, Default)]
 pub struct Module {
     pub functions: Vec<Function>,
-    // TODO cleanup: only one Table and Memory supported in WASM version 1 anyway...
     pub tables: Vec<Table>,
     pub memories: Vec<Memory>,
     pub globals: Vec<Global>,
@@ -355,6 +354,36 @@ impl Function {
             for instr in old_body.into_iter() {
                 body.append(&mut f(instr));
             }
+        }
+    }
+
+    /// add a new local with type ty and return its index
+    pub fn add_fresh_local(&mut self, ty: ValType) -> Idx<Local> {
+        let locals = &mut self.code.as_mut()
+            .expect("cannot add local to imported function")
+            .locals;
+        let idx = locals.len() + self.type_.params.len();
+        locals.push(ty);
+        idx.into()
+    }
+
+    pub fn add_fresh_locals(&mut self, tys: &[ValType]) -> Vec<Idx<Local>> {
+        tys.iter()
+            .map(|ty| self.add_fresh_local(*ty))
+            .collect()
+    }
+
+    /// get type of the local with index idx
+    pub fn local_type(&self, idx: Idx<Local>) -> ValType {
+        let param_count = self.type_.params.len();
+        if (idx.0) < param_count {
+            self.type_.params[idx.0]
+        } else {
+            let locals = &self.code.as_ref()
+                .expect("cannot get type of a local in an imported function")
+                .locals;
+            *locals.get(idx.0 - param_count)
+                .expect(&format!("invalid local index {}, function has {} parameters and {} locals", idx.0, param_count, locals.len()))
         }
     }
 }

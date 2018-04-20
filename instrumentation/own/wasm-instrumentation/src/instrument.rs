@@ -1,10 +1,10 @@
 use ast::{FunctionType, GlobalType, Idx, Label, Limits, Local, Memarg, MemoryType, Mutability, ValType, ValType::*};
 use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGroup::*, Memory, Module};
 use js_codegen::append_mangled_tys;
+use serde_json;
+use static_info::*;
 use std::collections::{HashMap, HashSet};
 use std::mem::{discriminant, Discriminant};
-use static_info::*;
-use serde_json;
 
 // TODO Idea: provide two options of connecting user analysis (i.e., client instrumentation code)
 // with the instrumented binary (i.e., the "host" code + hooks + import of callbacks):
@@ -29,29 +29,7 @@ use serde_json;
 //    Trivial inlining: if function body is empty (since most callbacks won't be used by the
 //    analysis module), remove the call to the function + setup of function arguments
 
-/// add a new local with type_
-/// We don't take whole function, but only locals and function_ty since the code itself is not
-/// touched (and we would get some errors with borrowck otherwise).
-/// function_ty is necessary since locals are indexed together with function parameters
-fn add_fresh_local(locals: &mut Vec<ValType>, function_ty: &FunctionType, type_: ValType) -> Idx<Local> {
-    let idx = locals.len() + function_ty.params.len();
-    locals.push(type_);
-    idx.into()
-}
-
-fn add_fresh_locals(locals: &mut Vec<ValType>, function_ty: &FunctionType, tys: &[ValType]) -> Vec<Idx<Local>> {
-    tys.iter()
-        .map(|ty| add_fresh_local(locals, function_ty, *ty))
-        .collect()
-}
-
-fn local_ty(locals: &[ValType], function_ty: &FunctionType, idx: Idx<Local>) -> ValType {
-    if (idx.0) < function_ty.params.len() {
-        function_ty.params[idx.0]
-    } else {
-        locals[idx.0 - function_ty.params.len()]
-    }
-}
+// TODO move next 2 functions into instrument/convert_i64
 
 fn convert_i64_type(ty: &ValType) -> &[ValType] {
     match ty {
@@ -59,6 +37,8 @@ fn convert_i64_type(ty: &ValType) -> &[ValType] {
         ty => ::std::slice::from_ref(ty),
     }
 }
+
+// TODO take instr by reference, produce not Vec<Instr> but a &'static [], as in convert_i64_type
 
 // instr is assumed to have no side-effects or influences on the stack (other than pushing one value)
 // ty is necessary when the type cannot be determined only from the instr, e.g., for GetLocal
@@ -137,6 +117,8 @@ fn save_stack_to_locals(locals: &[Idx<Local>]) -> Vec<Instr> {
     for &local in locals.iter().rev() {
         instrs.push(SetLocal(local));
     }
+    // TODO optimization: for middle local, use TeeLocal, not Set+Get
+    // TODO then use this function even for single-local cases
     // and restore (saving has removed them from the stack)
     for &local in locals.iter() {
         instrs.push(GetLocal(local));
@@ -144,7 +126,7 @@ fn save_stack_to_locals(locals: &[Idx<Local>]) -> Vec<Instr> {
     return instrs;
 }
 
-
+// TODO why not have a slice of tuples (Idx, ValType)?
 fn restore_locals_with_i64_handling(locals: &[Idx<Local>], local_tys: &[ValType]) -> Vec<Instr> {
     assert_eq!(locals.len(), local_tys.len());
 
@@ -328,393 +310,409 @@ pub fn add_hooks(module: &mut Module) {
     // NOTE we do not need to filter out functions since all hooks are imports and thus won't have
     // Code to instrument anyway...
     for (fidx, function) in module.functions() {
-        if let Some(ref mut code) = function.code {
-            let result_tys = function.type_.results.as_slice();
-            let function_type = &function.type_;
-            let locals = &mut code.locals;
-            let mut begin_stack = vec![Begin::Function];
-            code.body = code.body.iter().cloned().enumerate()
-                .flat_map(|(iidx, instr)| {
-                    let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
-                    match (instr.group(), instr.clone()) {
-                        (_, Block(_)) => {
-                            begin_stack.push(Begin::Block(iidx));
-                            vec![
-                                instr,
-                                location.0,
-                                location.1,
-                                Call(begin_block_hook),
-                            ]
-                        }
-                        (_, Loop(_)) => {
-                            begin_stack.push(Begin::Loop(iidx));
-                            vec![
-                                instr,
-                                location.0,
-                                location.1,
-                                Call(begin_loop_hook),
-                            ]
-                        }
-                        (_, If(_)) => {
-                            begin_stack.push(Begin::If(iidx));
+        // only instrument non-imported functions
+        if function.code.is_none() {
+            continue;
+        }
 
-                            let condition_tmp = add_fresh_local(locals, function_type, I32);
+        // move body out of function, so that function is not borrowed during iteration over the original body
+        let original_body = {
+            let dummy_body = Vec::new();
+            ::std::mem::replace(&mut function.code.as_mut().unwrap().body, dummy_body)
+        };
 
-                            vec![
-                                // if_ hook for the condition (always executed on either branch)
-                                TeeLocal(condition_tmp),
-                                location.0.clone(),
-                                location.1.clone(),
-                                GetLocal(condition_tmp),
-                                Call(if_hook),
-                                // actual if block start
-                                instr,
-                                // begin hook (not executed when condition implies else branch)
-                                location.0,
-                                location.1,
-                                Call(begin_if_hook),
-                            ]
-                        }
-                        (_, Else) => {
-                            let begin = begin_stack.pop()
-                                .expect(&format!("invalid begin/end nesting in function {}!", fidx.0));
-                            if let Begin::If(begin_iidx) = begin {
-                                begin_stack.push(Begin::Else(iidx));
-                                vec![
-                                    location.0.clone(),
-                                    location.1.clone(),
-                                    I32Const(begin_iidx as i32),
-                                    Call(end_else_hook),
-                                    instr,
-                                    location.0,
-                                    location.1,
-                                    Call(begin_else_hook),
-                                ]
-                            } else {
-                                unreachable!("else instruction should end if block, but was {:?}", begin);
-                            }
-                        }
-                        (_, End) => {
-                            let begin = begin_stack.pop()
-                                .expect(&format!("invalid begin/end nesting in function {}!", fidx.0));
+        // allocate new instrumented body (i.e., do not modify in-place), since there are too many insertions anyway
+        // there are at least 3 new instructions per original one (2 const for location + 1 hook call)
+        let mut instrumented_body = Vec::with_capacity(4 * original_body.len());
 
-                            let mut instrs = vec![
-                                location.0,
-                                location.1,
-                            ];
-                            instrs.append(&mut match begin {
-                                Begin::Function => vec![Call(end_function_hook)],
-                                Begin::Block(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_block_hook)],
-                                Begin::Loop(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_loop_hook)],
-                                Begin::If(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_if_hook)],
-                                Begin::Else(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_else_hook)],
-                            });
-                            instrs.push(instr);
-                            instrs
-                        }
-                        (_, Nop) => vec![
+        // TODO rename block_stack
+        let mut begin_stack = vec![Begin::Function];
+
+        // add function_begin hook...
+        instrumented_body.extend_from_slice(&[
+            I32Const(fidx.0 as i32),
+            // ...which does not correspond to any instruction, so take -1 as instruction index
+            I32Const(-1),
+            Call(begin_function_hook)
+        ]);
+
+        for (iidx, instr) in original_body.into_iter().enumerate() {
+            let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
+            // TODO replace with extend_from_slice and make vec![] -> &'static [] where possible
+            instrumented_body.append(&mut
+                match (instr.group(), instr.clone()) { // TODO remove that instr.clone()
+                    (_, Block(_)) => {
+                        begin_stack.push(Begin::Block(iidx));
+                        vec![
                             instr,
                             location.0,
                             location.1,
-                            Call(nop_hook),
-                        ],
-                        (_, Unreachable) => vec![
+                            Call(begin_block_hook),
+                        ]
+                    }
+                    (_, Loop(_)) => {
+                        begin_stack.push(Begin::Loop(iidx));
+                        vec![
                             instr,
                             location.0,
                             location.1,
-                            Call(unreachable_hook),
-                        ],
-                        (_, Drop) => vec![
+                            Call(begin_loop_hook),
+                        ]
+                    }
+                    (_, If(_)) => {
+                        begin_stack.push(Begin::If(iidx));
+
+                        let condition_tmp = function.add_fresh_local(I32);
+
+                        vec![
+                            // if_ hook for the condition (always executed on either branch)
+                            TeeLocal(condition_tmp),
+                            location.0.clone(),
+                            location.1.clone(),
+                            GetLocal(condition_tmp),
+                            Call(if_hook),
+                            // actual if block start
+                            instr,
+                            // begin hook (not executed when condition implies else branch)
+                            location.0,
+                            location.1,
+                            Call(begin_if_hook),
+                        ]
+                    }
+                    (_, Else) => {
+                        let begin = begin_stack.pop()
+                            .expect(&format!("invalid begin/end nesting in function {}!", fidx.0));
+                        if let Begin::If(begin_iidx) = begin {
+                            begin_stack.push(Begin::Else(iidx));
+                            vec![
+                                location.0.clone(),
+                                location.1.clone(),
+                                I32Const(begin_iidx as i32),
+                                Call(end_else_hook),
+                                instr,
+                                location.0,
+                                location.1,
+                                Call(begin_else_hook),
+                            ]
+                        } else {
+                            unreachable!("else instruction should end if block, but was {:?}", begin);
+                        }
+                    }
+                    (_, End) => {
+                        let begin = begin_stack.pop()
+                            .expect(&format!("invalid begin/end nesting in function {}!", fidx.0));
+
+                        let mut instrs = vec![
+                            location.0,
+                            location.1,
+                        ];
+                        instrs.append(&mut match begin {
+                            Begin::Function => vec![Call(end_function_hook)],
+                            Begin::Block(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_block_hook)],
+                            Begin::Loop(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_loop_hook)],
+                            Begin::If(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_if_hook)],
+                            Begin::Else(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_else_hook)],
+                        });
+                        instrs.push(instr);
+                        instrs
+                    }
+                    (_, Nop) => vec![
+                        instr,
+                        location.0,
+                        location.1,
+                        Call(nop_hook),
+                    ],
+                    (_, Unreachable) => vec![
+                        instr,
+                        location.0,
+                        location.1,
+                        Call(unreachable_hook),
+                    ],
+                    (_, Drop) => vec![
+                        instr,
+                        location.0,
+                        location.1,
+                        Call(drop_hook),
+                    ],
+                    (_, Select) => {
+                        let cond_tmp = function.add_fresh_local(I32);
+                        vec![
+                            TeeLocal(cond_tmp),
                             instr,
                             location.0,
                             location.1,
-                            Call(drop_hook),
-                        ],
-                        (_, Select) => {
-                            let cond_tmp = add_fresh_local(locals, function_type, I32);
-                            vec![
-                                TeeLocal(cond_tmp),
-                                instr,
-                                location.0,
-                                location.1,
-                                GetLocal(cond_tmp),
-                                Call(select_hook),
-                            ]
-                        }
-                        (_, CurrentMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
-                            let result_tmp = add_fresh_local(locals, function_type, I32);
-                            vec![
-                                instr,
-                                TeeLocal(result_tmp),
-                                location.0,
-                                location.1,
-                                GetLocal(result_tmp),
-                                Call(current_memory_hook)
-                            ]
-                        }
-                        (_, GrowMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
-                            let input_tmp = add_fresh_local(locals, function_type, I32);
-                            let result_tmp = add_fresh_local(locals, function_type, I32);
-                            vec![
-                                TeeLocal(input_tmp),
-                                instr,
-                                TeeLocal(result_tmp),
-                                location.0,
-                                location.1,
-                                GetLocal(input_tmp),
-                                GetLocal(result_tmp),
-                                Call(grow_memory_hook)
-                            ]
-                        }
-                        (_, GetLocal(local_idx)) | (_, SetLocal(local_idx)) | (_, TeeLocal(local_idx)) => {
-                            let local_ty = local_ty(locals.as_slice(), function_type, local_idx);
-                            let mut instrs = vec![
-                                instr.clone(),
-                                location.0,
-                                location.1,
-                                I32Const(local_idx.0 as i32),
-                            ];
-                            instrs.append(&mut convert_i64_instr(GetLocal(local_idx), local_ty));
-                            instrs.push(polymorphic_hooks.get_call(&instr, vec![local_ty]));
-                            instrs
-                        }
-                        (_, GetGlobal(global_idx)) | (_, SetGlobal(global_idx)) => {
-                            let global_ty = static_info.globals[global_idx.0];
-                            let mut instrs = vec![
-                                instr.clone(),
-                                location.0,
-                                location.1,
-                                I32Const(global_idx.0 as i32),
-                            ];
-                            instrs.append(&mut convert_i64_instr(GetGlobal(global_idx), global_ty));
-                            instrs.push(polymorphic_hooks.get_call(&instr, vec![global_ty]));
-                            instrs
-                        }
-                        (_, Return) => {
-                            let result_tmps = add_fresh_locals(locals, function_type, result_tys);
+                            GetLocal(cond_tmp),
+                            Call(select_hook),
+                        ]
+                    }
+                    (_, CurrentMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
+                        let result_tmp = function.add_fresh_local(I32);
+                        vec![
+                            instr,
+                            TeeLocal(result_tmp),
+                            location.0,
+                            location.1,
+                            GetLocal(result_tmp),
+                            Call(current_memory_hook)
+                        ]
+                    }
+                    (_, GrowMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
+                        let input_tmp = function.add_fresh_local(I32);
+                        let result_tmp = function.add_fresh_local(I32);
+                        vec![
+                            TeeLocal(input_tmp),
+                            instr,
+                            TeeLocal(result_tmp),
+                            location.0,
+                            location.1,
+                            GetLocal(input_tmp),
+                            GetLocal(result_tmp),
+                            Call(grow_memory_hook)
+                        ]
+                    }
+                    (_, GetLocal(local_idx)) | (_, SetLocal(local_idx)) | (_, TeeLocal(local_idx)) => {
+                        let local_ty = function.local_type(local_idx);
+                        let mut instrs = vec![
+                            instr.clone(),
+                            location.0,
+                            location.1,
+                            I32Const(local_idx.0 as i32),
+                        ];
+                        instrs.append(&mut convert_i64_instr(GetLocal(local_idx), local_ty));
+                        instrs.push(polymorphic_hooks.get_call(&instr, vec![local_ty]));
+                        instrs
+                    }
+                    (_, GetGlobal(global_idx)) | (_, SetGlobal(global_idx)) => {
+                        let global_ty = static_info.globals[global_idx.0];
+                        let mut instrs = vec![
+                            instr.clone(),
+                            location.0,
+                            location.1,
+                            I32Const(global_idx.0 as i32),
+                        ];
+                        instrs.append(&mut convert_i64_instr(GetGlobal(global_idx), global_ty));
+                        instrs.push(polymorphic_hooks.get_call(&instr, vec![global_ty]));
+                        instrs
+                    }
+                    (_, Return) => {
+                        let result_tys = function.type_.results.clone();
+                        let result_tmps = function.add_fresh_locals(&result_tys);
 
-                            let mut instrs = save_stack_to_locals(&result_tmps);
-                            instrs.extend_from_slice(&[
-                                location.0,
-                                location.1,
-                            ]);
-                            instrs.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
-                            instrs.extend_from_slice(&[
-                                polymorphic_hooks.get_call(&instr, result_tys.to_vec()),
-                                instr,
-                            ]);
-                            instrs
-                        }
-                        (_, Call(target_func_idx)) => {
-                            let arg_tys = static_info.functions[target_func_idx.0].type_.params.as_slice();
-                            let result_tys = static_info.functions[target_func_idx.0].type_.results.as_slice();
+                        let mut instrs = save_stack_to_locals(&result_tmps);
+                        instrs.extend_from_slice(&[
+                            location.0,
+                            location.1,
+                        ]);
+                        instrs.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
+                        instrs.extend_from_slice(&[
+                            polymorphic_hooks.get_call(&instr, result_tys),
+                            instr,
+                        ]);
+                        instrs
+                    }
+                    (_, Call(target_func_idx)) => {
+                        let arg_tys = static_info.functions[target_func_idx.0].type_.params.as_slice();
+                        let result_tys = static_info.functions[target_func_idx.0].type_.results.as_slice();
 
-                            let arg_tmps = add_fresh_locals(locals, function_type, arg_tys);
-                            let result_tmps = add_fresh_locals(locals, function_type, result_tys);
+                        let arg_tmps = function.add_fresh_locals(arg_tys);
+                        let result_tmps = function.add_fresh_locals(result_tys);
 
-                            /* pre call hook */
+                        /* pre call hook */
 
-                            let mut instrs = save_stack_to_locals(&arg_tmps);
-                            instrs.extend_from_slice(&[
-                                location.0.clone(),
-                                location.1.clone(),
-                                I32Const(target_func_idx.0 as i32),
-                            ]);
-                            instrs.append(&mut restore_locals_with_i64_handling(&arg_tmps, &arg_tys));
-                            instrs.extend_from_slice(&[
-                                polymorphic_hooks.get_call(&instr, arg_tys.to_vec()),
-                                instr,
-                            ]);
+                        let mut instrs = save_stack_to_locals(&arg_tmps);
+                        instrs.extend_from_slice(&[
+                            location.0.clone(),
+                            location.1.clone(),
+                            I32Const(target_func_idx.0 as i32),
+                        ]);
+                        instrs.append(&mut restore_locals_with_i64_handling(&arg_tmps, &arg_tys));
+                        instrs.extend_from_slice(&[
+                            polymorphic_hooks.get_call(&instr, arg_tys.to_vec()),
+                            instr,
+                        ]);
 
-                            /* post call hook */
+                        /* post call hook */
 
-                            instrs.append(&mut save_stack_to_locals(&result_tmps));
-                            instrs.extend_from_slice(&[
-                                location.0,
-                                location.1,
-                            ]);
-                            instrs.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
-                            instrs.push(Call(*call_result_hooks.get(result_tys).expect("no call_result hook for tys")));
+                        instrs.append(&mut save_stack_to_locals(&result_tmps));
+                        instrs.extend_from_slice(&[
+                            location.0,
+                            location.1,
+                        ]);
+                        instrs.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
+                        instrs.push(Call(*call_result_hooks.get(result_tys).expect("no call_result hook for tys")));
 
-                            instrs
-                        }
-                        (_, CallIndirect(func_ty, _ /* table idx == 0 in WASM version 1 */)) => {
-                            let arg_tys = func_ty.params.as_slice();
-                            let result_tys = func_ty.results.as_slice();
+                        instrs
+                    }
+                    (_, CallIndirect(func_ty, _ /* table idx == 0 in WASM version 1 */)) => {
+                        let arg_tys = func_ty.params.as_slice();
+                        let result_tys = func_ty.results.as_slice();
 
-                            let target_table_idx_tmp = add_fresh_local(locals, function_type, I32);
-                            let arg_tmps = add_fresh_locals(locals, function_type, arg_tys);
-                            let result_tmps = add_fresh_locals(locals, function_type, result_tys);
+                        let target_table_idx_tmp = function.add_fresh_local(I32);
+                        let arg_tmps = function.add_fresh_locals(arg_tys);
+                        let result_tmps = function.add_fresh_locals(result_tys);
 
 
-                            /* pre call hook */
+                        /* pre call hook */
 
-                            let mut instrs = vec![SetLocal(target_table_idx_tmp)];
-                            instrs.append(&mut save_stack_to_locals(&arg_tmps));
-                            instrs.extend_from_slice(&[
-                                GetLocal(target_table_idx_tmp),
-                                location.0.clone(),
-                                location.1.clone(),
-                                GetLocal(target_table_idx_tmp),
-                            ]);
-                            instrs.append(&mut restore_locals_with_i64_handling(&arg_tmps, &arg_tys));
-                            instrs.extend_from_slice(&[
-                                polymorphic_hooks.get_call(&instr, arg_tys.to_vec()),
-                                instr,
-                            ]);
+                        let mut instrs = vec![SetLocal(target_table_idx_tmp)];
+                        instrs.append(&mut save_stack_to_locals(&arg_tmps));
+                        instrs.extend_from_slice(&[
+                            GetLocal(target_table_idx_tmp),
+                            location.0.clone(),
+                            location.1.clone(),
+                            GetLocal(target_table_idx_tmp),
+                        ]);
+                        instrs.append(&mut restore_locals_with_i64_handling(&arg_tmps, &arg_tys));
+                        instrs.extend_from_slice(&[
+                            polymorphic_hooks.get_call(&instr, arg_tys.to_vec()),
+                            instr,
+                        ]);
 
-                            /* post call hook */
+                        /* post call hook */
 
-                            instrs.append(&mut save_stack_to_locals(&result_tmps));
-                            instrs.extend_from_slice(&[
-                                location.0,
-                                location.1,
-                            ]);
-                            instrs.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
-                            instrs.push(Call(*call_result_hooks.get(result_tys).expect("no call_result hook for tys")));
+                        instrs.append(&mut save_stack_to_locals(&result_tmps));
+                        instrs.extend_from_slice(&[
+                            location.0,
+                            location.1,
+                        ]);
+                        instrs.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
+                        instrs.push(Call(*call_result_hooks.get(result_tys).expect("no call_result hook for tys")));
 
-                            instrs
-                        }
-                        (Const(ty), instr) => {
-                            let mut instrs = vec![
-                                location.0,
-                                location.1,
-                            ];
-                            instrs.append(&mut convert_i64_instr(instr.clone(), ty));
-                            instrs.extend_from_slice(&[
-                                monomorphic_hook_call(&instr),
-                                instr,
-                            ]);
-                            instrs
-                        }
-                        (Unary { input_ty, result_ty }, instr) => {
-                            let input_tmp = add_fresh_local(locals, function_type, input_ty);
-                            let result_tmp = add_fresh_local(locals, function_type, result_ty);
+                        instrs
+                    }
+                    (Const(ty), instr) => {
+                        let mut instrs = vec![
+                            location.0,
+                            location.1,
+                        ];
+                        instrs.append(&mut convert_i64_instr(instr.clone(), ty));
+                        instrs.extend_from_slice(&[
+                            monomorphic_hook_call(&instr),
+                            instr,
+                        ]);
+                        instrs
+                    }
+                    (Unary { input_ty, result_ty }, instr) => {
+                        let input_tmp = function.add_fresh_local(input_ty);
+                        let result_tmp = function.add_fresh_local(result_ty);
 
-                            let mut instrs = vec![
-                                TeeLocal(input_tmp),
-                                instr.clone(),
-                                TeeLocal(result_tmp),
-                                location.0,
-                                location.1,
-                            ];
-                            // restore saved input and result
-                            instrs.append(&mut convert_i64_instr(GetLocal(input_tmp), input_ty));
-                            instrs.append(&mut convert_i64_instr(GetLocal(result_tmp), result_ty));
-                            instrs.push(monomorphic_hook_call(&instr));
-                            instrs
-                        }
-                        (Binary { first_ty, second_ty, result_ty }, instr) => {
-                            let first_tmp = add_fresh_local(locals, function_type, first_ty);
-                            let second_tmp = add_fresh_local(locals, function_type, second_ty);
-                            let result_tmp = add_fresh_local(locals, function_type, result_ty);
+                        let mut instrs = vec![
+                            TeeLocal(input_tmp),
+                            instr.clone(),
+                            TeeLocal(result_tmp),
+                            location.0,
+                            location.1,
+                        ];
+                        // restore saved input and result
+                        instrs.append(&mut convert_i64_instr(GetLocal(input_tmp), input_ty));
+                        instrs.append(&mut convert_i64_instr(GetLocal(result_tmp), result_ty));
+                        instrs.push(monomorphic_hook_call(&instr));
+                        instrs
+                    }
+                    (Binary { first_ty, second_ty, result_ty }, instr) => {
+                        let first_tmp = function.add_fresh_local(first_ty);
+                        let second_tmp = function.add_fresh_local(second_ty);
+                        let result_tmp = function.add_fresh_local(result_ty);
 
-                            let mut instrs = vec![
-                                SetLocal(second_tmp),
-                                TeeLocal(first_tmp),
-                                GetLocal(second_tmp),
-                                instr.clone(),
-                                TeeLocal(result_tmp),
-                                location.0,
-                                location.1,
-                            ];
-                            instrs.append(&mut convert_i64_instr(GetLocal(first_tmp), first_ty));
-                            instrs.append(&mut convert_i64_instr(GetLocal(second_tmp), second_ty));
-                            instrs.append(&mut convert_i64_instr(GetLocal(result_tmp), result_ty));
-                            instrs.push(monomorphic_hook_call(&instr));
-                            instrs
-                        }
-                        (MemoryLoad(ty, memarg), instr) => {
-                            let addr_tmp = add_fresh_local(locals, function_type, I32);
-                            let value_tmp = add_fresh_local(locals, function_type, ty);
+                        let mut instrs = vec![
+                            SetLocal(second_tmp),
+                            TeeLocal(first_tmp),
+                            GetLocal(second_tmp),
+                            instr.clone(),
+                            TeeLocal(result_tmp),
+                            location.0,
+                            location.1,
+                        ];
+                        instrs.append(&mut convert_i64_instr(GetLocal(first_tmp), first_ty));
+                        instrs.append(&mut convert_i64_instr(GetLocal(second_tmp), second_ty));
+                        instrs.append(&mut convert_i64_instr(GetLocal(result_tmp), result_ty));
+                        instrs.push(monomorphic_hook_call(&instr));
+                        instrs
+                    }
+                    (MemoryLoad(ty, memarg), instr) => {
+                        let addr_tmp = function.add_fresh_local(I32);
+                        let value_tmp = function.add_fresh_local(ty);
 
-                            let mut instrs = vec![
-                                TeeLocal(addr_tmp),
-                                instr.clone(),
-                                TeeLocal(value_tmp),
-                                location.0,
-                                location.1,
-                                GetLocal(addr_tmp),
-                                I32Const(memarg.offset as i32),
-                                I32Const(memarg.alignment as i32),
-                            ];
-                            instrs.append(&mut convert_i64_instr(GetLocal(value_tmp), ty));
-                            instrs.push(monomorphic_hook_call(&instr));
-                            instrs
-                        }
-                        (MemoryStore(ty, memarg), instr) => {
-                            // duplicate stack arguments
-                            let addr_tmp = add_fresh_local(locals, function_type, I32);
-                            let value_tmp = add_fresh_local(locals, function_type, ty);
+                        let mut instrs = vec![
+                            TeeLocal(addr_tmp),
+                            instr.clone(),
+                            TeeLocal(value_tmp),
+                            location.0,
+                            location.1,
+                            GetLocal(addr_tmp),
+                            I32Const(memarg.offset as i32),
+                            I32Const(memarg.alignment as i32),
+                        ];
+                        instrs.append(&mut convert_i64_instr(GetLocal(value_tmp), ty));
+                        instrs.push(monomorphic_hook_call(&instr));
+                        instrs
+                    }
+                    (MemoryStore(ty, memarg), instr) => {
+                        // duplicate stack arguments
+                        let addr_tmp = function.add_fresh_local(I32);
+                        let value_tmp = function.add_fresh_local(ty);
 
-                            let mut instrs = vec![
-                                SetLocal(value_tmp),
-                                TeeLocal(addr_tmp),
-                                GetLocal(value_tmp),
-                                instr.clone(),
-                                location.0,
-                                location.1,
-                                GetLocal(addr_tmp),
-                                I32Const(memarg.offset as i32),
-                                I32Const(memarg.alignment as i32),
-                            ];
-                            instrs.append(&mut convert_i64_instr(GetLocal(value_tmp), ty));
-                            instrs.push(monomorphic_hook_call(&instr));
-                            instrs
-                        }
-                        (_, Br(target_label)) => vec![
+                        let mut instrs = vec![
+                            SetLocal(value_tmp),
+                            TeeLocal(addr_tmp),
+                            GetLocal(value_tmp),
+                            instr.clone(),
+                            location.0,
+                            location.1,
+                            GetLocal(addr_tmp),
+                            I32Const(memarg.offset as i32),
+                            I32Const(memarg.alignment as i32),
+                        ];
+                        instrs.append(&mut convert_i64_instr(GetLocal(value_tmp), ty));
+                        instrs.push(monomorphic_hook_call(&instr));
+                        instrs
+                    }
+                    (_, Br(target_label)) => vec![
+                        location.0,
+                        location.1,
+                        I32Const(target_label.0 as i32),
+                        I32Const(label_to_instr_idx(&begin_stack, target_label) as i32),
+                        Call(br_hook),
+                        instr
+                    ],
+                    // FIXME untested, emscripten seems to not output br_if instruction?
+                    (_, BrIf(target_label)) => {
+                        let condition_tmp = function.add_fresh_local(I32);
+                        vec![
+                            TeeLocal(condition_tmp),
                             location.0,
                             location.1,
                             I32Const(target_label.0 as i32),
                             I32Const(label_to_instr_idx(&begin_stack, target_label) as i32),
-                            Call(br_hook),
+                            GetLocal(condition_tmp),
+                            Call(br_if_hook),
                             instr
-                        ],
-                        // FIXME untested, emscripten seems to not output br_if instruction?
-                        (_, BrIf(target_label)) => {
-                            let condition_tmp = add_fresh_local(locals, function_type, I32);
-                            vec![
-                                TeeLocal(condition_tmp),
-                                location.0,
-                                location.1,
-                                I32Const(target_label.0 as i32),
-                                I32Const(label_to_instr_idx(&begin_stack, target_label) as i32),
-                                GetLocal(condition_tmp),
-                                Call(br_if_hook),
-                                instr
-                            ]
-                        }
-                        (_, BrTable(target_table, default_target)) => {
-                            static_info.br_tables.push(BrTableInfo::new(
-                                target_table.into_iter().map(|label| LabelAndLocation::new(label.0)).collect(),
-                                LabelAndLocation::new(default_target.0)
-                            ));
-                            let target_idx_tmp = add_fresh_local(locals, function_type, I32);
-                            vec![
-                                TeeLocal(target_idx_tmp),
-                                location.0,
-                                location.1,
-                                I32Const((static_info.br_tables.len() - 1) as i32),
-                                GetLocal(target_idx_tmp),
-                                Call(br_table_hook),
-                                instr]
-                        }
-                        _ => unreachable!("no hook for instruction {}", instr.to_instr_name()),
+                        ]
                     }
-                })
-                .collect();
-
-            // add function_begin hook (which does not correspond to any instruction)
-            let mut new_body = vec![
-                I32Const(fidx.0 as i32),
-                I32Const(-1),
-                Call(begin_function_hook)
-            ];
-            new_body.append(&mut code.body);
-            ::std::mem::replace(&mut code.body, new_body);
-
-            assert!(begin_stack.is_empty(), "invalid begin/end nesting in function {}", fidx.0);
+                    (_, BrTable(target_table, default_target)) => {
+                        static_info.br_tables.push(BrTableInfo::new(
+                            target_table.into_iter().map(|label| LabelAndLocation::new(label.0)).collect(),
+                            LabelAndLocation::new(default_target.0),
+                        ));
+                        let target_idx_tmp = function.add_fresh_local(I32);
+                        vec![
+                            TeeLocal(target_idx_tmp),
+                            location.0,
+                            location.1,
+                            I32Const((static_info.br_tables.len() - 1) as i32),
+                            GetLocal(target_idx_tmp),
+                            Call(br_table_hook),
+                            instr]
+                    }
+                    _ => unreachable!("no hook for instruction {}", instr.to_instr_name()),
+                }
+            );
         }
+
+        // finally, move instrumented body inside function
+        ::std::mem::replace(&mut function.code.as_mut().unwrap().body, instrumented_body);
+
+        assert!(begin_stack.is_empty(), "invalid begin/end nesting in function {}", fidx.0);
     }
 
     println!("{}", serde_json::to_string(&static_info).unwrap());
