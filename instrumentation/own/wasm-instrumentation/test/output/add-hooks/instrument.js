@@ -3714,10 +3714,12 @@ const staticInfo = {
 
 let resolveTableIdx = function (i) {
     throw "internal error! the monkey-patched WebAssembly.instantiate() should have replaced this function with WebAssembly.Instance.Table.get(i)"
-}
+};
 
 const oldInstantiate = WebAssembly.instantiate;
 WebAssembly.instantiate = function () {
+    console.log(arguments)
+
     let importsObject = arguments[1] || {};
     importsObject.hooks = {
         // trivial
@@ -4473,6 +4475,7 @@ WebAssembly.instantiate = function () {
     result.then(result => {
         // window.wasm_res = result;
         resolveTableIdx = tableIndex => {
+            return tableIndex;
             // FIXME this is not correct: the name of the "Exotic Function Object" is the "function address", not
             // necessarily the function index in the WASM module:
             // documentation here is wrong: https://developer.mozilla.org/en-US/docs/WebAssembly/Exported_functions
