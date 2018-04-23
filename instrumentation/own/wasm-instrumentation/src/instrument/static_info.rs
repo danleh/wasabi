@@ -22,7 +22,7 @@ impl<'a> From<&'a Module> for ModuleInfo {
 //                    eprintln!("{:?}", module.eval_const_expr(&element.offset));
 //                    0usize
 //                }).collect(),
-            table_export_name: module.tables[0].export.clone().unwrap(),
+            table_export_name: module.tables.get(0).and_then(|table| table.export.clone()).unwrap_or("".into()),
             br_tables: vec![],
         }
     }
