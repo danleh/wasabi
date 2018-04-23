@@ -2,7 +2,7 @@ use ast::*;
 use ast::highlevel::Instr::*;
 use ast::ValType::*;
 use binary::WasmBinary;
-use instrument::*;
+use instrument::{add_hooks, direct::*};
 use std::fs::{create_dir_all, File};
 use std::io::{self, Cursor, Read, sink};
 use std::path::{Path, PathBuf};
@@ -167,6 +167,8 @@ fn instrument(test_file: &Path, instrument: impl Fn(&mut highlevel::Module), ins
     create_dir_all(output_file.parent().unwrap_or(&output_file))?;
 
     let mut module = highlevel::Module::from_file(test_file)?;
+
+    // TODO save String to same directory and filename, just wasm -> js
     instrument(&mut module);
     module.to_file(&output_file)?;
     Ok(output_file)

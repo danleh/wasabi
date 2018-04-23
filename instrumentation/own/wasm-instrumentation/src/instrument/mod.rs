@@ -1,13 +1,15 @@
 use ast::{FunctionType, GlobalType, Idx, Label, Limits, Local, Memarg, MemoryType, Mutability, ValType, ValType::*};
 use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGroup::*, Memory, Module};
 use js_codegen::append_mangled_tys;
+use self::convert_i64::{convert_i64_instr, convert_i64_type};
 use serde_json;
 use static_info::*;
 use std::collections::{HashMap, HashSet};
 use std::mem::{discriminant, Discriminant};
 
+pub mod direct;
+
 mod convert_i64;
-use self::convert_i64::{convert_i64_type, convert_i64_instr};
 
 // TODO Idea: provide two options of connecting user analysis (i.e., client instrumentation code)
 // with the instrumented binary (i.e., the "host" code + hooks + import of callbacks):
@@ -691,47 +693,3 @@ pub fn add_hooks(module: &mut Module) {
 }
 
 // TODO generate the JavaScript file!!
-
-
-/* trivial or "low-level" instrumentations, i.e., where the byte code is manually modified and not
-   a higher-level, Jalangi-style "instrumentation hook API" is provided. */
-
-pub fn identity(_: &mut Module) {}
-
-pub fn add_empty_function(module: &mut Module) {
-    module.add_function(
-        FunctionType::new(vec![], vec![]),
-        vec![],
-        vec![End]);
-}
-
-pub fn count_calls(module: &mut Module) {
-    let counter = module.add_global(I32, Mutability::Mut, vec![I32Const(0), End]);
-
-    let getter = module.add_function(
-        FunctionType::new(vec![], vec![I32]),
-        vec![],
-        vec![GetGlobal(counter), End]);
-    module.function(getter).export = Some("get_counter".into());
-
-    let increment = module.add_function(
-        FunctionType::new(vec![], vec![]),
-        vec![],
-        vec![
-            GetGlobal(counter),
-            I32Const(1),
-            I32Add,
-            SetGlobal(counter),
-            End
-        ]);
-
-    for (i, function) in module.functions() {
-        // ignore the functions we added
-        if i != getter && i != increment {
-            function.modify_instr(|instr| match instr {
-                Call(..) | CallIndirect(..) => vec![Call(increment), instr],
-                instr => vec![instr]
-            })
-        }
-    }
-}
