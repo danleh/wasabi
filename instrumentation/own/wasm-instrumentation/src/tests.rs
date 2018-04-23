@@ -159,7 +159,7 @@ fn wasm_files<P: AsRef<Path>>(dir: P) -> impl Iterator<Item=PathBuf> {
 }
 
 /// Read wasm module from test_file, instrument it, and write out to test/output/ directory
-fn instrument(test_file: &Path, instrument: impl Fn(&mut highlevel::Module), instrument_str: &str) -> io::Result<PathBuf> {
+fn instrument(test_file: &Path, instrument: impl Fn(&mut highlevel::Module) -> Option<String>, instrument_str: &str) -> io::Result<PathBuf> {
     assert!(test_file.to_string_lossy().contains("test/input"),
             "otherwise creating the output file and directories could fail/overwrite other stuff");
     let output_dir = "output/".to_string() + instrument_str;
@@ -167,7 +167,6 @@ fn instrument(test_file: &Path, instrument: impl Fn(&mut highlevel::Module), ins
     create_dir_all(output_file.parent().unwrap_or(&output_file))?;
 
     let mut module = highlevel::Module::from_file(test_file)?;
-
     // TODO save String to same directory and filename, just wasm -> js
     instrument(&mut module);
     module.to_file(&output_file)?;

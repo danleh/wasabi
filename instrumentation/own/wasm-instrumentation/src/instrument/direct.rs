@@ -1,19 +1,19 @@
 use ast::{FunctionType, Mutability::*, ValType::*};
 use ast::highlevel::{Instr::*, Module};
 
-/* trivial or "low-level" instrumentations, i.e., where the byte code is manually modified and not
-   a higher-level, Jalangi-style "instrumentation hook API" is provided. */
+/* trivial or "low-level" instrumentations, i.e., where the byte code is manually modified */
 
-pub fn identity(_: &mut Module) {}
+pub fn identity(_: &mut Module) -> Option<String> { None }
 
-pub fn add_empty_function(module: &mut Module) {
+pub fn add_empty_function(module: &mut Module) -> Option<String> {
     module.add_function(
         FunctionType::new(vec![], vec![]),
         vec![],
         vec![End]);
+    None
 }
 
-pub fn count_calls(module: &mut Module) {
+pub fn count_calls(module: &mut Module) -> Option<String> {
     let counter = module.add_global(I32, Mut, vec![I32Const(0), End]);
 
     let getter = module.add_function(
@@ -42,4 +42,6 @@ pub fn count_calls(module: &mut Module) {
             })
         }
     }
+
+    None
 }

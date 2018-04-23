@@ -117,7 +117,7 @@ fn label_to_instr_idx(begin_stack: &[Begin], label: Idx<Label>) -> usize {
     }
 }
 
-pub fn add_hooks(module: &mut Module) {
+pub fn add_hooks(module: &mut Module) -> Option<String> {
     // export the table for the JS code to translate table indices -> function indices
     for table in &mut module.tables {
         if let None = table.export {
@@ -662,7 +662,5 @@ pub fn add_hooks(module: &mut Module) {
         assert!(begin_stack.is_empty(), "invalid begin/end nesting in function {}", fidx.0);
     }
 
-    println!("{}", serde_json::to_string(&static_info).unwrap());
+    Some(serde_json::to_string(&static_info).unwrap())
 }
-
-// TODO generate the JavaScript file!!
