@@ -3,12 +3,11 @@ use ast::highlevel::Instr::*;
 use ast::ValType::*;
 use binary::WasmBinary;
 use instrument::{add_hooks, direct::*};
+use serde_json;
 use std::fs::{create_dir_all, File};
-use std::io::{self, Cursor, Read, sink};
+use std::io::{self, Cursor, Read, sink, Write, BufWriter};
 use std::path::{Path, PathBuf};
 use test::Bencher;
-
-use serde_json;
 
 /// "main"-like for quick and dirty testing
 #[test]
@@ -29,7 +28,7 @@ fn debug() {
 fn leb128_signed_roundtrips() {
     use leb128::{ReadLeb128, WriteLeb128};
 
-    for u in u16::min_value() ..= u16::max_value() {
+    for u in u16::min_value()..=u16::max_value() {
         let mut buf: Vec<u8> = Vec::new();
         buf.write_leb128(u).unwrap();
         let u_decode: u16 = buf.as_slice().read_leb128().unwrap();
@@ -38,7 +37,7 @@ fn leb128_signed_roundtrips() {
                    buf.iter().map(|byte| format!(" 0x{:x}", byte)).collect::<Vec<String>>().concat());
     }
 
-    for i in i16::min_value() ..= i16::max_value() {
+    for i in i16::min_value()..=i16::max_value() {
         let mut buf: Vec<u8> = Vec::new();
         buf.write_leb128(i).unwrap();
         let i_decode: i16 = buf.as_slice().read_leb128().unwrap();
@@ -163,14 +162,18 @@ fn instrument(test_file: &Path, instrument: impl Fn(&mut highlevel::Module) -> O
     assert!(test_file.to_string_lossy().contains("test/input"),
             "otherwise creating the output file and directories could fail/overwrite other stuff");
     let output_dir = "output/".to_string() + instrument_str;
-    let output_file = PathBuf::from(test_file.to_string_lossy().replace("input", &output_dir));
-    create_dir_all(output_file.parent().unwrap_or(&output_file))?;
+    let output_wasm_file = PathBuf::from(test_file.to_string_lossy().replace("input", &output_dir));
+    let output_js_file = PathBuf::from(output_wasm_file.to_string_lossy().replace(".wasm", ".js"));
+    create_dir_all(output_wasm_file.parent().unwrap_or(&output_wasm_file))?;
 
     let mut module = highlevel::Module::from_file(test_file)?;
-    // TODO save String to same directory and filename, just wasm -> js
-    instrument(&mut module);
-    module.to_file(&output_file)?;
-    Ok(output_file)
+    let generated_js = instrument(&mut module);
+    module.to_file(&output_wasm_file)?;
+    if let Some(generated_js) = generated_js {
+        BufWriter::new(File::create(output_js_file)?).write_all(generated_js.as_bytes())?;
+    }
+
+    Ok(output_wasm_file)
 }
 
 fn wasm_validate(path: &Path) -> Result<(), String> {

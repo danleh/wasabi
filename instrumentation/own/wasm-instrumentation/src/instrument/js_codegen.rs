@@ -1,8 +1,27 @@
 use ast::highlevel::{Instr, Instr::*, InstrGroup};
 use ast::ValType::{self, *};
+use serde_json;
+use super::static_info::ModuleInfo;
 
+pub fn js_codegen(module_info: ModuleInfo /*TODO hooks: Vec<Hooks>*/) -> String {
+    format!(r#"/*
+ * Auto-generated from WASM module to-analyze.
+ * DO NOT EDIT.
+ */
+
+const moduleInfo = {};
+
+const lowlevelHooks = {
+{}
+};
+"#,
+            serde_json::to_string_pretty(&module_info).unwrap(),
+            "" // TODO
+    )
+}
+
+/// "generate" quick and dirty the low-level JavaScript hook function from an instruction
 impl Instr {
-    /// "generate" quick and dirty the low-level JavaScript hook function from an instruction
     pub fn to_js_hook(&self) -> String {
         let instr_name = self.to_instr_name();
         match (self.group(), self) {
@@ -56,15 +75,15 @@ impl Instr {
                 let return_hook = format!("{}: function(func, instr{}) {{
     return_({{func, instr}}, [{}]);
 }},",
-                        hook_name,
-                        tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("result".to_string() + &i.to_string()), *ty))).collect::<String>(),
-                        tys.iter().enumerate().map(|(i, ty)| long(&("result".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(", "),
+                                          hook_name,
+                                          tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("result".to_string() + &i.to_string()), *ty))).collect::<String>(),
+                                          tys.iter().enumerate().map(|(i, ty)| long(&("result".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(", "),
                 );
                 // FIXME dirty hack: add also post call (call_result) hooks here, since they are based on the same type information
                 // FIXME because of replace() the hook name is "call_result_" instead of more natural "call_result"
                 // FIXME no difference between call_result and call_indirect_result
                 return_hook.clone() + "\n" + &return_hook.replace("return", "call_result")
-            },
+            }
             Call(_) => format!("{}: function(func, instr, targetFunc{}) {{
     call_({{func, instr}}, targetFunc, false, [{}]);
 }},",
@@ -75,9 +94,9 @@ impl Instr {
             CallIndirect(_, _) => format!("{}: function(func, instr, targetTableIdx{}) {{
     call_({{func, instr}}, resolveTableIdx(targetTableIdx), true, [{}]);
 }},",
-                               hook_name,
-                               tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("arg".to_string() + &i.to_string()), *ty))).collect::<String>(),
-                               tys.iter().enumerate().map(|(i, ty)| long(&("arg".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(", "),
+                                          hook_name,
+                                          tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("arg".to_string() + &i.to_string()), *ty))).collect::<String>(),
+                                          tys.iter().enumerate().map(|(i, ty)| long(&("arg".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(", "),
             ),
             GetLocal(_) => format!("{}: function(func, instr, index, {}) {{
     local({{func, instr}}, \"get\", index, {});
@@ -103,16 +122,16 @@ impl Instr {
             GetGlobal(_) => format!("{}: function(func, instr, index, {}) {{
     global({{func, instr}}, \"get\", index, {});
 }},",
-                                   hook_name,
-                                   arg("v", tys[0]),
-                                   long("v", tys[0])
+                                    hook_name,
+                                    arg("v", tys[0]),
+                                    long("v", tys[0])
             ),
             SetGlobal(_) => format!("{}: function(func, instr, index, {}) {{
     global({{func, instr}}, \"set\", index, {});
 }},",
-                                   hook_name,
-                                   arg("v", tys[0]),
-                                   long("v", tys[0])
+                                    hook_name,
+                                    arg("v", tys[0]),
+                                    long("v", tys[0])
             ),
             _ => unimplemented!("cannot generate JS hook code for instruction {}", self.to_instr_name())
         }
@@ -122,6 +141,7 @@ impl Instr {
 
 /* helpers */
 
+/// e.g. "call" + [I32, F32] -> "call_i32_f32"
 pub fn append_mangled_tys(prefix: String, tys: &[ValType]) -> String {
     prefix + "_" + &tys.iter().map(|ty| ty.to_string()).collect::<Vec<_>>().join("_")
 }

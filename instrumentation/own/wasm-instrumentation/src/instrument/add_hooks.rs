@@ -1,10 +1,9 @@
 use ast::{FunctionType, GlobalType, Idx, Label, Limits, Local, Memarg, MemoryType, Mutability, ValType, ValType::*};
 use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGroup::*, Memory, Module};
-use serde_json;
 use std::collections::{HashMap, HashSet};
 use std::mem::{discriminant, Discriminant};
 use super::convert_i64::{convert_i64_instr, convert_i64_type};
-use super::js_codegen::append_mangled_tys;
+use super::js_codegen::{js_codegen, append_mangled_tys};
 use super::static_info::*;
 
 /// instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, other
@@ -554,7 +553,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
         assert!(begin_stack.is_empty(), "invalid begin/end nesting in function {}", fidx.0);
     }
 
-    Some(serde_json::to_string(&static_info).unwrap())
+    Some(js_codegen(static_info))
 }
 
 fn add_hook(module: &mut Module, name: impl Into<String>, arg_tys_: &[ValType]) -> Idx<Function> {
