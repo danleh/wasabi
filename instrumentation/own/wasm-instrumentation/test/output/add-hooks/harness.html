@@ -2,10 +2,10 @@
 <html lang="en">
  	<head><meta charset="utf-8"></head>
  	<body>
-		<script src="br-implicit-drops.js"></script>
+		<script src="loop.js"></script>
 		<script src="long.js"></script>
 		<script src="wasabi.js"></script>
-        <script src="analysis-taint.js"></script>
+        <script src="analysis-log-all.js"></script>
 		<script type="text/javascript">
 			// "async main"
 			(async function() {
@@ -15,7 +15,7 @@
 					}
 				};
 
-				let {module, instance} = await fetch("br-implicit-drops.wasm")
+				let {module, instance} = await fetch("loop.wasm")
 					.then(response => response.arrayBuffer())
 					.then(arrayBuffer => WebAssembly.instantiate(arrayBuffer, importObject));
 

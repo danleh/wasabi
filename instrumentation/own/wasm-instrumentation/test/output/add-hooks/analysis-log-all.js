@@ -11,7 +11,7 @@ function br(location, target) {
 }
 
 function br_if(location, conditionalTarget, condition) {
-    console.log(location, "br_if, possibly to label #", conditionalTarget.label, " (==", conditionalTarget.label, "), condition =", condition);
+    console.log(location, "br_if, (conditionally) to label #", conditionalTarget.label, " (==", conditionalTarget.label, "), condition =", condition);
 }
 
 function br_table(location, table, defaultTarget, tableIdx) {
