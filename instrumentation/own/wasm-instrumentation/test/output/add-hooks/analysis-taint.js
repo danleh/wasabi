@@ -132,8 +132,8 @@ function load(location, op, memarg, value) {
     const jsAddr = values().pop();
     check(op + " addr", location, jsAddr, memarg.addr);
     const effectiveAddr = memarg.addr + memarg.offset;
-    const jsValue = memory[effectiveAddr] || 0;
-    // check(op + " value @ " + effectiveAddr + " (0x" + effectiveAddr.toString(16) + ")", location, jsValue, value); // FIXME doesn't work for initialized memory by Data section...
+    const jsValue = memory[effectiveAddr];
+    check(op + " value @ " + effectiveAddr + " (0x" + effectiveAddr.toString(16) + ")", location, jsValue, value); // FIXME doesn't work for initialized memory by Data section...
     values().push(value);
 }
 

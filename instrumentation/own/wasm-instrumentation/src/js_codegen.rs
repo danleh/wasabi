@@ -30,7 +30,7 @@ impl Instr {
                 instr_name,
                 long("first", first_ty), long("second", second_ty), long("result", result_ty)),
             (InstrGroup::MemoryLoad(ty, _), instr) => format!(
-                "{}: function (func, instr, addr, offset, align, {}) {{
+                "{}: function (func, instr, offset, align, addr, {}) {{
     load({{func, instr}}, \"{}\", {{addr, offset, align}}, {});
 }},",
                 instr_name,
@@ -38,7 +38,7 @@ impl Instr {
                 instr_name,
                 long("v", ty)),
             (InstrGroup::MemoryStore(ty, _), instr) => format!(
-                "{}: function (func, instr, addr, offset, align, {}) {{
+                "{}: function (func, instr, offset, align, addr, {}) {{
     store({{func, instr}}, \"{}\", {{addr, offset, align}}, {});
 }},",
                 instr_name,

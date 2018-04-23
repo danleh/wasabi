@@ -90,13 +90,15 @@ impl PolymorphicHookMap {
 fn save_stack_to_locals(locals: &[Idx<Local>]) -> Vec<Instr> {
     let mut instrs = Vec::new();
     // copy stack values into locals
-    for &local in locals.iter().rev() {
+    for &local in locals.iter().skip(1).rev() {
         instrs.push(SetLocal(local));
     }
-    // TODO optimization: for middle local, use TeeLocal, not Set+Get
-    // TODO then use this function even for single-local cases
+    // optimization: for first local on the stack / last one saved use tee_local instead of set_local + get_local
+    for &local in locals.iter().next() {
+        instrs.push(TeeLocal(local));
+    }
     // and restore (saving has removed them from the stack)
-    for &local in locals.iter() {
+    for &local in locals.iter().skip(1) {
         instrs.push(GetLocal(local));
     }
     return instrs;
@@ -314,7 +316,6 @@ pub fn add_hooks(module: &mut Module) {
 
         for (iidx, instr) in original_body.into_iter().enumerate() {
             let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
-            // TODO replace with extend_from_slice and make vec![] -> &'static [] where possible
             instrumented_body.append(&mut
                 match (instr.group(), instr.clone()) {
                     (_, Block(_)) => {
@@ -404,6 +405,7 @@ pub fn add_hooks(module: &mut Module) {
                         location.1,
                         Call(unreachable_hook),
                     ],
+                    // TODO monomorphize value
                     (_, Drop) => vec![
                         instr,
                         location.0,
@@ -412,6 +414,9 @@ pub fn add_hooks(module: &mut Module) {
                     ],
                     (_, Select) => {
                         let cond_tmp = function.add_fresh_local(I32);
+
+                        // TODO monomorphize for first and second argument
+
                         vec![
                             TeeLocal(cond_tmp),
                             instr,
@@ -580,8 +585,7 @@ pub fn add_hooks(module: &mut Module) {
                             location.1,
                         ];
                         // restore saved input and result
-                        instrs.append(&mut convert_i64_instr(GetLocal(input_tmp), input_ty));
-                        instrs.append(&mut convert_i64_instr(GetLocal(result_tmp), result_ty));
+                        instrs.append(&mut restore_locals_with_i64_handling(&[input_tmp, result_tmp], &[input_ty, result_ty]));
                         instrs.push(monomorphic_hook_call(&instr));
                         instrs
                     }
@@ -590,18 +594,14 @@ pub fn add_hooks(module: &mut Module) {
                         let second_tmp = function.add_fresh_local(second_ty);
                         let result_tmp = function.add_fresh_local(result_ty);
 
-                        let mut instrs = vec![
-                            SetLocal(second_tmp),
-                            TeeLocal(first_tmp),
-                            GetLocal(second_tmp),
+                        let mut instrs = save_stack_to_locals(&[first_tmp, second_tmp]);
+                        instrs.extend_from_slice(&[
                             instr.clone(),
                             TeeLocal(result_tmp),
                             location.0,
                             location.1,
-                        ];
-                        instrs.append(&mut convert_i64_instr(GetLocal(first_tmp), first_ty));
-                        instrs.append(&mut convert_i64_instr(GetLocal(second_tmp), second_ty));
-                        instrs.append(&mut convert_i64_instr(GetLocal(result_tmp), result_ty));
+                        ]);
+                        instrs.append(&mut restore_locals_with_i64_handling(&[first_tmp, second_tmp, result_tmp], &[first_ty, second_ty, result_ty]));
                         instrs.push(monomorphic_hook_call(&instr));
                         instrs
                     }
@@ -615,11 +615,10 @@ pub fn add_hooks(module: &mut Module) {
                             TeeLocal(value_tmp),
                             location.0,
                             location.1,
-                            GetLocal(addr_tmp),
                             I32Const(memarg.offset as i32),
                             I32Const(memarg.alignment as i32),
                         ];
-                        instrs.append(&mut convert_i64_instr(GetLocal(value_tmp), ty));
+                        instrs.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &[I32, ty]));
                         instrs.push(monomorphic_hook_call(&instr));
                         instrs
                     }
@@ -628,18 +627,15 @@ pub fn add_hooks(module: &mut Module) {
                         let addr_tmp = function.add_fresh_local(I32);
                         let value_tmp = function.add_fresh_local(ty);
 
-                        let mut instrs = vec![
-                            SetLocal(value_tmp),
-                            TeeLocal(addr_tmp),
-                            GetLocal(value_tmp),
+                        let mut instrs = save_stack_to_locals(&[addr_tmp, value_tmp]);
+                        instrs.extend_from_slice(&[
                             instr.clone(),
                             location.0,
                             location.1,
-                            GetLocal(addr_tmp),
                             I32Const(memarg.offset as i32),
                             I32Const(memarg.alignment as i32),
-                        ];
-                        instrs.append(&mut convert_i64_instr(GetLocal(value_tmp), ty));
+                        ]);
+                        instrs.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &[I32, ty]));
                         instrs.push(monomorphic_hook_call(&instr));
                         instrs
                     }
@@ -693,6 +689,8 @@ pub fn add_hooks(module: &mut Module) {
 
     println!("{}", serde_json::to_string(&static_info).unwrap());
 }
+
+// TODO generate the JavaScript file!!
 
 
 /* trivial or "low-level" instrumentations, i.e., where the byte code is manually modified and not
