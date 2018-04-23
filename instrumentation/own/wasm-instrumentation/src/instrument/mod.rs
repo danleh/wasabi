@@ -4,6 +4,8 @@ mod add_hooks;
 pub use self::add_hooks::add_hooks;
 
 mod convert_i64;
+mod js_codegen;
+mod static_info;
 
 // TODO Idea: provide two options of connecting user analysis (i.e., client instrumentation code)
 // with the instrumented binary (i.e., the "host" code + hooks + import of callbacks):

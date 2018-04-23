@@ -1,11 +1,11 @@
 use ast::{FunctionType, GlobalType, Idx, Label, Limits, Local, Memarg, MemoryType, Mutability, ValType, ValType::*};
 use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGroup::*, Memory, Module};
-use js_codegen::append_mangled_tys;
 use serde_json;
-use static_info::*;
 use std::collections::{HashMap, HashSet};
 use std::mem::{discriminant, Discriminant};
 use super::convert_i64::{convert_i64_instr, convert_i64_type};
+use super::js_codegen::append_mangled_tys;
+use super::static_info::*;
 
 /// instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, other
 /// relevant information.
