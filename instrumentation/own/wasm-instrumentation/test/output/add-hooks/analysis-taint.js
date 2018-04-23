@@ -20,7 +20,7 @@ function values() {
     return stack.peek().blocks.peek();
 }
 
-const memory = {};
+const memory = [];
 const globals = [];
 
 let valueCounter = 0;
