@@ -25,7 +25,7 @@ WebAssembly.instantiate = function () {
             // documentation here is wrong: https://developer.mozilla.org/en-US/docs/WebAssembly/Exported_functions
             // see https://www.w3.org/TR/wasm-js-api-1/#exported-function-exotic-objects
             // and http://webassembly.org/docs/js/#exported-function-exotic-objects
-            return parseInt(result.instance.exports[staticInfo.table_export_name].get(tableIndex).name, 10);
+            return parseInt(result.instance.exports[moduleInfo.table_export_name].get(tableIndex).name, 10);
         }
     });
     return result;
