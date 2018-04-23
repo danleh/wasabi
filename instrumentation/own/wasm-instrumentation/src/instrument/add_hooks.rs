@@ -16,7 +16,9 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
         }
     }
 
-    let mut static_info: ModuleInfo = (&*module).into();
+    let mut module_info: ModuleInfo = (&*module).into();
+    // TODO use something more meaningful than Strings, e.g., a LowlevelHook struct or so...
+    let mut on_demand_hooks = Vec::new();
 
     /* add hooks (imported functions, provided by the analysis in JavaScript) */
 
@@ -36,19 +38,19 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
     unique_arg_tys.dedup();
 
     // returns
-    polymorphic_hooks.add(module, Return, &[], unique_result_tys.as_slice());
+    polymorphic_hooks.add(module, Return, &[], unique_result_tys.as_slice(), &mut on_demand_hooks);
 
     // locals and globals
     let primitive_tys = &[vec![I32], vec![I64], vec![F32], vec![F64]];
-    polymorphic_hooks.add(module, GetLocal(0.into()), &[I32], primitive_tys);
-    polymorphic_hooks.add(module, SetLocal(0.into()), &[I32], primitive_tys);
-    polymorphic_hooks.add(module, TeeLocal(0.into()), &[I32], primitive_tys);
-    polymorphic_hooks.add(module, GetGlobal(0.into()), &[I32], primitive_tys);
-    polymorphic_hooks.add(module, SetGlobal(0.into()), &[I32], primitive_tys);
+    polymorphic_hooks.add(module, GetLocal(0.into()), &[I32], primitive_tys, &mut on_demand_hooks);
+    polymorphic_hooks.add(module, SetLocal(0.into()), &[I32], primitive_tys, &mut on_demand_hooks);
+    polymorphic_hooks.add(module, TeeLocal(0.into()), &[I32], primitive_tys, &mut on_demand_hooks);
+    polymorphic_hooks.add(module, GetGlobal(0.into()), &[I32], primitive_tys, &mut on_demand_hooks);
+    polymorphic_hooks.add(module, SetGlobal(0.into()), &[I32], primitive_tys, &mut on_demand_hooks);
 
     // calls
-    polymorphic_hooks.add(module, Call(0.into()), &[I32], unique_arg_tys.as_slice()); // I32 = target func idx
-    polymorphic_hooks.add(module, CallIndirect(FunctionType::new(vec![], vec![]), 0.into()), &[I32], unique_arg_tys.as_slice()); // I32 = target table idx
+    polymorphic_hooks.add(module, Call(0.into()), &[I32], unique_arg_tys.as_slice(), &mut on_demand_hooks); // I32 = target func idx
+    polymorphic_hooks.add(module, CallIndirect(FunctionType::new(vec![], vec![]), 0.into()), &[I32], unique_arg_tys.as_slice(), &mut on_demand_hooks); // I32 = target table idx
     // manually add call_post hook since it does not directly correspond to an instruction
     let call_result_hooks: HashMap<&[ValType], Idx<Function>> = unique_result_tys.iter()
         .map(|tys| {
@@ -140,7 +142,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
             F32Store(Memarg::default()),
             F64Store(Memarg::default()),
         ].into_iter()
-            .map(|i| add_hook_from_instr(module, i))
+            .map(|i| add_hook_from_instr(module, i, &mut on_demand_hooks))
             .collect();
 
         move |instr: &Instr| -> Instr {
@@ -330,7 +332,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         instrs
                     }
                     (_, GetGlobal(global_idx)) | (_, SetGlobal(global_idx)) => {
-                        let global_ty = static_info.globals[global_idx.0];
+                        let global_ty = module_info.globals[global_idx.0];
                         let mut instrs = vec![
                             instr.clone(),
                             location.0,
@@ -358,8 +360,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         instrs
                     }
                     (_, Call(target_func_idx)) => {
-                        let arg_tys = static_info.functions[target_func_idx.0].type_.params.as_slice();
-                        let result_tys = static_info.functions[target_func_idx.0].type_.results.as_slice();
+                        let arg_tys = module_info.functions[target_func_idx.0].type_.params.as_slice();
+                        let result_tys = module_info.functions[target_func_idx.0].type_.results.as_slice();
 
                         let arg_tmps = function.add_fresh_locals(arg_tys);
                         let result_tmps = function.add_fresh_locals(result_tys);
@@ -528,7 +530,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         ]
                     }
                     (_, BrTable(target_table, default_target)) => {
-                        static_info.br_tables.push(BrTableInfo::new(
+                        module_info.br_tables.push(BrTableInfo::new(
                             target_table.into_iter().map(|label| LabelAndLocation::new(label.0)).collect(),
                             LabelAndLocation::new(default_target.0),
                         ));
@@ -537,7 +539,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                             TeeLocal(target_idx_tmp),
                             location.0,
                             location.1,
-                            I32Const((static_info.br_tables.len() - 1) as i32),
+                            I32Const((module_info.br_tables.len() - 1) as i32),
                             GetLocal(target_idx_tmp),
                             Call(br_table_hook),
                             instr]
@@ -553,7 +555,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
         assert!(begin_stack.is_empty(), "invalid begin/end nesting in function {}", fidx.0);
     }
 
-    Some(js_codegen(static_info))
+    Some(js_codegen(module_info, &on_demand_hooks))
 }
 
 fn add_hook(module: &mut Module, name: impl Into<String>, arg_tys_: &[ValType]) -> Idx<Function> {
@@ -572,8 +574,8 @@ fn add_hook(module: &mut Module, name: impl Into<String>, arg_tys_: &[ValType]) 
 
 // TODO put this in the MonomorphicHookMap.add() function instead
 /// specialized version form of the above for monomorphic instructions
-fn add_hook_from_instr(module: &mut Module, instr: &Instr) -> (Discriminant<Instr>, Idx<Function>) {
-    println!("{}", instr.to_js_hook());
+fn add_hook_from_instr(module: &mut Module, instr: &Instr, hooks: &mut Vec<String>) -> (Discriminant<Instr>, Idx<Function>) {
+    hooks.push(instr.to_js_hook());
     (discriminant(instr), add_hook(module, instr.to_instr_name(), &match instr.group() {
         Const(ty) => vec![ty],
         Unary { input_ty, result_ty } => vec![input_ty, result_ty],
@@ -591,9 +593,9 @@ impl PolymorphicHookMap {
     pub fn new() -> Self {
         PolymorphicHookMap(HashMap::new())
     }
-    pub fn add(&mut self, module: &mut Module, instr: Instr, non_poly_args: &[ValType], tys: &[Vec<ValType>]) {
+    pub fn add(&mut self, module: &mut Module, instr: Instr, non_poly_args: &[ValType], tys: &[Vec<ValType>], hooks: &mut Vec<String>) {
         for tys in tys {
-            println!("{}", instr.to_poly_js_hook(tys.as_slice()));
+            hooks.push(instr.to_poly_js_hook(tys.as_slice()));
             let hook_name = append_mangled_tys(instr.to_instr_name(), tys.as_slice());
             let hook_idx = add_hook(module, hook_name, &[non_poly_args, tys.as_slice()].concat());
             self.0.insert(

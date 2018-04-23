@@ -3,7 +3,7 @@ use ast::ValType::{self, *};
 use serde_json;
 use super::static_info::ModuleInfo;
 
-pub fn js_codegen(module_info: ModuleInfo /*TODO hooks: Vec<Hooks>*/) -> String {
+pub fn js_codegen(module_info: ModuleInfo, on_demand_hooks: &[String]) -> String {
     format!(r#"/*
  * Auto-generated from WASM module to-analyze.
  * DO NOT EDIT.
@@ -11,12 +11,87 @@ pub fn js_codegen(module_info: ModuleInfo /*TODO hooks: Vec<Hooks>*/) -> String 
 
 const moduleInfo = {};
 
-const lowlevelHooks = {
-{}
-};
+const lowlevelHooks = {{
+{}{}
+}};
 "#,
             serde_json::to_string_pretty(&module_info).unwrap(),
-            "" // TODO
+            r#"    // trivial
+    nop: function (func, instr) {
+        nop({func, instr});
+    },
+    unreachable: function (func, instr) {
+        unreachable({func, instr});
+    },
+
+    // type polymorphic
+    drop: function (func, instr) {
+        drop({func, instr});
+    },
+    select: function (func, instr, cond) {
+        select({func, instr}, cond);
+    },
+
+    // memory
+    current_memory: function (func, instr, currentSizePages) {
+        current_memory({func, instr}, currentSizePages);
+    },
+    grow_memory: function (func, instr, byPages, previousSizePages) {
+        grow_memory({func, instr}, byPages, previousSizePages);
+    },
+
+    // begin/ends
+    begin_function: function (func, instr) {
+        begin({func, instr}, "function");
+    },
+    end_function: function (func, instr) {
+        end({func, instr}, "function", {func, instr: -1});
+    },
+    begin_block: function (func, instr) {
+        begin({func, instr}, "block");
+    },
+    end_block: function (func, instr, begin_instr) {
+        end({func, instr}, "block", {func, instr: begin_instr});
+    },
+    begin_loop: function (func, instr) {
+        begin({func, instr}, "loop");
+    },
+    end_loop: function (func, instr, begin_instr) {
+        end({func, instr}, "loop", {func, instr: begin_instr});
+    },
+    begin_if: function (func, instr) {
+        begin({func, instr}, "if");
+    },
+    end_if: function (func, instr, begin_instr) {
+        end({func, instr}, "if", {func, instr: begin_instr});
+    },
+    begin_else: function (func, instr) {
+        begin({func, instr}, "else");
+    },
+    end_else: function (func, instr, begin_instr) {
+        end({func, instr}, "else", {func, instr: begin_instr});
+    },
+
+    // branches/if condition
+    if_: function (func, instr, condition) {
+        if_({func, instr}, condition === 1);
+    },
+    br: function (func, instr, target_label, target_instr) {
+        br({func, instr}, {label: target_label, location: {func, instr: target_instr}});
+    },
+    br_if: function (func, instr, target_label, target_instr, condition) {
+        br_if({func, instr}, {label: target_label, location: {func, instr: target_instr}}, condition === 1);
+    },
+    br_table: function (func, instr, br_table_info_idx, table_idx) {
+        br_table({
+            func,
+            instr
+        }, moduleInfo.br_tables[br_table_info_idx].table, moduleInfo.br_tables[br_table_info_idx].default, table_idx);
+    },
+
+    // generated:
+    "#,
+            on_demand_hooks.iter().flat_map(|s| s.split("\n")).collect::<Vec<&str>>().join("\n    ")
     )
 }
 
