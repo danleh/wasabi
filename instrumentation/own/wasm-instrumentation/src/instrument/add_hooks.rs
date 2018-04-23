@@ -515,7 +515,6 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         Call(br_hook),
                         instr
                     ],
-                    // FIXME untested, emscripten seems to not output br_if instruction?
                     (_, BrIf(target_label)) => {
                         let condition_tmp = function.add_fresh_local(I32);
                         vec![
