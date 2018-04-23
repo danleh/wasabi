@@ -37,6 +37,7 @@ function if_(location, condition) {
     check("if", location, jsCondition, condition);
 }
 
+// TODO br/br_if: do not use stack of block stacks, but plain values, calculate statically how many values to drop
 function br(location, target) {
     const clearThisBlock = stack.peek().blocks.pop();
 }
