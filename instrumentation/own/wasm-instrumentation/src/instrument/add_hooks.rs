@@ -7,116 +7,8 @@ use std::collections::{HashMap, HashSet};
 use std::mem::{discriminant, Discriminant};
 use super::convert_i64::{convert_i64_instr, convert_i64_type};
 
-fn add_hook(module: &mut Module, name: impl Into<String>, arg_tys_: &[ValType]) -> Idx<Function> {
-    // prepend two I32 for (function idx, instr idx)
-    let mut arg_tys = vec![I32, I32];
-    arg_tys.extend(arg_tys_.iter()
-        // and expand i64 to a tuple of (i32, i32) since there is no JS interop for i64
-        .flat_map(convert_i64_type));
-
-    module.add_function_import(
-        // hooks do not return anything
-        FunctionType::new(arg_tys, vec![]),
-        "hooks".into(),
-        name.into())
-}
-
-// TODO put this in the MonomorphicHookMap.add() function instead
-/// specialized version form of the above for monomorphic instructions
-fn add_hook_from_instr(module: &mut Module, instr: &Instr) -> (Discriminant<Instr>, Idx<Function>) {
-    println!("{}", instr.to_js_hook());
-    (discriminant(instr), add_hook(module, instr.to_instr_name(), &match instr.group() {
-        Const(ty) => vec![ty],
-        Unary { input_ty, result_ty } => vec![input_ty, result_ty],
-        Binary { first_ty, second_ty, result_ty } => vec![first_ty, second_ty, result_ty],
-        // for address, offset and alignment
-        MemoryLoad(ty, _) => vec![I32, I32, I32, ty],
-        MemoryStore(ty, _) => vec![I32, I32, I32, ty],
-        Other => unreachable!("function should be only called for \"grouped\" instructions"),
-    }))
-}
-
-struct PolymorphicHookMap(HashMap<(Discriminant<Instr>, Vec<ValType>), Idx<Function>>);
-
-impl PolymorphicHookMap {
-    pub fn new() -> Self {
-        PolymorphicHookMap(HashMap::new())
-    }
-    pub fn add(&mut self, module: &mut Module, instr: Instr, non_poly_args: &[ValType], tys: &[Vec<ValType>]) {
-        for tys in tys {
-            println!("{}", instr.to_poly_js_hook(tys.as_slice()));
-            let hook_name = append_mangled_tys(instr.to_instr_name(), tys.as_slice());
-            let hook_idx = add_hook(module, hook_name, &[non_poly_args, tys.as_slice()].concat());
-            self.0.insert(
-                (discriminant(&instr), tys.clone()),
-                hook_idx);
-        }
-    }
-    pub fn get_call(&self, instr: &Instr, tys: Vec<ValType>) -> Instr {
-        let error = format!("no hook was added for {} with types {:?}", instr.to_instr_name(), tys);
-        Call(*self.0
-            .get(&(discriminant(instr), tys))
-            .expect(&error))
-    }
-}
-
-/// helper function to save top locals.len() values into locals with the given index
-/// types of locals must match stack, not enforced by this function!
-fn save_stack_to_locals(locals: &[Idx<Local>]) -> Vec<Instr> {
-    let mut instrs = Vec::new();
-    // copy stack values into locals
-    for &local in locals.iter().skip(1).rev() {
-        instrs.push(SetLocal(local));
-    }
-    // optimization: for first local on the stack / last one saved use tee_local instead of set_local + get_local
-    for &local in locals.iter().next() {
-        instrs.push(TeeLocal(local));
-    }
-    // and restore (saving has removed them from the stack)
-    for &local in locals.iter().skip(1) {
-        instrs.push(GetLocal(local));
-    }
-    return instrs;
-}
-
-// TODO why not have a slice of tuples (Idx, ValType)?
-fn restore_locals_with_i64_handling(locals: &[Idx<Local>], local_tys: &[ValType]) -> Vec<Instr> {
-    assert_eq!(locals.len(), local_tys.len());
-
-    let mut instrs = Vec::new();
-    for (&local, &ty) in locals.iter().zip(local_tys.iter()) {
-        instrs.append(&mut convert_i64_instr(GetLocal(local), ty));
-    }
-    return instrs;
-}
-
-/// also keeps instruction index, needed later for End hooks
-#[derive(Debug)]
-enum Begin {
-    // TODO include abstract block stack (i.e. Vec<ValType>) into this enum for
-    // a) drop/select monomorphization
-    // b) type checking
-    // c) statically figuring out implicit drops during br/br_if/br_table
-    // function begins correspond to no actual instruction, so no instruction index
-    Function,
-    Block(usize),
-    Loop(usize),
-    If(usize),
-    Else(usize),
-}
-
-fn label_to_instr_idx(begin_stack: &[Begin], label: Idx<Label>) -> usize {
-    let target_block = begin_stack.iter()
-        .rev().nth(label.0)
-        .expect(&format!("cannot resolve target for {:?}", label));
-    match *target_block {
-        Begin::Function => 0,
-        Begin::Loop(begin_iidx) => begin_iidx,
-        // FIXME if/else/block (forward jump, needs forward scanning for End)
-        Begin::If(i) | Begin::Else(i) | Begin::Block(i) => i
-    }
-}
-
+/// instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, other
+/// relevant information.
 pub fn add_hooks(module: &mut Module) -> Option<String> {
     // export the table for the JS code to translate table indices -> function indices
     for table in &mut module.tables {
@@ -663,4 +555,114 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
     }
 
     Some(serde_json::to_string(&static_info).unwrap())
+}
+
+fn add_hook(module: &mut Module, name: impl Into<String>, arg_tys_: &[ValType]) -> Idx<Function> {
+    // prepend two I32 for (function idx, instr idx)
+    let mut arg_tys = vec![I32, I32];
+    arg_tys.extend(arg_tys_.iter()
+        // and expand i64 to a tuple of (i32, i32) since there is no JS interop for i64
+        .flat_map(convert_i64_type));
+
+    module.add_function_import(
+        // hooks do not return anything
+        FunctionType::new(arg_tys, vec![]),
+        "hooks".into(),
+        name.into())
+}
+
+// TODO put this in the MonomorphicHookMap.add() function instead
+/// specialized version form of the above for monomorphic instructions
+fn add_hook_from_instr(module: &mut Module, instr: &Instr) -> (Discriminant<Instr>, Idx<Function>) {
+    println!("{}", instr.to_js_hook());
+    (discriminant(instr), add_hook(module, instr.to_instr_name(), &match instr.group() {
+        Const(ty) => vec![ty],
+        Unary { input_ty, result_ty } => vec![input_ty, result_ty],
+        Binary { first_ty, second_ty, result_ty } => vec![first_ty, second_ty, result_ty],
+        // for address, offset and alignment
+        MemoryLoad(ty, _) => vec![I32, I32, I32, ty],
+        MemoryStore(ty, _) => vec![I32, I32, I32, ty],
+        Other => unreachable!("function should be only called for \"grouped\" instructions"),
+    }))
+}
+
+struct PolymorphicHookMap(HashMap<(Discriminant<Instr>, Vec<ValType>), Idx<Function>>);
+
+impl PolymorphicHookMap {
+    pub fn new() -> Self {
+        PolymorphicHookMap(HashMap::new())
+    }
+    pub fn add(&mut self, module: &mut Module, instr: Instr, non_poly_args: &[ValType], tys: &[Vec<ValType>]) {
+        for tys in tys {
+            println!("{}", instr.to_poly_js_hook(tys.as_slice()));
+            let hook_name = append_mangled_tys(instr.to_instr_name(), tys.as_slice());
+            let hook_idx = add_hook(module, hook_name, &[non_poly_args, tys.as_slice()].concat());
+            self.0.insert(
+                (discriminant(&instr), tys.clone()),
+                hook_idx);
+        }
+    }
+    pub fn get_call(&self, instr: &Instr, tys: Vec<ValType>) -> Instr {
+        let error = format!("no hook was added for {} with types {:?}", instr.to_instr_name(), tys);
+        Call(*self.0
+            .get(&(discriminant(instr), tys))
+            .expect(&error))
+    }
+}
+
+/// helper function to save top locals.len() values into locals with the given index
+/// types of locals must match stack, not enforced by this function!
+fn save_stack_to_locals(locals: &[Idx<Local>]) -> Vec<Instr> {
+    let mut instrs = Vec::new();
+    // copy stack values into locals
+    for &local in locals.iter().skip(1).rev() {
+        instrs.push(SetLocal(local));
+    }
+    // optimization: for first local on the stack / last one saved use tee_local instead of set_local + get_local
+    for &local in locals.iter().next() {
+        instrs.push(TeeLocal(local));
+    }
+    // and restore (saving has removed them from the stack)
+    for &local in locals.iter().skip(1) {
+        instrs.push(GetLocal(local));
+    }
+    return instrs;
+}
+
+// TODO why not have a slice of tuples (Idx, ValType)?
+fn restore_locals_with_i64_handling(locals: &[Idx<Local>], local_tys: &[ValType]) -> Vec<Instr> {
+    assert_eq!(locals.len(), local_tys.len());
+
+    let mut instrs = Vec::new();
+    for (&local, &ty) in locals.iter().zip(local_tys.iter()) {
+        instrs.append(&mut convert_i64_instr(GetLocal(local), ty));
+    }
+    return instrs;
+}
+
+/// also keeps instruction index, needed later for End hooks
+#[derive(Debug)]
+enum Begin {
+    // TODO include abstract block stack (i.e. Vec<ValType>) into this enum for
+    // a) drop/select monomorphization
+    // b) type checking
+    // c) statically figuring out implicit drops during br/br_if/br_table
+    // function begins correspond to no actual instruction, so no instruction index
+    Function,
+    Block(usize),
+    Loop(usize),
+    If(usize),
+    Else(usize),
+}
+
+fn label_to_instr_idx(begin_stack: &[Begin], label: Idx<Label>) -> usize {
+    let target_block = begin_stack.iter()
+        .rev().nth(label.0)
+        .expect(&format!("cannot resolve target for {:?}", label));
+    match *target_block {
+        Begin::Function => 0,
+        Begin::Loop(begin_iidx) => begin_iidx,
+        // FIXME if/else/block (forward jump, needs forward scanning for End)
+        Begin::If(i) | Begin::Else(i) | Begin::Block(i) => i
+    }
 }
