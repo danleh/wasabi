@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+ 	<head><meta charset="utf-8"></head>
+ 	<body>
+		<script src="br-implicit-drops.js"></script>
+		<script src="long.js"></script>
+		<script src="wasabi.js"></script>
+        <script src="analysis-taint.js"></script>
+		<script type="text/javascript">
+			// "async main"
+			(async function() {
+				let importObject = {
+					imports: {
+						output: console.log,
+					}
+				};
+
+				let {module, instance} = await fetch("br-implicit-drops.wasm")
+					.then(response => response.arrayBuffer())
+					.then(arrayBuffer => WebAssembly.instantiate(arrayBuffer, importObject));
+
+				// instance.exports.main();
+			})();
+		</script>
+	</body>
+</html>
