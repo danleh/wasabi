@@ -329,7 +329,7 @@ impl Module {
         types
     }
 
-    
+    // FIXME untested, possibly broken
     pub fn eval_const_expr(&self, expr: &Expr) -> Instr {
         use self::Instr::*;
         if let &[ref instr, End] = expr.as_slice() {
