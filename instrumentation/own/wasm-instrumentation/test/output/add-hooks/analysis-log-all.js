@@ -59,11 +59,11 @@ function const_(location, value) {
 }
 
 function unary(location, op, input, result) {
-    // console.log(location, op, "input =", input, "result =", result);
+    console.log(location, op, "input =", input, "result =", result);
 }
 
 function binary(location, op, first, second, result) {
-    // console.log(location, op, "first =", first, " second =", second, "result =", result);
+    console.log(location, op, "first =", first, " second =", second, "result =", result);
 }
 
 function load(location, op, memarg, value) {

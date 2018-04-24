@@ -574,55 +574,37 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                 (Const(ty), instr) => {
                     type_stack.op(&[], &[ty]);
 
-                    // TODO reorder hook and original instruction to make
-                    // a) cheaper to construct
-                    // b) easier to understand
-                    // c) more regular between different hooks (i.e., hook always before instr or after)
                     instrumented_body.extend_from_slice(&[
+                        instr.clone(),
                         location.0,
                         location.1,
                     ]);
                     instrumented_body.append(&mut convert_i64_instr(instr.clone(), ty));
-                    instrumented_body.extend_from_slice(&[
-                        monomorphic_hook_call(&instr),
-                        instr,
-                    ]);
+                    instrumented_body.push(monomorphic_hook_call(&instr));
                 }
-                // TODO unify Unary and Binary instrs
-                (Unary { input_ty, result_ty }, instr) => {
-                    type_stack.op(&[input_ty], &[result_ty]);
+                (Numeric { input_tys, result_tys }, instr) => {
+                    type_stack.op(&input_tys, &result_tys);
 
-                    let input_tmp = function.add_fresh_local(input_ty);
-                    let result_tmp = function.add_fresh_local(result_ty);
+                    let input_tmps = function.add_fresh_locals(&input_tys);
+                    let result_tmps = function.add_fresh_locals(&result_tys);
 
+                    instrumented_body.append(&mut save_stack_to_locals(&input_tmps));
+                    instrumented_body.push(instr.clone());
+                    instrumented_body.append(&mut save_stack_to_locals(&result_tmps));
                     instrumented_body.extend_from_slice(&[
-                        TeeLocal(input_tmp),
-                        instr.clone(),
-                        TeeLocal(result_tmp),
                         location.0,
                         location.1,
                     ]);
-                    // restore saved input and result
-                    instrumented_body.append(&mut restore_locals_with_i64_handling(&[input_tmp, result_tmp], &[input_ty, result_ty]));
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(
+                        &[input_tmps, result_tmps].concat(),
+                        &[input_tys, result_tys].concat()));
                     instrumented_body.push(monomorphic_hook_call(&instr));
                 }
-                (Binary { first_ty, second_ty, result_ty }, instr) => {
-                    type_stack.op(&[first_ty, second_ty], &[result_ty]);
 
-                    let first_tmp = function.add_fresh_local(first_ty);
-                    let second_tmp = function.add_fresh_local(second_ty);
-                    let result_tmp = function.add_fresh_local(result_ty);
-
-                    instrumented_body.append(&mut save_stack_to_locals(&[first_tmp, second_tmp]));
-                    instrumented_body.extend_from_slice(&[
-                        instr.clone(),
-                        TeeLocal(result_tmp),
-                        location.0,
-                        location.1,
-                    ]);
-                    instrumented_body.append(&mut restore_locals_with_i64_handling(&[first_tmp, second_tmp, result_tmp], &[first_ty, second_ty, result_ty]));
-                    instrumented_body.push(monomorphic_hook_call(&instr));
-                }
+                // TODO reorder hook and original instruction to make
+                // a) cheaper to construct
+                // b) easier to understand
+                // c) more regular between different hooks (i.e., hook always before instr or after)
 
                 _ => unreachable!("no hook for instruction {}", instr.to_instr_name()),
             }
@@ -657,8 +639,7 @@ fn add_hook_from_instr(module: &mut Module, instr: &Instr, hooks: &mut Vec<Strin
     hooks.push(instr.to_js_hook());
     (discriminant(instr), add_hook(module, instr.to_instr_name(), &match instr.group() {
         Const(ty) => vec![ty],
-        Unary { input_ty, result_ty } => vec![input_ty, result_ty],
-        Binary { first_ty, second_ty, result_ty } => vec![first_ty, second_ty, result_ty],
+        Numeric { input_tys, result_tys } => [input_tys, result_tys].concat().into(),
         // for address, offset and alignment
         MemoryLoad(ty, _) => vec![I32, I32, I32, ty],
         MemoryStore(ty, _) => vec![I32, I32, I32, ty],

@@ -99,22 +99,22 @@ impl Instr {
                 instr_name,
                 arg("v", ty), long("v", ty)
             ),
-            (InstrGroup::Unary { input_ty, result_ty }, instr) => format!(
+            (InstrGroup::Numeric { ref input_tys, ref result_tys }, instr) if input_tys.len() == 1 => format!(
                 "{}: function (func, instr, {}, {}) {{
     unary({{func, instr}}, \"{}\", {}, {});
 }},",
                 instr_name,
-                arg("input", input_ty), arg("result", result_ty),
+                arg("input", input_tys[0]), arg("result", result_tys[0]),
                 instr_name,
-                long("input", input_ty), long("result", result_ty)),
-            (InstrGroup::Binary { first_ty, second_ty, result_ty }, instr) => format!(
+                long("input", input_tys[0]), long("result", result_tys[0])),
+            (InstrGroup::Numeric { ref input_tys, ref result_tys }, instr) if input_tys.len() == 2 => format!(
                 "{}: function (func, instr, {}, {}, {}) {{
     binary({{func, instr}}, \"{}\", {}, {}, {});
 }},",
                 instr_name,
-                arg("first", first_ty), arg("second", second_ty), arg("result", result_ty),
+                arg("first", input_tys[0]), arg("second", input_tys[1]), arg("result", result_tys[0]),
                 instr_name,
-                long("first", first_ty), long("second", second_ty), long("result", result_ty)),
+                long("first", input_tys[0]), long("second", input_tys[1]), long("result", result_tys[0])),
             (InstrGroup::MemoryLoad(ty, _), instr) => format!(
                 "{}: function (func, instr, offset, align, addr, {}) {{
     load({{func, instr}}, \"{}\", {{addr, offset, align}}, {});
