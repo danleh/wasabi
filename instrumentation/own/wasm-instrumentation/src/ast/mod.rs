@@ -38,7 +38,7 @@ pub struct FunctionType {
     pub results: Vec<ValType>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BlockType(pub Option<ValType>);
 
 #[derive(WasmBinary, Debug, Clone)]
