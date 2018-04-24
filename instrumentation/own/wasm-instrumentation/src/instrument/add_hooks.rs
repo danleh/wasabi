@@ -89,8 +89,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
     let nop_hook = add_hook(module, "nop", &[]);
     let unreachable_hook = add_hook(module, "unreachable", &[]);
 
-    let current_memory_hook = add_hook(module, "current_memory", &[I32]);
-    let grow_memory_hook = add_hook(module, "grow_memory", &[I32, I32]);
+    let memory_size_hook = add_hook(module, "memory_size", &[I32]);
+    let memory_grow_hook = add_hook(module, "memory_grow", &[I32, I32]);
 
     // TODO make this a struct of its own, similar to PolymorphicHookMap
     let monomorphic_hook_call = {
@@ -206,14 +206,14 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
                 /* Control Instructions: Blocks */
 
-                Block(ty) | Loop(ty) => {
+                Block(block_ty) | Loop(block_ty) => {
                     // TODO move into block_stack
                     block_stack.push(match instr {
                         Block(_) => Begin::Block(iidx),
                         Loop(_) => Begin::Loop(iidx),
                         _ => unreachable!()
                     });
-                    type_stack.begin_block(ty);
+                    type_stack.begin_block(block_ty);
 
                     instrumented_body.extend_from_slice(&[
                         instr,
@@ -222,9 +222,9 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         Call(begin_block_hook),
                     ]);
                 }
-                If(ty) => {
+                If(block_ty) => {
                     block_stack.push(Begin::If(iidx));
-                    type_stack.begin_block(ty);
+                    type_stack.begin_block(block_ty);
 
                     let condition_tmp = function.add_fresh_local(I32);
 
@@ -502,8 +502,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
                 /* Memory Instructions */
 
-                // TODO rename to memory.size and memory.grow
-                CurrentMemory(_ /* memory idx == 0 in WASM version 1 */) => {
+                MemorySize(_ /* memory idx == 0 in WASM version 1 */) => {
                     type_stack.op(&[], &[I32]);
 
                     let result_tmp = function.add_fresh_local(I32);
@@ -514,10 +513,10 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.0,
                         location.1,
                         GetLocal(result_tmp),
-                        Call(current_memory_hook)
+                        Call(memory_size_hook)
                     ]);
                 }
-                GrowMemory(_ /* memory idx == 0 in WASM version 1 */) => {
+                MemoryGrow(_ /* memory idx == 0 in WASM version 1 */) => {
                     type_stack.op(&[I32], &[I32]);
 
                     let input_tmp = function.add_fresh_local(I32);
@@ -531,7 +530,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.1,
                         GetLocal(input_tmp),
                         GetLocal(result_tmp),
-                        Call(grow_memory_hook)
+                        Call(memory_grow_hook)
                     ]);
                 }
 

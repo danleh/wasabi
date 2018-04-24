@@ -161,8 +161,8 @@ pub enum Instr {
     #[tag = 0x3d] I64Store16(Memarg),
     #[tag = 0x3e] I64Store32(Memarg),
 
-    #[tag = 0x3f] CurrentMemory(/* unused, always 0x00 in WASM version 1 */ Idx<Memory>),
-    #[tag = 0x40] GrowMemory(/* unused, always 0x00 in WASM version 1 */ Idx<Memory>),
+    #[tag = 0x3f] MemorySize(/* unused, always 0x00 in WASM version 1 */ Idx<Memory>),
+    #[tag = 0x40] MemoryGrow(/* unused, always 0x00 in WASM version 1 */ Idx<Memory>),
 
     #[tag = 0x41] I32Const(i32),
     #[tag = 0x42] I64Const(i64),

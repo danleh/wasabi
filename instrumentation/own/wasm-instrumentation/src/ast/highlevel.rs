@@ -134,8 +134,8 @@ pub enum Instr {
     I64Store16(Memarg),
     I64Store32(Memarg),
 
-    CurrentMemory(Idx<Memory>),
-    GrowMemory(Idx<Memory>),
+    MemorySize(Idx<Memory>),
+    MemoryGrow(Idx<Memory>),
 
     I32Const(i32),
     I64Const(i64),

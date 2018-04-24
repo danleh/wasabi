@@ -73,10 +73,10 @@ function load(i: InstructionLocation, op: LoadSize, memarg: Memarg, value: Val) 
 function store(i: InstructionLocation, op: StoreSize, memarg: Memarg, value: Val) {
 }
 
-function current_memory(i: InstructionLocation, currentSizePages: number) {
+function memory_size(i: InstructionLocation, currentSizePages: number) {
 }
 
-function grow_memory(i: InstructionLocation, byPages: number, previousSizePages: number) {
+function memory_grow(i: InstructionLocation, byPages: number, previousSizePages: number) {
 }
 
 

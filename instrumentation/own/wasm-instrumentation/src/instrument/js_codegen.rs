@@ -25,11 +25,11 @@ const lowlevelHooks = {{
     },
 
     // memory
-    current_memory: function (func, instr, currentSizePages) {
-        current_memory({func, instr}, currentSizePages);
+    memory_size: function (func, instr, currentSizePages) {
+        memory_size({func, instr}, currentSizePages);
     },
-    grow_memory: function (func, instr, byPages, previousSizePages) {
-        grow_memory({func, instr}, byPages, previousSizePages);
+    memory_grow: function (func, instr, byPages, previousSizePages) {
+        memory_grow({func, instr}, byPages, previousSizePages);
     },
 
     // begin/ends

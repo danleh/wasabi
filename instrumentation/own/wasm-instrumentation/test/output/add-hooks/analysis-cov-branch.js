@@ -1,6 +1,5 @@
 // analysis specific
 
-// TODO how to get 100% data, i.e., the number of possible branches? would need to know each if/br_if/br_table instr
 const coverageData = [];
 
 // branch can be boolean (for if and br_if) or integer (for br_table, i.e., switches)
@@ -39,13 +38,6 @@ function br_table(location, table, defaultTarget, tableIdx) {
     addBranch(location, tableIdx);
 }
 
-// TODO are selects really branches?
 function select(location, condition) {
     addBranch(location, condition);
-}
-
-function call_(location, targetFunc, indirect, args) {
-    if (indirect) {
-        // TODO are indirect calls a form of branch? what is 100% coverage there, the full module table?
-    }
 }

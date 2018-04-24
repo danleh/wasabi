@@ -214,8 +214,8 @@ fn from_lowlevel_instr(instr: ll::Instr, types: &[FunctionType]) -> hl::Instr {
         ll::Instr::I64Store16(memarg) => hl::Instr::I64Store16(memarg),
         ll::Instr::I64Store32(memarg) => hl::Instr::I64Store32(memarg),
 
-        ll::Instr::CurrentMemory(memory_idx) => hl::Instr::CurrentMemory(memory_idx.0.into()),
-        ll::Instr::GrowMemory(memory_idx) => hl::Instr::GrowMemory(memory_idx.0.into()),
+        ll::Instr::MemorySize(memory_idx) => hl::Instr::MemorySize(memory_idx.0.into()),
+        ll::Instr::MemoryGrow(memory_idx) => hl::Instr::MemoryGrow(memory_idx.0.into()),
 
         ll::Instr::I32Const(immediate) => hl::Instr::I32Const(immediate),
         ll::Instr::I64Const(immediate) => hl::Instr::I64Const(immediate),
@@ -656,8 +656,8 @@ fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
         hl::Instr::I64Store16(memarg) => ll::Instr::I64Store16(memarg),
         hl::Instr::I64Store32(memarg) => ll::Instr::I64Store32(memarg),
 
-        hl::Instr::CurrentMemory(memory_idx) => ll::Instr::CurrentMemory(state.map_memory_idx(memory_idx.0)),
-        hl::Instr::GrowMemory(memory_idx) => ll::Instr::GrowMemory(state.map_memory_idx(memory_idx.0)),
+        hl::Instr::MemorySize(memory_idx) => ll::Instr::MemorySize(state.map_memory_idx(memory_idx.0)),
+        hl::Instr::MemoryGrow(memory_idx) => ll::Instr::MemoryGrow(state.map_memory_idx(memory_idx.0)),
 
         hl::Instr::I32Const(immediate) => ll::Instr::I32Const(immediate),
         hl::Instr::I64Const(immediate) => ll::Instr::I64Const(immediate),

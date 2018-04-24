@@ -147,13 +147,13 @@ function store(location, op, memarg, value) {
     memory[effectiveAddr] = value;
 }
 
-function current_memory(location, currentSizePages) {
+function memory_size(location, currentSizePages) {
     values().push(currentSizePages);
 }
 
-function grow_memory(location, byPages, previousSizePages) {
+function memory_grow(location, byPages, previousSizePages) {
     let jsByPages = values().pop();
-    check("grow_memory", location, jsByPages, byPages);
+    check("memory_grow", location, jsByPages, byPages);
     values().push(previousSizePages);
 }
 

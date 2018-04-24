@@ -30,5 +30,5 @@ function results() {
 
 // just let every callback report add its location to coverageData
 for (const callback of analysisCallbacks) {
-    this[callback] = addLocation;
+    window[callback] = addLocation;
 }

@@ -33,7 +33,7 @@ WebAssembly.instantiate = function () {
 
 // provide analysis callback stubs if they were not defined by the user
 const analysisCallbacks = [
-    "if_", "br", "br_if", "br_table", "begin", "end", "nop", "unreachable", "drop", "select", "call_", "return_", "call_result_", "const_", "unary", "binary", "load", "store", "current_memory", "grow_memory", "local", "global"
+    "if_", "br", "br_if", "br_table", "begin", "end", "nop", "unreachable", "drop", "select", "call_", "return_", "call_result_", "const_", "unary", "binary", "load", "store", "memory_size", "memory_grow", "local", "global"
 ];
 for (const callback of analysisCallbacks) {
     if (window[callback] === undefined) {

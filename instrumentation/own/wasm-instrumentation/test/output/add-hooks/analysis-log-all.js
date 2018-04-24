@@ -74,12 +74,12 @@ function store(location, op, memarg, value) {
     console.log(location, op, "value =", value, "to =", memarg);
 }
 
-function current_memory(location, currentSizePages) {
-    console.log(location, "current_memory, size (in pages) =", currentSizePages);
+function memory_size(location, currentSizePages) {
+    console.log(location, "memory_size, size (in pages) =", currentSizePages);
 }
 
-function grow_memory(location, byPages, previousSizePages) {
-    console.log(location, "grow_memory, delta (in pages) =", byPages, "previous size (in pages) =", previousSizePages);
+function memory_grow(location, byPages, previousSizePages) {
+    console.log(location, "memory_grow, delta (in pages) =", byPages, "previous size (in pages) =", previousSizePages);
 }
 
 function local(location, op, localIndex, value) {
