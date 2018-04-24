@@ -48,7 +48,10 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
     polymorphic_hooks.add(module, TeeLocal(0.into()), &[I32], primitive_tys, &mut on_demand_hooks);
     polymorphic_hooks.add(module, GetGlobal(0.into()), &[I32], primitive_tys, &mut on_demand_hooks);
     polymorphic_hooks.add(module, SetGlobal(0.into()), &[I32], primitive_tys, &mut on_demand_hooks);
+
+    // drop and select
     polymorphic_hooks.add(module, Drop, &[], primitive_tys, &mut on_demand_hooks);
+    polymorphic_hooks.add(module, Select, &[I32], &[vec![I32, I32], vec![I64, I64], vec![F32, F32], vec![F64, F64]], &mut on_demand_hooks);
 
     // calls
     polymorphic_hooks.add(module, Call(0.into()), &[I32], unique_arg_tys.as_slice(), &mut on_demand_hooks); // I32 = target func idx
@@ -84,9 +87,6 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
     let nop_hook = add_hook(module, "nop", &[]);
     let unreachable_hook = add_hook(module, "unreachable", &[]);
-
-    // FIXME make polymorphic hook
-    let select_hook = add_hook(module, "select", &[I32]);
 
     let current_memory_hook = add_hook(module, "current_memory", &[I32]);
     let grow_memory_hook = add_hook(module, "grow_memory", &[I32, I32]);
@@ -184,7 +184,9 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
         for (iidx, instr) in original_body.into_iter().enumerate() {
             let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
+
             instrumented_body.append(&mut
+                // TODO do not return Vec from match and append, but directly access instrumented body inside match arms
                 match (instr.group(), instr.clone()) {
                     (_, Block(ty)) => {
                         block_stack.push(Begin::Block(iidx));
@@ -284,7 +286,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         Call(unreachable_hook),
                     ],
                     (_, Drop) => {
-                        let &ty = type_stack.topn(1).first().expect("empty type stack, needed for drop monomorphization");
+                        let ty = type_stack.pop();
                         let tmp = function.add_fresh_local(ty);
 
                         let mut instrs = vec![
@@ -297,19 +299,24 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         instrs
                     }
                     (_, Select) => {
-                        let cond_tmp = function.add_fresh_local(I32);
+                        assert_eq!(type_stack.pop(), I32, "select condition should be i32");
+                        let ty = type_stack.pop();
+                        assert_eq!(type_stack.pop(), ty, "select arguments should have same type");
+                        type_stack.push(ty);
 
-                        // TODO monomorphize for first and second argument
-                        println!("select arg tys: {:?}", type_stack.topn(3));
+                        let condition_tmp = function.add_fresh_local(I32);
+                        let arg_tmps = function.add_fresh_locals(&[ty, ty]);
 
-                        vec![
-                            TeeLocal(cond_tmp),
-                            instr,
+                        let mut instrs = save_stack_to_locals(&[arg_tmps[0], arg_tmps[1], condition_tmp]);
+                        instrs.extend_from_slice(&[
+                            instr.clone(),
                             location.0,
                             location.1,
-                            GetLocal(cond_tmp),
-                            Call(select_hook),
-                        ]
+                            GetLocal(condition_tmp),
+                        ]);
+                        instrs.append(&mut restore_locals_with_i64_handling(&arg_tmps, &[ty, ty]));
+                        instrs.push(polymorphic_hooks.get_call(&instr, vec![ty, ty]));
+                        instrs
                     }
                     (_, CurrentMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
                         type_stack.op(&[], &[I32]);

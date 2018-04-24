@@ -24,10 +24,6 @@ const lowlevelHooks = {{
         unreachable({func, instr});
     },
 
-    select: function (func, instr, cond) {
-        select({func, instr}, cond);
-    },
-
     // memory
     current_memory: function (func, instr, currentSizePages) {
         current_memory({func, instr}, currentSizePages);
@@ -175,6 +171,13 @@ impl Instr {
                             hook_name,
                             arg("v", tys[0]),
                             long("v", tys[0])
+            ),
+            Select => format!("{}: function(func, instr, condition, {}, {}) {{
+    select({{func, instr}}, condition === 1, {}, {});
+}},",
+                              hook_name,
+                              arg("first", tys[0]), arg("second", tys[1]),
+                              long("first", tys[0]), long("second", tys[1]),
             ),
             GetLocal(_) => format!("{}: function(func, instr, index, {}) {{
     local({{func, instr}}, \"get\", index, {});
