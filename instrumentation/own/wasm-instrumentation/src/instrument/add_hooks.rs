@@ -347,7 +347,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.0,
                         location.1,
                     ]);
-                    instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &function));
                     instrumented_body.extend_from_slice(&[
                         polymorphic_hooks.get_call(&instr, result_tys),
                         instr,
@@ -359,10 +359,9 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
                     type_stack.op(arg_tys, result_tys);
 
-                    let arg_tmps = function.add_fresh_locals(arg_tys);
-                    let result_tmps = function.add_fresh_locals(result_tys);
-
                     /* pre call hook */
+
+                    let arg_tmps = function.add_fresh_locals(arg_tys);
 
                     instrumented_body.append(&mut save_stack_to_locals(&arg_tmps));
                     instrumented_body.extend_from_slice(&[
@@ -370,7 +369,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.1.clone(),
                         I32Const(target_func_idx.0 as i32),
                     ]);
-                    instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &arg_tys));
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &function));
                     instrumented_body.extend_from_slice(&[
                         polymorphic_hooks.get_call(&instr, arg_tys.to_vec()),
                         instr,
@@ -378,12 +377,14 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
                     /* post call hook */
 
+                    let result_tmps = function.add_fresh_locals(result_tys);
+
                     instrumented_body.append(&mut save_stack_to_locals(&result_tmps));
                     instrumented_body.extend_from_slice(&[
                         location.0,
                         location.1,
                     ]);
-                    instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &function));
                     instrumented_body.push(Call(*call_result_hooks.get(result_tys).expect("no call_result hook for tys")));
                 }
                 CallIndirect(ref func_ty, _ /* table idx == 0 in WASM version 1 */) => {
@@ -392,13 +393,11 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
                     type_stack.op(arg_tys, result_tys);
 
-                    let target_table_idx_tmp = function.add_fresh_local(I32);
-                    let arg_tmps = function.add_fresh_locals(arg_tys);
-                    let result_tmps = function.add_fresh_locals(result_tys);
-
                     /* pre call hook */
 
-                    // TODO unify call args and target_table_idx_tmp
+                    let target_table_idx_tmp = function.add_fresh_local(I32);
+                    let arg_tmps = function.add_fresh_locals(arg_tys);
+
                     instrumented_body.push(SetLocal(target_table_idx_tmp));
                     instrumented_body.append(&mut save_stack_to_locals(&arg_tmps));
                     instrumented_body.extend_from_slice(&[
@@ -407,7 +406,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.1.clone(),
                         GetLocal(target_table_idx_tmp),
                     ]);
-                    instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &arg_tys));
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &function));
                     instrumented_body.extend_from_slice(&[
                         polymorphic_hooks.get_call(&instr, arg_tys.to_vec()),
                         instr.clone(),
@@ -415,12 +414,14 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
                     /* post call hook */
 
+                    let result_tmps = function.add_fresh_locals(result_tys);
+
                     instrumented_body.append(&mut save_stack_to_locals(&result_tmps));
                     instrumented_body.extend_from_slice(&[
                         location.0,
                         location.1,
                     ]);
-                    instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &function));
                     instrumented_body.push(Call(*call_result_hooks.get(result_tys).expect("no call_result hook for tys")));
                 }
 
@@ -455,7 +456,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.1,
                         GetLocal(condition_tmp),
                     ]);
-                    instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &[ty, ty]));
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &function));
                     instrumented_body.push(polymorphic_hooks.get_call(&instr, vec![ty, ty]));
                 }
 
@@ -560,7 +561,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                             I32Const(memarg.offset as i32),
                             I32Const(memarg.alignment as i32),
                         ]);
-                        instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &[I32, ty]));
+                        instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &function));
                         instrumented_body.push(monomorphic_hook_call(&instr));
                     }
 
@@ -593,7 +594,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         ]);
                         instrumented_body.append(&mut restore_locals_with_i64_handling(
                             &[input_tmps, result_tmps].concat(),
-                            &[input_tys, result_tys].concat()));
+                            &function));
                         instrumented_body.push(monomorphic_hook_call(&instr));
                     }
 
@@ -684,13 +685,11 @@ fn save_stack_to_locals(locals: &[Idx<Local>]) -> Vec<Instr> {
     return instrs;
 }
 
-// TODO why not have a slice of tuples (Idx, ValType)?
-fn restore_locals_with_i64_handling(locals: &[Idx<Local>], local_tys: &[ValType]) -> Vec<Instr> {
-    assert_eq!(locals.len(), local_tys.len());
-
+/// function is necessary to get the types of the locals
+fn restore_locals_with_i64_handling(locals: &[Idx<Local>], function: &Function) -> Vec<Instr> {
     let mut instrs = Vec::new();
-    for (&local, &ty) in locals.iter().zip(local_tys.iter()) {
-        instrs.append(&mut convert_i64_instr(GetLocal(local), ty));
+    for &local in locals {
+        instrs.append(&mut convert_i64_instr(GetLocal(local), function.local_type(local)));
     }
     return instrs;
 }
