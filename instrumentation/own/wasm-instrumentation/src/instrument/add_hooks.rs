@@ -430,6 +430,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
                 Drop => {
                     let ty = type_stack.pop();
+
                     let tmp = function.add_fresh_local(ty);
 
                     instrumented_body.extend_from_slice(&[
@@ -467,7 +468,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     let local_ty = function.local_type(local_idx);
 
                     match instr {
-                        GetLocal(_) => type_stack.op(&[], &[local_ty]),
+                        | GetLocal(_) => type_stack.op(&[], &[local_ty]),
                         | SetLocal(_) => type_stack.op(&[local_ty], &[]),
                         _ => {}
                     }
@@ -485,7 +486,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     let global_ty = module_info.globals[global_idx.0];
 
                     match instr {
-                        GetGlobal(_) => type_stack.op(&[], &[global_ty]),
+                        | GetGlobal(_) => type_stack.op(&[], &[global_ty]),
                         | SetGlobal(_) => type_stack.op(&[global_ty], &[]),
                         _ => {}
                     }
@@ -506,14 +507,12 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                 MemorySize(_ /* memory idx == 0 in WASM version 1 */) => {
                     type_stack.op(&[], &[I32]);
 
-                    let result_tmp = function.add_fresh_local(I32);
-
                     instrumented_body.extend_from_slice(&[
-                        instr,
-                        TeeLocal(result_tmp),
+                        instr.clone(),
                         location.0,
                         location.1,
-                        GetLocal(result_tmp),
+                        // optimization: just call memory_size again instead of duplicating result into local
+                        instr,
                         Call(memory_size_hook)
                     ]);
                 }
@@ -576,6 +575,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                             location.0,
                             location.1,
                         ]);
+                        // optimization: just call T.const again, instead of duplicating result into local
                         instrumented_body.append(&mut convert_i64_instr(instr.clone(), ty));
                         instrumented_body.push(monomorphic_hook_call(&instr));
                     }
@@ -597,11 +597,6 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                             &function));
                         instrumented_body.push(monomorphic_hook_call(&instr));
                     }
-
-                    // TODO reorder hook and original instruction to make
-                    // a) cheaper to construct
-                    // b) easier to understand
-                    // c) more regular between different hooks (i.e., hook always before instr or after)
 
                     _ => unreachable!("no hook for instruction {}", instr.to_instr_name()),
                 }
