@@ -206,13 +206,9 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
                 /* Control Instructions: Blocks */
 
-                Block(block_ty) | Loop(block_ty) => {
+                Block(block_ty) => {
                     // TODO move into block_stack
-                    block_stack.push(match instr {
-                        Block(_) => Begin::Block(iidx),
-                        Loop(_) => Begin::Loop(iidx),
-                        _ => unreachable!()
-                    });
+                    block_stack.push(Begin::Block(iidx));
                     type_stack.begin_block(block_ty);
 
                     instrumented_body.extend_from_slice(&[
@@ -220,6 +216,18 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.0,
                         location.1,
                         Call(begin_block_hook),
+                    ]);
+                }
+                Loop(block_ty) => {
+                    // TODO move into block_stack
+                    block_stack.push(Begin::Loop(iidx));
+                    type_stack.begin_block(block_ty);
+
+                    instrumented_body.extend_from_slice(&[
+                        instr,
+                        location.0,
+                        location.1,
+                        Call(begin_loop_hook),
                     ]);
                 }
                 If(block_ty) => {
