@@ -81,8 +81,8 @@ pub type Expr = Vec<Instr>;
 
 #[derive(Debug, Clone)]
 pub enum Instr {
-    Unreachable,
     Nop,
+    Unreachable,
 
     Block(BlockType),
     Loop(BlockType),

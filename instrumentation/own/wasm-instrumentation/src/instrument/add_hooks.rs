@@ -184,16 +184,25 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
         for (iidx, instr) in original_body.into_iter().enumerate() {
             let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
+            // TODO do not compute group here, just have fallback case in bottom for "SimpleInstructions" or so
             match (instr.group(), instr.clone()) {
-                (_, Nop) | (_, Unreachable) => instrumented_body.extend_from_slice(&[
-                    instr.clone(),
+                // size optimization: replace nop fully with hook
+                (_, Nop) => instrumented_body.extend_from_slice(&[
                     location.0,
                     location.1,
-                    Call(match instr {
-                        Nop => nop_hook,
-                        Unreachable => unreachable_hook,
-                        _ => unreachable!()
-                    })]),
+                    Call(nop_hook)
+                ]),
+                // hook must come before unreachable instruction, otherwise it prevents hook from being called
+                (_, Unreachable) => instrumented_body.extend_from_slice(&[
+                    location.0,
+                    location.1,
+                    Call(unreachable_hook),
+                    instr
+                ]),
+
+
+                /* Control Instructions: Blocks */
+
                 (_, Block(ty)) | (_, Loop(ty)) => {
                     block_stack.push(match instr {
                         Block(_) => Begin::Block(iidx),
@@ -273,104 +282,58 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     });
                     instrumented_body.push(instr);
                 }
-                (_, Drop) => {
-                    let ty = type_stack.pop();
-                    let tmp = function.add_fresh_local(ty);
 
-                    instrumented_body.extend_from_slice(&[
-                        SetLocal(tmp),
-                        location.0,
-                        location.1,
-                    ]);
-                    instrumented_body.append(&mut convert_i64_instr(GetLocal(tmp), ty));
-                    instrumented_body.push(polymorphic_hooks.get_call(&instr, vec![ty]));
-                }
-                (_, Select) => {
-                    assert_eq!(type_stack.pop(), I32, "select condition should be i32");
-                    let ty = type_stack.pop();
-                    assert_eq!(type_stack.pop(), ty, "select arguments should have same type");
-                    type_stack.push(ty);
+
+                /* Control Instructions: Branches/Breaks */
+
+                (_, Br(target_label)) => instrumented_body.extend_from_slice(&[
+                    location.0,
+                    location.1,
+                    I32Const(target_label.0 as i32),
+                    I32Const(label_to_instr_idx(&block_stack, target_label) as i32),
+                    Call(br_hook),
+                    instr
+                ]),
+                (_, BrIf(target_label)) => {
+                    type_stack.op(&[I32], &[]);
 
                     let condition_tmp = function.add_fresh_local(I32);
-                    let arg_tmps = function.add_fresh_locals(&[ty, ty]);
 
-                    instrumented_body.append(&mut save_stack_to_locals(&[arg_tmps[0], arg_tmps[1], condition_tmp]));
                     instrumented_body.extend_from_slice(&[
-                        instr.clone(),
+                        TeeLocal(condition_tmp),
                         location.0,
                         location.1,
+                        I32Const(target_label.0 as i32),
+                        I32Const(label_to_instr_idx(&block_stack, target_label) as i32),
                         GetLocal(condition_tmp),
+                        Call(br_if_hook),
+                        instr
                     ]);
-                    instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &[ty, ty]));
-                    instrumented_body.push(polymorphic_hooks.get_call(&instr, vec![ty, ty]));
                 }
-                (_, CurrentMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
-                    type_stack.op(&[], &[I32]);
+                (_, BrTable(target_table, default_target)) => {
+                    type_stack.op(&[I32], &[]);
 
-                    let result_tmp = function.add_fresh_local(I32);
+                    module_info.br_tables.push(BrTableInfo::new(
+                        target_table.into_iter().map(|label| LabelAndLocation::new(label.0)).collect(),
+                        LabelAndLocation::new(default_target.0),
+                    ));
+
+                    let target_idx_tmp = function.add_fresh_local(I32);
 
                     instrumented_body.extend_from_slice(&[
-                        instr,
-                        TeeLocal(result_tmp),
+                        TeeLocal(target_idx_tmp),
                         location.0,
                         location.1,
-                        GetLocal(result_tmp),
-                        Call(current_memory_hook)
+                        I32Const((module_info.br_tables.len() - 1) as i32),
+                        GetLocal(target_idx_tmp),
+                        Call(br_table_hook),
+                        instr
                     ]);
                 }
-                (_, GrowMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
-                    type_stack.op(&[I32], &[I32]);
 
-                    let input_tmp = function.add_fresh_local(I32);
-                    let result_tmp = function.add_fresh_local(I32);
 
-                    instrumented_body.extend_from_slice(&[
-                        TeeLocal(input_tmp),
-                        instr,
-                        TeeLocal(result_tmp),
-                        location.0,
-                        location.1,
-                        GetLocal(input_tmp),
-                        GetLocal(result_tmp),
-                        Call(grow_memory_hook)
-                    ]);
-                }
-                (_, GetLocal(local_idx)) | (_, SetLocal(local_idx)) | (_, TeeLocal(local_idx)) => {
-                    let local_ty = function.local_type(local_idx);
+                /* Control Instructions: Calls & Returns */
 
-                    match instr {
-                        GetLocal(_) => type_stack.op(&[], &[local_ty]),
-                        | SetLocal(_) => type_stack.op(&[local_ty], &[]),
-                        _ => {}
-                    }
-
-                    instrumented_body.extend_from_slice(&[
-                        instr.clone(),
-                        location.0,
-                        location.1,
-                        I32Const(local_idx.0 as i32),
-                    ]);
-                    instrumented_body.append(&mut convert_i64_instr(GetLocal(local_idx), local_ty));
-                    instrumented_body.push(polymorphic_hooks.get_call(&instr, vec![local_ty]));
-                }
-                (_, GetGlobal(global_idx)) | (_, SetGlobal(global_idx)) => {
-                    let global_ty = module_info.globals[global_idx.0];
-
-                    match instr {
-                        GetGlobal(_) => type_stack.op(&[], &[global_ty]),
-                        | SetGlobal(_) => type_stack.op(&[global_ty], &[]),
-                        _ => {}
-                    }
-
-                    instrumented_body.extend_from_slice(&[
-                        instr.clone(),
-                        location.0,
-                        location.1,
-                        I32Const(global_idx.0 as i32),
-                    ]);
-                    instrumented_body.append(&mut convert_i64_instr(GetGlobal(global_idx), global_ty));
-                    instrumented_body.push(polymorphic_hooks.get_call(&instr, vec![global_ty]));
-                }
                 (_, Return) => {
                     // FIXME type checking for return correctly handled?
 
@@ -458,6 +421,156 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
                     instrumented_body.push(Call(*call_result_hooks.get(result_tys).expect("no call_result hook for tys")));
                 }
+
+
+                /* Parametric Instructions */
+
+                (_, Drop) => {
+                    let ty = type_stack.pop();
+                    let tmp = function.add_fresh_local(ty);
+
+                    instrumented_body.extend_from_slice(&[
+                        SetLocal(tmp),
+                        location.0,
+                        location.1,
+                    ]);
+                    instrumented_body.append(&mut convert_i64_instr(GetLocal(tmp), ty));
+                    instrumented_body.push(polymorphic_hooks.get_call(&instr, vec![ty]));
+                }
+                (_, Select) => {
+                    assert_eq!(type_stack.pop(), I32, "select condition should be i32");
+                    let ty = type_stack.pop();
+                    assert_eq!(type_stack.pop(), ty, "select arguments should have same type");
+                    type_stack.push(ty);
+
+                    let condition_tmp = function.add_fresh_local(I32);
+                    let arg_tmps = function.add_fresh_locals(&[ty, ty]);
+
+                    instrumented_body.append(&mut save_stack_to_locals(&[arg_tmps[0], arg_tmps[1], condition_tmp]));
+                    instrumented_body.extend_from_slice(&[
+                        instr.clone(),
+                        location.0,
+                        location.1,
+                        GetLocal(condition_tmp),
+                    ]);
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &[ty, ty]));
+                    instrumented_body.push(polymorphic_hooks.get_call(&instr, vec![ty, ty]));
+                }
+
+
+                /* Variable Instructions */
+
+                (_, GetLocal(local_idx)) | (_, SetLocal(local_idx)) | (_, TeeLocal(local_idx)) => {
+                    let local_ty = function.local_type(local_idx);
+
+                    match instr {
+                        GetLocal(_) => type_stack.op(&[], &[local_ty]),
+                        | SetLocal(_) => type_stack.op(&[local_ty], &[]),
+                        _ => {}
+                    }
+
+                    instrumented_body.extend_from_slice(&[
+                        instr.clone(),
+                        location.0,
+                        location.1,
+                        I32Const(local_idx.0 as i32),
+                    ]);
+                    instrumented_body.append(&mut convert_i64_instr(GetLocal(local_idx), local_ty));
+                    instrumented_body.push(polymorphic_hooks.get_call(&instr, vec![local_ty]));
+                }
+                (_, GetGlobal(global_idx)) | (_, SetGlobal(global_idx)) => {
+                    let global_ty = module_info.globals[global_idx.0];
+
+                    match instr {
+                        GetGlobal(_) => type_stack.op(&[], &[global_ty]),
+                        | SetGlobal(_) => type_stack.op(&[global_ty], &[]),
+                        _ => {}
+                    }
+
+                    instrumented_body.extend_from_slice(&[
+                        instr.clone(),
+                        location.0,
+                        location.1,
+                        I32Const(global_idx.0 as i32),
+                    ]);
+                    instrumented_body.append(&mut convert_i64_instr(GetGlobal(global_idx), global_ty));
+                    instrumented_body.push(polymorphic_hooks.get_call(&instr, vec![global_ty]));
+                }
+
+
+                /* Memory Instructions */
+
+                (_, CurrentMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
+                    type_stack.op(&[], &[I32]);
+
+                    let result_tmp = function.add_fresh_local(I32);
+
+                    instrumented_body.extend_from_slice(&[
+                        instr,
+                        TeeLocal(result_tmp),
+                        location.0,
+                        location.1,
+                        GetLocal(result_tmp),
+                        Call(current_memory_hook)
+                    ]);
+                }
+                (_, GrowMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
+                    type_stack.op(&[I32], &[I32]);
+
+                    let input_tmp = function.add_fresh_local(I32);
+                    let result_tmp = function.add_fresh_local(I32);
+
+                    instrumented_body.extend_from_slice(&[
+                        TeeLocal(input_tmp),
+                        instr,
+                        TeeLocal(result_tmp),
+                        location.0,
+                        location.1,
+                        GetLocal(input_tmp),
+                        GetLocal(result_tmp),
+                        Call(grow_memory_hook)
+                    ]);
+                }
+                // TODO maybe unify Mem load and store?
+                (MemoryLoad(ty, memarg), instr) => {
+                    type_stack.op(&[I32], &[ty]);
+
+                    let addr_tmp = function.add_fresh_local(I32);
+                    let value_tmp = function.add_fresh_local(ty);
+
+                    instrumented_body.extend_from_slice(&[
+                        TeeLocal(addr_tmp),
+                        instr.clone(),
+                        TeeLocal(value_tmp),
+                        location.0,
+                        location.1,
+                        I32Const(memarg.offset as i32),
+                        I32Const(memarg.alignment as i32),
+                    ]);
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &[I32, ty]));
+                    instrumented_body.push(monomorphic_hook_call(&instr));
+                }
+                (MemoryStore(ty, memarg), instr) => {
+                    type_stack.op(&[I32, ty], &[]);
+
+                    let addr_tmp = function.add_fresh_local(I32);
+                    let value_tmp = function.add_fresh_local(ty);
+
+                    instrumented_body.append(&mut save_stack_to_locals(&[addr_tmp, value_tmp]));
+                    instrumented_body.extend_from_slice(&[
+                        instr.clone(),
+                        location.0,
+                        location.1,
+                        I32Const(memarg.offset as i32),
+                        I32Const(memarg.alignment as i32),
+                    ]);
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &[I32, ty]));
+                    instrumented_body.push(monomorphic_hook_call(&instr));
+                }
+
+
+                /* Numeric Instructions */
+
                 (Const(ty), instr) => {
                     type_stack.op(&[], &[ty]);
 
@@ -510,86 +623,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     instrumented_body.append(&mut restore_locals_with_i64_handling(&[first_tmp, second_tmp, result_tmp], &[first_ty, second_ty, result_ty]));
                     instrumented_body.push(monomorphic_hook_call(&instr));
                 }
-                // TODO maybe unify Mem load and store?
-                (MemoryLoad(ty, memarg), instr) => {
-                    type_stack.op(&[I32], &[ty]);
 
-                    let addr_tmp = function.add_fresh_local(I32);
-                    let value_tmp = function.add_fresh_local(ty);
-
-                    instrumented_body.extend_from_slice(&[
-                        TeeLocal(addr_tmp),
-                        instr.clone(),
-                        TeeLocal(value_tmp),
-                        location.0,
-                        location.1,
-                        I32Const(memarg.offset as i32),
-                        I32Const(memarg.alignment as i32),
-                    ]);
-                    instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &[I32, ty]));
-                    instrumented_body.push(monomorphic_hook_call(&instr));
-                }
-                (MemoryStore(ty, memarg), instr) => {
-                    type_stack.op(&[I32, ty], &[]);
-
-                    let addr_tmp = function.add_fresh_local(I32);
-                    let value_tmp = function.add_fresh_local(ty);
-
-                    instrumented_body.append(&mut save_stack_to_locals(&[addr_tmp, value_tmp]));
-                    instrumented_body.extend_from_slice(&[
-                        instr.clone(),
-                        location.0,
-                        location.1,
-                        I32Const(memarg.offset as i32),
-                        I32Const(memarg.alignment as i32),
-                    ]);
-                    instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &[I32, ty]));
-                    instrumented_body.push(monomorphic_hook_call(&instr));
-                }
-                (_, Br(target_label)) => instrumented_body.extend_from_slice(&[
-                    location.0,
-                    location.1,
-                    I32Const(target_label.0 as i32),
-                    I32Const(label_to_instr_idx(&block_stack, target_label) as i32),
-                    Call(br_hook),
-                    instr
-                ]),
-                (_, BrIf(target_label)) => {
-                    type_stack.op(&[I32], &[]);
-
-                    let condition_tmp = function.add_fresh_local(I32);
-
-                    instrumented_body.extend_from_slice(&[
-                        TeeLocal(condition_tmp),
-                        location.0,
-                        location.1,
-                        I32Const(target_label.0 as i32),
-                        I32Const(label_to_instr_idx(&block_stack, target_label) as i32),
-                        GetLocal(condition_tmp),
-                        Call(br_if_hook),
-                        instr
-                    ]);
-                }
-                (_, BrTable(target_table, default_target)) => {
-                    type_stack.op(&[I32], &[]);
-
-                    module_info.br_tables.push(BrTableInfo::new(
-                        target_table.into_iter().map(|label| LabelAndLocation::new(label.0)).collect(),
-                        LabelAndLocation::new(default_target.0),
-                    ));
-
-                    let target_idx_tmp = function.add_fresh_local(I32);
-
-                    instrumented_body.extend_from_slice(&[
-                        TeeLocal(target_idx_tmp),
-                        location.0,
-                        location.1,
-                        I32Const((module_info.br_tables.len() - 1) as i32),
-                        GetLocal(target_idx_tmp),
-                        Call(br_table_hook),
-                        instr
-                    ]);
-                }
                 _ => unreachable!("no hook for instruction {}", instr.to_instr_name()),
             }
         }
