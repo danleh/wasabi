@@ -6,6 +6,7 @@ use super::convert_i64::{convert_i64_instr, convert_i64_type};
 use super::js_codegen::{append_mangled_tys, js_codegen};
 use super::static_info::*;
 use super::type_stack::TypeStack;
+use super::block_stack::{BlockStack, Begin};
 
 /// instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, other
 /// relevant information.
@@ -171,7 +172,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
         // there are at least 3 new instructions per original one (2 const for location + 1 hook call)
         let mut instrumented_body = Vec::with_capacity(4 * original_body.len());
 
-        let mut block_stack = vec![Begin::Function];
+        let mut block_stack = BlockStack::new();
         let mut type_stack = TypeStack::new();
 
         // add function_begin hook...
@@ -207,6 +208,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                 /* Control Instructions: Blocks */
 
                 (_, Block(ty)) | (_, Loop(ty)) => {
+                    // TODO move into block_stack
                     block_stack.push(match instr {
                         Block(_) => Begin::Block(iidx),
                         Loop(_) => Begin::Loop(iidx),
@@ -243,8 +245,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     ]);
                 }
                 (_, Else) => {
-                    let begin = block_stack.pop()
-                        .expect(&format!("invalid begin/end nesting in function {}!", fidx.0));
+                    let begin = block_stack.pop();
                     if let Begin::If(begin_iidx) = begin {
                         block_stack.push(Begin::Else(iidx));
                         let block_ty = type_stack.end_block();
@@ -265,8 +266,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     }
                 }
                 (_, End) => {
-                    let begin = block_stack.pop()
-                        .expect(&format!("invalid begin/end nesting in function {}!", fidx.0));
+                    let begin = block_stack.pop();
                     // TODO better: add begin_function and end_function or so to type_stack
                     if begin != Begin::Function {
                         type_stack.end_block();
@@ -293,7 +293,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     location.0,
                     location.1,
                     I32Const(target_label.0 as i32),
-                    I32Const(label_to_instr_idx(&block_stack, target_label) as i32),
+                    I32Const(block_stack.label_to_instr_idx(target_label) as i32),
                     Call(br_hook),
                     instr
                 ]),
@@ -307,7 +307,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.0,
                         location.1,
                         I32Const(target_label.0 as i32),
-                        I32Const(label_to_instr_idx(&block_stack, target_label) as i32),
+                        I32Const(block_stack.label_to_instr_idx(target_label) as i32),
                         GetLocal(condition_tmp),
                         Call(br_if_hook),
                         instr
@@ -615,8 +615,6 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
         // finally, move instrumented body inside function
         ::std::mem::replace(&mut function.code.as_mut().unwrap().body, instrumented_body);
-
-        assert!(block_stack.is_empty(), "invalid begin/end nesting in function {}", fidx.0);
     }
 
     Some(js_codegen(module_info, &on_demand_hooks))
@@ -702,32 +700,4 @@ fn restore_locals_with_i64_handling(locals: &[Idx<Local>], local_tys: &[ValType]
         instrs.append(&mut convert_i64_instr(GetLocal(local), ty));
     }
     return instrs;
-}
-
-// TODO move to own module, refactor (use InstructionLocation, not raw usize)
-/// also keeps instruction index, needed later for End hooks
-#[derive(Debug, PartialEq)]
-enum Begin {
-    // TODO include abstract block stack (i.e. Vec<ValType>) into this enum for
-    // a) drop/select monomorphization
-    // b) type checking
-    // c) statically figuring out implicit drops during br/br_if/br_table
-    // function begins correspond to no actual instruction, so no instruction index
-    Function,
-    Block(usize),
-    Loop(usize),
-    If(usize),
-    Else(usize),
-}
-
-fn label_to_instr_idx(begin_stack: &[Begin], label: Idx<Label>) -> usize {
-    let target_block = begin_stack.iter()
-        .rev().nth(label.0)
-        .expect(&format!("cannot resolve target for {:?}", label));
-    match *target_block {
-        Begin::Function => 0,
-        Begin::Loop(begin_iidx) => begin_iidx,
-        // FIXME if/else/block (forward jump, needs forward scanning for End)
-        Begin::If(i) | Begin::Else(i) | Begin::Block(i) => i
-    }
 }

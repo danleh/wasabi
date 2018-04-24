@@ -1,7 +1,6 @@
 use ast::{BlockType, FunctionType, ValType};
 use self::TypeStackElement::*;
 
-/// Abstract Wasm stack
 #[derive(Debug, new)]
 pub struct TypeStack(#[new(default)] Vec<TypeStackElement>);
 

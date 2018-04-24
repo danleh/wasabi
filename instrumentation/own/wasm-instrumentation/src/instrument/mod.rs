@@ -6,6 +6,7 @@ pub use self::add_hooks::add_hooks;
 mod convert_i64;
 mod js_codegen;
 mod static_info;
+mod block_stack;
 mod type_stack;
 
 // TODO Idea: provide two options of connecting user analysis (i.e., client instrumentation code)
