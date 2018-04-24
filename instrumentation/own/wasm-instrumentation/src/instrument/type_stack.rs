@@ -2,9 +2,8 @@ use ast::{BlockType, FunctionType, ValType};
 use self::TypeStackElement::*;
 
 /// Abstract Wasm stack
-// TODO handle function begin and end, by adding FunctionType to TypeStack struct
-#[derive(Debug)]
-pub struct TypeStack(Vec<TypeStackElement>);
+#[derive(Debug, new)]
+pub struct TypeStack(#[new(default)] Vec<TypeStackElement>);
 
 #[derive(Debug, PartialEq)]
 pub enum TypeStackElement {
@@ -13,10 +12,6 @@ pub enum TypeStackElement {
 }
 
 impl TypeStack {
-    pub fn new() -> Self {
-        TypeStack(Vec::new())
-    }
-
     pub fn push(&mut self, ty: ValType) {
         self.0.push(Val(ty))
     }
@@ -53,7 +48,8 @@ impl TypeStack {
                 None => panic!("tried to end block by popping from type stack until block begin, but no block begin was found"),
                 Some(Val(ty)) => {},
                 Some(BlockBegin(block_ty)) => {
-                    // TODO validate that popped values so far == block type
+                    // NOTE there is no validation that the stack is correct at the end of a block
+                    // it is unclear to me how it exactly works with, e.g., br/return + drops
                     if let BlockType(Some(ty)) = block_ty {
                         self.push(ty);
                     }

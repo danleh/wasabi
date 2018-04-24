@@ -182,6 +182,9 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
             Call(begin_function_hook)
         ]);
 
+        // TODO add implicit return hook, so that the results can be observed, even when no explicit
+        // return instruction is given
+
         for (iidx, instr) in original_body.into_iter().enumerate() {
             let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
             // TODO do not compute group here, just have fallback case in bottom for "SimpleInstructions" or so
@@ -335,7 +338,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                 /* Control Instructions: Calls & Returns */
 
                 (_, Return) => {
-                    // FIXME type checking for return correctly handled?
+                    type_stack.op(&function.type_.results, &[]);
 
                     let result_tys = function.type_.results.clone();
                     let result_tmps = function.add_fresh_locals(&result_tys);

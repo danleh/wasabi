@@ -79,7 +79,7 @@ pub struct Data {
 
 pub type Expr = Vec<Instr>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Instr {
     Nop,
     Unreachable,
