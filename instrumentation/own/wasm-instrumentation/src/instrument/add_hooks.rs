@@ -184,434 +184,414 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
         for (iidx, instr) in original_body.into_iter().enumerate() {
             let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
+            match (instr.group(), instr.clone()) {
+                (_, Nop) | (_, Unreachable) => instrumented_body.extend_from_slice(&[
+                    instr.clone(),
+                    location.0,
+                    location.1,
+                    Call(match instr {
+                        Nop => nop_hook,
+                        Unreachable => unreachable_hook,
+                        _ => unreachable!()
+                    })]),
+                (_, Block(ty)) | (_, Loop(ty)) => {
+                    block_stack.push(match instr {
+                        Block(_) => Begin::Block(iidx),
+                        Loop(_) => Begin::Loop(iidx),
+                        _ => unreachable!()
+                    });
+                    type_stack.begin_block(ty);
 
-            instrumented_body.append(&mut
-                // TODO do not return Vec from match and append, but directly access instrumented body inside match arms
-                match (instr.group(), instr.clone()) {
-                    (_, Block(ty)) => {
-                        block_stack.push(Begin::Block(iidx));
-                        type_stack.begin_block(ty);
-                        vec![
-                            instr,
-                            location.0,
-                            location.1,
-                            Call(begin_block_hook),
-                        ]
-                    }
-                    (_, Loop(ty)) => {
-                        block_stack.push(Begin::Loop(iidx));
-                        type_stack.begin_block(ty);
-                        vec![
-                            instr,
-                            location.0,
-                            location.1,
-                            Call(begin_loop_hook),
-                        ]
-                    }
-                    (_, If(ty)) => {
-                        block_stack.push(Begin::If(iidx));
-                        type_stack.begin_block(ty);
-
-                        let condition_tmp = function.add_fresh_local(I32);
-
-                        vec![
-                            // if_ hook for the condition (always executed on either branch)
-                            TeeLocal(condition_tmp),
-                            location.0.clone(),
-                            location.1.clone(),
-                            GetLocal(condition_tmp),
-                            Call(if_hook),
-                            // actual if block start
-                            instr,
-                            // begin hook (not executed when condition implies else branch)
-                            location.0,
-                            location.1,
-                            Call(begin_if_hook),
-                        ]
-                    }
-                    (_, Else) => {
-                        let begin = block_stack.pop()
-                            .expect(&format!("invalid begin/end nesting in function {}!", fidx.0));
-                        if let Begin::If(begin_iidx) = begin {
-                            block_stack.push(Begin::Else(iidx));
-                            let block_ty = type_stack.end_block();
-                            type_stack.begin_block(block_ty);
-
-                            vec![
-                                location.0.clone(),
-                                location.1.clone(),
-                                I32Const(begin_iidx as i32),
-                                Call(end_else_hook),
-                                instr,
-                                location.0,
-                                location.1,
-                                Call(begin_else_hook),
-                            ]
-                        } else {
-                            unreachable!("else instruction should end if block, but was {:?}", begin);
-                        }
-                    }
-                    (_, End) => {
-                        let begin = block_stack.pop()
-                            .expect(&format!("invalid begin/end nesting in function {}!", fidx.0));
-                        // TODO better: add begin_function and end_function or so to type_stack
-                        if begin != Begin::Function {
-                            type_stack.end_block();
-                        }
-
-                        let mut instrs = vec![
-                            location.0,
-                            location.1,
-                        ];
-                        instrs.append(&mut match begin {
-                            Begin::Function => vec![Call(end_function_hook)],
-                            Begin::Block(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_block_hook)],
-                            Begin::Loop(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_loop_hook)],
-                            Begin::If(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_if_hook)],
-                            Begin::Else(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_else_hook)],
-                        });
-                        instrs.push(instr);
-                        instrs
-                    }
-                    (_, Nop) => vec![
+                    instrumented_body.extend_from_slice(&[
                         instr,
                         location.0,
                         location.1,
-                        Call(nop_hook),
-                    ],
-                    (_, Unreachable) => vec![
+                        Call(begin_block_hook),
+                    ]);
+                }
+                (_, If(ty)) => {
+                    block_stack.push(Begin::If(iidx));
+                    type_stack.begin_block(ty);
+
+                    let condition_tmp = function.add_fresh_local(I32);
+
+                    instrumented_body.extend_from_slice(&[
+                        // if_ hook for the condition (always executed on either branch)
+                        TeeLocal(condition_tmp),
+                        location.0.clone(),
+                        location.1.clone(),
+                        GetLocal(condition_tmp),
+                        Call(if_hook),
+                        // actual if block start
                         instr,
+                        // begin hook (not executed when condition implies else branch)
                         location.0,
                         location.1,
-                        Call(unreachable_hook),
-                    ],
-                    (_, Drop) => {
-                        let ty = type_stack.pop();
-                        let tmp = function.add_fresh_local(ty);
+                        Call(begin_if_hook),
+                    ]);
+                }
+                (_, Else) => {
+                    let begin = block_stack.pop()
+                        .expect(&format!("invalid begin/end nesting in function {}!", fidx.0));
+                    if let Begin::If(begin_iidx) = begin {
+                        block_stack.push(Begin::Else(iidx));
+                        let block_ty = type_stack.end_block();
+                        type_stack.begin_block(block_ty);
 
-                        let mut instrs = vec![
-                            SetLocal(tmp),
-                            location.0,
-                            location.1,
-                        ];
-                        instrs.append(&mut convert_i64_instr(GetLocal(tmp), ty));
-                        instrs.push(polymorphic_hooks.get_call(&instr, vec![ty]));
-                        instrs
-                    }
-                    (_, Select) => {
-                        assert_eq!(type_stack.pop(), I32, "select condition should be i32");
-                        let ty = type_stack.pop();
-                        assert_eq!(type_stack.pop(), ty, "select arguments should have same type");
-                        type_stack.push(ty);
-
-                        let condition_tmp = function.add_fresh_local(I32);
-                        let arg_tmps = function.add_fresh_locals(&[ty, ty]);
-
-                        let mut instrs = save_stack_to_locals(&[arg_tmps[0], arg_tmps[1], condition_tmp]);
-                        instrs.extend_from_slice(&[
-                            instr.clone(),
-                            location.0,
-                            location.1,
-                            GetLocal(condition_tmp),
-                        ]);
-                        instrs.append(&mut restore_locals_with_i64_handling(&arg_tmps, &[ty, ty]));
-                        instrs.push(polymorphic_hooks.get_call(&instr, vec![ty, ty]));
-                        instrs
-                    }
-                    (_, CurrentMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
-                        type_stack.op(&[], &[I32]);
-
-                        let result_tmp = function.add_fresh_local(I32);
-
-                        vec![
-                            instr,
-                            TeeLocal(result_tmp),
-                            location.0,
-                            location.1,
-                            GetLocal(result_tmp),
-                            Call(current_memory_hook)
-                        ]
-                    }
-                    (_, GrowMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
-                        type_stack.op(&[I32], &[I32]);
-
-                        let input_tmp = function.add_fresh_local(I32);
-                        let result_tmp = function.add_fresh_local(I32);
-
-                        vec![
-                            TeeLocal(input_tmp),
-                            instr,
-                            TeeLocal(result_tmp),
-                            location.0,
-                            location.1,
-                            GetLocal(input_tmp),
-                            GetLocal(result_tmp),
-                            Call(grow_memory_hook)
-                        ]
-                    }
-                    (_, GetLocal(local_idx)) | (_, SetLocal(local_idx)) | (_, TeeLocal(local_idx)) => {
-                        let local_ty = function.local_type(local_idx);
-
-                        match instr {
-                            GetLocal(_) => type_stack.op(&[], &[local_ty]),
-                            | SetLocal(_) => type_stack.op(&[local_ty], &[]),
-                            _ => {}
-                        }
-
-                        let mut instrs = vec![
-                            instr.clone(),
-                            location.0,
-                            location.1,
-                            I32Const(local_idx.0 as i32),
-                        ];
-                        instrs.append(&mut convert_i64_instr(GetLocal(local_idx), local_ty));
-                        instrs.push(polymorphic_hooks.get_call(&instr, vec![local_ty]));
-                        instrs
-                    }
-                    (_, GetGlobal(global_idx)) | (_, SetGlobal(global_idx)) => {
-                        let global_ty = module_info.globals[global_idx.0];
-
-                        match instr {
-                            GetGlobal(_) => type_stack.op(&[], &[global_ty]),
-                            | SetGlobal(_) => type_stack.op(&[global_ty], &[]),
-                            _ => {}
-                        }
-
-                        let mut instrs = vec![
-                            instr.clone(),
-                            location.0,
-                            location.1,
-                            I32Const(global_idx.0 as i32),
-                        ];
-                        instrs.append(&mut convert_i64_instr(GetGlobal(global_idx), global_ty));
-                        instrs.push(polymorphic_hooks.get_call(&instr, vec![global_ty]));
-                        instrs
-                    }
-                    (_, Return) => {
-                        // FIXME type checking for return correctly handled?
-
-                        let result_tys = function.type_.results.clone();
-                        let result_tmps = function.add_fresh_locals(&result_tys);
-
-                        let mut instrs = save_stack_to_locals(&result_tmps);
-                        instrs.extend_from_slice(&[
-                            location.0,
-                            location.1,
-                        ]);
-                        instrs.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
-                        instrs.extend_from_slice(&[
-                            polymorphic_hooks.get_call(&instr, result_tys),
-                            instr,
-                        ]);
-                        instrs
-                    }
-                    (_, Call(target_func_idx)) => {
-                        let arg_tys = module_info.functions[target_func_idx.0].type_.params.as_slice();
-                        let result_tys = module_info.functions[target_func_idx.0].type_.results.as_slice();
-
-                        type_stack.op(arg_tys, result_tys);
-
-                        let arg_tmps = function.add_fresh_locals(arg_tys);
-                        let result_tmps = function.add_fresh_locals(result_tys);
-
-                        /* pre call hook */
-
-                        let mut instrs = save_stack_to_locals(&arg_tmps);
-                        instrs.extend_from_slice(&[
+                        instrumented_body.extend_from_slice(&[
                             location.0.clone(),
                             location.1.clone(),
-                            I32Const(target_func_idx.0 as i32),
-                        ]);
-                        instrs.append(&mut restore_locals_with_i64_handling(&arg_tmps, &arg_tys));
-                        instrs.extend_from_slice(&[
-                            polymorphic_hooks.get_call(&instr, arg_tys.to_vec()),
+                            I32Const(begin_iidx as i32),
+                            Call(end_else_hook),
                             instr,
-                        ]);
-
-                        /* post call hook */
-
-                        instrs.append(&mut save_stack_to_locals(&result_tmps));
-                        instrs.extend_from_slice(&[
                             location.0,
                             location.1,
+                            Call(begin_else_hook),
                         ]);
-                        instrs.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
-                        instrs.push(Call(*call_result_hooks.get(result_tys).expect("no call_result hook for tys")));
-
-                        instrs
+                    } else {
+                        unreachable!("else instruction should end if block, but was {:?}", begin);
                     }
-                    (_, CallIndirect(func_ty, _ /* table idx == 0 in WASM version 1 */)) => {
-                        let arg_tys = func_ty.params.as_slice();
-                        let result_tys = func_ty.results.as_slice();
-
-                        type_stack.op(arg_tys, result_tys);
-
-                        let target_table_idx_tmp = function.add_fresh_local(I32);
-                        let arg_tmps = function.add_fresh_locals(arg_tys);
-                        let result_tmps = function.add_fresh_locals(result_tys);
-
-                        /* pre call hook */
-
-                        let mut instrs = vec![SetLocal(target_table_idx_tmp)];
-                        instrs.append(&mut save_stack_to_locals(&arg_tmps));
-                        instrs.extend_from_slice(&[
-                            GetLocal(target_table_idx_tmp),
-                            location.0.clone(),
-                            location.1.clone(),
-                            GetLocal(target_table_idx_tmp),
-                        ]);
-                        instrs.append(&mut restore_locals_with_i64_handling(&arg_tmps, &arg_tys));
-                        instrs.extend_from_slice(&[
-                            polymorphic_hooks.get_call(&instr, arg_tys.to_vec()),
-                            instr,
-                        ]);
-
-                        /* post call hook */
-
-                        instrs.append(&mut save_stack_to_locals(&result_tmps));
-                        instrs.extend_from_slice(&[
-                            location.0,
-                            location.1,
-                        ]);
-                        instrs.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
-                        instrs.push(Call(*call_result_hooks.get(result_tys).expect("no call_result hook for tys")));
-
-                        instrs
+                }
+                (_, End) => {
+                    let begin = block_stack.pop()
+                        .expect(&format!("invalid begin/end nesting in function {}!", fidx.0));
+                    // TODO better: add begin_function and end_function or so to type_stack
+                    if begin != Begin::Function {
+                        type_stack.end_block();
                     }
-                    (Const(ty), instr) => {
-                        type_stack.op(&[], &[ty]);
 
-                        let mut instrs = vec![
-                            location.0,
-                            location.1,
-                        ];
-                        instrs.append(&mut convert_i64_instr(instr.clone(), ty));
-                        instrs.extend_from_slice(&[
-                            monomorphic_hook_call(&instr),
-                            instr,
-                        ]);
-                        instrs
+                    instrumented_body.extend_from_slice(&[
+                        location.0,
+                        location.1,
+                    ]);
+                    instrumented_body.append(&mut match begin {
+                        Begin::Function => vec![Call(end_function_hook)],
+                        Begin::Block(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_block_hook)],
+                        Begin::Loop(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_loop_hook)],
+                        Begin::If(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_if_hook)],
+                        Begin::Else(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_else_hook)],
+                    });
+                    instrumented_body.push(instr);
+                }
+                (_, Drop) => {
+                    let ty = type_stack.pop();
+                    let tmp = function.add_fresh_local(ty);
+
+                    instrumented_body.extend_from_slice(&[
+                        SetLocal(tmp),
+                        location.0,
+                        location.1,
+                    ]);
+                    instrumented_body.append(&mut convert_i64_instr(GetLocal(tmp), ty));
+                    instrumented_body.push(polymorphic_hooks.get_call(&instr, vec![ty]));
+                }
+                (_, Select) => {
+                    assert_eq!(type_stack.pop(), I32, "select condition should be i32");
+                    let ty = type_stack.pop();
+                    assert_eq!(type_stack.pop(), ty, "select arguments should have same type");
+                    type_stack.push(ty);
+
+                    let condition_tmp = function.add_fresh_local(I32);
+                    let arg_tmps = function.add_fresh_locals(&[ty, ty]);
+
+                    instrumented_body.append(&mut save_stack_to_locals(&[arg_tmps[0], arg_tmps[1], condition_tmp]));
+                    instrumented_body.extend_from_slice(&[
+                        instr.clone(),
+                        location.0,
+                        location.1,
+                        GetLocal(condition_tmp),
+                    ]);
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &[ty, ty]));
+                    instrumented_body.push(polymorphic_hooks.get_call(&instr, vec![ty, ty]));
+                }
+                (_, CurrentMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
+                    type_stack.op(&[], &[I32]);
+
+                    let result_tmp = function.add_fresh_local(I32);
+
+                    instrumented_body.extend_from_slice(&[
+                        instr,
+                        TeeLocal(result_tmp),
+                        location.0,
+                        location.1,
+                        GetLocal(result_tmp),
+                        Call(current_memory_hook)
+                    ]);
+                }
+                (_, GrowMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
+                    type_stack.op(&[I32], &[I32]);
+
+                    let input_tmp = function.add_fresh_local(I32);
+                    let result_tmp = function.add_fresh_local(I32);
+
+                    instrumented_body.extend_from_slice(&[
+                        TeeLocal(input_tmp),
+                        instr,
+                        TeeLocal(result_tmp),
+                        location.0,
+                        location.1,
+                        GetLocal(input_tmp),
+                        GetLocal(result_tmp),
+                        Call(grow_memory_hook)
+                    ]);
+                }
+                (_, GetLocal(local_idx)) | (_, SetLocal(local_idx)) | (_, TeeLocal(local_idx)) => {
+                    let local_ty = function.local_type(local_idx);
+
+                    match instr {
+                        GetLocal(_) => type_stack.op(&[], &[local_ty]),
+                        | SetLocal(_) => type_stack.op(&[local_ty], &[]),
+                        _ => {}
                     }
-                    (Unary { input_ty, result_ty }, instr) => {
-                        type_stack.op(&[input_ty], &[result_ty]);
 
-                        let input_tmp = function.add_fresh_local(input_ty);
-                        let result_tmp = function.add_fresh_local(result_ty);
+                    instrumented_body.extend_from_slice(&[
+                        instr.clone(),
+                        location.0,
+                        location.1,
+                        I32Const(local_idx.0 as i32),
+                    ]);
+                    instrumented_body.append(&mut convert_i64_instr(GetLocal(local_idx), local_ty));
+                    instrumented_body.push(polymorphic_hooks.get_call(&instr, vec![local_ty]));
+                }
+                (_, GetGlobal(global_idx)) | (_, SetGlobal(global_idx)) => {
+                    let global_ty = module_info.globals[global_idx.0];
 
-                        let mut instrs = vec![
-                            TeeLocal(input_tmp),
-                            instr.clone(),
-                            TeeLocal(result_tmp),
-                            location.0,
-                            location.1,
-                        ];
-                        // restore saved input and result
-                        instrs.append(&mut restore_locals_with_i64_handling(&[input_tmp, result_tmp], &[input_ty, result_ty]));
-                        instrs.push(monomorphic_hook_call(&instr));
-                        instrs
+                    match instr {
+                        GetGlobal(_) => type_stack.op(&[], &[global_ty]),
+                        | SetGlobal(_) => type_stack.op(&[global_ty], &[]),
+                        _ => {}
                     }
-                    (Binary { first_ty, second_ty, result_ty }, instr) => {
-                        type_stack.op(&[first_ty, second_ty], &[result_ty]);
 
-                        let first_tmp = function.add_fresh_local(first_ty);
-                        let second_tmp = function.add_fresh_local(second_ty);
-                        let result_tmp = function.add_fresh_local(result_ty);
+                    instrumented_body.extend_from_slice(&[
+                        instr.clone(),
+                        location.0,
+                        location.1,
+                        I32Const(global_idx.0 as i32),
+                    ]);
+                    instrumented_body.append(&mut convert_i64_instr(GetGlobal(global_idx), global_ty));
+                    instrumented_body.push(polymorphic_hooks.get_call(&instr, vec![global_ty]));
+                }
+                (_, Return) => {
+                    // FIXME type checking for return correctly handled?
 
-                        let mut instrs = save_stack_to_locals(&[first_tmp, second_tmp]);
-                        instrs.extend_from_slice(&[
-                            instr.clone(),
-                            TeeLocal(result_tmp),
-                            location.0,
-                            location.1,
-                        ]);
-                        instrs.append(&mut restore_locals_with_i64_handling(&[first_tmp, second_tmp, result_tmp], &[first_ty, second_ty, result_ty]));
-                        instrs.push(monomorphic_hook_call(&instr));
-                        instrs
-                    }
-                    (MemoryLoad(ty, memarg), instr) => {
-                        type_stack.op(&[I32], &[ty]);
+                    let result_tys = function.type_.results.clone();
+                    let result_tmps = function.add_fresh_locals(&result_tys);
 
-                        let addr_tmp = function.add_fresh_local(I32);
-                        let value_tmp = function.add_fresh_local(ty);
+                    instrumented_body.append(&mut save_stack_to_locals(&result_tmps));
+                    instrumented_body.extend_from_slice(&[
+                        location.0,
+                        location.1,
+                    ]);
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
+                    instrumented_body.extend_from_slice(&[
+                        polymorphic_hooks.get_call(&instr, result_tys),
+                        instr,
+                    ]);
+                }
+                (_, Call(target_func_idx)) => {
+                    let arg_tys = module_info.functions[target_func_idx.0].type_.params.as_slice();
+                    let result_tys = module_info.functions[target_func_idx.0].type_.results.as_slice();
 
-                        let mut instrs = vec![
-                            TeeLocal(addr_tmp),
-                            instr.clone(),
-                            TeeLocal(value_tmp),
-                            location.0,
-                            location.1,
-                            I32Const(memarg.offset as i32),
-                            I32Const(memarg.alignment as i32),
-                        ];
-                        instrs.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &[I32, ty]));
-                        instrs.push(monomorphic_hook_call(&instr));
-                        instrs
-                    }
-                    (MemoryStore(ty, memarg), instr) => {
-                        type_stack.op(&[I32, ty], &[]);
+                    type_stack.op(arg_tys, result_tys);
 
-                        let addr_tmp = function.add_fresh_local(I32);
-                        let value_tmp = function.add_fresh_local(ty);
+                    let arg_tmps = function.add_fresh_locals(arg_tys);
+                    let result_tmps = function.add_fresh_locals(result_tys);
 
-                        let mut instrs = save_stack_to_locals(&[addr_tmp, value_tmp]);
-                        instrs.extend_from_slice(&[
-                            instr.clone(),
-                            location.0,
-                            location.1,
-                            I32Const(memarg.offset as i32),
-                            I32Const(memarg.alignment as i32),
-                        ]);
-                        instrs.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &[I32, ty]));
-                        instrs.push(monomorphic_hook_call(&instr));
-                        instrs
-                    }
-                    (_, Br(target_label)) => vec![
+                    /* pre call hook */
+
+                    instrumented_body.append(&mut save_stack_to_locals(&arg_tmps));
+                    instrumented_body.extend_from_slice(&[
+                        location.0.clone(),
+                        location.1.clone(),
+                        I32Const(target_func_idx.0 as i32),
+                    ]);
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &arg_tys));
+                    instrumented_body.extend_from_slice(&[
+                        polymorphic_hooks.get_call(&instr, arg_tys.to_vec()),
+                        instr,
+                    ]);
+
+                    /* post call hook */
+
+                    instrumented_body.append(&mut save_stack_to_locals(&result_tmps));
+                    instrumented_body.extend_from_slice(&[
+                        location.0,
+                        location.1,
+                    ]);
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
+                    instrumented_body.push(Call(*call_result_hooks.get(result_tys).expect("no call_result hook for tys")));
+                }
+                (_, CallIndirect(func_ty, _ /* table idx == 0 in WASM version 1 */)) => {
+                    let arg_tys = func_ty.params.as_slice();
+                    let result_tys = func_ty.results.as_slice();
+
+                    type_stack.op(arg_tys, result_tys);
+
+                    let target_table_idx_tmp = function.add_fresh_local(I32);
+                    let arg_tmps = function.add_fresh_locals(arg_tys);
+                    let result_tmps = function.add_fresh_locals(result_tys);
+
+                    /* pre call hook */
+
+                    // TODO unify call args and target_table_idx_tmp
+                    instrumented_body.push(SetLocal(target_table_idx_tmp));
+                    instrumented_body.append(&mut save_stack_to_locals(&arg_tmps));
+                    instrumented_body.extend_from_slice(&[
+                        GetLocal(target_table_idx_tmp),
+                        location.0.clone(),
+                        location.1.clone(),
+                        GetLocal(target_table_idx_tmp),
+                    ]);
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &arg_tys));
+                    instrumented_body.extend_from_slice(&[
+                        polymorphic_hooks.get_call(&instr, arg_tys.to_vec()),
+                        instr,
+                    ]);
+
+                    /* post call hook */
+
+                    instrumented_body.append(&mut save_stack_to_locals(&result_tmps));
+                    instrumented_body.extend_from_slice(&[
+                        location.0,
+                        location.1,
+                    ]);
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &result_tys));
+                    instrumented_body.push(Call(*call_result_hooks.get(result_tys).expect("no call_result hook for tys")));
+                }
+                (Const(ty), instr) => {
+                    type_stack.op(&[], &[ty]);
+
+                    // TODO reorder hook and original instruction to make
+                    // a) cheaper to construct
+                    // b) easier to understand
+                    // c) more regular between different hooks (i.e., hook always before instr or after)
+                    instrumented_body.extend_from_slice(&[
+                        location.0,
+                        location.1,
+                    ]);
+                    instrumented_body.append(&mut convert_i64_instr(instr.clone(), ty));
+                    instrumented_body.extend_from_slice(&[
+                        monomorphic_hook_call(&instr),
+                        instr,
+                    ]);
+                }
+                // TODO unify Unary and Binary instrs
+                (Unary { input_ty, result_ty }, instr) => {
+                    type_stack.op(&[input_ty], &[result_ty]);
+
+                    let input_tmp = function.add_fresh_local(input_ty);
+                    let result_tmp = function.add_fresh_local(result_ty);
+
+                    instrumented_body.extend_from_slice(&[
+                        TeeLocal(input_tmp),
+                        instr.clone(),
+                        TeeLocal(result_tmp),
+                        location.0,
+                        location.1,
+                    ]);
+                    // restore saved input and result
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&[input_tmp, result_tmp], &[input_ty, result_ty]));
+                    instrumented_body.push(monomorphic_hook_call(&instr));
+                }
+                (Binary { first_ty, second_ty, result_ty }, instr) => {
+                    type_stack.op(&[first_ty, second_ty], &[result_ty]);
+
+                    let first_tmp = function.add_fresh_local(first_ty);
+                    let second_tmp = function.add_fresh_local(second_ty);
+                    let result_tmp = function.add_fresh_local(result_ty);
+
+                    instrumented_body.append(&mut save_stack_to_locals(&[first_tmp, second_tmp]));
+                    instrumented_body.extend_from_slice(&[
+                        instr.clone(),
+                        TeeLocal(result_tmp),
+                        location.0,
+                        location.1,
+                    ]);
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&[first_tmp, second_tmp, result_tmp], &[first_ty, second_ty, result_ty]));
+                    instrumented_body.push(monomorphic_hook_call(&instr));
+                }
+                // TODO maybe unify Mem load and store?
+                (MemoryLoad(ty, memarg), instr) => {
+                    type_stack.op(&[I32], &[ty]);
+
+                    let addr_tmp = function.add_fresh_local(I32);
+                    let value_tmp = function.add_fresh_local(ty);
+
+                    instrumented_body.extend_from_slice(&[
+                        TeeLocal(addr_tmp),
+                        instr.clone(),
+                        TeeLocal(value_tmp),
+                        location.0,
+                        location.1,
+                        I32Const(memarg.offset as i32),
+                        I32Const(memarg.alignment as i32),
+                    ]);
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &[I32, ty]));
+                    instrumented_body.push(monomorphic_hook_call(&instr));
+                }
+                (MemoryStore(ty, memarg), instr) => {
+                    type_stack.op(&[I32, ty], &[]);
+
+                    let addr_tmp = function.add_fresh_local(I32);
+                    let value_tmp = function.add_fresh_local(ty);
+
+                    instrumented_body.append(&mut save_stack_to_locals(&[addr_tmp, value_tmp]));
+                    instrumented_body.extend_from_slice(&[
+                        instr.clone(),
+                        location.0,
+                        location.1,
+                        I32Const(memarg.offset as i32),
+                        I32Const(memarg.alignment as i32),
+                    ]);
+                    instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &[I32, ty]));
+                    instrumented_body.push(monomorphic_hook_call(&instr));
+                }
+                (_, Br(target_label)) => instrumented_body.extend_from_slice(&[
+                    location.0,
+                    location.1,
+                    I32Const(target_label.0 as i32),
+                    I32Const(label_to_instr_idx(&block_stack, target_label) as i32),
+                    Call(br_hook),
+                    instr
+                ]),
+                (_, BrIf(target_label)) => {
+                    type_stack.op(&[I32], &[]);
+
+                    let condition_tmp = function.add_fresh_local(I32);
+
+                    instrumented_body.extend_from_slice(&[
+                        TeeLocal(condition_tmp),
                         location.0,
                         location.1,
                         I32Const(target_label.0 as i32),
                         I32Const(label_to_instr_idx(&block_stack, target_label) as i32),
-                        Call(br_hook),
+                        GetLocal(condition_tmp),
+                        Call(br_if_hook),
                         instr
-                    ],
-                    (_, BrIf(target_label)) => {
-                        type_stack.op(&[I32], &[]);
-
-                        let condition_tmp = function.add_fresh_local(I32);
-
-                        vec![
-                            TeeLocal(condition_tmp),
-                            location.0,
-                            location.1,
-                            I32Const(target_label.0 as i32),
-                            I32Const(label_to_instr_idx(&block_stack, target_label) as i32),
-                            GetLocal(condition_tmp),
-                            Call(br_if_hook),
-                            instr
-                        ]
-                    }
-                    (_, BrTable(target_table, default_target)) => {
-                        type_stack.op(&[I32], &[]);
-
-                        module_info.br_tables.push(BrTableInfo::new(
-                            target_table.into_iter().map(|label| LabelAndLocation::new(label.0)).collect(),
-                            LabelAndLocation::new(default_target.0),
-                        ));
-
-                        let target_idx_tmp = function.add_fresh_local(I32);
-
-                        vec![
-                            TeeLocal(target_idx_tmp),
-                            location.0,
-                            location.1,
-                            I32Const((module_info.br_tables.len() - 1) as i32),
-                            GetLocal(target_idx_tmp),
-                            Call(br_table_hook),
-                            instr
-                        ]
-                    }
-                    _ => unreachable!("no hook for instruction {}", instr.to_instr_name()),
+                    ]);
                 }
-            );
+                (_, BrTable(target_table, default_target)) => {
+                    type_stack.op(&[I32], &[]);
+
+                    module_info.br_tables.push(BrTableInfo::new(
+                        target_table.into_iter().map(|label| LabelAndLocation::new(label.0)).collect(),
+                        LabelAndLocation::new(default_target.0),
+                    ));
+
+                    let target_idx_tmp = function.add_fresh_local(I32);
+
+                    instrumented_body.extend_from_slice(&[
+                        TeeLocal(target_idx_tmp),
+                        location.0,
+                        location.1,
+                        I32Const((module_info.br_tables.len() - 1) as i32),
+                        GetLocal(target_idx_tmp),
+                        Call(br_table_hook),
+                        instr
+                    ]);
+                }
+                _ => unreachable!("no hook for instruction {}", instr.to_instr_name()),
+            }
         }
 
         // finally, move instrumented body inside function

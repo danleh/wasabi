@@ -151,6 +151,7 @@ impl Instr {
                 // FIXME no difference between call_result and call_indirect_result
                 return_hook.clone() + "\n" + &return_hook.replace("return", "call_result")
             }
+            // TODO rename to call_pre and the call_result -> call_post
             Call(_) => format!("{}: function(func, instr, targetFunc{}) {{
     call_({{func, instr}}, targetFunc, false, [{}]);
 }},",

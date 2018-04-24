@@ -19506,10 +19506,6 @@ const lowlevelHooks = {
         unreachable({func, instr});
     },
 
-    select: function (func, instr, cond) {
-        select({func, instr}, cond);
-    },
-
     // memory
     current_memory: function (func, instr, currentSizePages) {
         current_memory({func, instr}, currentSizePages);
@@ -19663,6 +19659,18 @@ const lowlevelHooks = {
     },
     drop_f64: function(func, instr, v) {
         drop({func, instr}, v);
+    },
+    select_i32_i32: function(func, instr, condition, first, second) {
+        select({func, instr}, condition === 1, first, second);
+    },
+    select_i64_i64: function(func, instr, condition, first_low, first_high, second_low, second_high) {
+        select({func, instr}, condition === 1, new Long(first_low, first_high), new Long(second_low, second_high));
+    },
+    select_f32_f32: function(func, instr, condition, first, second) {
+        select({func, instr}, condition === 1, first, second);
+    },
+    select_f64_f64: function(func, instr, condition, first, second) {
+        select({func, instr}, condition === 1, first, second);
     },
     call_: function(func, instr, targetFunc) {
         call_({func, instr}, targetFunc, false, []);
