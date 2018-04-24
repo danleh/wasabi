@@ -24,10 +24,6 @@ const lowlevelHooks = {{
         unreachable({func, instr});
     },
 
-    // type polymorphic
-    drop: function (func, instr) {
-        drop({func, instr});
-    },
     select: function (func, instr, cond) {
         select({func, instr}, cond);
     },
@@ -172,6 +168,13 @@ impl Instr {
                                           hook_name,
                                           tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("arg".to_string() + &i.to_string()), *ty))).collect::<String>(),
                                           tys.iter().enumerate().map(|(i, ty)| long(&("arg".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(", "),
+            ),
+            Drop => format!("{}: function(func, instr, {}) {{
+    drop({{func, instr}}, {});
+}},",
+                            hook_name,
+                            arg("v", tys[0]),
+                            long("v", tys[0])
             ),
             GetLocal(_) => format!("{}: function(func, instr, index, {}) {{
     local({{func, instr}}, \"get\", index, {});

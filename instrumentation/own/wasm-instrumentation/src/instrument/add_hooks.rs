@@ -3,8 +3,9 @@ use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGro
 use std::collections::{HashMap, HashSet};
 use std::mem::{discriminant, Discriminant};
 use super::convert_i64::{convert_i64_instr, convert_i64_type};
-use super::js_codegen::{js_codegen, append_mangled_tys};
+use super::js_codegen::{append_mangled_tys, js_codegen};
 use super::static_info::*;
+use super::type_stack::TypeStack;
 
 /// instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, other
 /// relevant information.
@@ -47,6 +48,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
     polymorphic_hooks.add(module, TeeLocal(0.into()), &[I32], primitive_tys, &mut on_demand_hooks);
     polymorphic_hooks.add(module, GetGlobal(0.into()), &[I32], primitive_tys, &mut on_demand_hooks);
     polymorphic_hooks.add(module, SetGlobal(0.into()), &[I32], primitive_tys, &mut on_demand_hooks);
+    polymorphic_hooks.add(module, Drop, &[], primitive_tys, &mut on_demand_hooks);
 
     // calls
     polymorphic_hooks.add(module, Call(0.into()), &[I32], unique_arg_tys.as_slice(), &mut on_demand_hooks); // I32 = target func idx
@@ -83,9 +85,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
     let nop_hook = add_hook(module, "nop", &[]);
     let unreachable_hook = add_hook(module, "unreachable", &[]);
 
-    // drop and select are polymorphic (even "worse" than return and call: we need to type the
-    // stack in order to find out the argument types) -> FIXME for now, just ignore the values
-    let drop_hook = add_hook(module, "drop", &[]);
+    // FIXME make polymorphic hook
     let select_hook = add_hook(module, "select", &[I32]);
 
     let current_memory_hook = add_hook(module, "current_memory", &[I32]);
@@ -171,8 +171,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
         // there are at least 3 new instructions per original one (2 const for location + 1 hook call)
         let mut instrumented_body = Vec::with_capacity(4 * original_body.len());
 
-        // TODO rename block_stack
-        let mut begin_stack = vec![Begin::Function];
+        let mut block_stack = vec![Begin::Function];
+        let mut type_stack = TypeStack::new();
 
         // add function_begin hook...
         instrumented_body.extend_from_slice(&[
@@ -186,8 +186,9 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
             let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
             instrumented_body.append(&mut
                 match (instr.group(), instr.clone()) {
-                    (_, Block(_)) => {
-                        begin_stack.push(Begin::Block(iidx));
+                    (_, Block(ty)) => {
+                        block_stack.push(Begin::Block(iidx));
+                        type_stack.begin_block(ty);
                         vec![
                             instr,
                             location.0,
@@ -195,8 +196,9 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                             Call(begin_block_hook),
                         ]
                     }
-                    (_, Loop(_)) => {
-                        begin_stack.push(Begin::Loop(iidx));
+                    (_, Loop(ty)) => {
+                        block_stack.push(Begin::Loop(iidx));
+                        type_stack.begin_block(ty);
                         vec![
                             instr,
                             location.0,
@@ -204,8 +206,9 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                             Call(begin_loop_hook),
                         ]
                     }
-                    (_, If(_)) => {
-                        begin_stack.push(Begin::If(iidx));
+                    (_, If(ty)) => {
+                        block_stack.push(Begin::If(iidx));
+                        type_stack.begin_block(ty);
 
                         let condition_tmp = function.add_fresh_local(I32);
 
@@ -225,10 +228,13 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         ]
                     }
                     (_, Else) => {
-                        let begin = begin_stack.pop()
+                        let begin = block_stack.pop()
                             .expect(&format!("invalid begin/end nesting in function {}!", fidx.0));
                         if let Begin::If(begin_iidx) = begin {
-                            begin_stack.push(Begin::Else(iidx));
+                            block_stack.push(Begin::Else(iidx));
+                            let block_ty = type_stack.end_block();
+                            type_stack.begin_block(block_ty);
+
                             vec![
                                 location.0.clone(),
                                 location.1.clone(),
@@ -244,8 +250,12 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         }
                     }
                     (_, End) => {
-                        let begin = begin_stack.pop()
+                        let begin = block_stack.pop()
                             .expect(&format!("invalid begin/end nesting in function {}!", fidx.0));
+                        // TODO better: add begin_function and end_function or so to type_stack
+                        if begin != Begin::Function {
+                            type_stack.end_block();
+                        }
 
                         let mut instrs = vec![
                             location.0,
@@ -273,17 +283,24 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.1,
                         Call(unreachable_hook),
                     ],
-                    // TODO monomorphize value
-                    (_, Drop) => vec![
-                        instr,
-                        location.0,
-                        location.1,
-                        Call(drop_hook),
-                    ],
+                    (_, Drop) => {
+                        let &ty = type_stack.topn(1).first().expect("empty type stack, needed for drop monomorphization");
+                        let tmp = function.add_fresh_local(ty);
+
+                        let mut instrs = vec![
+                            SetLocal(tmp),
+                            location.0,
+                            location.1,
+                        ];
+                        instrs.append(&mut convert_i64_instr(GetLocal(tmp), ty));
+                        instrs.push(polymorphic_hooks.get_call(&instr, vec![ty]));
+                        instrs
+                    }
                     (_, Select) => {
                         let cond_tmp = function.add_fresh_local(I32);
 
                         // TODO monomorphize for first and second argument
+                        println!("select arg tys: {:?}", type_stack.topn(3));
 
                         vec![
                             TeeLocal(cond_tmp),
@@ -295,7 +312,10 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         ]
                     }
                     (_, CurrentMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
+                        type_stack.op(&[], &[I32]);
+
                         let result_tmp = function.add_fresh_local(I32);
+
                         vec![
                             instr,
                             TeeLocal(result_tmp),
@@ -306,8 +326,11 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         ]
                     }
                     (_, GrowMemory(_ /* memory idx == 0 in WASM version 1 */)) => {
+                        type_stack.op(&[I32], &[I32]);
+
                         let input_tmp = function.add_fresh_local(I32);
                         let result_tmp = function.add_fresh_local(I32);
+
                         vec![
                             TeeLocal(input_tmp),
                             instr,
@@ -321,6 +344,13 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     }
                     (_, GetLocal(local_idx)) | (_, SetLocal(local_idx)) | (_, TeeLocal(local_idx)) => {
                         let local_ty = function.local_type(local_idx);
+
+                        match instr {
+                            GetLocal(_) => type_stack.op(&[], &[local_ty]),
+                            | SetLocal(_) => type_stack.op(&[local_ty], &[]),
+                            _ => {}
+                        }
+
                         let mut instrs = vec![
                             instr.clone(),
                             location.0,
@@ -333,6 +363,13 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     }
                     (_, GetGlobal(global_idx)) | (_, SetGlobal(global_idx)) => {
                         let global_ty = module_info.globals[global_idx.0];
+
+                        match instr {
+                            GetGlobal(_) => type_stack.op(&[], &[global_ty]),
+                            | SetGlobal(_) => type_stack.op(&[global_ty], &[]),
+                            _ => {}
+                        }
+
                         let mut instrs = vec![
                             instr.clone(),
                             location.0,
@@ -344,6 +381,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         instrs
                     }
                     (_, Return) => {
+                        // FIXME type checking for return correctly handled?
+
                         let result_tys = function.type_.results.clone();
                         let result_tmps = function.add_fresh_locals(&result_tys);
 
@@ -362,6 +401,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     (_, Call(target_func_idx)) => {
                         let arg_tys = module_info.functions[target_func_idx.0].type_.params.as_slice();
                         let result_tys = module_info.functions[target_func_idx.0].type_.results.as_slice();
+
+                        type_stack.op(arg_tys, result_tys);
 
                         let arg_tmps = function.add_fresh_locals(arg_tys);
                         let result_tmps = function.add_fresh_locals(result_tys);
@@ -396,10 +437,11 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         let arg_tys = func_ty.params.as_slice();
                         let result_tys = func_ty.results.as_slice();
 
+                        type_stack.op(arg_tys, result_tys);
+
                         let target_table_idx_tmp = function.add_fresh_local(I32);
                         let arg_tmps = function.add_fresh_locals(arg_tys);
                         let result_tmps = function.add_fresh_locals(result_tys);
-
 
                         /* pre call hook */
 
@@ -430,6 +472,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         instrs
                     }
                     (Const(ty), instr) => {
+                        type_stack.op(&[], &[ty]);
+
                         let mut instrs = vec![
                             location.0,
                             location.1,
@@ -442,6 +486,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         instrs
                     }
                     (Unary { input_ty, result_ty }, instr) => {
+                        type_stack.op(&[input_ty], &[result_ty]);
+
                         let input_tmp = function.add_fresh_local(input_ty);
                         let result_tmp = function.add_fresh_local(result_ty);
 
@@ -458,6 +504,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         instrs
                     }
                     (Binary { first_ty, second_ty, result_ty }, instr) => {
+                        type_stack.op(&[first_ty, second_ty], &[result_ty]);
+
                         let first_tmp = function.add_fresh_local(first_ty);
                         let second_tmp = function.add_fresh_local(second_ty);
                         let result_tmp = function.add_fresh_local(result_ty);
@@ -474,6 +522,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         instrs
                     }
                     (MemoryLoad(ty, memarg), instr) => {
+                        type_stack.op(&[I32], &[ty]);
+
                         let addr_tmp = function.add_fresh_local(I32);
                         let value_tmp = function.add_fresh_local(ty);
 
@@ -491,7 +541,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         instrs
                     }
                     (MemoryStore(ty, memarg), instr) => {
-                        // duplicate stack arguments
+                        type_stack.op(&[I32, ty], &[]);
+
                         let addr_tmp = function.add_fresh_local(I32);
                         let value_tmp = function.add_fresh_local(ty);
 
@@ -511,29 +562,36 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.0,
                         location.1,
                         I32Const(target_label.0 as i32),
-                        I32Const(label_to_instr_idx(&begin_stack, target_label) as i32),
+                        I32Const(label_to_instr_idx(&block_stack, target_label) as i32),
                         Call(br_hook),
                         instr
                     ],
                     (_, BrIf(target_label)) => {
+                        type_stack.op(&[I32], &[]);
+
                         let condition_tmp = function.add_fresh_local(I32);
+
                         vec![
                             TeeLocal(condition_tmp),
                             location.0,
                             location.1,
                             I32Const(target_label.0 as i32),
-                            I32Const(label_to_instr_idx(&begin_stack, target_label) as i32),
+                            I32Const(label_to_instr_idx(&block_stack, target_label) as i32),
                             GetLocal(condition_tmp),
                             Call(br_if_hook),
                             instr
                         ]
                     }
                     (_, BrTable(target_table, default_target)) => {
+                        type_stack.op(&[I32], &[]);
+
                         module_info.br_tables.push(BrTableInfo::new(
                             target_table.into_iter().map(|label| LabelAndLocation::new(label.0)).collect(),
                             LabelAndLocation::new(default_target.0),
                         ));
+
                         let target_idx_tmp = function.add_fresh_local(I32);
+
                         vec![
                             TeeLocal(target_idx_tmp),
                             location.0,
@@ -541,7 +599,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                             I32Const((module_info.br_tables.len() - 1) as i32),
                             GetLocal(target_idx_tmp),
                             Call(br_table_hook),
-                            instr]
+                            instr
+                        ]
                     }
                     _ => unreachable!("no hook for instruction {}", instr.to_instr_name()),
                 }
@@ -551,7 +610,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
         // finally, move instrumented body inside function
         ::std::mem::replace(&mut function.code.as_mut().unwrap().body, instrumented_body);
 
-        assert!(begin_stack.is_empty(), "invalid begin/end nesting in function {}", fidx.0);
+        assert!(block_stack.is_empty(), "invalid begin/end nesting in function {}", fidx.0);
     }
 
     Some(js_codegen(module_info, &on_demand_hooks))
@@ -640,8 +699,9 @@ fn restore_locals_with_i64_handling(locals: &[Idx<Local>], local_tys: &[ValType]
     return instrs;
 }
 
+// TODO move to own module, refactor (use InstructionLocation, not raw usize)
 /// also keeps instruction index, needed later for End hooks
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Begin {
     // TODO include abstract block stack (i.e. Vec<ValType>) into this enum for
     // a) drop/select monomorphization

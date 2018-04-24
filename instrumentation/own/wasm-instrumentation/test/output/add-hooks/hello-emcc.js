@@ -19506,10 +19506,6 @@ const lowlevelHooks = {
         unreachable({func, instr});
     },
 
-    // type polymorphic
-    drop: function (func, instr) {
-        drop({func, instr});
-    },
     select: function (func, instr, cond) {
         select({func, instr}, cond);
     },
@@ -19655,6 +19651,18 @@ const lowlevelHooks = {
     },
     set_global_f64: function(func, instr, index, v) {
         global({func, instr}, "set", index, v);
+    },
+    drop_i32: function(func, instr, v) {
+        drop({func, instr}, v);
+    },
+    drop_i64: function(func, instr, v_low, v_high) {
+        drop({func, instr}, new Long(v_low, v_high));
+    },
+    drop_f32: function(func, instr, v) {
+        drop({func, instr}, v);
+    },
+    drop_f64: function(func, instr, v) {
+        drop({func, instr}, v);
     },
     call_: function(func, instr, targetFunc) {
         call_({func, instr}, targetFunc, false, []);
