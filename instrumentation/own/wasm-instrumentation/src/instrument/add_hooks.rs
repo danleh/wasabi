@@ -1,5 +1,5 @@
 use ast::{FunctionType, GlobalType, Idx, Label, Limits, Local, Memarg, MemoryType, Mutability, ValType, ValType::*};
-use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGroup::*, MemoryOp, Module};
+use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGroup::*, Memory, Module};
 use std::collections::{HashMap, HashSet};
 use std::mem::{discriminant, Discriminant};
 use super::block_stack::{Begin, BlockStack};
@@ -536,25 +536,34 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
                 // rest are "grouped instructions", i.e., where many instructions can be handled in a similar manner
                 instr => match instr.group() {
-                    Memory(op, ty, memarg) => {
-                        match op {
-                            MemoryOp::Load => type_stack.op(&[I32], &[ty]),
-                            MemoryOp::Store => type_stack.op(&[I32, ty], &[]),
-                        }
+
+                    MemoryLoad(ty, memarg) => {
+                        type_stack.op(&[I32], &[ty]);
 
                         let addr_tmp = function.add_fresh_local(I32);
                         let value_tmp = function.add_fresh_local(ty);
 
-                        instrumented_body.append(&mut match op {
-                            MemoryOp::Load => vec![TeeLocal(addr_tmp)],
-                            MemoryOp::Store => save_stack_to_locals(&[addr_tmp, value_tmp]),
-                        });
-                        instrumented_body.push(instr.clone());
-                        instrumented_body.append(&mut match op {
-                            MemoryOp::Load => vec![TeeLocal(value_tmp)],
-                            MemoryOp::Store => vec![],
-                        });
                         instrumented_body.extend_from_slice(&[
+                            TeeLocal(addr_tmp),
+                            instr.clone(),
+                            TeeLocal(value_tmp),
+                            location.0,
+                            location.1,
+                            I32Const(memarg.offset as i32),
+                            I32Const(memarg.alignment as i32),
+                        ]);
+                        instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &function));
+                        instrumented_body.push(monomorphic_hook_call(&instr));
+                    }
+                    MemoryStore(ty, memarg) => {
+                        type_stack.op(&[I32, ty], &[]);
+
+                        let addr_tmp = function.add_fresh_local(I32);
+                        let value_tmp = function.add_fresh_local(ty);
+
+                        instrumented_body.append(&mut save_stack_to_locals(&[addr_tmp, value_tmp]));
+                        instrumented_body.extend_from_slice(&[
+                            instr.clone(),
                             location.0,
                             location.1,
                             I32Const(memarg.offset as i32),
@@ -632,7 +641,8 @@ fn add_hook_from_instr(module: &mut Module, instr: &Instr, hooks: &mut Vec<Strin
         Const(ty) => vec![ty],
         Numeric { input_tys, result_tys } => [input_tys, result_tys].concat().into(),
         // for address, offset and alignment
-        Memory(_, ty, _) => vec![I32, I32, I32, ty],
+        MemoryLoad(ty, _) => vec![I32, I32, I32, ty],
+        MemoryStore(ty, _) => vec![I32, I32, I32, ty],
         Other => unreachable!("function should be only called for \"grouped\" instructions"),
     }))
 }

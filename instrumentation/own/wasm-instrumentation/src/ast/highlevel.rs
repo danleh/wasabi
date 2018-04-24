@@ -329,7 +329,7 @@ impl Module {
         types
     }
 
-    // FIXME untested, possibly broken
+    
     pub fn eval_const_expr(&self, expr: &Expr) -> Instr {
         use self::Instr::*;
         if let &[ref instr, End] = expr.as_slice() {
@@ -396,14 +396,9 @@ pub enum InstrGroup {
         input_tys: Vec<ValType>,
         result_tys: Vec<ValType>,
     },
-    Memory(MemoryOp, ValType, Memarg),
+    MemoryLoad(ValType, Memarg),
+    MemoryStore(ValType, Memarg),
     Other,
-}
-
-#[derive(Debug, Eq, PartialEq, Hash, Clone)]
-pub enum MemoryOp {
-    Load,
-    Store,
 }
 
 impl Instr {
@@ -461,32 +456,32 @@ impl Instr {
 
             /* Memory */
 
-            I32Load(memarg) => Memory(MemoryOp::Load, I32, memarg),
-            I64Load(memarg) => Memory(MemoryOp::Load, I64, memarg),
-            F32Load(memarg) => Memory(MemoryOp::Load, F32, memarg),
-            F64Load(memarg) => Memory(MemoryOp::Load, F64, memarg),
+            I32Load(memarg) => MemoryLoad(I32, memarg),
+            I64Load(memarg) => MemoryLoad(I64, memarg),
+            F32Load(memarg) => MemoryLoad(F32, memarg),
+            F64Load(memarg) => MemoryLoad(F64, memarg),
 
-            I32Load8S(memarg) => Memory(MemoryOp::Load, I32, memarg),
-            I32Load8U(memarg) => Memory(MemoryOp::Load, I32, memarg),
-            I32Load16S(memarg) => Memory(MemoryOp::Load, I32, memarg),
-            I32Load16U(memarg) => Memory(MemoryOp::Load, I32, memarg),
-            I64Load8S(memarg) => Memory(MemoryOp::Load, I64, memarg),
-            I64Load8U(memarg) => Memory(MemoryOp::Load, I64, memarg),
-            I64Load16S(memarg) => Memory(MemoryOp::Load, I64, memarg),
-            I64Load16U(memarg) => Memory(MemoryOp::Load, I64, memarg),
-            I64Load32S(memarg) => Memory(MemoryOp::Load, I64, memarg),
-            I64Load32U(memarg) => Memory(MemoryOp::Load, I64, memarg),
+            I32Load8S(memarg) => MemoryLoad(I32, memarg),
+            I32Load8U(memarg) => MemoryLoad(I32, memarg),
+            I32Load16S(memarg) => MemoryLoad(I32, memarg),
+            I32Load16U(memarg) => MemoryLoad(I32, memarg),
+            I64Load8S(memarg) => MemoryLoad(I64, memarg),
+            I64Load8U(memarg) => MemoryLoad(I64, memarg),
+            I64Load16S(memarg) => MemoryLoad(I64, memarg),
+            I64Load16U(memarg) => MemoryLoad(I64, memarg),
+            I64Load32S(memarg) => MemoryLoad(I64, memarg),
+            I64Load32U(memarg) => MemoryLoad(I64, memarg),
 
-            I32Store(memarg) => Memory(MemoryOp::Store, I32, memarg),
-            I64Store(memarg) => Memory(MemoryOp::Store, I64, memarg),
-            F32Store(memarg) => Memory(MemoryOp::Store, F32, memarg),
-            F64Store(memarg) => Memory(MemoryOp::Store, F64, memarg),
+            I32Store(memarg) => MemoryStore(I32, memarg),
+            I64Store(memarg) => MemoryStore(I64, memarg),
+            F32Store(memarg) => MemoryStore(F32, memarg),
+            F64Store(memarg) => MemoryStore(F64, memarg),
 
-            I32Store8(memarg) => Memory(MemoryOp::Store, I32, memarg),
-            I32Store16(memarg) => Memory(MemoryOp::Store, I32, memarg),
-            I64Store8(memarg) => Memory(MemoryOp::Store, I64, memarg),
-            I64Store16(memarg) => Memory(MemoryOp::Store, I64, memarg),
-            I64Store32(memarg) => Memory(MemoryOp::Store, I64, memarg),
+            I32Store8(memarg) => MemoryStore(I32, memarg),
+            I32Store16(memarg) => MemoryStore(I32, memarg),
+            I64Store8(memarg) => MemoryStore(I64, memarg),
+            I64Store16(memarg) => MemoryStore(I64, memarg),
+            I64Store32(memarg) => MemoryStore(I64, memarg),
 
             _ => Other,
         }

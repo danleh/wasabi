@@ -1,4 +1,4 @@
-use ast::highlevel::{Instr, Instr::*, InstrGroup, MemoryOp};
+use ast::highlevel::{Instr, Instr::*, InstrGroup};
 use ast::ValType::{self, *};
 use serde_json;
 use super::static_info::ModuleInfo;
@@ -115,7 +115,7 @@ impl Instr {
                 arg("first", input_tys[0]), arg("second", input_tys[1]), arg("result", result_tys[0]),
                 instr_name,
                 long("first", input_tys[0]), long("second", input_tys[1]), long("result", result_tys[0])),
-            (InstrGroup::Memory(MemoryOp::Load, ty, _), instr) => format!(
+            (InstrGroup::MemoryLoad(ty, _), instr) => format!(
                 "{}: function (func, instr, offset, align, addr, {}) {{
     load({{func, instr}}, \"{}\", {{addr, offset, align}}, {});
 }},",
@@ -123,7 +123,7 @@ impl Instr {
                 arg("v", ty),
                 instr_name,
                 long("v", ty)),
-            (InstrGroup::Memory(MemoryOp::Store, ty, _), instr) => format!(
+            (InstrGroup::MemoryStore(ty, _), instr) => format!(
                 "{}: function (func, instr, offset, align, addr, {}) {{
     store({{func, instr}}, \"{}\", {{addr, offset, align}}, {});
 }},",
