@@ -35,11 +35,11 @@ function unreachable(location) {
 }
 
 function drop(location, value) {
-    console.log(location, "drop, value =", value);
+    // console.log(location, "drop, value =", value);
 }
 
-function select(location, cond) {
-    // console.log(location, "select, condition =", cond);
+function select(location, cond, first, second) {
+    console.log(location, "select, condition =", cond, "first =", first, "second =", second);
 }
 
 function call_(location, targetFunc, indirect, args) {

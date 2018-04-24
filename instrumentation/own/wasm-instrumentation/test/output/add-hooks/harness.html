@@ -2,7 +2,7 @@
 <html lang="en">
  	<head><meta charset="utf-8"></head>
  	<body>
-		<script src="drop.js"></script>
+		<script src="select.js"></script>
 		<script src="long.js"></script>
 		<script src="wasabi.js"></script>
         <script src="analysis-log-all.js"></script>
@@ -15,7 +15,7 @@
 					}
 				};
 
-				let {module, instance} = await fetch("drop.wasm")
+				let {module, instance} = await fetch("select.wasm")
 					.then(response => response.arrayBuffer())
 					.then(arrayBuffer => WebAssembly.instantiate(arrayBuffer, importObject));
 
