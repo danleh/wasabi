@@ -91,15 +91,15 @@ const lowlevelHooks = {{
 impl Instr {
     pub fn to_js_hook(&self) -> String {
         let instr_name = self.to_instr_name();
-        match (self.group(), self) {
-            (InstrGroup::Const(ty), instr) => format!(
+        match self.group() {
+            InstrGroup::Const(ty) => format!(
                 "{}: function (func, instr, {}) {{
     const_({{func, instr}}, {});
 }},",
                 instr_name,
                 arg("v", ty), long("v", ty)
             ),
-            (InstrGroup::Numeric { ref input_tys, ref result_tys }, instr) if input_tys.len() == 1 => format!(
+            InstrGroup::Numeric { ref input_tys, ref result_tys } if input_tys.len() == 1 => format!(
                 "{}: function (func, instr, {}, {}) {{
     unary({{func, instr}}, \"{}\", {}, {});
 }},",
@@ -107,7 +107,7 @@ impl Instr {
                 arg("input", input_tys[0]), arg("result", result_tys[0]),
                 instr_name,
                 long("input", input_tys[0]), long("result", result_tys[0])),
-            (InstrGroup::Numeric { ref input_tys, ref result_tys }, instr) if input_tys.len() == 2 => format!(
+            InstrGroup::Numeric { ref input_tys, ref result_tys } if input_tys.len() == 2 => format!(
                 "{}: function (func, instr, {}, {}, {}) {{
     binary({{func, instr}}, \"{}\", {}, {}, {});
 }},",
@@ -115,7 +115,7 @@ impl Instr {
                 arg("first", input_tys[0]), arg("second", input_tys[1]), arg("result", result_tys[0]),
                 instr_name,
                 long("first", input_tys[0]), long("second", input_tys[1]), long("result", result_tys[0])),
-            (InstrGroup::MemoryLoad(ty, _), instr) => format!(
+            InstrGroup::MemoryLoad(ty, _) => format!(
                 "{}: function (func, instr, offset, align, addr, {}) {{
     load({{func, instr}}, \"{}\", {{addr, offset, align}}, {});
 }},",
@@ -123,7 +123,7 @@ impl Instr {
                 arg("v", ty),
                 instr_name,
                 long("v", ty)),
-            (InstrGroup::MemoryStore(ty, _), instr) => format!(
+            InstrGroup::MemoryStore(ty, _) => format!(
                 "{}: function (func, instr, offset, align, addr, {}) {{
     store({{func, instr}}, \"{}\", {{addr, offset, align}}, {});
 }},",
