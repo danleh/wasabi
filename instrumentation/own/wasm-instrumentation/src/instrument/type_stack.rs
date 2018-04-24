@@ -45,7 +45,7 @@ impl TypeStack {
         loop {
             match self.0.pop() {
                 None => panic!("tried to end block by popping from type stack until block begin, but no block begin was found"),
-                Some(Val(ty)) => {},
+                Some(Val(_ty)) => {},
                 Some(BlockBegin(block_ty)) => {
                     // NOTE there is no validation that the stack is correct at the end of a block
                     // it is unclear to me how it exactly works with, e.g., br/return + drops

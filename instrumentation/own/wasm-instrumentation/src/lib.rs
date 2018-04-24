@@ -1,5 +1,5 @@
 #![feature(attr_literals, specialization, test, core_intrinsics, from_ref, slice_patterns)]
-#![allow(dead_code, unused_variables, unused_imports)]
+#![allow(dead_code, unused_imports)]
 
 extern crate byteorder;
 #[macro_use]

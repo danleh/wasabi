@@ -27,7 +27,8 @@ macro_rules! impl_leb128_integer {
         impl<R: io::Read> ReadLeb128<$T> for R {
             fn read_leb128(&mut self) -> io::Result<$T> {
                 let mut value = 0;
-                let mut bytes_read = 0;
+                // useful if you want to preserve length when encoding this LEB128 again (not here)
+                let mut _bytes_read = 0;
                 let mut shift = 0;
                 let mut byte = 0x80;
 
@@ -39,7 +40,7 @@ macro_rules! impl_leb128_integer {
                     } else {
                         return Err(io::Error::new(io::ErrorKind::InvalidData, format!("LEB128 to {} overflow", stringify!($T))));
                     }
-                    bytes_read += 1;
+                    _bytes_read += 1;
                     shift += 7;
                 }
 
