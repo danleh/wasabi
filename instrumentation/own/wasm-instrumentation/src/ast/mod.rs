@@ -1,6 +1,8 @@
 use binary::WasmBinary;
 use std::fmt::{self, Write};
 use std::marker::PhantomData;
+use std::hash::{Hash, Hasher};
+use std::cmp::Ordering;
 
 pub mod highlevel;
 pub mod lowlevel;
@@ -107,6 +109,12 @@ impl<T> PartialEq for Idx<T> {
 }
 
 impl<T> Eq for Idx<T> {}
+
+impl<T> Hash for Idx<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state)
+    }
+}
 
 // Unit structs as markers for indices that do not have their own "content" type
 // I.e., Local is just ValType, Label is not represented at all.
