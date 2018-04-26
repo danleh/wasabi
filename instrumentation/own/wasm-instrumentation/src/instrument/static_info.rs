@@ -1,12 +1,13 @@
-use ast::{FunctionType, ValType};
-use ast::highlevel::{Function, Module};
+use ast::{FunctionType, Idx, Label, ValType};
+use ast::highlevel::{Function, Instr, Module};
+use super::block_stack::BlockStack;
 
 #[derive(Serialize)]
 pub struct ModuleInfo {
     pub functions: Vec<FunctionInfo>,
     pub globals: Vec<ValType>,
     pub table_export_name: String,
-//    pub table: Vec<usize>,
+    //    pub table: Vec<usize>,
     pub br_tables: Vec<BrTableInfo>,
 }
 
@@ -15,6 +16,7 @@ impl<'a> From<&'a Module> for ModuleInfo {
         ModuleInfo {
             functions: module.functions.iter().map(Into::into).collect(),
             globals: module.globals.iter().map(|g| g.type_.0).collect(),
+// FIXME table evaluation/constexpr eval
 //            table: module.tables.iter()
 //                .flat_map(|table| table.elements.clone())
 //                .map(|element| {
@@ -51,22 +53,33 @@ impl<'a> From<&'a Function> for FunctionInfo {
     }
 }
 
-#[derive(Serialize, new)]
+#[derive(Serialize)]
 pub struct BrTableInfo {
-    pub table: Vec<LabelAndLocation>,
-    pub default: LabelAndLocation,
+    pub table: Vec<ResolvedLabel>,
+    pub default: ResolvedLabel,
 }
 
-#[derive(Serialize, new)]
-pub struct LabelAndLocation {
-    pub label: usize,
-    // FIXME actually compute Location from Label during instrumentation
-    #[new(default)]
+impl BrTableInfo {
+    /// needs block_stack for resolving the labels to actual locations
+    pub fn from_br_table(table: &[Idx<Label>], default: Idx<Label>, block_stack: &BlockStack, func: Idx<Function>) -> Self {
+        let resolve = |label: Idx<Label>| {
+            ResolvedLabel { label, location: Location { func, instr: block_stack.br_target(label) } }
+        };
+        BrTableInfo {
+            table: table.iter().cloned().map(resolve).collect(),
+            default: resolve(default),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct ResolvedLabel {
+    pub label: Idx<Label>,
     pub location: Location,
 }
 
-#[derive(Serialize, new, Default)]
+#[derive(Serialize)]
 pub struct Location {
-    pub func: usize,
-    pub instr: usize,
+    pub func: Idx<Function>,
+    pub instr: Idx<Instr>,
 }

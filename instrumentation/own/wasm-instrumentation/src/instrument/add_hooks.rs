@@ -321,10 +321,9 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                 BrTable(ref target_table, default_target) => {
                     type_stack.instr(&[I32], &[]);
 
-                    module_info.br_tables.push(BrTableInfo::new(
-                        target_table.iter().map(|label| LabelAndLocation::new(label.0)).collect(),
-                        LabelAndLocation::new(default_target.0),
-                    ));
+                    // each br_table instruction gets its own entry in the static info object
+                    // that maps table index to label and location
+                    module_info.br_tables.push(BrTableInfo::from_br_table(target_table, default_target, &block_stack, fidx));
 
                     let target_idx_tmp = function.add_fresh_local(I32);
 
