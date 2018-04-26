@@ -1,4 +1,4 @@
-use ast::{BlockType, FunctionType, ValType};
+use ast::{BlockType, ValType};
 use self::TypeStackElement::*;
 
 #[derive(Debug)]
@@ -8,11 +8,12 @@ pub struct TypeStack(Vec<TypeStackElement>);
 enum TypeStackElement {
     Val(ValType),
     BlockBegin(BlockType),
+    FunctionBegin,
 }
 
 impl TypeStack {
     pub fn new() -> Self {
-        TypeStack(vec![])
+        TypeStack(vec![FunctionBegin])
     }
 
     pub fn push_val(&mut self, ty: ValType) {
@@ -23,8 +24,9 @@ impl TypeStack {
     pub fn pop_val(&mut self) -> ValType {
         match self.0.pop() {
             None => panic!("tried to pop from empty type stack"),
+            Some(Val(ty)) => ty,
             Some(BlockBegin(_)) => panic!("expected ValType on type stack, but got block begin marker indicating empty block stack; full type stack was {:?}", self.0),
-            Some(Val(ty)) => ty
+            Some(FunctionBegin) => panic!("expected ValType on type stack, but got function begin marker indicating empty block stack; full type stack was {:?}", self.0),
         }
     }
 
@@ -44,26 +46,27 @@ impl TypeStack {
 
     /// implicitly pops all types from the stack until the last block begin
     /// pushes that blocks result type on the stack
-    /// returns the BlockType of that last block
-    pub fn end(&mut self) -> BlockType {
+    /// returns the BlockType of that last block, or None if the last block was the function
+    pub fn end(&mut self) -> Option<BlockType> {
         loop {
             match self.0.pop() {
                 None => panic!("could not end block, no block begin was found on type stack"),
-                Some(Val(_ty)) => {},
+                Some(Val(_ty)) => {}
                 Some(BlockBegin(block_ty)) => {
                     // NOTE there is no validation that the stack is correct at the end of a block
                     // it is unclear to me how it exactly works with, e.g., br/return + drops
                     if let BlockType(Some(ty)) = block_ty {
                         self.push_val(ty);
                     }
-                    return block_ty
-                },
+                    return Some(block_ty);
+                }
+                Some(FunctionBegin) => return None
             }
         }
     }
 
     pub fn else_(&mut self) {
-        let block_ty = self.end();
+        let block_ty = self.end().expect("else cannot end a function");
         self.begin(block_ty);
     }
 }
