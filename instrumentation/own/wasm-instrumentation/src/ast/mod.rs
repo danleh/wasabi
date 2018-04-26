@@ -1,8 +1,9 @@
 use binary::WasmBinary;
-use std::fmt::{self, Write};
-use std::marker::PhantomData;
-use std::hash::{Hash, Hasher};
+use serde::{Serialize, Serializer};
 use std::cmp::Ordering;
+use std::fmt::{self, Write};
+use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
 
 pub mod highlevel;
 pub mod lowlevel;
@@ -113,6 +114,12 @@ impl<T> Eq for Idx<T> {}
 impl<T> Hash for Idx<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state)
+    }
+}
+
+impl<T> Serialize for Idx<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
     }
 }
 
