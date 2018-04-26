@@ -54,14 +54,14 @@ const lowlevelHooks = {{
     begin_if: function (func, instr) {
         begin({func, instr}, "if");
     },
-    end_if: function (func, instr, begin_instr) {
-        end({func, instr}, "if", {func, instr: begin_instr});
+    end_if: function (func, instr, if_instr) {
+        end({func, instr}, "if", {func, instr: if_instr});
     },
-    begin_else: function (func, instr) {
-        begin({func, instr}, "else");
+    begin_else: function (func, instr, if_instr) {
+        begin({func, instr}, "else", {func, instr: if_instr});
     },
-    end_else: function (func, instr, begin_instr) {
-        end({func, instr}, "else", {func, instr: begin_instr});
+    end_else: function (func, instr, if_instr, else_instr) {
+        end({func, instr}, "else", {func, instr: if_instr}, {func, instr: else_instr});
     },
 
     // branches/if condition

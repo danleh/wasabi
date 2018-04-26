@@ -12,10 +12,8 @@ const moduleInfo = {
       },
       "import": null,
       "export": null,
-      "locals": [
-        "i32"
-      ],
-      "instrCount": 12
+      "locals": [],
+      "instrCount": 13
     }
   ],
   "globals": [],

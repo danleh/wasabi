@@ -2,7 +2,7 @@ use ast::{FunctionType, GlobalType, Idx, Label, Limits, Local, Memarg, MemoryTyp
 use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGroup::*, Memory, Module};
 use std::collections::{HashMap, HashSet};
 use std::mem::{discriminant, Discriminant};
-use super::block_stack::{Begin, BlockStack};
+use super::block_stack::{BlockStack, BlockStackElement};
 use super::convert_i64::{convert_i64_instr, convert_i64_type};
 use super::js_codegen::{append_mangled_tys, js_codegen};
 use super::static_info::*;
@@ -73,8 +73,9 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
     let br_if_hook = add_hook(module, "br_if", &[/* condition */ I32, /* target label and instr */ I32, I32]);
     let br_table_hook = add_hook(module, "br_table", &[/* br_table_info_idx */ I32, /* table_idx */ I32]);
 
-    // all end hooks also give the instruction index of the corresponding begin (except for functions,
+    // *_end hooks also give instruction index of corresponding begin (except for functions,
     // where it implicitly is -1 anyway)
+    // else_* hooks also give instruction index of corresponding if
     let begin_function_hook = add_hook(module, "begin_function", &[]);
     let end_function_hook = add_hook(module, "end_function", &[]);
     let begin_block_hook = add_hook(module, "begin_block", &[]);
@@ -83,8 +84,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
     let end_loop_hook = add_hook(module, "end_loop", &[I32]);
     let begin_if_hook = add_hook(module, "begin_if", &[]);
     let end_if_hook = add_hook(module, "end_if", &[I32]);
-    let begin_else_hook = add_hook(module, "begin_else", &[]);
-    let end_else_hook = add_hook(module, "end_else", &[I32]);
+    let begin_else_hook = add_hook(module, "begin_else", &[I32]);
+    let end_else_hook = add_hook(module, "end_else", &[I32, I32]);
 
     let nop_hook = add_hook(module, "nop", &[]);
     let unreachable_hook = add_hook(module, "unreachable", &[]);
@@ -172,7 +173,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
         // there are at least 3 new instructions per original one (2 const for location + 1 hook call)
         let mut instrumented_body = Vec::with_capacity(4 * original_body.len());
 
-        let mut block_stack = BlockStack::new();
+        let mut block_stack = BlockStack::new(&original_body);
         let mut type_stack = TypeStack::new();
 
         // add function_begin hook...
@@ -187,6 +188,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
         // return instruction is given
 
         for (iidx, instr) in original_body.into_iter().enumerate() {
+            // TODO add let iidx = iidx.into();
             let location = (I32Const(fidx.0 as i32), I32Const(iidx as i32));
             match instr {
                 // size optimization: replace nop fully with hook
@@ -207,9 +209,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                 /* Control Instructions: Blocks */
 
                 Block(block_ty) => {
-                    // TODO move into block_stack
-                    block_stack.push(Begin::Block(iidx));
-                    type_stack.begin_block(block_ty);
+                    block_stack.begin_block(iidx.into());
+                    type_stack.begin(block_ty);
 
                     instrumented_body.extend_from_slice(&[
                         instr,
@@ -219,9 +220,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     ]);
                 }
                 Loop(block_ty) => {
-                    // TODO move into block_stack
-                    block_stack.push(Begin::Loop(iidx));
-                    type_stack.begin_block(block_ty);
+                    block_stack.begin_loop(iidx.into());
+                    type_stack.begin(block_ty);
 
                     instrumented_body.extend_from_slice(&[
                         instr,
@@ -231,8 +231,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     ]);
                 }
                 If(block_ty) => {
-                    block_stack.push(Begin::If(iidx));
-                    type_stack.begin_block(block_ty);
+                    block_stack.begin_if(iidx.into());
+                    type_stack.begin(block_ty);
 
                     let condition_tmp = function.add_fresh_local(I32);
 
@@ -252,60 +252,58 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     ]);
                 }
                 Else => {
-                    let begin = block_stack.pop();
-                    if let Begin::If(begin_iidx) = begin {
-                        block_stack.push(Begin::Else(iidx));
-                        let block_ty = type_stack.end_block();
-                        type_stack.begin_block(block_ty);
+                    let if_begin = block_stack.else_();
+                    type_stack.else_();
 
-                        instrumented_body.extend_from_slice(&[
-                            location.0.clone(),
-                            location.1.clone(),
-                            I32Const(begin_iidx as i32),
-                            Call(end_else_hook),
-                            instr,
-                            location.0,
-                            location.1,
-                            Call(begin_else_hook),
-                        ]);
-                    } else {
-                        unreachable!("else instruction should end if block, but was {:?}", begin);
-                    }
+                    instrumented_body.extend_from_slice(&[
+                        location.0.clone(),
+                        location.1.clone(),
+                        I32Const(if_begin.0 as i32),
+                        Call(end_if_hook),
+                        instr,
+                        location.0,
+                        location.1,
+                        I32Const(if_begin.0 as i32),
+                        Call(begin_else_hook),
+                    ]);
                 }
                 End => {
-                    let begin = block_stack.pop();
-                    // TODO better: add begin_function and end_function or so to type_stack
-                    if begin != Begin::Function {
-                        type_stack.end_block();
-                    }
+                    let block = block_stack.end();
+                    type_stack.end();
 
                     instrumented_body.extend_from_slice(&[
                         location.0,
                         location.1,
                     ]);
-                    instrumented_body.append(&mut match begin {
-                        Begin::Function => vec![Call(end_function_hook)],
-                        Begin::Block(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_block_hook)],
-                        Begin::Loop(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_loop_hook)],
-                        Begin::If(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_if_hook)],
-                        Begin::Else(begin_iidx) => vec![I32Const(begin_iidx as i32), Call(end_else_hook)],
+                    instrumented_body.append(&mut match block {
+                        BlockStackElement::Function { .. } =>
+                            vec![Call(end_function_hook)],
+                        BlockStackElement::Block { begin, .. } =>
+                            vec![I32Const(begin.0 as i32), Call(end_block_hook)],
+                        BlockStackElement::Loop { begin, .. } =>
+                            vec![I32Const(begin.0 as i32), Call(end_loop_hook)],
+                        BlockStackElement::If { begin_if, .. } =>
+                            vec![I32Const(begin_if.0 as i32), Call(end_if_hook)],
+                        BlockStackElement::Else { begin_if, begin_else, .. } =>
+                            vec![I32Const(begin_if.0 as i32), I32Const(begin_else.0 as i32), Call(end_else_hook)]
                     });
                     instrumented_body.push(instr);
                 }
 
 
                 /* Control Instructions: Branches/Breaks */
+                // NOTE hooks must come before instr
 
                 Br(target_label) => instrumented_body.extend_from_slice(&[
                     location.0,
                     location.1,
                     I32Const(target_label.0 as i32),
-                    I32Const(block_stack.label_to_instr_idx(target_label) as i32),
+                    I32Const(block_stack.br_target(target_label).0 as i32),
                     Call(br_hook),
                     instr
                 ]),
                 BrIf(target_label) => {
-                    type_stack.op(&[I32], &[]);
+                    type_stack.instr(&[I32], &[]);
 
                     let condition_tmp = function.add_fresh_local(I32);
 
@@ -314,14 +312,14 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.0,
                         location.1,
                         I32Const(target_label.0 as i32),
-                        I32Const(block_stack.label_to_instr_idx(target_label) as i32),
+                        I32Const(block_stack.br_target(target_label).0 as i32),
                         GetLocal(condition_tmp),
                         Call(br_if_hook),
                         instr
                     ]);
                 }
                 BrTable(ref target_table, default_target) => {
-                    type_stack.op(&[I32], &[]);
+                    type_stack.instr(&[I32], &[]);
 
                     module_info.br_tables.push(BrTableInfo::new(
                         target_table.iter().map(|label| LabelAndLocation::new(label.0)).collect(),
@@ -345,7 +343,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                 /* Control Instructions: Calls & Returns */
 
                 Return => {
-                    type_stack.op(&function.type_.results, &[]);
+                    type_stack.instr(&function.type_.results, &[]);
 
                     let result_tys = function.type_.results.clone();
                     let result_tmps = function.add_fresh_locals(&result_tys);
@@ -365,7 +363,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     let arg_tys = module_info.functions[target_func_idx.0].type_.params.as_slice();
                     let result_tys = module_info.functions[target_func_idx.0].type_.results.as_slice();
 
-                    type_stack.op(arg_tys, result_tys);
+                    type_stack.instr(arg_tys, result_tys);
 
                     /* pre call hook */
 
@@ -399,7 +397,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     let arg_tys = func_ty.params.as_slice();
                     let result_tys = func_ty.results.as_slice();
 
-                    type_stack.op(arg_tys, result_tys);
+                    type_stack.instr(arg_tys, result_tys);
 
                     /* pre call hook */
 
@@ -437,7 +435,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                 /* Parametric Instructions */
 
                 Drop => {
-                    let ty = type_stack.pop();
+                    let ty = type_stack.pop_val();
 
                     let tmp = function.add_fresh_local(ty);
 
@@ -450,10 +448,10 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     instrumented_body.push(polymorphic_hooks.get_call(&instr, vec![ty]));
                 }
                 Select => {
-                    assert_eq!(type_stack.pop(), I32, "select condition should be i32");
-                    let ty = type_stack.pop();
-                    assert_eq!(type_stack.pop(), ty, "select arguments should have same type");
-                    type_stack.push(ty);
+                    assert_eq!(type_stack.pop_val(), I32, "select condition should be i32");
+                    let ty = type_stack.pop_val();
+                    assert_eq!(type_stack.pop_val(), ty, "select arguments should have same type");
+                    type_stack.push_val(ty);
 
                     let condition_tmp = function.add_fresh_local(I32);
                     let arg_tmps = function.add_fresh_locals(&[ty, ty]);
@@ -476,8 +474,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     let local_ty = function.local_type(local_idx);
 
                     match instr {
-                        | GetLocal(_) => type_stack.op(&[], &[local_ty]),
-                        | SetLocal(_) => type_stack.op(&[local_ty], &[]),
+                        GetLocal(_) => type_stack.instr(&[], &[local_ty]),
+                        SetLocal(_) => type_stack.instr(&[local_ty], &[]),
                         _ => {}
                     }
 
@@ -494,8 +492,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     let global_ty = module_info.globals[global_idx.0];
 
                     match instr {
-                        | GetGlobal(_) => type_stack.op(&[], &[global_ty]),
-                        | SetGlobal(_) => type_stack.op(&[global_ty], &[]),
+                        GetGlobal(_) => type_stack.instr(&[], &[global_ty]),
+                        SetGlobal(_) => type_stack.instr(&[global_ty], &[]),
                         _ => {}
                     }
 
@@ -513,7 +511,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                 /* Memory Instructions */
 
                 MemorySize(_ /* memory idx == 0 in WASM version 1 */) => {
-                    type_stack.op(&[], &[I32]);
+                    type_stack.instr(&[], &[I32]);
 
                     instrumented_body.extend_from_slice(&[
                         instr.clone(),
@@ -525,7 +523,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     ]);
                 }
                 MemoryGrow(_ /* memory idx == 0 in WASM version 1 */) => {
-                    type_stack.op(&[I32], &[I32]);
+                    type_stack.instr(&[I32], &[I32]);
 
                     let input_tmp = function.add_fresh_local(I32);
                     let result_tmp = function.add_fresh_local(I32);
@@ -544,9 +542,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
                 // rest are "grouped instructions", i.e., where many instructions can be handled in a similar manner
                 instr => match instr.group() {
-
                     MemoryLoad(ty, memarg) => {
-                        type_stack.op(&[I32], &[ty]);
+                        type_stack.instr(&[I32], &[ty]);
 
                         let addr_tmp = function.add_fresh_local(I32);
                         let value_tmp = function.add_fresh_local(ty);
@@ -564,7 +561,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         instrumented_body.push(monomorphic_hook_call(&instr));
                     }
                     MemoryStore(ty, memarg) => {
-                        type_stack.op(&[I32, ty], &[]);
+                        type_stack.instr(&[I32, ty], &[]);
 
                         let addr_tmp = function.add_fresh_local(I32);
                         let value_tmp = function.add_fresh_local(ty);
@@ -585,7 +582,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     /* Numeric Instructions */
 
                     Const(ty) => {
-                        type_stack.op(&[], &[ty]);
+                        type_stack.instr(&[], &[ty]);
 
                         instrumented_body.extend_from_slice(&[
                             instr.clone(),
@@ -597,7 +594,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         instrumented_body.push(monomorphic_hook_call(&instr));
                     }
                     Numeric { input_tys, result_tys } => {
-                        type_stack.op(&input_tys, &result_tys);
+                        type_stack.instr(&input_tys, &result_tys);
 
                         let input_tmps = function.add_fresh_locals(&input_tys);
                         let result_tmps = function.add_fresh_locals(&result_tys);
@@ -706,3 +703,5 @@ fn restore_locals_with_i64_handling(locals: &[Idx<Local>], function: &Function) 
     }
     return instrs;
 }
+
+// TODO add Into<Instr> impl for Idx<T> ---> I32Const(idx.0 as i32)
