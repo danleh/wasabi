@@ -7,11 +7,11 @@ function if_(location, condition) {
 }
 
 function br(location, target) {
-    console.log(location, "br, to label #", target.label, "(==", target.location, ")");
+    console.log(location, "br, to label", target.label, "(==", target.location, ")");
 }
 
 function br_if(location, conditionalTarget, condition) {
-    console.log(location, "br_if, (conditionally) to label #", conditionalTarget.label, " (==", conditionalTarget.label, "), condition =", condition);
+    console.log(location, "br_if, (conditionally) to label", conditionalTarget.label, "(==", conditionalTarget.location, "), condition =", condition);
 }
 
 function br_table(location, table, defaultTarget, tableIdx) {
@@ -23,7 +23,7 @@ function begin(location, type) {
 }
 
 function end(location, type, beginLocation) {
-    console.log(location, "end, for begin", type, "@", beginLocation);
+    console.log(location, "end", type, "(begin @", beginLocation, ")");
 }
 
 function nop(location) {
