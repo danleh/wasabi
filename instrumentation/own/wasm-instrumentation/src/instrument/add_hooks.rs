@@ -192,7 +192,9 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
         // there are at least 3 new instructions per original one (2 const for location + 1 hook call)
         let mut instrumented_body = Vec::with_capacity(4 * original_body.len());
 
+        // for branch target resolution (i.e., relative labels -> instruction locations)
         let mut block_stack = BlockStack::new(&original_body);
+        // for drop/select monomorphization (cannot read their argument types of the opcodes directly)
         let mut type_stack = TypeStack::new();
 
         // execute start hook before anything else (if this is the start function and it hasn't run yet)
@@ -217,9 +219,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
             Call(begin_function_hook)
         ]);
 
-        // TODO add implicit return hook, so that the results can be observed, even when no explicit
-        // return instruction is given
-        // reuse existing return hook, just make instr === -1 to signal that it was not present in the original binary
+        // check for implicit return now, since body gets consumed below
+        let implicit_return = !original_body.ends_with(&[Return, End]);
 
         for (iidx, instr) in original_body.into_iter().enumerate() {
             let iidx: Idx<Instr> = iidx.into();
@@ -650,7 +651,26 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
             }
         }
 
-        // finally, move instrumented body inside function
+        // add return hook, if function has an implicit return
+        // (can be distinguished from actual returns in analysis because of -1 as instr location)
+        if implicit_return {
+            let result_tys = function.type_.results.clone();
+            let result_tmps = function.add_fresh_locals(&result_tys);
+
+            assert_eq!(instrumented_body.pop(), Some(End));
+            instrumented_body.append(&mut save_stack_to_locals(&result_tmps));
+            instrumented_body.extend_from_slice(&[
+                fidx.into(),
+                I32Const(-1),
+            ]);
+            instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &function));
+            instrumented_body.extend_from_slice(&[
+                polymorphic_hooks.get_call(&Return, result_tys),
+                End,
+            ]);
+        }
+
+        // finally, switch dummy body out against instrumented body
         ::std::mem::replace(&mut function.code.as_mut().unwrap().body, instrumented_body);
     }
 
