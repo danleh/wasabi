@@ -8,8 +8,8 @@ use super::js_codegen::{append_mangled_tys, js_codegen};
 use super::static_info::*;
 use super::type_stack::TypeStack;
 
-/// instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, other
-/// relevant information.
+/// instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, and
+/// other relevant information.
 pub fn add_hooks(module: &mut Module) -> Option<String> {
     /*
      * make sure every function and table is exported,
@@ -758,6 +758,7 @@ fn restore_locals_with_i64_handling(locals: &[Idx<Local>], function: &Function) 
     return instrs;
 }
 
+/// convenience to hand (function/instr/local/global) indices to hooks
 impl<T> Into<Instr> for Idx<T> {
     fn into(self) -> Instr {
         I32Const(self.0 as i32)
