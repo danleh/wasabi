@@ -25,16 +25,6 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
             function.export = Some(format!("wasabi_function_{}", fidx.0));
         }
     }
-    // add global for start, set to false on the first execution of the start function
-    let start_not_executed_global = {
-        module.globals.push(Global {
-            type_: GlobalType(I32, Mutability::Mut),
-            init: Some(vec![I32Const(1), End]),
-            import: None,
-            export: None,
-        });
-        module.globals.len() - 1
-    };
 
     let mut module_info: ModuleInfo = (&*module).into();
     // TODO use something more meaningful than Strings, e.g., a LowlevelHook struct or so...
@@ -76,10 +66,10 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
     polymorphic_hooks.add(module, Call(0.into()), &[I32], unique_arg_tys.as_slice(), &mut on_demand_hooks); // I32 = target func idx
     polymorphic_hooks.add(module, CallIndirect(FunctionType::new(vec![], vec![]), 0.into()), &[I32], unique_arg_tys.as_slice(), &mut on_demand_hooks); // I32 = target table idx
     // manually add call_post hook since it does not directly correspond to an instruction
-    let call_result_hooks: HashMap<&[ValType], Idx<Function>> = unique_result_tys.iter()
+    let call_post_hooks: HashMap<&[ValType], Idx<Function>> = unique_result_tys.iter()
         .map(|tys| {
             let tys = tys.as_slice();
-            (tys, add_hook(module, append_mangled_tys("call_result".into(), tys), tys))
+            (tys, add_hook(module, append_mangled_tys("call_post".into(), tys), tys))
         }).collect();
 
     // monomorphic hooks:
@@ -171,6 +161,17 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                 .get(&discriminant(instr))
                 .expect(&format!("no hook was added for instruction {}", instr.to_instr_name())))
         }
+    };
+
+    // add global for start, set to false on the first execution of the start function
+    let start_not_executed_global = {
+        module.globals.push(Global {
+            type_: GlobalType(I32, Mutability::Mut),
+            init: Some(vec![I32Const(1), End]),
+            import: None,
+            export: None,
+        });
+        module.globals.len() - 1
     };
 
     /* add call to hooks: setup code that copies the returned value, instruction location, call */
@@ -425,7 +426,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.1,
                     ]);
                     instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &function));
-                    instrumented_body.push(Call(*call_result_hooks.get(result_tys).expect("no call_result hook for tys")));
+                    instrumented_body.push(Call(*call_post_hooks.get(result_tys).expect("no call_post hook for tys")));
                 }
                 CallIndirect(ref func_ty, _ /* table idx == 0 in WASM version 1 */) => {
                     let arg_tys = func_ty.params.as_slice();
@@ -462,7 +463,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.1,
                     ]);
                     instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &function));
-                    instrumented_body.push(Call(*call_result_hooks.get(result_tys).expect("no call_result hook for tys")));
+                    instrumented_body.push(Call(*call_post_hooks.get(result_tys).expect("no call_post hook for tys")));
                 }
 
 

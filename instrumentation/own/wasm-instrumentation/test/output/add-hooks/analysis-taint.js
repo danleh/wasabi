@@ -37,7 +37,6 @@ function if_(location, condition) {
     check("if", location, jsCondition, condition);
 }
 
-// TODO br/br_if: do not use stack of block stacks, but plain values, calculate statically how many values to drop
 function br(location, target) {
     const clearThisBlock = stack.peek().blocks.pop();
 }
@@ -71,18 +70,18 @@ function end(location, type, beginLocation) {
     }
 }
 
-function drop(location) {
-    values().pop(); // FIXME cannot compare since wasm value would need monomorphization, which needs stack typing
+function drop(location, value) {
+    check("drop", location, values().pop(), value);
 }
 
-function select(location, condition) {
-    values().pop(); // FIXME cannot compare since wasm value would need monomorphization, which needs stack typing
-    values().pop(); // FIXME cannot compare since wasm value would need monomorphization, which needs stack typing
+function select(location, condition, first, second) {
+    check("select", location, values().pop(), second);
+    check("select", location, values().pop(), first);
     const jsCondition = values().pop() === 1;
     check("select", location, jsCondition, condition);
 }
 
-function call_(location, targetFunc, indirect, args) {
+function call_pre(location, targetFunc, indirect, args) {
     if (indirect) {
         const jsTargetTableIdx = values().pop();
         check("call_indirect table idx", location, jsTargetTableIdx, targetFunc);
@@ -99,7 +98,7 @@ function call_(location, targetFunc, indirect, args) {
     });
 }
 
-function call_result_(location, vals) {
+function call_post(location, vals) {
     // clear stack frame
     stack.pop();
     for (const val of vals) {

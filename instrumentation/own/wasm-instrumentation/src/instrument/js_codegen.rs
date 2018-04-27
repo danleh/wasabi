@@ -149,21 +149,23 @@ impl Instr {
                                           tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("result".to_string() + &i.to_string()), *ty))).collect::<String>(),
                                           tys.iter().enumerate().map(|(i, ty)| long(&("result".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(", "),
                 );
-                // FIXME dirty hack: add also post call (call_result) hooks here, since they are based on the same type information
-                // FIXME because of replace() the hook name is "call_result_" instead of more natural "call_result"
-                // FIXME no difference between call_result and call_indirect_result
-                return_hook.clone() + "\n" + &return_hook.replace("return", "call_result")
+                return_hook.clone()
+                    + "\n"
+                    + &return_hook
+                    // quick&dirty hack: call_post hook has same signature as return, so generate it just by textual replacement
+                    .replace("return", "call_post")
+                    // remove trailing underscore because of textual replacement
+                    .replace("call_post_({", "call_post({")
             }
-            // TODO rename to call_pre and the call_result -> call_post
             Call(_) => format!("{}: function(func, instr, targetFunc{}) {{
-    call_({{func, instr}}, targetFunc, false, [{}]);
+    call_pre({{func, instr}}, targetFunc, false, [{}]);
 }},",
                                hook_name,
                                tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("arg".to_string() + &i.to_string()), *ty))).collect::<String>(),
                                tys.iter().enumerate().map(|(i, ty)| long(&("arg".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(", "),
             ),
             CallIndirect(_, _) => format!("{}: function(func, instr, targetTableIdx{}) {{
-    call_({{func, instr}}, Wasabi.resolveTableIdx(targetTableIdx), true, [{}]);
+    call_pre({{func, instr}}, Wasabi.resolveTableIdx(targetTableIdx), true, [{}]);
 }},",
                                           hook_name,
                                           tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("arg".to_string() + &i.to_string()), *ty))).collect::<String>(),

@@ -2,6 +2,18 @@
  * User-facing API for dynamic analyses.
  */
 
+function start(location) {
+    console.log(location, "start");
+}
+
+function nop(location) {
+    console.log(location, "nop");
+}
+
+function unreachable(location) {
+    console.log(location, "unreachable");
+}
+
 function if_(location, condition) {
     console.log(location, "if, condition =", condition);
 }
@@ -26,14 +38,6 @@ function end(location, type, beginLocation) {
     console.log(location, "end", type, "(begin @", beginLocation, ")");
 }
 
-function nop(location) {
-    console.log(location, "nop");
-}
-
-function unreachable(location) {
-    console.log(location, "unreachable");
-}
-
 function drop(location, value) {
     console.log(location, "drop, value =", value);
 }
@@ -42,16 +46,16 @@ function select(location, cond, first, second) {
     console.log(location, "select, condition =", cond, "first =", first, "second =", second);
 }
 
-function call_(location, targetFunc, indirect, args) {
+function call_pre(location, targetFunc, indirect, args) {
     console.log(location, (indirect ? "indirect" : "direct"), "call", "to func #", targetFunc, "args =", args);
+}
+
+function call_post(location, values) {
+    console.log(location, "call result =", values);
 }
 
 function return_(location, values) {
     console.log(location, "return, values = ", values);
-}
-
-function call_result_(location, values) {
-    console.log(location, "call result =", values);
 }
 
 function const_(location, value) {
