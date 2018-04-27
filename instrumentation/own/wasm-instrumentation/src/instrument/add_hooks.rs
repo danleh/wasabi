@@ -11,10 +11,17 @@ use super::type_stack::TypeStack;
 /// instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, other
 /// relevant information.
 pub fn add_hooks(module: &mut Module) -> Option<String> {
-    // export the table for the JS code to translate table indices -> function indices
+    /* make sure every function and table is exported,
+     * needed for Wasabi runtime to resolve table indices to function indices
+     */
     for table in &mut module.tables {
         if let None = table.export {
-            table.export = Some("table".into());
+            table.export = Some("wasabi_table".into());
+        }
+    }
+    for (fidx, function) in module.functions() {
+        if let None = function.export {
+            function.export = Some(format!("wasabi_function_{}", fidx.0));
         }
     }
 
@@ -188,6 +195,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
         // TODO add implicit return hook, so that the results can be observed, even when no explicit
         // return instruction is given
+        // reuse existing return hook, just make instr === -1 to signal that it was not present in the original binary
 
         for (iidx, instr) in original_body.into_iter().enumerate() {
             let iidx: Idx<Instr> = iidx.into();
