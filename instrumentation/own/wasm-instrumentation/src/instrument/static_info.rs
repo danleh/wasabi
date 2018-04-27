@@ -6,8 +6,9 @@ use super::block_stack::BlockStack;
 pub struct ModuleInfo {
     pub functions: Vec<FunctionInfo>,
     pub globals: Vec<ValType>,
+    pub start: Option<Idx<Function>>,
     #[serde(rename = "tableExportName")]
-    pub table_export_name: String,
+    pub table_export_name: Option<String>,
     #[serde(rename = "brTables")]
     pub br_tables: Vec<BrTableInfo>,
 }
@@ -17,16 +18,9 @@ impl<'a> From<&'a Module> for ModuleInfo {
         ModuleInfo {
             functions: module.functions.iter().map(Into::into).collect(),
             globals: module.globals.iter().map(|g| g.type_.0).collect(),
-// FIXME table evaluation/constexpr eval
-//            table: module.tables.iter()
-//                .flat_map(|table| table.elements.clone())
-//                .map(|element| {
-//                    eprintln!("{:?}", element.offset);
-//                    eprintln!("{:?}", module.eval_const_expr(&element.offset));
-//                    0usize
-//                }).collect(),
-            // FIXME what happens if the module has no table?
-            table_export_name: module.tables.get(0).and_then(|table| table.export.clone()).unwrap_or("".into()),
+            start: module.start,
+            // if the module has no table, there cannot be a call_indirect, so this null will never be read from JS runtime
+            table_export_name: module.tables.get(0).and_then(|table| table.export.clone()),
             br_tables: vec![],
         }
     }
