@@ -45,8 +45,12 @@ let Wasabi = {
         return funcIdx;
     },
 
-    // add "info" and "lowlevelHooks" at instrumentation time, add "exports" and "table" after instantiation
-    module: {},
+    module: {
+        // filled at instrumentation time
+        info: {}, lowlevelHooks: {},
+        // filled after instantiation
+        exports: undefined, table: undefined,
+    },
 };
 
 // provide analysis callback stubs if they were not defined by the user
@@ -78,6 +82,6 @@ for (const hook of Wasabi.HOOK_NAMES) {
         return result;
     };
 
-    // TODO patch instantiateStreaming
-    // TODO patch WebAssembly.Instance to throw error (Chrome does not support it >4KB modules anyway, so we cannot execute Wasabi synchronously)
+    // TODO patch WebAssembly.instantiateStreaming()
+    // TODO patch new WebAssembly.Instance() to throw error (Chrome does not support it for >4KB modules anyway, so we cannot execute Wasabi itself synchronously)
 }
