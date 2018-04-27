@@ -35,8 +35,14 @@ let Wasabi = {
             return undefined;
         }
 
-        // TODO implement
-        return 0;
+        // find which export matches the function object in the table
+        let func = Wasabi.module.table.get(tableIdx);
+        let [funcExportName, _x] = Object.entries(Wasabi.module.exports).find(([funcName, funcObject]) => funcObject === func);
+
+        // map exported function name back to function index
+        let funcIdx = Wasabi.module.info.functions.findIndex(func => func.export === funcExportName);
+        if (funcIdx < 0) throw `could not find ${funcExportName} in module exports, but every function should be exported by Wasabi?`;
+        return funcIdx;
     },
 
     // add "info" and "lowlevelHooks" at instrumentation time, add "exports" and "table" after instantiation
