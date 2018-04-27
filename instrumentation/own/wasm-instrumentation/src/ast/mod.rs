@@ -11,9 +11,6 @@ pub mod convert;
 
 /* AST nodes common to high- and low-level representations. */
 
-// TODO streaming AST: replace Vec's with iterators, where possible, in particular: Expr
-// TODO avoid high-level/low-level split, read to high-level directly
-
 
 /* Types */
 
