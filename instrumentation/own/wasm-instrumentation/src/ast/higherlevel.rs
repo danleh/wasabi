@@ -28,8 +28,8 @@ enum Instr {
     Load(ValType, Option<LoadSize>, Memarg),
     Store(ValType, Option<StoreSize>, Memarg),
 
-    CurrentMemory(Idx<Memory>),
-    GrowMemory(Idx<Memory>),
+    MemorySize(Idx<Memory>),
+    MemoryGrow(Idx<Memory>),
 
     Const(Val),
     Unary(UnaryOp),
