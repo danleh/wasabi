@@ -1,14 +1,11 @@
-#![feature(attr_literals, specialization, test, core_intrinsics, from_ref, slice_patterns)]
-#![allow(dead_code, unused_imports)]
+#![feature(attr_literals, specialization, test, core_intrinsics, from_ref)]
+#![allow(dead_code)]
 
 extern crate byteorder;
 #[macro_use]
 extern crate custom_derive;
 #[macro_use]
 extern crate derive_new;
-extern crate itertools;
-#[macro_use]
-extern crate maplit;
 extern crate rayon;
 extern crate serde;
 #[macro_use]

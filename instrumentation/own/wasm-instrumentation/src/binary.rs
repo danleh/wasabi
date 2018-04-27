@@ -8,6 +8,9 @@ use std::io;
 use std::marker::PhantomData;
 use std::mem::size_of;
 
+/* Trait and impl for decoding/encoding between binary format (as per spec) and our own formats (see ast module) */
+
+
 pub trait WasmBinary: Sized {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self>;
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize>;
@@ -238,7 +241,7 @@ impl WasmBinary for Module {
     }
 }
 
-/// needs manual impl because of block handling
+/// needs manual impl because of block handling: End op-code terminates body, but only if block stack is empty
 impl WasmBinary for Expr {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let mut instructions = Vec::new();

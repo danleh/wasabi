@@ -1,9 +1,6 @@
 use ast::*;
-use ast::highlevel::Instr::*;
-use ast::ValType::*;
 use binary::WasmBinary;
 use instrument::{add_hooks, direct::*};
-use serde_json;
 use std::fs::{create_dir_all, File};
 use std::io::{self, Cursor, Read, sink, Write, BufWriter};
 use std::path::{Path, PathBuf};

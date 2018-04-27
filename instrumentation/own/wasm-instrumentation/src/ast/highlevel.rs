@@ -1,6 +1,4 @@
 use std::collections::HashSet;
-use std::iter::empty;
-use std::slice::Iter;
 use super::*;
 use super::ValType::*;
 

@@ -1,6 +1,5 @@
 use binary::WasmBinary;
 use serde::{Serialize, Serializer};
-use std::cmp::Ordering;
 use std::fmt::{self, Write};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;

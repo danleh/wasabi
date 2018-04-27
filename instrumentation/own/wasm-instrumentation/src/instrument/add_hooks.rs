@@ -1,6 +1,6 @@
-use ast::{FunctionType, GlobalType, Idx, Label, Limits, Local, Memarg, MemoryType, Mutability, ValType, ValType::*, BlockType};
-use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGroup::*, Memory, Module, Global};
-use std::collections::{HashMap, HashSet};
+use ast::{FunctionType, GlobalType, Idx, Local, Memarg, Mutability, ValType, ValType::*, BlockType};
+use ast::highlevel::{Function, Instr, Instr::*, InstrGroup::*, Module, Global};
+use std::collections::HashMap;
 use std::mem::{discriminant, Discriminant};
 use super::block_stack::{BlockStack, BlockStackElement};
 use super::convert_i64::{convert_i64_instr, convert_i64_type};

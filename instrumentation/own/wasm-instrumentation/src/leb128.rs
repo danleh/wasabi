@@ -27,7 +27,7 @@ macro_rules! impl_leb128_integer {
         impl<R: io::Read> ReadLeb128<$T> for R {
             fn read_leb128(&mut self) -> io::Result<$T> {
                 let mut value = 0;
-                // useful if you want to preserve length when encoding this LEB128 again (not here)
+                // useful if you want to preserve length when encoding this LEB128 again (unused currently though)
                 let mut _bytes_read = 0;
                 let mut shift = 0;
                 let mut byte = 0x80;
@@ -85,6 +85,6 @@ impl_leb128_integer!(usize);
 impl_leb128_integer!(i32);
 impl_leb128_integer!(i64);
 
-// for testing
+// for testing, can be exhaustively checked for correctness
 impl_leb128_integer!(u16);
 impl_leb128_integer!(i16);
