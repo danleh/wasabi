@@ -6,8 +6,9 @@ use super::block_stack::BlockStack;
 pub struct ModuleInfo {
     pub functions: Vec<FunctionInfo>,
     pub globals: Vec<ValType>,
+    #[serde(rename = "tableExportName")]
     pub table_export_name: String,
-    //    pub table: Vec<usize>,
+    #[serde(rename = "brTables")]
     pub br_tables: Vec<BrTableInfo>,
 }
 
@@ -24,6 +25,7 @@ impl<'a> From<&'a Module> for ModuleInfo {
 //                    eprintln!("{:?}", module.eval_const_expr(&element.offset));
 //                    0usize
 //                }).collect(),
+            // FIXME what happens if the module has no table?
             table_export_name: module.tables.get(0).and_then(|table| table.export.clone()).unwrap_or("".into()),
             br_tables: vec![],
         }

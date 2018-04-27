@@ -65,6 +65,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
         }).collect();
 
     // monomorphic hooks:
+    // TODO start hook, also resolve table there?
+
     // - 1 hook : 1 instruction
     // - argument/result types are directly determined from the instruction itself
     let if_hook = add_hook(module, "if_", &[/* condition */ I32]);
@@ -633,7 +635,7 @@ fn add_hook(module: &mut Module, name: impl Into<String>, arg_tys_: &[ValType]) 
     module.add_function_import(
         // hooks do not return anything
         FunctionType::new(arg_tys, vec![]),
-        "hooks".into(),
+        "wasabi_hooks".into(),
         name.into())
 }
 

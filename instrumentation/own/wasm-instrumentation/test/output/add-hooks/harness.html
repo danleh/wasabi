@@ -1,26 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
- 	<head><meta charset="utf-8"></head>
- 	<body>
-		<script src="call-indirect.js"></script>
-		<script src="long.js"></script>
-		<script src="wasabi.js"></script>
-        <script src="analysis-log-all.js"></script>
-		<script type="text/javascript">
-			// "async main"
-			(async function() {
-				let importObject = {
-					imports: {
-						output: console.log,
-					}
-				};
+<head>
+    <meta charset="utf-8">
+</head>
+<body>
+<script src="long.js"></script>
+<script src="wasabi.js"></script>
+<script src="call-indirect.js"></script>
+<script src="analysis-log-all.js"></script>
+<script type="text/javascript">
+    // "async main"
+    (async () => {
+        let importObject = {
+            imports: {
+                output: console.log,
+            }
+        };
 
-				let {module, instance} = await fetch("call-indirect.wasm")
-					.then(response => response.arrayBuffer())
-					.then(arrayBuffer => WebAssembly.instantiate(arrayBuffer, importObject));
+        let {module, instance} = await fetch("call-indirect.wasm")
+            .then(response => response.arrayBuffer())
+            .then(arrayBuffer => WebAssembly.instantiate(arrayBuffer, importObject));
 
-				// instance.exports.main();
-			})();
-		</script>
-	</body>
+        // instance.exports.main();
+    })();
+</script>
+</body>
 </html>

@@ -9,9 +9,9 @@ pub fn js_codegen(module_info: ModuleInfo, on_demand_hooks: &[String]) -> String
  * DO NOT EDIT.
  */
 
-const moduleInfo = {};
+Wasabi.module.info = {};
 
-const lowlevelHooks = {{
+Wasabi.module.lowlevelHooks = {{
 {}{}
 }};
 "#,
@@ -78,7 +78,7 @@ const lowlevelHooks = {{
         br_table({
             func,
             instr
-        }, moduleInfo.br_tables[br_table_info_idx].table, moduleInfo.br_tables[br_table_info_idx].default, table_idx);
+        }, Wasabi.module.info.brTables[br_table_info_idx].table, Wasabi.module.info.brTables[br_table_info_idx].default, table_idx);
     },
 
     // generated:
@@ -160,7 +160,7 @@ impl Instr {
                                tys.iter().enumerate().map(|(i, ty)| long(&("arg".to_string() + &i.to_string()), *ty)).collect::<Vec<String>>().join(", "),
             ),
             CallIndirect(_, _) => format!("{}: function(func, instr, targetTableIdx{}) {{
-    call_({{func, instr}}, resolveTableIdx(targetTableIdx), true, [{}]);
+    call_({{func, instr}}, Wasabi.resolveTableIdx(targetTableIdx), true, [{}]);
 }},",
                                           hook_name,
                                           tys.iter().enumerate().map(|(i, ty)| format!(", {}", arg(&("arg".to_string() + &i.to_string()), *ty))).collect::<String>(),
