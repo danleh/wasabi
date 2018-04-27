@@ -16,7 +16,11 @@ Wasabi.module.lowlevelHooks = {{
 }};
 "#,
             serde_json::to_string_pretty(&module_info).unwrap(),
-            r#"    // trivial
+            r#"
+    start: function(func, instr) {
+        start({func, instr});
+    },
+
     nop: function (func, instr) {
         nop({func, instr});
     },
@@ -24,7 +28,6 @@ Wasabi.module.lowlevelHooks = {{
         unreachable({func, instr});
     },
 
-    // memory
     memory_size: function (func, instr, currentSizePages) {
         memory_size({func, instr}, currentSizePages);
     },

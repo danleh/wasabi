@@ -1,5 +1,5 @@
-use ast::{FunctionType, GlobalType, Idx, Label, Limits, Local, Memarg, MemoryType, Mutability, ValType, ValType::*};
-use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGroup::*, Memory, Module};
+use ast::{FunctionType, GlobalType, Idx, Label, Limits, Local, Memarg, MemoryType, Mutability, ValType, ValType::*, BlockType};
+use ast::highlevel::{Code, Expr, Function, Instr, Instr::*, InstrGroup, InstrGroup::*, Memory, Module, Global};
 use std::collections::{HashMap, HashSet};
 use std::mem::{discriminant, Discriminant};
 use super::block_stack::{BlockStack, BlockStackElement};
@@ -11,7 +11,8 @@ use super::type_stack::TypeStack;
 /// instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, other
 /// relevant information.
 pub fn add_hooks(module: &mut Module) -> Option<String> {
-    /* make sure every function and table is exported,
+    /*
+     * make sure every function and table is exported,
      * needed for Wasabi runtime to resolve table indices to function indices
      */
     for table in &mut module.tables {
@@ -24,6 +25,16 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
             function.export = Some(format!("wasabi_function_{}", fidx.0));
         }
     }
+    // add global for start, set to false on the first execution of the start function
+    let start_not_executed_global = {
+        module.globals.push(Global {
+            type_: GlobalType(I32, Mutability::Mut),
+            init: Some(vec![I32Const(1), End]),
+            import: None,
+            export: None,
+        });
+        module.globals.len() - 1
+    };
 
     let mut module_info: ModuleInfo = (&*module).into();
     // TODO use something more meaningful than Strings, e.g., a LowlevelHook struct or so...
@@ -72,10 +83,9 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
         }).collect();
 
     // monomorphic hooks:
-    // TODO start hook, also resolve table there?
-
     // - 1 hook : 1 instruction
     // - argument/result types are directly determined from the instruction itself
+    let start_hook = add_hook(module, "start", &[]);
     let if_hook = add_hook(module, "if_", &[/* condition */ I32]);
     // [I32, I32] for label and target instruction index (determined statically)
     let br_hook = add_hook(module, "br", &[I32, I32]);
@@ -185,9 +195,23 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
         let mut block_stack = BlockStack::new(&original_body);
         let mut type_stack = TypeStack::new();
 
+        // execute start hook before anything else (if this is the start function and it hasn't run yet)
+        if module_info.start == Some(fidx) {
+            instrumented_body.extend_from_slice(&[
+                GetGlobal(start_not_executed_global.into()),
+                If(BlockType(None)),
+                I32Const(0),
+                SetGlobal(start_not_executed_global.into()),
+                fidx.into(),
+                I32Const(-1),
+                Call(start_hook),
+                End,
+            ]);
+        }
+
         // add function_begin hook...
         instrumented_body.extend_from_slice(&[
-            I32Const(fidx.0 as i32),
+            fidx.into(),
             // ...which does not correspond to any instruction, so take -1 as instruction index
             I32Const(-1),
             Call(begin_function_hook)
