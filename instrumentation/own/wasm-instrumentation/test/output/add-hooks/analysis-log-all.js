@@ -55,7 +55,7 @@ function call_post(location, values) {
 }
 
 function return_(location, values) {
-    console.log(location, "return, values = ", values);
+    console.log(location, (location.instr === -1) ? "implicit" : "explicit","return, values = ", values);
 }
 
 function const_(location, value) {
