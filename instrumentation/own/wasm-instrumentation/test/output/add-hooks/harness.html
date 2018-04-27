@@ -21,7 +21,10 @@
             .then(response => response.arrayBuffer())
             .then(arrayBuffer => WebAssembly.instantiate(arrayBuffer, importObject));
 
-        // instance.exports.main();
+
+        console.debug("instantiated...");
+
+        instance.exports.f();
     })();
 </script>
 </body>
