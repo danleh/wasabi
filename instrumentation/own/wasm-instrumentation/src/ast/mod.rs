@@ -4,12 +4,31 @@ use std::fmt::{self, Write};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 
+mod higherlevel;
 pub mod highlevel;
 pub mod lowlevel;
 pub mod convert;
 
 /* AST nodes common to high- and low-level representations. */
 
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+enum Val {
+    I32(i32),
+    I64(i64),
+    F32(f32),
+    F64(f64),
+}
+
+impl Val {
+    fn to_type(&self) -> ValType {
+        match *self {
+            Val::I32(_) => ValType::I32,
+            Val::I64(_) => ValType::I64,
+            Val::F32(_) => ValType::F32,
+            Val::F64(_) => ValType::F64,
+        }
+    }
+}
 
 /* Types */
 
