@@ -13,7 +13,7 @@ use test::Bencher;
 #[test]
 #[ignore]
 fn debug() {
-    let file = "test/input/call-indirect.wasm";
+    let file = "test/input/hello-emcc.wasm";
     let _module = highlevel::Module::from_file(file).unwrap();
 //    println!("{}", serde_json::to_string(&module.functions[0].to_info()).unwrap())
 //    println!("{:?}", module);

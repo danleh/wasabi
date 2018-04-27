@@ -21,7 +21,6 @@
             .then(response => response.arrayBuffer())
             .then(arrayBuffer => WebAssembly.instantiate(arrayBuffer, importObject));
 
-
         console.debug("instantiated...");
 
         instance.exports.f();

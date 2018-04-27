@@ -27,12 +27,17 @@ Wasabi.module.info = {
     }
   ],
   "globals": [],
+  "start": 0,
   "tableExportName": "wasabi_table",
   "brTables": []
 };
 
 Wasabi.module.lowlevelHooks = {
-    // trivial
+
+    start: function(func, instr) {
+        start({func, instr});
+    },
+
     nop: function (func, instr) {
         nop({func, instr});
     },
@@ -40,7 +45,6 @@ Wasabi.module.lowlevelHooks = {
         unreachable({func, instr});
     },
 
-    // memory
     memory_size: function (func, instr, currentSizePages) {
         memory_size({func, instr}, currentSizePages);
     },
@@ -101,8 +105,8 @@ Wasabi.module.lowlevelHooks = {
     return_: function(func, instr) {
         return_({func, instr}, []);
     },
-    call_result_: function(func, instr) {
-        call_result_({func, instr}, []);
+    call_post_: function(func, instr) {
+        call_post({func, instr}, []);
     },
     get_local_i32: function(func, instr, index, v) {
         local({func, instr}, "get", index, v);
@@ -189,10 +193,10 @@ Wasabi.module.lowlevelHooks = {
         select({func, instr}, condition === 1, first, second);
     },
     call_: function(func, instr, targetFunc) {
-        call_({func, instr}, targetFunc, false, []);
+        call_pre({func, instr}, targetFunc, false, []);
     },
     call_indirect_: function(func, instr, targetTableIdx) {
-        call_({func, instr}, Wasabi.resolveTableIdx(targetTableIdx), true, []);
+        call_pre({func, instr}, Wasabi.resolveTableIdx(targetTableIdx), true, []);
     },
     i32_const: function (func, instr, v) {
         const_({func, instr}, v);
