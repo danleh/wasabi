@@ -1,4 +1,4 @@
-use ast::highlevel::{Instr, Instr::*, InstrGroup};
+use ast::highlevel::Instr::{self, *};
 use ast::ValType::{self, *};
 use serde_json;
 use super::static_info::ModuleInfo;
@@ -93,53 +93,53 @@ Wasabi.module.lowlevelHooks = {{
 /// "generate" quick and dirty the low-level JavaScript hook function from an instruction
 impl Instr {
     pub fn to_js_hook(&self) -> String {
-        let instr_name = self.to_instr_name();
-        match self.group() {
-            InstrGroup::Const(ty) => format!(
-                "{}: function (func, instr, {}) {{
+        let instr_name = self.to_name();
+        match (self, self.to_type()) {
+            (Const(val), _) => format!(
+                "\"{}\": function (func, instr, {}) {{
     const_({{func, instr}}, {});
 }},",
                 instr_name,
-                arg("v", ty), long("v", ty)
+                arg("v", val.to_type()), long("v", val.to_type())
             ),
-            InstrGroup::Numeric { ref input_tys, ref result_tys } if input_tys.len() == 1 => format!(
-                "{}: function (func, instr, {}, {}) {{
+            (Numeric(_), Some(ref ty)) if ty.inputs.len() == 1 => format!(
+                "\"{}\": function (func, instr, {}, {}) {{
     unary({{func, instr}}, \"{}\", {}, {});
 }},",
                 instr_name,
-                arg("input", input_tys[0]), arg("result", result_tys[0]),
+                arg("input", ty.inputs[0]), arg("result", ty.results[0]),
                 instr_name,
-                long("input", input_tys[0]), long("result", result_tys[0])),
-            InstrGroup::Numeric { ref input_tys, ref result_tys } if input_tys.len() == 2 => format!(
-                "{}: function (func, instr, {}, {}, {}) {{
+                long("input", ty.inputs[0]), long("result", ty.results[0])),
+            (Numeric(_), Some(ref ty)) if ty.inputs.len() == 2 => format!(
+                "\"{}\": function (func, instr, {}, {}, {}) {{
     binary({{func, instr}}, \"{}\", {}, {}, {});
 }},",
                 instr_name,
-                arg("first", input_tys[0]), arg("second", input_tys[1]), arg("result", result_tys[0]),
+                arg("first", ty.inputs[0]), arg("second", ty.inputs[1]), arg("result", ty.results[0]),
                 instr_name,
-                long("first", input_tys[0]), long("second", input_tys[1]), long("result", result_tys[0])),
-            InstrGroup::MemoryLoad(ty, _) => format!(
-                "{}: function (func, instr, offset, align, addr, {}) {{
+                long("first", ty.inputs[0]), long("second", ty.inputs[1]), long("result", ty.results[0])),
+            (Load(_, _), Some(ty)) => format!(
+                "\"{}\": function (func, instr, offset, align, addr, {}) {{
     load({{func, instr}}, \"{}\", {{addr, offset, align}}, {});
 }},",
                 instr_name,
-                arg("v", ty),
+                arg("v", ty.results[0]),
                 instr_name,
-                long("v", ty)),
-            InstrGroup::MemoryStore(ty, _) => format!(
-                "{}: function (func, instr, offset, align, addr, {}) {{
+                long("v", ty.results[0])),
+            (Store(_, _), Some(ty)) => format!(
+                "\"{}\": function (func, instr, offset, align, addr, {}) {{
     store({{func, instr}}, \"{}\", {{addr, offset, align}}, {});
 }},",
                 instr_name,
-                arg("v", ty),
+                arg("v", ty.inputs[0]),
                 instr_name,
-                long("v", ty)),
+                long("v", ty.inputs[0])),
             _ => unimplemented!("cannot generate JS hook code for instruction {}", instr_name)
         }
     }
 
     pub fn to_poly_js_hook(&self, tys: &[ValType]) -> String {
-        let hook_name = append_mangled_tys(self.to_instr_name(), tys);
+        let hook_name = append_mangled_tys(self.to_name().to_string(), tys);
         match *self {
             Return => {
                 let return_hook = format!("{}: function(func, instr{}) {{
@@ -185,42 +185,23 @@ impl Instr {
                               arg("first", tys[0]), arg("second", tys[1]),
                               long("first", tys[0]), long("second", tys[1]),
             ),
-            GetLocal(_) => format!("{}: function(func, instr, index, {}) {{
-    local({{func, instr}}, \"get\", index, {});
+            Local(_, _) => format!("{}: function(func, instr, index, {}) {{
+    local({{func, instr}}, \"{}\", index, {});
 }},",
                                    hook_name,
                                    arg("v", tys[0]),
+                                   self.to_name(),
                                    long("v", tys[0])
             ),
-            SetLocal(_) => format!("{}: function(func, instr, index, {}) {{
-    local({{func, instr}}, \"set\", index, {});
-}},",
-                                   hook_name,
-                                   arg("v", tys[0]),
-                                   long("v", tys[0])
-            ),
-            TeeLocal(_) => format!("{}: function(func, instr, index, {}) {{
-    local({{func, instr}}, \"tee\", index, {});
-}},",
-                                   hook_name,
-                                   arg("v", tys[0]),
-                                   long("v", tys[0])
-            ),
-            GetGlobal(_) => format!("{}: function(func, instr, index, {}) {{
-    global({{func, instr}}, \"get\", index, {});
+            Global(_, _) => format!("{}: function(func, instr, index, {}) {{
+    global({{func, instr}}, \"{}\", index, {});
 }},",
                                     hook_name,
                                     arg("v", tys[0]),
+                                    self.to_name(),
                                     long("v", tys[0])
             ),
-            SetGlobal(_) => format!("{}: function(func, instr, index, {}) {{
-    global({{func, instr}}, \"set\", index, {});
-}},",
-                                    hook_name,
-                                    arg("v", tys[0]),
-                                    long("v", tys[0])
-            ),
-            _ => unimplemented!("cannot generate JS hook code for instruction {}", self.to_instr_name())
+            _ => unimplemented!("cannot generate JS hook code for instruction {}", self.to_name())
         }
     }
 }
@@ -229,6 +210,7 @@ impl Instr {
 /* helpers */
 
 /// e.g. "call" + [I32, F32] -> "call_i32_f32"
+// TODO change prefix to &str, concat slices and then join once
 pub fn append_mangled_tys(prefix: String, tys: &[ValType]) -> String {
     prefix + "_" + &tys.iter().map(|ty| ty.to_string()).collect::<Vec<_>>().join("_")
 }

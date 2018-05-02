@@ -158,17 +158,17 @@ function memory_grow(location, byPages, previousSizePages) {
 
 function local(location, op, localIndex, value) {
     switch (op) {
-        case "set":
+        case "set_local":
             const jsValue = values().pop();
-            check("set_local", location, jsValue, value);
+            check(op, location, jsValue, value);
             stack.peek().locals[localIndex] = value;
             return;
-        case "tee":
+        case "tee_local":
             const jsValue2 = values().peek();
-            check("tee_local", location, jsValue2, value);
+            check(op, location, jsValue2, value);
             stack.peek().locals[localIndex] = value;
             return;
-        case "get":
+        case "get_local":
             values().push(value);
             return;
     }
@@ -176,12 +176,12 @@ function local(location, op, localIndex, value) {
 
 function global(location, op, globalIndex, value) {
     switch (op) {
-        case "set":
+        case "set_global":
             const jsValue = values().pop();
-            check("set_global", location, jsValue, value);
+            check(op, location, jsValue, value);
             globals[globalIndex] = value;
             return;
-        case "get":
+        case "get_global":
             values().push(value);
             return;
     }

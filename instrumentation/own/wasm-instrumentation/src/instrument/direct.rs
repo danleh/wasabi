@@ -1,5 +1,5 @@
-use ast::{FunctionType, Mutability::*, ValType::*};
-use ast::highlevel::{Instr::*, Module};
+use ast::{FunctionType, Mutability, Val, ValType::*};
+use ast::highlevel::{Instr::*, Module, GlobalOp::*, NumericOp::*};
 
 /* trivial or "low-level" instrumentations, i.e., where the byte code is manually modified */
 
@@ -14,22 +14,22 @@ pub fn add_empty_function(module: &mut Module) -> Option<String> {
 }
 
 pub fn count_calls(module: &mut Module) -> Option<String> {
-    let counter = module.add_global(I32, Mut, vec![I32Const(0), End]);
+    let counter = module.add_global(I32, Mutability::Mut, vec![Const(Val::I32(0)), End]);
 
     let getter = module.add_function(
         FunctionType::new(vec![], vec![I32]),
         vec![],
-        vec![GetGlobal(counter), End]);
+        vec![Global(GetGlobal, counter), End]);
     module.function(getter).export = Some("get_counter".into());
 
     let increment = module.add_function(
         FunctionType::new(vec![], vec![]),
         vec![],
         vec![
-            GetGlobal(counter),
-            I32Const(1),
-            I32Add,
-            SetGlobal(counter),
+            Global(GetGlobal, counter),
+            Const(Val::I32(1)),
+            Numeric(I32Add),
+            Global(SetGlobal, counter),
             End
         ]);
 

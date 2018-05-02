@@ -1,4 +1,5 @@
-use ast::{ValType, ValType::*, highlevel::Instr, highlevel::Instr::*};
+use ast::{Val, ValType, ValType::*};
+use ast::highlevel::{Instr, Instr::*, NumericOp::*};
 use std::slice::from_ref;
 
 pub fn convert_i64_type(ty: &ValType) -> &[ValType] {
@@ -15,11 +16,11 @@ pub fn convert_i64_instr(instr: Instr, ty: ValType) -> Vec<Instr> {
     match ty {
         I64 => vec![
             instr.clone(),
-            I32WrapI64, // low bits
+            Numeric(I32WrapI64), // low bits
             instr,
-            I64Const(32), // shift high bits to the right
-            I64ShrS,
-            I32WrapI64, // high bits
+            Const(Val::I64(32)), // shift high bits to the right
+            Numeric(I64ShrS),
+            Numeric(I32WrapI64), // high bits
         ],
         _ => vec![instr],
     }

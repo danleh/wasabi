@@ -1,4 +1,4 @@
-use ast::{BlockType, ValType};
+use ast::{BlockType, ValType, InstrType};
 use self::TypeStackElement::*;
 
 #[derive(Debug)]
@@ -31,11 +31,11 @@ impl TypeStack {
     }
 
     /// convenience, pops and validates input_tys, then pushes the result_tys
-    pub fn instr(&mut self, input_tys: &[ValType], result_tys: &[ValType]) {
-        for &input_ty in input_tys.iter().rev() {
+    pub fn instr(&mut self, ty: &InstrType) {
+        for &input_ty in ty.inputs.iter().rev() {
             assert_eq!(input_ty, self.pop_val());
         }
-        for &result_ty in result_tys {
+        for &result_ty in ty.results.iter() {
             self.push_val(result_ty);
         }
     }
