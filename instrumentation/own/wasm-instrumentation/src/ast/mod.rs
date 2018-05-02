@@ -4,7 +4,7 @@ use std::fmt::{self, Write};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 
-mod higherlevel;
+pub mod higherlevel;
 pub mod highlevel;
 pub mod lowlevel;
 pub mod convert;
@@ -51,6 +51,8 @@ impl fmt::Display for ValType {
 
 #[derive(WasmBinary, Debug, PartialEq, Eq, Clone, Hash, Serialize, new)]
 #[tag = 0x60]
+// TODO also optimize: Box<[T]> instead of Vec<T>
+// TODO convert between InstrType <-> FunctionType
 pub struct FunctionType {
     pub params: Vec<ValType>,
     pub results: Vec<ValType>,

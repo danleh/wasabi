@@ -79,8 +79,8 @@ pub enum ExportType {
     #[tag = 0x3] Global(Idx<Global>),
 }
 
-// Markers for Idx<T>, since in low-level format Function, Table and Memory have not one type, but
-// are split over multiple sections.
+// Markers for Idx<T>, since in low-level format Function, Table, and Memory have not one type,
+// but are split over multiple sections.
 
 #[derive(Debug)]
 pub struct Function;

@@ -5,7 +5,7 @@ use self::{GlobalOp::*, LoadOp::*, LocalOp::*, StoreOp::*};
 // TODO replace highlevel::Instr with this and InstrGroup with InstrType
 
 #[derive(Debug, Clone, PartialEq)]
-enum Instr {
+pub enum Instr {
     Unreachable,
     Nop,
 
@@ -40,13 +40,13 @@ enum Instr {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-enum LocalOp { GetLocal, SetLocal, TeeLocal }
+pub enum LocalOp { GetLocal, SetLocal, TeeLocal }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-enum GlobalOp { GetGlobal, SetGlobal }
+pub enum GlobalOp { GetGlobal, SetGlobal }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-enum LoadOp {
+pub enum LoadOp {
     I32Load,
     I64Load,
     F32Load,
@@ -66,7 +66,7 @@ enum LoadOp {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-enum StoreOp {
+pub enum StoreOp {
     I32Store,
     I64Store,
     F32Store,
@@ -81,7 +81,7 @@ enum StoreOp {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-enum NumericOp {
+pub enum NumericOp {
     /* Unary */
     I32Eqz,
     I64Eqz,
@@ -233,8 +233,8 @@ enum NumericOp {
 pub struct InstrType {
     // use Box not Vec (saves the capacity field, i.e., smaller memory size) since InstrType is
     // almost always immutable anyway (i.e., no dynamic adding/removing of input/result types)
-    inputs: Box<[ValType]>,
-    results: Box<[ValType]>,
+    pub inputs: Box<[ValType]>,
+    pub results: Box<[ValType]>,
 }
 
 impl InstrType {
@@ -247,7 +247,7 @@ impl InstrType {
 }
 
 impl NumericOp {
-    fn to_type(&self) -> InstrType {
+    pub fn to_type(&self) -> InstrType {
         use self::NumericOp::*;
         match *self {
             /* Unary */
@@ -296,7 +296,7 @@ impl NumericOp {
 }
 
 impl LoadOp {
-    fn to_type(&self) -> InstrType {
+    pub fn to_type(&self) -> InstrType {
         match *self {
             I32Load => InstrType::new(&[], &[I32]),
             I64Load => InstrType::new(&[], &[I64]),
@@ -318,7 +318,7 @@ impl LoadOp {
 }
 
 impl StoreOp {
-    fn to_type(&self) -> InstrType {
+    pub fn to_type(&self) -> InstrType {
         match *self {
             I32Store => InstrType::new(&[I32], &[]),
             I64Store => InstrType::new(&[I64], &[]),
@@ -337,7 +337,7 @@ impl StoreOp {
 impl Instr {
     /// for all where the type can be determined by just looking at the instruction, not additional
     /// information like the function or module etc.
-    fn to_type(&self) -> Option<InstrType> {
+    pub fn to_type(&self) -> Option<InstrType> {
         use self::Instr::*;
         match *self {
             Unreachable | Nop => Some(InstrType::default()),
@@ -361,7 +361,8 @@ impl Instr {
         }
     }
 
-    fn to_name(&self) -> &'static str {
+    /// returns instruction name as in Wasm spec
+    pub fn to_name(&self) -> &'static str {
         use self::Instr::*;
         use self::NumericOp::*;
         match *self {

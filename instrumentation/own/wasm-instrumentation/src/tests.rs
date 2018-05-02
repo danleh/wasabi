@@ -10,6 +10,9 @@ use test::Bencher;
 #[test]
 #[ignore]
 fn debug() {
+//    use std::mem::size_of;
+//    println!("{}", size_of::<higherlevel::Funky>());
+
     let file = "test/input/hello-emcc.wasm";
     let _module = highlevel::Module::from_file(file).unwrap();
 //    println!("{}", serde_json::to_string(&module.functions[0].to_info()).unwrap())
