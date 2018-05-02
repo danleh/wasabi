@@ -67,24 +67,21 @@ impl InstrType {
     }
 }
 
-// convert between functions and instruction types
-
+// convert between function and instruction types
 impl<'a> From<&'a FunctionType> for InstrType {
     fn from(func: &FunctionType) -> Self {
         InstrType::new(&func.params, &func.results)
     }
 }
 
-// TODO convert between InstrType <-> FunctionType
-//impl<'a> From<&'a InstrType> for FunctionType {
-//    fn from(instr: &InstrType) -> Self {
-//        FunctionType::new(&func.params, &func.results)
-//    }
-//}
+impl<'a> From<&'a InstrType> for FunctionType {
+    fn from(instr: &InstrType) -> Self {
+        FunctionType::new(instr.inputs.to_vec(), instr.results.to_vec())
+    }
+}
 
 #[derive(WasmBinary, Debug, Clone, PartialEq, Eq, Hash, Serialize, new)]
 #[tag = 0x60]
-// TODO also optimize: Box<[T]> instead of Vec<T>
 pub struct FunctionType {
     pub params: Vec<ValType>,
     pub results: Vec<ValType>,
