@@ -3,6 +3,7 @@ use serde::{Serialize, Serializer};
 use std::fmt::{self, Write};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
+use std::cmp::Ordering;
 
 pub mod highlevel;
 pub mod lowlevel;
@@ -166,6 +167,18 @@ impl<T> Hash for Idx<T> {
 impl<T> Serialize for Idx<T> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.0.serialize(serializer)
+    }
+}
+
+impl<T> PartialOrd for Idx<T> {
+    fn partial_cmp(&self, other: &Idx<T>) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T> Ord for Idx<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&other.0)
     }
 }
 
