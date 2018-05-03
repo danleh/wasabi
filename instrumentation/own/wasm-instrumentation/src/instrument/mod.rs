@@ -11,3 +11,4 @@ mod js_codegen;
 mod static_info;
 mod block_stack;
 mod type_stack;
+mod hook_map;
