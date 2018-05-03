@@ -1,3 +1,5 @@
+// TODO move all other add_hooks related stuff below here
+
 use ast::{self, BlockType, FunctionType, GlobalType, Idx, InstrType, Memarg, Mutability, Val, ValType, ValType::*};
 use ast::highlevel::{Function, Global, GlobalOp::*, Instr, Instr::*, LoadOp::*, LocalOp::*, Module, NumericOp::*, StoreOp::*};
 use std::collections::HashMap;
