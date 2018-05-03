@@ -207,10 +207,9 @@ impl Instr {
 }
 
 
-/* helpers */
+/* quick & dirty helpers */
 
 /// e.g. "call" + [I32, F32] -> "call_i32_f32"
-// TODO change prefix to &str, concat slices and then join once
 pub fn append_mangled_tys(prefix: String, tys: &[ValType]) -> String {
     prefix + "_" + &tys.iter().map(|ty| ty.to_string()).collect::<Vec<_>>().join("_")
 }
