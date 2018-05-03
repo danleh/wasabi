@@ -1,4 +1,4 @@
-#![feature(attr_literals, specialization, test, core_intrinsics, from_ref)]
+#![feature(attr_literals, specialization, test, core_intrinsics, from_ref, fn_must_use)]
 #![allow(dead_code)]
 
 extern crate byteorder;
