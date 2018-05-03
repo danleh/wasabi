@@ -16,12 +16,12 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
      */
     for table in &mut module.tables {
         if let None = table.export {
-            table.export = Some("wasabi_table".into());
+            table.export = Some("__wasabi_table".into());
         }
     }
     for (fidx, function) in module.functions() {
         if let None = function.export {
-            function.export = Some(format!("wasabi_function_{}", fidx.0));
+            function.export = Some(format!("__wasabi_function_{}", fidx.0));
         }
     }
 
