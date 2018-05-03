@@ -12,7 +12,9 @@ pub struct Hook {
     args: Vec<ValType>,
     /// to-be function index in the module
     pub idx: Idx<Function>,
-    pub js_code: String,
+    highlevel_name: String,
+    js_lowlevel_args: String,
+    js_highlevel_args: String,
 }
 
 impl Hook {
@@ -30,6 +32,14 @@ impl Hook {
             code: None,
             export: None,
         }
+    }
+
+    pub fn to_js(&self) -> String {
+        format!("\"{}\": function (func, instr, {}) {{\n    {}({{func, instr}}, {});\n}}",
+                self.name,
+                self.js_lowlevel_args,
+                self.highlevel_name,
+                self.js_highlevel_args)
     }
 }
 
@@ -186,17 +196,17 @@ impl HookMap {
     }
 
     pub fn end_hook(&mut self, block: &BlockStackElement) -> Instr {
-        let (name, tys) = match *block {
+        let (name, tys, js_code) = match *block {
             // function begin is implicit anyway, so no hook argument
-            BlockStackElement::Function { .. } => ("end_function", vec![]),
+            BlockStackElement::Function { .. } => ("end_function", vec![], r#"end_function: function (func, instr) { end({func, instr}, "function", {func, instr: -1}); }"#),
             // matching begin instruction index
-            BlockStackElement::Block { .. } => ("end_block", vec![I32]),
+            BlockStackElement::Block { .. } => ("end_block", vec![I32], r#"end_block: function (func, instr, begin_instr) { end({func, instr}, "block", {func, instr: begin_instr}); }"#),
             BlockStackElement::Loop { .. } => ("end_loop", vec![I32]),
             BlockStackElement::If { .. } => ("end_if", vec![I32]),
             // instruction index of matching if, instruction index of matching else
             BlockStackElement::Else { .. } => ("end_else", vec![I32, I32]),
         };
-        self.get_or_insert_hook(name, tys, "") // FIXME
+        self.get_or_insert_hook(name, tys, js_code)
     }
 
 
@@ -205,6 +215,7 @@ impl HookMap {
     /// returns a Call instruction to the hook, which either
     /// A) was freshly generated, since it was not requested with these types before,
     /// B) came from the internal hook map.
+    // TODO build js_code from the three new fields, do not use lowlevel string
     fn get_or_insert_hook(&mut self, name: impl Into<String>, args: Vec<ValType>, js_code: impl Into<String>) -> Instr {
         let name = name.into();
         let hook_count = self.map.len();
