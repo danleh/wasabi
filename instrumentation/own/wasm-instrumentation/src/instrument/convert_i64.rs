@@ -9,9 +9,9 @@ pub fn convert_i64_type(ty: &ValType) -> &[ValType] {
     }
 }
 
-// instr is assumed to have no side-effects or influences on the stack (other than pushing one value)
-// so that we can execute it safely twice (once for lower and higher bit half).
-// ty is necessary when the type cannot be determined only from the instr, e.g., for GetLocal
+/// instr is assumed to have no side-effects or influences on the stack (other than pushing one value)
+/// so that we can execute it safely twice (once for lower and higher bit half).
+/// ty is necessary when the type cannot be determined only from the instr, e.g., for GetLocal
 pub fn convert_i64_instr(instr: Instr, ty: ValType) -> Vec<Instr> {
     match ty {
         I64 => vec![
