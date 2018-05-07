@@ -1,11 +1,17 @@
 use ast::{self, BlockType, GlobalType, Idx, InstrType, Mutability, Val, ValType::*};
 use ast::highlevel::{Function, Global, GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
+use self::block_stack::{BlockStack, BlockStackElement};
+use self::convert_i64::convert_i64_instr;
+use self::hook_map::HookMap;
+use self::static_info::*;
+use self::type_stack::TypeStack;
 use serde_json;
-use super::block_stack::{BlockStack, BlockStackElement};
-use super::convert_i64::convert_i64_instr;
-use super::hook_map::HookMap;
-use super::static_info::*;
-use super::type_stack::TypeStack;
+
+mod convert_i64;
+mod static_info;
+mod block_stack;
+mod type_stack;
+mod hook_map;
 
 /// instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, and
 /// other relevant information.
