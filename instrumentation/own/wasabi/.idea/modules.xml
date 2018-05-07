@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/wasm-instrumentation.iml" filepath="$PROJECT_DIR$/wasm-instrumentation.iml" />
+      <module fileurl="file://$PROJECT_DIR$/wasabi.iml" filepath="$PROJECT_DIR$/wasabi.iml" />
     </modules>
   </component>
 </project>
