@@ -70,7 +70,7 @@ for (const hook of Wasabi.HOOK_NAMES) {
         }
 
         let importObjectWithHooks = importObject || {};
-        importObjectWithHooks.wasabi_hooks = Wasabi.module.lowlevelHooks;
+        importObjectWithHooks.__wasabi_hooks = Wasabi.module.lowlevelHooks;
 
         const result = oldInstantiate(sourceBuffer, importObjectWithHooks);
         // as soon as instance is available, save exports and table
