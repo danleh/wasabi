@@ -1,7 +1,8 @@
-use ast::{self, BlockType, GlobalType, Idx, InstrType, Mutability, Val, ValType::*};
-use ast::highlevel::{Function, Global, GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
+use ast::{BlockType, GlobalType, Idx, InstrType, Mutability, Val, ValType::*};
+use ast::highlevel::{Global, GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
 use self::block_stack::{BlockStack, BlockStackElement};
 use self::convert_i64::convert_i64_instr;
+use self::duplicate_stack::*;
 use self::hook_map::HookMap;
 use self::static_info::*;
 use self::type_stack::TypeStack;
@@ -12,6 +13,7 @@ mod static_info;
 mod block_stack;
 mod type_stack;
 mod hook_map;
+mod duplicate_stack;
 
 /// instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, and
 /// other relevant information.
@@ -553,34 +555,6 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
     }
 
     Some(generate_js(module_info, &js_hooks))
-}
-
-/// helper function to save top locals.len() values into locals with the given index
-/// types of locals must match stack, not enforced by this function!
-fn save_stack_to_locals(locals: &[Idx<ast::Local>]) -> Vec<Instr> {
-    let mut instrs = Vec::new();
-    // copy stack values into locals
-    for &local in locals.iter().skip(1).rev() {
-        instrs.push(Local(SetLocal, local));
-    }
-    // optimization: for first local on the stack / last one saved use tee_local instead of set_local + get_local
-    for &local in locals.iter().next() {
-        instrs.push(Local(TeeLocal, local));
-    }
-    // and restore (saving has removed them from the stack)
-    for &local in locals.iter().skip(1) {
-        instrs.push(Local(GetLocal, local));
-    }
-    return instrs;
-}
-
-/// function is necessary to get the types of the locals
-fn restore_locals_with_i64_handling(locals: &[Idx<ast::Local>], function: &Function) -> Vec<Instr> {
-    let mut instrs = Vec::new();
-    for &local in locals {
-        instrs.append(&mut convert_i64_instr(Local(GetLocal, local), function.local_type(local)));
-    }
-    return instrs;
 }
 
 /// convenience to hand (function/instr/local/global) indices to hooks
