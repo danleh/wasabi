@@ -24,6 +24,8 @@ fn debug() {
 
 /* Correctness tests */
 
+// TODO move these tests into their appropriate cargo projects
+
 #[test]
 fn can_lowlevel_decode_valid_wasm() {
     for path in wasm_files("test/input") {
