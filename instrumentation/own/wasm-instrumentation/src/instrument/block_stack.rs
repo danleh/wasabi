@@ -1,6 +1,6 @@
 use ast::{highlevel::Instr, Idx, Label};
-use std::collections::HashMap;
 use self::BlockStackElement::*;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct BlockStack {
@@ -31,7 +31,7 @@ pub enum BlockStackElement {
         begin_if: Idx<Instr>,
         begin_else: Idx<Instr>,
         end: Idx<Instr>,
-    }
+    },
 }
 
 impl BlockStack {
@@ -63,6 +63,8 @@ impl BlockStack {
         }
     }
 
+    // TODO is there a way to avoid the begin_<blockkind> functions here and in hook_map (and in type_stack?) maybe through "externalizing the Block enum?
+
     pub fn begin_block(&mut self, begin: Idx<Instr>) {
         self.block_stack.push(Block {
             begin,
@@ -87,7 +89,7 @@ impl BlockStack {
             If {
                 begin_if,
                 begin_else: Some(end_or_else),
-                end
+                end,
             }
         } else {
             If {
@@ -100,13 +102,15 @@ impl BlockStack {
     }
 
     /// returns instruction index of the matching if begin
-    pub fn else_(&mut self) -> Idx<Instr> {
+    pub fn else_(&mut self) -> BlockStackElement {
         match self.block_stack.pop() {
-            Some(If { begin_if, begin_else: Some(begin_else), end }) => {
-                self.block_stack.push(Else { begin_if, begin_else, end });
-                begin_if
+            Some(block_element) => match block_element {
+                If { begin_if, begin_else: Some(begin_else), end } => {
+                    self.block_stack.push(Else { begin_if, begin_else, end });
+                    block_element
+                }
+                block => panic!("invalid block nesting: expected if with else on block stack, but got {:?}", block),
             }
-            Some(block) => panic!("invalid block nesting: expected if with else on block stack, but got {:?}", block),
             None => panic!("invalid block nesting: expected if, but stack was empty"),
         }
     }
