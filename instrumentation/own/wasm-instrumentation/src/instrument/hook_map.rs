@@ -156,7 +156,7 @@ impl HookMap {
                     _ => unreachable!()
                 };
                 let inputs = ty.inputs.iter().enumerate().map(|(i, &ty)| Arg { name: format!("input{}", i), ty });
-                let results = ty.inputs.iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{}", i), ty });
+                let results = ty.results.iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{}", i), ty });
                 let args = inputs.chain(results).collect::<Vec<_>>();
                 let instr_string = name.clone();
                 let js_args = &format!("\"{}\", {}", instr_string, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
