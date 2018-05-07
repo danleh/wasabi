@@ -1,6 +1,6 @@
 [package]
-name = "custom-derive"
-version = "0.1.0"
+name = "derive"
+version = "0.2.0"
 authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
 
 [lib]

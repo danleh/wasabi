@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
 
 [dependencies]
-custom-derive = { path = "custom-derive" }
+derive = { path = "../wasabi/lib/ast/derive" }
 leb128 = { path = "../wasabi/lib/leb128" }
 byteorder = "1.2.1"
 rayon = "1.0.0"

@@ -53,8 +53,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "custom-derive"
-version = "0.1.0"
+name = "derive"
+version = "0.2.0"
 dependencies = [
  "quote 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "syn 0.12.10 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -268,7 +268,7 @@ name = "wasm-instrumentation"
 version = "0.1.0"
 dependencies = [
  "byteorder 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "custom-derive 0.1.0",
+ "derive 0.2.0",
  "derive-new 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "leb128 0.2.0",
  "rayon 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
