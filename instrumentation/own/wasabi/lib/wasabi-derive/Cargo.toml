@@ -1,5 +1,5 @@
 [package]
-name = "derive"
+name = "wasabi-derive"
 version = "0.2.0"
 authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
 
