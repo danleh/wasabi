@@ -71,8 +71,6 @@ impl BlockStack {
         }
     }
 
-    // TODO is there a way to avoid the begin_<blockkind> functions here and in hook_map (and in type_stack?) maybe through "externalizing the Block enum?
-
     pub fn begin_block(&mut self, begin: Idx<Instr>) {
         self.block_stack.push(Block {
             begin,
@@ -109,7 +107,7 @@ impl BlockStack {
         self.block_stack.push(if_);
     }
 
-    /// returns instruction index of the matching if begin
+    /// returns matching If block (of which this else is a "sibling")
     pub fn else_(&mut self) -> BlockStackElement {
         match self.block_stack.pop() {
             Some(block_element) => match block_element {
@@ -127,11 +125,15 @@ impl BlockStack {
         self.block_stack.pop().expect("invalid block nesting: could not end block, stack was empty")
     }
 
+    /// resolves a relative label at the current instruction to an absolute instruction index
+    /// this requires forward scanning for non-loop block ends (implemented as a precomputed HashMap lookup, so O(1))
     pub fn br_target(&self, label: Idx<Label>) -> Idx<Instr> {
+        // resolve label to block begin
         let target_block = self.block_stack.iter()
             .rev().nth(label.0)
             .expect(&format!("invalid label: cannot find target block for {:?}", label));
-        // backward branch for loops, forward for all other blocks
+        // resolve block begin to actual next instruction locations
+        // backward branch when targeting loops, forward for all other blocks
         match *target_block {
             Loop { begin, .. } => begin,
             Function { end } | Block { end, .. } | If { end, .. } | Else { end, .. } => end,

@@ -56,7 +56,7 @@ impl TypeStack {
 
     /// implicitly pops all types from the stack until the last block begin
     /// pushes that blocks result type on the stack
-    /// returns the BlockType of that last block, or None if the last block was the function
+    /// returns the BlockType of that last block, or None if the last block was the whole function
     pub fn end(&mut self) -> Option<BlockType> {
         loop {
             match self.0.pop() {
