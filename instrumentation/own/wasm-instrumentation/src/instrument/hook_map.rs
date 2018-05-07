@@ -111,8 +111,8 @@ impl HookMap {
         result
     }
 
-    pub fn instr_hook(&mut self, instr: &Instr, polymorphic_tys: Vec<ValType>) -> Instr {
-        let name = &mangle_polymorphic_name(instr.to_name(), &polymorphic_tys)[..];
+    pub fn instr(&mut self, instr: &Instr, polymorphic_tys: &[ValType]) -> Instr {
+        let name = &mangle_polymorphic_name(instr.to_name(), polymorphic_tys)[..];
         let hook = match *instr {
             /*
                 monomorphic instructions:
@@ -220,44 +220,44 @@ impl HookMap {
 
             Block(_) | Loop(_) | Else | End => panic!("cannot get hook for block-type instruction with this method, please use the other methods specialized to the block type"),
         };
-        self.get_or_insert_hook(hook)
+        self.get_or_insert(hook)
     }
 
     /* special hooks that do not directly correspond to an instruction or need additional information */
 
-    pub fn start_hook(&mut self) -> Instr {
-        self.get_or_insert_hook(Hook::new("start", vec![], "start", ""))
+    pub fn start(&mut self) -> Instr {
+        self.get_or_insert(Hook::new("start", vec![], "start", ""))
     }
 
-    pub fn call_post_hook(&mut self, result_tys: &[ValType]) -> Instr {
+    pub fn call_post(&mut self, result_tys: &[ValType]) -> Instr {
         let name = mangle_polymorphic_name("call_post", result_tys);
         let args = result_tys.iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{}", i), ty }).collect::<Vec<_>>();
         let js_args = &format!("[{}]", args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
-        self.get_or_insert_hook(Hook::new(name, args, "call_post", js_args))
+        self.get_or_insert(Hook::new(name, args, "call_post", js_args))
     }
 
-    pub fn begin_function_hook(&mut self) -> Instr {
-        self.get_or_insert_hook(Hook::new("begin_function", vec![], "begin", "\"function\""))
+    pub fn begin_function(&mut self) -> Instr {
+        self.get_or_insert(Hook::new("begin_function", vec![], "begin", "\"function\""))
     }
 
-    pub fn begin_block_hook(&mut self) -> Instr {
-        self.get_or_insert_hook(Hook::new("begin_block", vec![], "begin", "\"block\""))
+    pub fn begin_block(&mut self) -> Instr {
+        self.get_or_insert(Hook::new("begin_block", vec![], "begin", "\"block\""))
     }
 
-    pub fn begin_loop_hook(&mut self) -> Instr {
-        self.get_or_insert_hook(Hook::new("begin_loop", vec![], "begin", "\"loop\""))
+    pub fn begin_loop(&mut self) -> Instr {
+        self.get_or_insert(Hook::new("begin_loop", vec![], "begin", "\"loop\""))
     }
 
-    pub fn begin_if_hook(&mut self) -> Instr {
-        self.get_or_insert_hook(Hook::new("begin_if", vec![], "begin", "\"if\""))
+    pub fn begin_if(&mut self) -> Instr {
+        self.get_or_insert(Hook::new("begin_if", vec![], "begin", "\"if\""))
     }
 
-    pub fn begin_else_hook(&mut self) -> Instr {
-        self.get_or_insert_hook(Hook::new("begin_else", args!(ifInstr: I32), "begin", "\"else\", {func, instr: ifInstr}"))
+    pub fn begin_else(&mut self) -> Instr {
+        self.get_or_insert(Hook::new("begin_else", args!(ifInstr: I32), "begin", "\"else\", {func, instr: ifInstr}"))
     }
 
-    pub fn end_hook(&mut self, block: &BlockStackElement) -> Instr {
-        self.get_or_insert_hook(match *block {
+    pub fn end(&mut self, block: &BlockStackElement) -> Instr {
+        self.get_or_insert(match *block {
             BlockStackElement::Function { .. } => Hook::new("end_function", vec![], "end", "\"function\", {func, instr: -1}"),
             BlockStackElement::Block { .. } => Hook::new("end_block", args!(beginInstr: I32), "end", "\"block\", {func, instr: beginInstr}"),
             BlockStackElement::Loop { .. } => Hook::new("end_loop", args!(beginInstr: I32), "end", "\"loop\", {func, instr: beginInstr}"),
@@ -269,7 +269,7 @@ impl HookMap {
     /// returns a Call instruction to the requested hook, which either
     /// A) was freshly generated, since it was not requested with these types before,
     /// B) came from the internal hook map.
-    fn get_or_insert_hook(&mut self, hook: Hook) -> Instr {
+    fn get_or_insert(&mut self, hook: Hook) -> Instr {
         let hook_count = self.map.len();
         let hook = self.map.entry(hook.lowlevel_name().to_string()).or_insert(Hook {
             idx: (self.function_count + hook_count).into(),
