@@ -1,5 +1,5 @@
-use ast::{BlockType, GlobalType, Idx, InstrType, Mutability, Val, ValType::*};
-use ast::highlevel::{Global, GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
+use ast::{BlockType, Idx, InstrType, Mutability, Val, ValType::*};
+use ast::highlevel::{GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
 use self::block_stack::{BlockStack, BlockStackElement};
 use self::convert_i64::convert_i64_instr;
 use self::duplicate_stack::*;
@@ -38,15 +38,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
     let mut hooks = HookMap::new(&module);
 
     // add global for start, set to false on the first execution of the start function
-    let start_not_executed_global = {
-        module.globals.push(Global {
-            type_: GlobalType(I32, Mutability::Mut),
-            init: Some(vec![Const(Val::I32(1)), End]),
-            import: None,
-            export: None,
-        });
-        module.globals.len() - 1
-    };
+    let start_not_executed_global = module.add_global(I32, Mutability::Mut, vec![Const(Val::I32(1)), End]);
 
     for (fidx, function) in module.functions() {
         // only instrument non-imported functions
@@ -72,11 +64,11 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
         // execute start hook before anything else...
         if module_info.start == Some(fidx) {
             instrumented_body.extend_from_slice(&[
-                Global(GetGlobal, start_not_executed_global.into()),
+                Global(GetGlobal, start_not_executed_global),
                 // ...(if this is the start function and it hasn't run yet)
                 If(BlockType(None)),
                 Const(Val::I32(0)),
-                Global(SetGlobal, start_not_executed_global.into()),
+                Global(SetGlobal, start_not_executed_global),
                 fidx.into(),
                 Const(Val::I32(-1)),
                 hooks.start(),
