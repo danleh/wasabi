@@ -21,7 +21,7 @@ use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use std::path::Path;
 
-mod ast;
+pub mod ast;
 mod binary;
 mod instrument;
 #[cfg(test)]
