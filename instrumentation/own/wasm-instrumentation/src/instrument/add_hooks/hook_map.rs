@@ -4,7 +4,14 @@ use std::collections::HashMap;
 use super::block_stack::BlockStackElement;
 use super::convert_i64::convert_i64_type;
 
-/// helper struct to encapsulate JavaScript arguments + their Wasm type for the hooks to generate
+/*
+ * This does 3 things:
+ *  - on-demand hook: only hooks for instructions that are actually present in the binary are generated and hooks that were already generated are re-used
+ *  - monomorphization of polymorphic hooks: multiple monomorphized hook-variants are generated for one polymorphic instruction, such as call/return/drop/select etc.
+ *  - JavaScript and Wasm hook codegen: generate imported functions with some type signature + matching low-level JavaScript functions that are glue-code to the high-level JavaScript hooks the user sees
+ */
+
+/// helper struct to encapsulate JavaScript arguments + their Wasm type
 pub struct Arg {
     name: String,
     ty: ValType,
@@ -41,7 +48,7 @@ pub struct Hook {
 }
 
 impl Hook {
-    /// args: not including the (i32, i32) instruction location
+    /// args: do not include the (i32, i32) instruction location, also before i64 -> (i32, i32) lowering
     /// js_args: (quick and dirty, highly unsafe) JavaScript fragment, pasted into the high-level user hook call
     pub fn new(lowlevel_name: impl Into<String>, args: Vec<Arg>, highlevel_name: &str, js_args: &str) -> Self {
         let lowlevel_name = lowlevel_name.into();

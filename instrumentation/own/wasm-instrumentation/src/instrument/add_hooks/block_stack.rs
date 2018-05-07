@@ -2,10 +2,18 @@ use ast::{highlevel::Instr, Idx, Label};
 use self::BlockStackElement::*;
 use std::collections::HashMap;
 
+/*
+ * Data structure for representing the "control stack", i.e., the implicit nested block structure
+ * of control-flow instructions.
+ * Needed for:
+ *  - resolving End instructions to their corresponding begins (i.e., Block, Loop, If, Else)
+ *  - resolving labels of branches to actual instruction indices (which requires the previous as a first step)
+ */
+
 #[derive(Debug)]
 pub struct BlockStack {
     block_stack: Vec<BlockStackElement>,
-    // pre-computed on new()
+    /// pre-computed on new()
     begin_end_map: HashMap<Idx<Instr>, Idx<Instr>>,
 }
 

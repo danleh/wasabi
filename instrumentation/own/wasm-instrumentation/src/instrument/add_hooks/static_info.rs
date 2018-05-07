@@ -2,6 +2,11 @@ use ast::{FunctionType, Idx, Label, ValType};
 use ast::highlevel::{Function, Instr, Module};
 use super::block_stack::BlockStack;
 
+/*
+ * Structs for static information that is generated during instrumentation and output as JSON
+ * so that the dynamic analysis author does not also have to develop static analyses.
+ */
+
 #[derive(Serialize)]
 pub struct ModuleInfo {
     pub functions: Vec<FunctionInfo>,
@@ -34,6 +39,8 @@ pub struct FunctionInfo {
     pub export: Option<String>,
     pub locals: Vec<ValType>,
     #[serde(rename = "instrCount")]
+    /// this is the only field that differentiates FunctionInfo from a plain Function:
+    /// we do not want to save all instructions in the object, this seems a bit excessive...
     pub instr_count: Option<usize>,
 }
 
@@ -50,6 +57,7 @@ impl<'a> From<&'a Function> for FunctionInfo {
 }
 
 #[derive(Serialize)]
+/// for resolving br_table instruction targets at runtime
 pub struct BrTableInfo {
     pub table: Vec<ResolvedLabel>,
     pub default: ResolvedLabel,
@@ -69,6 +77,8 @@ impl BrTableInfo {
 }
 
 #[derive(Serialize)]
+/// carries the relative label (as it appears in the instructions) and the actual instruction index
+/// to which this label resolves to (statically computed with block_stack)
 pub struct ResolvedLabel {
     pub label: Idx<Label>,
     pub location: Location,
