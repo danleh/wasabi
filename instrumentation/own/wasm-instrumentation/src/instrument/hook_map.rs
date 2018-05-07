@@ -134,19 +134,19 @@ impl HookMap {
                 let ty = op.to_type().results[0];
                 let args = args!(offset: I32, align: I32, addr: I32, value: ty);
                 let js_args = &format!("{{addr, offset, align}}, {}", &args[3].to_lowlevel_long_expr());
-                Hook::new(name, args, name, js_args)
+                Hook::new(name, args, "load", js_args)
             }
             Store(op, _) => {
                 let ty = op.to_type().inputs[0];
                 let args = args!(offset: I32, align: I32, addr: I32, value: ty);
                 let js_args = &format!("{{addr, offset, align}}, {}", &args[3].to_lowlevel_long_expr());
-                Hook::new(name, args, name, js_args)
+                Hook::new(name, args, "store", js_args)
             }
 
             Const(val) => {
                 let args = args!(value: val.to_type());
                 let js_args = &args[0].to_lowlevel_long_expr();
-                Hook::new(name, args, "const", js_args)
+                Hook::new(name, args, "const_", js_args)
             }
             Numeric(op) => {
                 let ty = op.to_type();
@@ -176,14 +176,14 @@ impl HookMap {
                 assert_eq!(polymorphic_tys.len(), 1, "drop has only one argument");
                 let args = args!(value: polymorphic_tys[0]);
                 let js_args = &args[0].to_lowlevel_long_expr();
-                Hook::new(name, args, name, js_args)
+                Hook::new(name, args, "drop", js_args)
             }
             Select => {
                 assert_eq!(polymorphic_tys.len(), 2, "select has two polymorphic arguments");
                 assert_eq!(polymorphic_tys[0], polymorphic_tys[1], "select arguments must be equal");
                 let args = args!(condition: I32, input0: polymorphic_tys[0], input1: polymorphic_tys[1]);
                 let js_args = &format!("condition === 1, {}", args[1..].iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
-                Hook::new(name, args, name, js_args)
+                Hook::new(name, args, "select", js_args)
             }
             Local(_, _) => {
                 assert_eq!(polymorphic_tys.len(), 1, "local instructions have only one argument");
