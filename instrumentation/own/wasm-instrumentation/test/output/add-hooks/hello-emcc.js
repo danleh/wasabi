@@ -19499,697 +19499,328 @@ Wasabi.module.info = {
 };
 
 Wasabi.module.lowlevelHooks = {
-
-    start: function(func, instr) {
-        start({func, instr});
-    },
-
-    nop: function (func, instr) {
-        nop({func, instr});
-    },
-    unreachable: function (func, instr) {
-        unreachable({func, instr});
-    },
-
-    memory_size: function (func, instr, currentSizePages) {
-        memory_size({func, instr}, currentSizePages);
-    },
-    memory_grow: function (func, instr, byPages, previousSizePages) {
-        memory_grow({func, instr}, byPages, previousSizePages);
-    },
-
-    // begin/ends
-    begin_function: function (func, instr) {
+    "begin_function": function (func, instr, ) {
         begin({func, instr}, "function");
     },
-    end_function: function (func, instr) {
-        end({func, instr}, "function", {func, instr: -1});
+    "get_global_i32": function (func, instr, index, value) {
+        global({func, instr}, "get_global_i32", index, value);
     },
-    begin_block: function (func, instr) {
-        begin({func, instr}, "block");
+    "set_local_i32": function (func, instr, index, value) {
+        local({func, instr}, "set_local_i32", index, value);
     },
-    end_block: function (func, instr, begin_instr) {
-        end({func, instr}, "block", {func, instr: begin_instr});
+    "get_local_i32": function (func, instr, index, value) {
+        local({func, instr}, "get_local_i32", index, value);
     },
-    begin_loop: function (func, instr) {
-        begin({func, instr}, "loop");
+    "i32.add": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.add", input0, input1, result0);
     },
-    end_loop: function (func, instr, begin_instr) {
-        end({func, instr}, "loop", {func, instr: begin_instr});
+    "set_global_i32": function (func, instr, index, value) {
+        global({func, instr}, "set_global_i32", index, value);
     },
-    begin_if: function (func, instr) {
-        begin({func, instr}, "if");
+    "i32.const": function (func, instr, value) {
+        const_({func, instr}, value);
     },
-    end_if: function (func, instr, if_instr) {
-        end({func, instr}, "if", {func, instr: if_instr});
+    "i32.and": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.and", input0, input1, result0);
     },
-    begin_else: function (func, instr, if_instr) {
-        begin({func, instr}, "else", {func, instr: if_instr});
+    "i32.ge_s": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.ge_s", input0, input1, result0);
     },
-    end_else: function (func, instr, if_instr, else_instr) {
-        end({func, instr}, "else", {func, instr: if_instr}, {func, instr: else_instr});
-    },
-
-    // branches/if condition
-    if_: function (func, instr, condition) {
+    "if": function (func, instr, condition) {
         if_({func, instr}, condition === 1);
     },
-    br: function (func, instr, target_label, target_instr) {
-        br({func, instr}, {label: target_label, location: {func, instr: target_instr}});
+    "begin_if": function (func, instr, ) {
+        begin({func, instr}, "if");
     },
-    br_if: function (func, instr, target_label, target_instr, condition) {
-        br_if({func, instr}, {label: target_label, location: {func, instr: target_instr}}, condition === 1);
+    "call_i32": function (func, instr, targetFunc, arg0) {
+        call_pre({func, instr}, targetFunc, false, [arg0]);
     },
-    br_table: function (func, instr, br_table_info_idx, table_idx) {
-        br_table({
-            func,
-            instr
-        }, Wasabi.module.info.brTables[br_table_info_idx].table, Wasabi.module.info.brTables[br_table_info_idx].default, table_idx);
-    },
-
-    // generated:
-    return_: function(func, instr) {
-        return_({func, instr}, []);
-    },
-    call_post_: function(func, instr) {
+    "call_post": function (func, instr, ) {
         call_post({func, instr}, []);
     },
-    return_i32: function(func, instr, result0) {
+    "end_if": function (func, instr, beginInstr) {
+        end({func, instr}, "if", {func, instr: beginInstr});
+    },
+    "return_i32": function (func, instr, result0) {
         return_({func, instr}, [result0]);
     },
-    call_post_i32: function(func, instr, result0) {
+    "end_function": function (func, instr, ) {
+        end({func, instr}, "function", {func, instr: -1});
+    },
+    "return": function (func, instr, ) {
+        return_({func, instr}, []);
+    },
+    "i32.eq": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.eq", input0, input1, result0);
+    },
+    "call_i32_i32": function (func, instr, targetFunc, arg0, arg1) {
+        call_pre({func, instr}, targetFunc, false, [arg0, arg1]);
+    },
+    "call_post_i32": function (func, instr, result0) {
         call_post({func, instr}, [result0]);
     },
-    return_i64: function(func, instr, result0_low, result0_high) {
-        return_({func, instr}, [new Long(result0_low, result0_high)]);
+    "drop_i32": function (func, instr, value) {
+        drop({func, instr}, value);
     },
-    call_post_i64: function(func, instr, result0_low, result0_high) {
-        call_post({func, instr}, [new Long(result0_low, result0_high)]);
+    "i32.lt_u": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.lt_u", input0, input1, result0);
     },
-    return_f64: function(func, instr, result0) {
-        return_({func, instr}, [result0]);
+    "begin_block": function (func, instr, ) {
+        begin({func, instr}, "block");
     },
-    call_post_f64: function(func, instr, result0) {
-        call_post({func, instr}, [result0]);
+    "begin_else": function (func, instr, ifInstr) {
+        begin({func, instr}, "else", {func, instr: ifInstr});
     },
-    get_local_i32: function(func, instr, index, v) {
-        local({func, instr}, "get_local", index, v);
+    "end_else": function (func, instr, ifInstr, elseInstr) {
+        end({func, instr}, "else", {func, instr: ifInstr}, {func, instr: elseInstr});
     },
-    get_local_i64: function(func, instr, index, v_low, v_high) {
-        local({func, instr}, "get_local", index, new Long(v_low, v_high));
+    "i32.shr_u": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.shr_u", input0, input1, result0);
     },
-    get_local_f32: function(func, instr, index, v) {
-        local({func, instr}, "get_local", index, v);
+    "i32.load": function (func, instr, offset, align, addr, value) {
+        load({func, instr}, {addr, offset, align}, value);
     },
-    get_local_f64: function(func, instr, index, v) {
-        local({func, instr}, "get_local", index, v);
+    "i32.eqz": function (func, instr, input0, result0) {
+        unary({func, instr}, "i32.eqz", input0, result0);
     },
-    set_local_i32: function(func, instr, index, v) {
-        local({func, instr}, "set_local", index, v);
+    "i32.xor": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.xor", input0, input1, result0);
     },
-    set_local_i64: function(func, instr, index, v_low, v_high) {
-        local({func, instr}, "set_local", index, new Long(v_low, v_high));
+    "i32.shl": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.shl", input0, input1, result0);
     },
-    set_local_f32: function(func, instr, index, v) {
-        local({func, instr}, "set_local", index, v);
+    "i32.store": function (func, instr, offset, align, addr, value) {
+        store({func, instr}, {addr, offset, align}, value);
     },
-    set_local_f64: function(func, instr, index, v) {
-        local({func, instr}, "set_local", index, v);
+    "i32.or": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.or", input0, input1, result0);
     },
-    tee_local_i32: function(func, instr, index, v) {
-        local({func, instr}, "tee_local", index, v);
+    "i32.gt_u": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.gt_u", input0, input1, result0);
     },
-    tee_local_i64: function(func, instr, index, v_low, v_high) {
-        local({func, instr}, "tee_local", index, new Long(v_low, v_high));
+    "i32.sub": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.sub", input0, input1, result0);
     },
-    tee_local_f32: function(func, instr, index, v) {
-        local({func, instr}, "tee_local", index, v);
+    "begin_loop": function (func, instr, ) {
+        begin({func, instr}, "loop");
     },
-    tee_local_f64: function(func, instr, index, v) {
-        local({func, instr}, "tee_local", index, v);
+    "br": function (func, instr, targetLabel, targetInstr) {
+        br({func, instr}, {label: targetLabel, location: {func, instr: targetInstr}});
     },
-    get_global_i32: function(func, instr, index, v) {
-        global({func, instr}, "get_global", index, v);
+    "end_block": function (func, instr, beginInstr) {
+        end({func, instr}, "block", {func, instr: beginInstr});
     },
-    get_global_i64: function(func, instr, index, v_low, v_high) {
-        global({func, instr}, "get_global", index, new Long(v_low, v_high));
+    "end_loop": function (func, instr, beginInstr) {
+        end({func, instr}, "loop", {func, instr: beginInstr});
     },
-    get_global_f32: function(func, instr, index, v) {
-        global({func, instr}, "get_global", index, v);
+    "i32.ne": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.ne", input0, input1, result0);
     },
-    get_global_f64: function(func, instr, index, v) {
-        global({func, instr}, "get_global", index, v);
+    "i32.le_u": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.le_u", input0, input1, result0);
     },
-    set_global_i32: function(func, instr, index, v) {
-        global({func, instr}, "set_global", index, v);
+    "unreachable": function (func, instr, ) {
+        unreachable({func, instr}, );
     },
-    set_global_i64: function(func, instr, index, v_low, v_high) {
-        global({func, instr}, "set_global", index, new Long(v_low, v_high));
+    "i32.ge_u": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.ge_u", input0, input1, result0);
     },
-    set_global_f32: function(func, instr, index, v) {
-        global({func, instr}, "set_global", index, v);
+    "i64.load": function (func, instr, offset, align, addr, value_low, value_high) {
+        load({func, instr}, {addr, offset, align}, new Long(value_low, value_high));
     },
-    set_global_f64: function(func, instr, index, v) {
-        global({func, instr}, "set_global", index, v);
+    "i64.store": function (func, instr, offset, align, addr, value_low, value_high) {
+        store({func, instr}, {addr, offset, align}, new Long(value_low, value_high));
     },
-    drop_i32: function(func, instr, v) {
-        drop({func, instr}, v);
-    },
-    drop_i64: function(func, instr, v_low, v_high) {
-        drop({func, instr}, new Long(v_low, v_high));
-    },
-    drop_f32: function(func, instr, v) {
-        drop({func, instr}, v);
-    },
-    drop_f64: function(func, instr, v) {
-        drop({func, instr}, v);
-    },
-    select_i32_i32: function(func, instr, condition, first, second) {
-        select({func, instr}, condition === 1, first, second);
-    },
-    select_i64_i64: function(func, instr, condition, first_low, first_high, second_low, second_high) {
-        select({func, instr}, condition === 1, new Long(first_low, first_high), new Long(second_low, second_high));
-    },
-    select_f32_f32: function(func, instr, condition, first, second) {
-        select({func, instr}, condition === 1, first, second);
-    },
-    select_f64_f64: function(func, instr, condition, first, second) {
-        select({func, instr}, condition === 1, first, second);
-    },
-    call_: function(func, instr, targetFunc) {
+    "call": function (func, instr, targetFunc) {
         call_pre({func, instr}, targetFunc, false, []);
     },
-    call_i32: function(func, instr, targetFunc, arg0) {
-        call_pre({func, instr}, targetFunc, false, [arg0]);
+    "i32.lt_s": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.lt_s", input0, input1, result0);
     },
-    call_i32_i32: function(func, instr, targetFunc, arg0, arg1) {
-        call_pre({func, instr}, targetFunc, false, [arg0, arg1]);
+    "i32.shr_s": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.shr_s", input0, input1, result0);
     },
-    call_i32_i32_i32: function(func, instr, targetFunc, arg0, arg1, arg2) {
+    "i32.store8": function (func, instr, offset, align, addr, value) {
+        store({func, instr}, {addr, offset, align}, value);
+    },
+    "call_i32_i32_i32": function (func, instr, targetFunc, arg0, arg1, arg2) {
         call_pre({func, instr}, targetFunc, false, [arg0, arg1, arg2]);
     },
-    call_i32_i32_i32_i32: function(func, instr, targetFunc, arg0, arg1, arg2, arg3) {
-        call_pre({func, instr}, targetFunc, false, [arg0, arg1, arg2, arg3]);
+    "i32.load8_s": function (func, instr, offset, align, addr, value) {
+        load({func, instr}, {addr, offset, align}, value);
     },
-    call_i32_i32_i32_i32_i32: function(func, instr, targetFunc, arg0, arg1, arg2, arg3, arg4) {
+    "i64.const": function (func, instr, value_low, value_high) {
+        const_({func, instr}, new Long(value_low, value_high));
+    },
+    "call_i32_i32_i32_i32_i32": function (func, instr, targetFunc, arg0, arg1, arg2, arg3, arg4) {
         call_pre({func, instr}, targetFunc, false, [arg0, arg1, arg2, arg3, arg4]);
     },
-    call_i32_f64_i32_i32_i32_i32: function(func, instr, targetFunc, arg0, arg1, arg2, arg3, arg4, arg5) {
-        call_pre({func, instr}, targetFunc, false, [arg0, arg1, arg2, arg3, arg4, arg5]);
+    "i32.gt_s": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.gt_s", input0, input1, result0);
     },
-    call_i64_i32: function(func, instr, targetFunc, arg0_low, arg0_high, arg1) {
+    "call_indirect_i32_i32_i32": function (func, instr, tableIndex, arg0, arg1, arg2) {
+        call_pre({func, instr}, Wasabi.resolveTableIdx(tableIndex), true, [arg0, arg1, arg2]);
+    },
+    "br_table": function (func, instr, brTablesInfoIdx, tableIdx) {
+        br_table({func, instr}, Wasabi.module.info.brTables[brTablesInfoIdx].table, Wasabi.module.info.brTables[brTablesInfoIdx].default, tableIdx);
+    },
+    "nop": function (func, instr, ) {
+        nop({func, instr}, );
+    },
+    "set_local_i64": function (func, instr, index, value_low, value_high) {
+        local({func, instr}, "set_local_i64", index, new Long(value_low, value_high));
+    },
+    "get_local_i64": function (func, instr, index, value_low, value_high) {
+        local({func, instr}, "get_local_i64", index, new Long(value_low, value_high));
+    },
+    "i32.wrap/i64": function (func, instr, input0_low, input0_high, result0) {
+        unary({func, instr}, "i32.wrap/i64", new Long(input0_low, input0_high), result0);
+    },
+    "i32.mul": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.mul", input0, input1, result0);
+    },
+    "i64.extend_s/i32": function (func, instr, input0, result0_low, result0_high) {
+        unary({func, instr}, "i64.extend_s/i32", input0, new Long(result0_low, result0_high));
+    },
+    "i32.store16": function (func, instr, offset, align, addr, value) {
+        store({func, instr}, {addr, offset, align}, value);
+    },
+    "call_i64_i32": function (func, instr, targetFunc, arg0_low, arg0_high, arg1) {
         call_pre({func, instr}, targetFunc, false, [new Long(arg0_low, arg0_high), arg1]);
     },
-    call_i64_i32_i32: function(func, instr, targetFunc, arg0_low, arg0_high, arg1, arg2) {
+    "i64.lt_s": function (func, instr, input0_low, input0_high, input1_low, input1_high, result0) {
+        binary({func, instr}, "i64.lt_s", new Long(input0_low, input0_high), new Long(input1_low, input1_high), result0);
+    },
+    "i64.sub": function (func, instr, input0_low, input0_high, input1_low, input1_high, result0_low, result0_high) {
+        binary({func, instr}, "i64.sub", new Long(input0_low, input0_high), new Long(input1_low, input1_high), new Long(result0_low, result0_high));
+    },
+    "f64.load": function (func, instr, offset, align, addr, value) {
+        load({func, instr}, {addr, offset, align}, value);
+    },
+    "set_local_f64": function (func, instr, index, value) {
+        local({func, instr}, "set_local_f64", index, value);
+    },
+    "get_local_f64": function (func, instr, index, value) {
+        local({func, instr}, "get_local_f64", index, value);
+    },
+    "call_i32_f64_i32_i32_i32_i32": function (func, instr, targetFunc, arg0, arg1, arg2, arg3, arg4, arg5) {
+        call_pre({func, instr}, targetFunc, false, [arg0, arg1, arg2, arg3, arg4, arg5]);
+    },
+    "call_i64_i32_i32": function (func, instr, targetFunc, arg0_low, arg0_high, arg1, arg2) {
         call_pre({func, instr}, targetFunc, false, [new Long(arg0_low, arg0_high), arg1, arg2]);
     },
-    call_f64: function(func, instr, targetFunc, arg0) {
+    "i64.eq": function (func, instr, input0_low, input0_high, input1_low, input1_high, result0) {
+        binary({func, instr}, "i64.eq", new Long(input0_low, input0_high), new Long(input1_low, input1_high), result0);
+    },
+    "i64.ne": function (func, instr, input0_low, input0_high, input1_low, input1_high, result0) {
+        binary({func, instr}, "i64.ne", new Long(input0_low, input0_high), new Long(input1_low, input1_high), result0);
+    },
+    "i64.extend_u/i32": function (func, instr, input0, result0_low, result0_high) {
+        unary({func, instr}, "i64.extend_u/i32", input0, new Long(result0_low, result0_high));
+    },
+    "f64.store": function (func, instr, offset, align, addr, value) {
+        store({func, instr}, {addr, offset, align}, value);
+    },
+    "i64.shr_u": function (func, instr, input0_low, input0_high, input1_low, input1_high, result0_low, result0_high) {
+        binary({func, instr}, "i64.shr_u", new Long(input0_low, input0_high), new Long(input1_low, input1_high), new Long(result0_low, result0_high));
+    },
+    "i64.gt_u": function (func, instr, input0_low, input0_high, input1_low, input1_high, result0) {
+        binary({func, instr}, "i64.gt_u", new Long(input0_low, input0_high), new Long(input1_low, input1_high), result0);
+    },
+    "i64.rem_u": function (func, instr, input0_low, input0_high, input1_low, input1_high, result0_low, result0_high) {
+        binary({func, instr}, "i64.rem_u", new Long(input0_low, input0_high), new Long(input1_low, input1_high), new Long(result0_low, result0_high));
+    },
+    "i64.div_u": function (func, instr, input0_low, input0_high, input1_low, input1_high, result0_low, result0_high) {
+        binary({func, instr}, "i64.div_u", new Long(input0_low, input0_high), new Long(input1_low, input1_high), new Long(result0_low, result0_high));
+    },
+    "i32.rem_u": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.rem_u", input0, input1, result0);
+    },
+    "i32.div_u": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.div_u", input0, input1, result0);
+    },
+    "call_f64": function (func, instr, targetFunc, arg0) {
         call_pre({func, instr}, targetFunc, false, [arg0]);
     },
-    call_f64_i32: function(func, instr, targetFunc, arg0, arg1) {
+    "call_post_i64": function (func, instr, result0_low, result0_high) {
+        call_post({func, instr}, [new Long(result0_low, result0_high)]);
+    },
+    "f64.neg": function (func, instr, input0, result0) {
+        unary({func, instr}, "f64.neg", input0, result0);
+    },
+    "i64.and": function (func, instr, input0_low, input0_high, input1_low, input1_high, result0_low, result0_high) {
+        binary({func, instr}, "i64.and", new Long(input0_low, input0_high), new Long(input1_low, input1_high), new Long(result0_low, result0_high));
+    },
+    "i64.lt_u": function (func, instr, input0_low, input0_high, input1_low, input1_high, result0) {
+        binary({func, instr}, "i64.lt_u", new Long(input0_low, input0_high), new Long(input1_low, input1_high), result0);
+    },
+    "call_f64_i32": function (func, instr, targetFunc, arg0, arg1) {
         call_pre({func, instr}, targetFunc, false, [arg0, arg1]);
     },
-    call_indirect_: function(func, instr, targetTableIdx) {
-        call_pre({func, instr}, Wasabi.resolveTableIdx(targetTableIdx), true, []);
+    "call_post_f64": function (func, instr, result0) {
+        call_post({func, instr}, [result0]);
     },
-    call_indirect_i32: function(func, instr, targetTableIdx, arg0) {
-        call_pre({func, instr}, Wasabi.resolveTableIdx(targetTableIdx), true, [arg0]);
+    "f64.const": function (func, instr, value) {
+        const_({func, instr}, value);
     },
-    call_indirect_i32_i32: function(func, instr, targetTableIdx, arg0, arg1) {
-        call_pre({func, instr}, Wasabi.resolveTableIdx(targetTableIdx), true, [arg0, arg1]);
+    "f64.mul": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "f64.mul", input0, input1, result0);
     },
-    call_indirect_i32_i32_i32: function(func, instr, targetTableIdx, arg0, arg1, arg2) {
-        call_pre({func, instr}, Wasabi.resolveTableIdx(targetTableIdx), true, [arg0, arg1, arg2]);
+    "f64.ne": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "f64.ne", input0, input1, result0);
     },
-    call_indirect_i32_i32_i32_i32: function(func, instr, targetTableIdx, arg0, arg1, arg2, arg3) {
-        call_pre({func, instr}, Wasabi.resolveTableIdx(targetTableIdx), true, [arg0, arg1, arg2, arg3]);
+    "f64.sub": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "f64.sub", input0, input1, result0);
     },
-    call_indirect_i32_i32_i32_i32_i32: function(func, instr, targetTableIdx, arg0, arg1, arg2, arg3, arg4) {
-        call_pre({func, instr}, Wasabi.resolveTableIdx(targetTableIdx), true, [arg0, arg1, arg2, arg3, arg4]);
+    "f64.add": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "f64.add", input0, input1, result0);
     },
-    call_indirect_i32_f64_i32_i32_i32_i32: function(func, instr, targetTableIdx, arg0, arg1, arg2, arg3, arg4, arg5) {
-        call_pre({func, instr}, Wasabi.resolveTableIdx(targetTableIdx), true, [arg0, arg1, arg2, arg3, arg4, arg5]);
+    "i32.trunc_s/f64": function (func, instr, input0, result0) {
+        unary({func, instr}, "i32.trunc_s/f64", input0, result0);
     },
-    call_indirect_i64_i32: function(func, instr, targetTableIdx, arg0_low, arg0_high, arg1) {
-        call_pre({func, instr}, Wasabi.resolveTableIdx(targetTableIdx), true, [new Long(arg0_low, arg0_high), arg1]);
+    "f64.convert_s/i32": function (func, instr, input0, result0) {
+        unary({func, instr}, "f64.convert_s/i32", input0, result0);
     },
-    call_indirect_i64_i32_i32: function(func, instr, targetTableIdx, arg0_low, arg0_high, arg1, arg2) {
-        call_pre({func, instr}, Wasabi.resolveTableIdx(targetTableIdx), true, [new Long(arg0_low, arg0_high), arg1, arg2]);
+    "f64.eq": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "f64.eq", input0, input1, result0);
     },
-    call_indirect_f64: function(func, instr, targetTableIdx, arg0) {
-        call_pre({func, instr}, Wasabi.resolveTableIdx(targetTableIdx), true, [arg0]);
+    "i32.trunc_u/f64": function (func, instr, input0, result0) {
+        unary({func, instr}, "i32.trunc_u/f64", input0, result0);
     },
-    call_indirect_f64_i32: function(func, instr, targetTableIdx, arg0, arg1) {
-        call_pre({func, instr}, Wasabi.resolveTableIdx(targetTableIdx), true, [arg0, arg1]);
+    "f64.convert_u/i32": function (func, instr, input0, result0) {
+        unary({func, instr}, "f64.convert_u/i32", input0, result0);
     },
-    "i32.const": function (func, instr, v) {
-        const_({func, instr}, v);
+    "i64.shl": function (func, instr, input0_low, input0_high, input1_low, input1_high, result0_low, result0_high) {
+        binary({func, instr}, "i64.shl", new Long(input0_low, input0_high), new Long(input1_low, input1_high), new Long(result0_low, result0_high));
     },
-    "i64.const": function (func, instr, v_low, v_high) {
-        const_({func, instr}, new Long(v_low, v_high));
+    "i64.add": function (func, instr, input0_low, input0_high, input1_low, input1_high, result0_low, result0_high) {
+        binary({func, instr}, "i64.add", new Long(input0_low, input0_high), new Long(input1_low, input1_high), new Long(result0_low, result0_high));
     },
-    "f32.const": function (func, instr, v) {
-        const_({func, instr}, v);
+    "i32.div_s": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.div_s", input0, input1, result0);
     },
-    "f64.const": function (func, instr, v) {
-        const_({func, instr}, v);
+    "i32.rem_s": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.rem_s", input0, input1, result0);
     },
-    "i32.eqz": function (func, instr, input, result) {
-        unary({func, instr}, "i32.eqz", input, result);
+    "i64.reinterpret/f64": function (func, instr, input0, result0_low, result0_high) {
+        unary({func, instr}, "i64.reinterpret/f64", input0, new Long(result0_low, result0_high));
     },
-    "i64.eqz": function (func, instr, input_low, input_high, result) {
-        unary({func, instr}, "i64.eqz", new Long(input_low, input_high), result);
+    "return_i64": function (func, instr, result0_low, result0_high) {
+        return_({func, instr}, [new Long(result0_low, result0_high)]);
     },
-    "i32.clz": function (func, instr, input, result) {
-        unary({func, instr}, "i32.clz", input, result);
+    "return_f64": function (func, instr, result0) {
+        return_({func, instr}, [result0]);
     },
-    "i32.ctz": function (func, instr, input, result) {
-        unary({func, instr}, "i32.ctz", input, result);
+    "i64.or": function (func, instr, input0_low, input0_high, input1_low, input1_high, result0_low, result0_high) {
+        binary({func, instr}, "i64.or", new Long(input0_low, input0_high), new Long(input1_low, input1_high), new Long(result0_low, result0_high));
     },
-    "i32.popcnt": function (func, instr, input, result) {
-        unary({func, instr}, "i32.popcnt", input, result);
+    "f64.reinterpret/i64": function (func, instr, input0_low, input0_high, result0) {
+        unary({func, instr}, "f64.reinterpret/i64", new Long(input0_low, input0_high), result0);
     },
-    "i64.clz": function (func, instr, input_low, input_high, result_low, result_high) {
-        unary({func, instr}, "i64.clz", new Long(input_low, input_high), new Long(result_low, result_high));
+    "i32.le_s": function (func, instr, input0, input1, result0) {
+        binary({func, instr}, "i32.le_s", input0, input1, result0);
     },
-    "i64.ctz": function (func, instr, input_low, input_high, result_low, result_high) {
-        unary({func, instr}, "i64.ctz", new Long(input_low, input_high), new Long(result_low, result_high));
-    },
-    "i64.popcnt": function (func, instr, input_low, input_high, result_low, result_high) {
-        unary({func, instr}, "i64.popcnt", new Long(input_low, input_high), new Long(result_low, result_high));
-    },
-    "f32.abs": function (func, instr, input, result) {
-        unary({func, instr}, "f32.abs", input, result);
-    },
-    "f32.neg": function (func, instr, input, result) {
-        unary({func, instr}, "f32.neg", input, result);
-    },
-    "f32.ceil": function (func, instr, input, result) {
-        unary({func, instr}, "f32.ceil", input, result);
-    },
-    "f32.floor": function (func, instr, input, result) {
-        unary({func, instr}, "f32.floor", input, result);
-    },
-    "f32.trunc": function (func, instr, input, result) {
-        unary({func, instr}, "f32.trunc", input, result);
-    },
-    "f32.nearest": function (func, instr, input, result) {
-        unary({func, instr}, "f32.nearest", input, result);
-    },
-    "f32.sqrt": function (func, instr, input, result) {
-        unary({func, instr}, "f32.sqrt", input, result);
-    },
-    "f64.abs": function (func, instr, input, result) {
-        unary({func, instr}, "f64.abs", input, result);
-    },
-    "f64.neg": function (func, instr, input, result) {
-        unary({func, instr}, "f64.neg", input, result);
-    },
-    "f64.ceil": function (func, instr, input, result) {
-        unary({func, instr}, "f64.ceil", input, result);
-    },
-    "f64.floor": function (func, instr, input, result) {
-        unary({func, instr}, "f64.floor", input, result);
-    },
-    "f64.trunc": function (func, instr, input, result) {
-        unary({func, instr}, "f64.trunc", input, result);
-    },
-    "f64.nearest": function (func, instr, input, result) {
-        unary({func, instr}, "f64.nearest", input, result);
-    },
-    "f64.sqrt": function (func, instr, input, result) {
-        unary({func, instr}, "f64.sqrt", input, result);
-    },
-    "i32.wrap/i64": function (func, instr, input_low, input_high, result) {
-        unary({func, instr}, "i32.wrap/i64", new Long(input_low, input_high), result);
-    },
-    "i32.trunc_s/f32": function (func, instr, input, result) {
-        unary({func, instr}, "i32.trunc_s/f32", input, result);
-    },
-    "i32.trunc_u/f32": function (func, instr, input, result) {
-        unary({func, instr}, "i32.trunc_u/f32", input, result);
-    },
-    "i32.trunc_s/f64": function (func, instr, input, result) {
-        unary({func, instr}, "i32.trunc_s/f64", input, result);
-    },
-    "i32.trunc_u/f64": function (func, instr, input, result) {
-        unary({func, instr}, "i32.trunc_u/f64", input, result);
-    },
-    "i64.extend_s/i32": function (func, instr, input, result_low, result_high) {
-        unary({func, instr}, "i64.extend_s/i32", input, new Long(result_low, result_high));
-    },
-    "i64.extend_u/i32": function (func, instr, input, result_low, result_high) {
-        unary({func, instr}, "i64.extend_u/i32", input, new Long(result_low, result_high));
-    },
-    "i64.trunc_s/f32": function (func, instr, input, result_low, result_high) {
-        unary({func, instr}, "i64.trunc_s/f32", input, new Long(result_low, result_high));
-    },
-    "i64.trunc_u/f32": function (func, instr, input, result_low, result_high) {
-        unary({func, instr}, "i64.trunc_u/f32", input, new Long(result_low, result_high));
-    },
-    "i64.trunc_s/f64": function (func, instr, input, result_low, result_high) {
-        unary({func, instr}, "i64.trunc_s/f64", input, new Long(result_low, result_high));
-    },
-    "i64.trunc_u/f64": function (func, instr, input, result_low, result_high) {
-        unary({func, instr}, "i64.trunc_u/f64", input, new Long(result_low, result_high));
-    },
-    "f32.convert_s/i32": function (func, instr, input, result) {
-        unary({func, instr}, "f32.convert_s/i32", input, result);
-    },
-    "f32.convert_u/i32": function (func, instr, input, result) {
-        unary({func, instr}, "f32.convert_u/i32", input, result);
-    },
-    "f32.convert_s/i64": function (func, instr, input_low, input_high, result) {
-        unary({func, instr}, "f32.convert_s/i64", new Long(input_low, input_high), result);
-    },
-    "f32.convert_u/i64": function (func, instr, input_low, input_high, result) {
-        unary({func, instr}, "f32.convert_u/i64", new Long(input_low, input_high), result);
-    },
-    "f32.demote/f64": function (func, instr, input, result) {
-        unary({func, instr}, "f32.demote/f64", input, result);
-    },
-    "f64.convert_s/i32": function (func, instr, input, result) {
-        unary({func, instr}, "f64.convert_s/i32", input, result);
-    },
-    "f64.convert_u/i32": function (func, instr, input, result) {
-        unary({func, instr}, "f64.convert_u/i32", input, result);
-    },
-    "f64.convert_s/i64": function (func, instr, input_low, input_high, result) {
-        unary({func, instr}, "f64.convert_s/i64", new Long(input_low, input_high), result);
-    },
-    "f64.convert_u/i64": function (func, instr, input_low, input_high, result) {
-        unary({func, instr}, "f64.convert_u/i64", new Long(input_low, input_high), result);
-    },
-    "f64.promote/f32": function (func, instr, input, result) {
-        unary({func, instr}, "f64.promote/f32", input, result);
-    },
-    "i32.reinterpret/f32": function (func, instr, input, result) {
-        unary({func, instr}, "i32.reinterpret/f32", input, result);
-    },
-    "i64.reinterpret/f64": function (func, instr, input, result_low, result_high) {
-        unary({func, instr}, "i64.reinterpret/f64", input, new Long(result_low, result_high));
-    },
-    "f32.reinterpret/i32": function (func, instr, input, result) {
-        unary({func, instr}, "f32.reinterpret/i32", input, result);
-    },
-    "f64.reinterpret/i64": function (func, instr, input_low, input_high, result) {
-        unary({func, instr}, "f64.reinterpret/i64", new Long(input_low, input_high), result);
-    },
-    "i32.eq": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.eq", first, second, result);
-    },
-    "i32.ne": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.ne", first, second, result);
-    },
-    "i32.lt_s": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.lt_s", first, second, result);
-    },
-    "i32.lt_u": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.lt_u", first, second, result);
-    },
-    "i32.gt_s": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.gt_s", first, second, result);
-    },
-    "i32.gt_u": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.gt_u", first, second, result);
-    },
-    "i32.le_s": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.le_s", first, second, result);
-    },
-    "i32.le_u": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.le_u", first, second, result);
-    },
-    "i32.ge_s": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.ge_s", first, second, result);
-    },
-    "i32.ge_u": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.ge_u", first, second, result);
-    },
-    "i64.eq": function (func, instr, first_low, first_high, second_low, second_high, result) {
-        binary({func, instr}, "i64.eq", new Long(first_low, first_high), new Long(second_low, second_high), result);
-    },
-    "i64.ne": function (func, instr, first_low, first_high, second_low, second_high, result) {
-        binary({func, instr}, "i64.ne", new Long(first_low, first_high), new Long(second_low, second_high), result);
-    },
-    "i64.lt_s": function (func, instr, first_low, first_high, second_low, second_high, result) {
-        binary({func, instr}, "i64.lt_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
-    },
-    "i64.lt_u": function (func, instr, first_low, first_high, second_low, second_high, result) {
-        binary({func, instr}, "i64.lt_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
-    },
-    "i64.gt_s": function (func, instr, first_low, first_high, second_low, second_high, result) {
-        binary({func, instr}, "i64.gt_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
-    },
-    "i64.gt_u": function (func, instr, first_low, first_high, second_low, second_high, result) {
-        binary({func, instr}, "i64.gt_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
-    },
-    "i64.le_s": function (func, instr, first_low, first_high, second_low, second_high, result) {
-        binary({func, instr}, "i64.le_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
-    },
-    "i64.le_u": function (func, instr, first_low, first_high, second_low, second_high, result) {
-        binary({func, instr}, "i64.le_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
-    },
-    "i64.ge_s": function (func, instr, first_low, first_high, second_low, second_high, result) {
-        binary({func, instr}, "i64.ge_s", new Long(first_low, first_high), new Long(second_low, second_high), result);
-    },
-    "i64.ge_u": function (func, instr, first_low, first_high, second_low, second_high, result) {
-        binary({func, instr}, "i64.ge_u", new Long(first_low, first_high), new Long(second_low, second_high), result);
-    },
-    "f32.eq": function (func, instr, first, second, result) {
-        binary({func, instr}, "f32.eq", first, second, result);
-    },
-    "f32.ne": function (func, instr, first, second, result) {
-        binary({func, instr}, "f32.ne", first, second, result);
-    },
-    "f32.lt": function (func, instr, first, second, result) {
-        binary({func, instr}, "f32.lt", first, second, result);
-    },
-    "f32.gt": function (func, instr, first, second, result) {
-        binary({func, instr}, "f32.gt", first, second, result);
-    },
-    "f32.le": function (func, instr, first, second, result) {
-        binary({func, instr}, "f32.le", first, second, result);
-    },
-    "f32.ge": function (func, instr, first, second, result) {
-        binary({func, instr}, "f32.ge", first, second, result);
-    },
-    "f64.eq": function (func, instr, first, second, result) {
-        binary({func, instr}, "f64.eq", first, second, result);
-    },
-    "f64.ne": function (func, instr, first, second, result) {
-        binary({func, instr}, "f64.ne", first, second, result);
-    },
-    "f64.lt": function (func, instr, first, second, result) {
-        binary({func, instr}, "f64.lt", first, second, result);
-    },
-    "f64.gt": function (func, instr, first, second, result) {
-        binary({func, instr}, "f64.gt", first, second, result);
-    },
-    "f64.le": function (func, instr, first, second, result) {
-        binary({func, instr}, "f64.le", first, second, result);
-    },
-    "f64.ge": function (func, instr, first, second, result) {
-        binary({func, instr}, "f64.ge", first, second, result);
-    },
-    "i32.add": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.add", first, second, result);
-    },
-    "i32.sub": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.sub", first, second, result);
-    },
-    "i32.mul": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.mul", first, second, result);
-    },
-    "i32.div_s": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.div_s", first, second, result);
-    },
-    "i32.div_u": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.div_u", first, second, result);
-    },
-    "i32.rem_s": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.rem_s", first, second, result);
-    },
-    "i32.rem_u": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.rem_u", first, second, result);
-    },
-    "i32.and": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.and", first, second, result);
-    },
-    "i32.or": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.or", first, second, result);
-    },
-    "i32.xor": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.xor", first, second, result);
-    },
-    "i32.shl": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.shl", first, second, result);
-    },
-    "i32.shr_s": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.shr_s", first, second, result);
-    },
-    "i32.shr_u": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.shr_u", first, second, result);
-    },
-    "i32.rotl": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.rotl", first, second, result);
-    },
-    "i32.rotr": function (func, instr, first, second, result) {
-        binary({func, instr}, "i32.rotr", first, second, result);
-    },
-    "i64.add": function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-        binary({func, instr}, "i64.add", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
-    },
-    "i64.sub": function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-        binary({func, instr}, "i64.sub", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
-    },
-    "i64.mul": function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-        binary({func, instr}, "i64.mul", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
-    },
-    "i64.div_s": function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-        binary({func, instr}, "i64.div_s", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
-    },
-    "i64.div_u": function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-        binary({func, instr}, "i64.div_u", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
-    },
-    "i64.rem_s": function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-        binary({func, instr}, "i64.rem_s", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
-    },
-    "i64.rem_u": function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-        binary({func, instr}, "i64.rem_u", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
-    },
-    "i64.and": function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-        binary({func, instr}, "i64.and", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
-    },
-    "i64.or": function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-        binary({func, instr}, "i64.or", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
-    },
-    "i64.xor": function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-        binary({func, instr}, "i64.xor", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
-    },
-    "i64.shl": function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-        binary({func, instr}, "i64.shl", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
-    },
-    "i64.shr_s": function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-        binary({func, instr}, "i64.shr_s", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
-    },
-    "i64.shr_u": function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-        binary({func, instr}, "i64.shr_u", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
-    },
-    "i64.rotl": function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-        binary({func, instr}, "i64.rotl", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
-    },
-    "i64.rotr": function (func, instr, first_low, first_high, second_low, second_high, result_low, result_high) {
-        binary({func, instr}, "i64.rotr", new Long(first_low, first_high), new Long(second_low, second_high), new Long(result_low, result_high));
-    },
-    "f32.add": function (func, instr, first, second, result) {
-        binary({func, instr}, "f32.add", first, second, result);
-    },
-    "f32.sub": function (func, instr, first, second, result) {
-        binary({func, instr}, "f32.sub", first, second, result);
-    },
-    "f32.mul": function (func, instr, first, second, result) {
-        binary({func, instr}, "f32.mul", first, second, result);
-    },
-    "f32.div": function (func, instr, first, second, result) {
-        binary({func, instr}, "f32.div", first, second, result);
-    },
-    "f32.min": function (func, instr, first, second, result) {
-        binary({func, instr}, "f32.min", first, second, result);
-    },
-    "f32.max": function (func, instr, first, second, result) {
-        binary({func, instr}, "f32.max", first, second, result);
-    },
-    "f32.copysign": function (func, instr, first, second, result) {
-        binary({func, instr}, "f32.copysign", first, second, result);
-    },
-    "f64.add": function (func, instr, first, second, result) {
-        binary({func, instr}, "f64.add", first, second, result);
-    },
-    "f64.sub": function (func, instr, first, second, result) {
-        binary({func, instr}, "f64.sub", first, second, result);
-    },
-    "f64.mul": function (func, instr, first, second, result) {
-        binary({func, instr}, "f64.mul", first, second, result);
-    },
-    "f64.div": function (func, instr, first, second, result) {
-        binary({func, instr}, "f64.div", first, second, result);
-    },
-    "f64.min": function (func, instr, first, second, result) {
-        binary({func, instr}, "f64.min", first, second, result);
-    },
-    "f64.max": function (func, instr, first, second, result) {
-        binary({func, instr}, "f64.max", first, second, result);
-    },
-    "f64.copysign": function (func, instr, first, second, result) {
-        binary({func, instr}, "f64.copysign", first, second, result);
-    },
-    "i32.load": function (func, instr, offset, align, addr, v) {
-        load({func, instr}, "i32.load", {addr, offset, align}, v);
-    },
-    "i32.load8_s": function (func, instr, offset, align, addr, v) {
-        load({func, instr}, "i32.load8_s", {addr, offset, align}, v);
-    },
-    "i32.load8_u": function (func, instr, offset, align, addr, v) {
-        load({func, instr}, "i32.load8_u", {addr, offset, align}, v);
-    },
-    "i32.load16_s": function (func, instr, offset, align, addr, v) {
-        load({func, instr}, "i32.load16_s", {addr, offset, align}, v);
-    },
-    "i32.load16_u": function (func, instr, offset, align, addr, v) {
-        load({func, instr}, "i32.load16_u", {addr, offset, align}, v);
-    },
-    "i64.load": function (func, instr, offset, align, addr, v_low, v_high) {
-        load({func, instr}, "i64.load", {addr, offset, align}, new Long(v_low, v_high));
-    },
-    "i64.load8_s": function (func, instr, offset, align, addr, v_low, v_high) {
-        load({func, instr}, "i64.load8_s", {addr, offset, align}, new Long(v_low, v_high));
-    },
-    "i64.load8_u": function (func, instr, offset, align, addr, v_low, v_high) {
-        load({func, instr}, "i64.load8_u", {addr, offset, align}, new Long(v_low, v_high));
-    },
-    "i64.load16_s": function (func, instr, offset, align, addr, v_low, v_high) {
-        load({func, instr}, "i64.load16_s", {addr, offset, align}, new Long(v_low, v_high));
-    },
-    "i64.load16_u": function (func, instr, offset, align, addr, v_low, v_high) {
-        load({func, instr}, "i64.load16_u", {addr, offset, align}, new Long(v_low, v_high));
-    },
-    "i64.load32_s": function (func, instr, offset, align, addr, v_low, v_high) {
-        load({func, instr}, "i64.load32_s", {addr, offset, align}, new Long(v_low, v_high));
-    },
-    "i64.load32_u": function (func, instr, offset, align, addr, v_low, v_high) {
-        load({func, instr}, "i64.load32_u", {addr, offset, align}, new Long(v_low, v_high));
-    },
-    "f32.load": function (func, instr, offset, align, addr, v) {
-        load({func, instr}, "f32.load", {addr, offset, align}, v);
-    },
-    "f64.load": function (func, instr, offset, align, addr, v) {
-        load({func, instr}, "f64.load", {addr, offset, align}, v);
-    },
-    "i32.store": function (func, instr, offset, align, addr, v) {
-        store({func, instr}, "i32.store", {addr, offset, align}, v);
-    },
-    "i32.store8": function (func, instr, offset, align, addr, v) {
-        store({func, instr}, "i32.store8", {addr, offset, align}, v);
-    },
-    "i32.store16": function (func, instr, offset, align, addr, v) {
-        store({func, instr}, "i32.store16", {addr, offset, align}, v);
-    },
-    "i64.store": function (func, instr, offset, align, addr, v_low, v_high) {
-        store({func, instr}, "i64.store", {addr, offset, align}, new Long(v_low, v_high));
-    },
-    "i64.store8": function (func, instr, offset, align, addr, v_low, v_high) {
-        store({func, instr}, "i64.store8", {addr, offset, align}, new Long(v_low, v_high));
-    },
-    "i64.store16": function (func, instr, offset, align, addr, v_low, v_high) {
-        store({func, instr}, "i64.store16", {addr, offset, align}, new Long(v_low, v_high));
-    },
-    "i64.store32": function (func, instr, offset, align, addr, v_low, v_high) {
-        store({func, instr}, "i64.store32", {addr, offset, align}, new Long(v_low, v_high));
-    },
-    "f32.store": function (func, instr, offset, align, addr, v) {
-        store({func, instr}, "f32.store", {addr, offset, align}, v);
-    },
-    "f64.store": function (func, instr, offset, align, addr, v) {
-        store({func, instr}, "f64.store", {addr, offset, align}, v);
+    "call_indirect_i32": function (func, instr, tableIndex, arg0) {
+        call_pre({func, instr}, Wasabi.resolveTableIdx(tableIndex), true, [arg0]);
     },
 };
