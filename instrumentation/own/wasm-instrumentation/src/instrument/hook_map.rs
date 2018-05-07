@@ -48,7 +48,7 @@ impl Hook {
 
         // generate JavaScript low-level hook that is called from Wasm and in turn calls the
         // high-level user analysis hook
-        let js = format!("\"{}\": function (func, instr, {}) {{\n    {}({{func, instr}}, {});\n}}",
+        let js = format!("\"{}\": function (func, instr, {}) {{\n    {}({{func, instr}}, {});\n}},",
                          &lowlevel_name,
                          args.iter().map(Arg::to_lowlevel_param_name).collect::<Vec<_>>().join(", "),
                          highlevel_name,
