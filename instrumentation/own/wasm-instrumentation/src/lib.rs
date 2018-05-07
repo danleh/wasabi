@@ -13,6 +13,7 @@ extern crate serde_derive;
 extern crate serde_json;
 extern crate test;
 extern crate walkdir;
+extern crate leb128;
 
 use ast::{highlevel, lowlevel};
 use binary::WasmBinary;
@@ -20,7 +21,6 @@ use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use std::path::Path;
 
-mod leb128;
 mod ast;
 mod binary;
 mod instrument;

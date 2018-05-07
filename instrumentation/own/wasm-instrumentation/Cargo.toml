@@ -5,6 +5,7 @@ authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
 
 [dependencies]
 custom-derive = { path = "custom-derive" }
+leb128 = { path = "../wasabi/leb128" }
 byteorder = "1.2.1"
 rayon = "1.0.0"
 walkdir = "2"

@@ -25,29 +25,6 @@ fn debug() {
 /* Correctness tests */
 
 #[test]
-fn leb128_signed_roundtrips() {
-    use leb128::{ReadLeb128, WriteLeb128};
-
-    for u in u16::min_value()..=u16::max_value() {
-        let mut buf: Vec<u8> = Vec::new();
-        buf.write_leb128(u).unwrap();
-        let u_decode: u16 = buf.as_slice().read_leb128().unwrap();
-        assert_eq!(u, u_decode,
-                   "\nbuffer:{}",
-                   buf.iter().map(|byte| format!(" 0x{:x}", byte)).collect::<Vec<String>>().concat());
-    }
-
-    for i in i16::min_value()..=i16::max_value() {
-        let mut buf: Vec<u8> = Vec::new();
-        buf.write_leb128(i).unwrap();
-        let i_decode: i16 = buf.as_slice().read_leb128().unwrap();
-        assert_eq!(i, i_decode,
-                   "\nbuffer:{}",
-                   buf.iter().map(|byte| format!(" 0x{:x}", byte)).collect::<Vec<String>>().concat());
-    }
-}
-
-#[test]
 fn can_lowlevel_decode_valid_wasm() {
     for path in wasm_files("test/input") {
         lowlevel::Module::from_file(&path).expect(&format!("could not decode valid wasm file {} to low-level AST", path.display()));

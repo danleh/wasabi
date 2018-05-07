@@ -110,6 +110,13 @@ version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "leb128"
+version = "0.2.0"
+dependencies = [
+ "byteorder 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -263,6 +270,7 @@ dependencies = [
  "byteorder 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "custom-derive 0.1.0",
  "derive-new 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "leb128 0.2.0",
  "rayon 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.36 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.36 (registry+https://github.com/rust-lang/crates.io-index)",

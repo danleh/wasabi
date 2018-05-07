@@ -1,6 +1,11 @@
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::io;
 
+extern crate byteorder;
+
+#[cfg(test)]
+mod tests;
+
 /* Traits for encoding and decoding Leb128 primitive integers */
 
 pub trait ReadLeb128<T>: io::Read {
