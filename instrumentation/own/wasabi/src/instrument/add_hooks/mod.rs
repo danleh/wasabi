@@ -69,7 +69,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                 If(BlockType(None)),
                 Const(Val::I32(0)),
                 Global(SetGlobal, start_not_executed_global),
-                fidx.into(),
+                fidx.to_const(),
                 Const(Val::I32(-1)),
                 hooks.start(),
                 End,
@@ -78,7 +78,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
         // add function_begin hook...
         instrumented_body.extend_from_slice(&[
-            fidx.into(),
+            fidx.to_const(),
             // ...which does not correspond to any instruction, so take -1 as instruction index
             Const(Val::I32(-1)),
             hooks.begin_function()
@@ -89,7 +89,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 
         for (iidx, instr) in original_body.into_iter().enumerate() {
             let iidx: Idx<Instr> = iidx.into();
-            let location = (fidx.into(), iidx.into());
+            let location = (fidx.to_const(), iidx.to_const());
 
             /*
              * add calls to hooks, typical instructions inserted for (not necessarily in this order if that saves us a local or so):
@@ -173,12 +173,12 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     instrumented_body.extend_from_slice(&[
                         location.0.clone(),
                         location.1.clone(),
-                        begin_if.into(),
+                        begin_if.to_const(),
                         hooks.end(&if_block),
                         instr,
                         location.0,
                         location.1,
-                        begin_if.into(),
+                        begin_if.to_const(),
                         hooks.begin_else(),
                     ]);
                 }
@@ -193,8 +193,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     // arguments for end hook
                     instrumented_body.append(&mut match block {
                         BlockStackElement::Function { .. } => vec![],
-                        BlockStackElement::Block { begin, .. } | BlockStackElement::Loop { begin, .. } | BlockStackElement::If { begin_if: begin, .. } => vec![begin.into()],
-                        BlockStackElement::Else { begin_if, begin_else, .. } => vec![begin_if.into(), begin_else.into()]
+                        BlockStackElement::Block { begin, .. } | BlockStackElement::Loop { begin, .. } | BlockStackElement::If { begin_if: begin, .. } => vec![begin.to_const()],
+                        BlockStackElement::Else { begin_if, begin_else, .. } => vec![begin_if.to_const(), begin_else.to_const()]
                     });
                     instrumented_body.extend_from_slice(&[
                         hooks.end(&block),
@@ -209,8 +209,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                 Br(target_label) => instrumented_body.extend_from_slice(&[
                     location.0,
                     location.1,
-                    target_label.into(),
-                    block_stack.br_target(target_label).into(),
+                    target_label.to_const(),
+                    block_stack.br_target(target_label).to_const(),
                     hooks.instr(&instr, &[]),
                     instr
                 ]),
@@ -223,8 +223,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         Local(TeeLocal, condition_tmp),
                         location.0,
                         location.1,
-                        target_label.into(),
-                        block_stack.br_target(target_label).into(),
+                        target_label.to_const(),
+                        block_stack.br_target(target_label).to_const(),
                         Local(GetLocal, condition_tmp),
                         hooks.instr(&instr, &[]),
                         instr
@@ -282,7 +282,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     instrumented_body.extend_from_slice(&[
                         location.0.clone(),
                         location.1.clone(),
-                        target_func_idx.into(),
+                        target_func_idx.to_const(),
                     ]);
                     instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &function));
                     instrumented_body.extend_from_slice(&[
@@ -385,7 +385,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         instr.clone(),
                         location.0,
                         location.1,
-                        local_idx.into(),
+                        local_idx.to_const(),
                     ]);
                     instrumented_body.append(&mut convert_i64_instr(Local(GetLocal, local_idx), local_ty));
                     instrumented_body.push(hooks.instr(&instr, &[local_ty]));
@@ -399,7 +399,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         instr.clone(),
                         location.0,
                         location.1,
-                        global_idx.into(),
+                        global_idx.to_const(),
                     ]);
                     instrumented_body.append(&mut convert_i64_instr(Global(GetGlobal, global_idx), global_ty));
                     instrumented_body.push(hooks.instr(&instr, &[global_ty]));
@@ -523,7 +523,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
             assert_eq!(instrumented_body.pop(), Some(End));
             instrumented_body.append(&mut save_stack_to_locals(&result_tmps));
             instrumented_body.extend_from_slice(&[
-                fidx.into(),
+                fidx.to_const(),
                 Const(Val::I32(-1)),
             ]);
             instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &function));
@@ -550,8 +550,12 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 }
 
 /// convenience to hand (function/instr/local/global) indices to hooks
-impl<T> Into<Instr> for Idx<T> {
-    fn into(self) -> Instr {
+trait ToConst {
+    fn to_const(self) -> Instr;
+}
+
+impl<T> ToConst for Idx<T> {
+    fn to_const(self) -> Instr {
         Const(Val::I32(self.0 as i32))
     }
 }

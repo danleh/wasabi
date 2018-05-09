@@ -4,12 +4,8 @@ version = "0.2.0"
 authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
 
 [dependencies]
-binary_derive = { path = "lib/binary_derive" }
-leb128 = { path = "lib/leb128" }
-byteorder = "1"
-rayon = "1.0"
+wasm = { path = "lib/wasm" }
 walkdir = "2"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
-derive-new = "0.5"

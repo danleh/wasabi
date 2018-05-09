@@ -273,6 +273,17 @@ dependencies = [
 name = "wasabi"
 version = "0.2.0"
 dependencies = [
+ "serde 1.0.50 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive 1.0.50 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.17 (registry+https://github.com/rust-lang/crates.io-index)",
+ "walkdir 2.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wasm 0.3.0",
+]
+
+[[package]]
+name = "wasm"
+version = "0.3.0"
+dependencies = [
  "binary_derive 0.2.0",
  "byteorder 1.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "derive-new 0.5.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -280,8 +291,6 @@ dependencies = [
  "rayon 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.50 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.50 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_json 1.0.17 (registry+https://github.com/rust-lang/crates.io-index)",
- "walkdir 2.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

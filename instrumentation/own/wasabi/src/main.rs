@@ -1,7 +1,9 @@
 extern crate wasabi;
+extern crate wasm;
 
-use std::{env, fs, path::PathBuf, io};
-use wasabi::{wasm::ast::highlevel::Module, instrument::add_hooks};
+use std::{env, fs, io, path::PathBuf};
+use wasabi::instrument::add_hooks;
+use wasm::ast::highlevel::Module;
 
 fn main() {
     if let Err(error) = main_inner() {
