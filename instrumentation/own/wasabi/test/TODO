@@ -1,0 +1,10 @@
+sort inputs into
+  - "testsuite" for Wasm features, very small files, mostly generated from text
+  - "integration" style end-to-end tests: real-world/large Wasm binaries
+
+new output dirs
+  - just validating that wasm files can be parsed
+  - that writing them out again (uninstrumented) are still wasm-validate OK
+  - wasm-validate after instrumentation
+
+write tests to automatically traverse ALL wasm files in these directories
