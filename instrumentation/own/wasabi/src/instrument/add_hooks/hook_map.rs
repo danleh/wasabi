@@ -1,5 +1,5 @@
-use ast::{FunctionType, Idx, ValType, ValType::*};
-use ast::highlevel::{Function, Instr, Instr::*, Module};
+use wasm::ast::{FunctionType, Idx, ValType, ValType::*};
+use wasm::ast::highlevel::{Function, Instr, Instr::*, Module};
 use std::collections::HashMap;
 use super::block_stack::BlockStackElement;
 use super::convert_i64::convert_i64_type;

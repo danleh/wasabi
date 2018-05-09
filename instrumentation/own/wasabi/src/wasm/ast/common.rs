@@ -1,4 +1,4 @@
-use binary::WasmBinary;
+use WasmBinary;
 use serde::{Serialize, Serializer};
 use std::fmt::{self, Write};
 use std::hash::{Hash, Hasher};

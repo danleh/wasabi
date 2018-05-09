@@ -1,4 +1,4 @@
-use ast::{highlevel::Instr, Idx, Label};
+use wasm::ast::{highlevel::Instr, Idx, Label};
 use self::BlockStackElement::*;
 use std::collections::HashMap;
 

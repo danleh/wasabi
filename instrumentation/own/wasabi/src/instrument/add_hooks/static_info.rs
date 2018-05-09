@@ -1,5 +1,5 @@
-use ast::{FunctionType, Idx, Label, ValType};
-use ast::highlevel::{Function, Instr, Module};
+use wasm::ast::{FunctionType, Idx, Label, ValType};
+use wasm::ast::highlevel::{Function, Instr, Module};
 use super::block_stack::BlockStack;
 
 /*

@@ -1,5 +1,5 @@
-use ast::*;
-use ast::lowlevel::*;
+use wasm::ast::*;
+use wasm::ast::lowlevel::*;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use leb128::*;
 use rayon::prelude::*;

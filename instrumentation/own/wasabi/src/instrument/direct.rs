@@ -1,5 +1,5 @@
-use ast::{FunctionType, Mutability, Val, ValType::*};
-use ast::highlevel::{Instr::*, Module, GlobalOp::*, NumericOp::*};
+use wasm::ast::{FunctionType, Mutability, Val, ValType::*};
+use wasm::ast::highlevel::{Instr::*, Module, GlobalOp::*, NumericOp::*};
 
 /* trivial or "low-level" instrumentations, i.e., where the byte code is manually modified */
 

@@ -15,15 +15,14 @@ extern crate test;
 extern crate walkdir;
 extern crate leb128;
 
-use ast::{highlevel, lowlevel};
-use binary::WasmBinary;
+use wasm::ast::{highlevel, lowlevel};
+use wasm::WasmBinary;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use std::path::Path;
 
-pub mod ast;
-mod binary;
-mod instrument;
+pub mod wasm;
+pub mod instrument;
 #[cfg(test)]
 mod tests;
 

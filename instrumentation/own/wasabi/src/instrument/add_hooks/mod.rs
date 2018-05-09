@@ -1,5 +1,5 @@
-use ast::{BlockType, Idx, InstrType, Mutability, Val, ValType::*};
-use ast::highlevel::{GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
+use wasm::ast::{BlockType, Idx, InstrType, Mutability, Val, ValType::*};
+use wasm::ast::highlevel::{GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
 use self::block_stack::{BlockStack, BlockStackElement};
 use self::convert_i64::convert_i64_instr;
 use self::duplicate_stack::*;

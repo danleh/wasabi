@@ -1,5 +1,5 @@
-use ast::{Val, ValType, ValType::I32, ValType::I64};
-use ast::highlevel::{Instr, Instr::Const, Instr::Numeric, NumericOp::I32WrapI64, NumericOp::I64ShrS};
+use wasm::ast::{Val, ValType, ValType::I32, ValType::I64};
+use wasm::ast::highlevel::{Instr, Instr::Const, Instr::Numeric, NumericOp::I32WrapI64, NumericOp::I64ShrS};
 use std::slice::from_ref;
 
 /*

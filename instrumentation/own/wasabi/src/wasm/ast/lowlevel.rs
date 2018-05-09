@@ -1,4 +1,4 @@
-use binary::WasmBinary;
+use WasmBinary;
 use super::*;
 
 #[derive(Debug, Clone)]

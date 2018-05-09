@@ -1,5 +1,5 @@
-use ast::{self, Idx};
-use ast::highlevel::{Function, Instr, Instr::Local, LocalOp::*};
+use wasm::ast::{self, Idx};
+use wasm::ast::highlevel::{Function, Instr, Instr::Local, LocalOp::*};
 
 /*
  * Helper functions for duplicating stack values

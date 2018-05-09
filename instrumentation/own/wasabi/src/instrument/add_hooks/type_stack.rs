@@ -1,4 +1,4 @@
-use ast::{BlockType, ValType, InstrType};
+use wasm::ast::{BlockType, ValType, InstrType};
 use self::TypeStackElement::*;
 
 /*
