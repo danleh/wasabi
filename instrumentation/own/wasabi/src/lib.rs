@@ -3,7 +3,7 @@
 
 extern crate byteorder;
 #[macro_use]
-extern crate wasabi_derive;
+extern crate binary_derive;
 #[macro_use]
 extern crate derive_new;
 extern crate rayon;

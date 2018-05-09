@@ -4,7 +4,7 @@ version = "0.2.0"
 authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
 
 [dependencies]
-wasabi-derive = { path = "lib/wasabi-derive" }
+binary_derive = { path = "lib/binary_derive" }
 leb128 = { path = "lib/leb128" }
 byteorder = "1"
 rayon = "1.0"
