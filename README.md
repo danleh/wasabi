@@ -64,8 +64,8 @@ target/release/wasabi
 
 - Creating WebAssembly Programs
     * Manually:
-    ```
-    # paste the following into hello.wat
+    ```sexp
+    ;; paste into hello.wat
     (module
       (import "host" "print" (func $i (param i32)))
       (func $somefun
@@ -73,7 +73,8 @@ target/release/wasabi
         call $i)
       (export "somefun" (func $somefun))
     )
-    
+    ```
+    ```bash
     # assemble binary Wasm file
     wat2wasm hello.wat
     
