@@ -143,7 +143,7 @@ target/release/wasabi
     firefox http://localhost:8080/hello.html
     ```
 
-- **Analyze** with Wasabi in the browser
+- **Analyze** with Wasabi in the browser (**TODO** create a sample-analysis/ directory and copy from there, some more examples and explanations)
     ```js
     // paste into log-all.js
   /*
@@ -251,4 +251,4 @@ target/release/wasabi
     firefox http://localhost:8080/hello.html
     ```
 
--  Running in and instrumenting for Node.js: **TODO**
+-  Running in and instrumenting for **Node.js**: **TODO**
