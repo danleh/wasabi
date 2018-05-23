@@ -43,7 +43,7 @@ git clone https://github.com/danleh/wasabi.git
 cd wasabi/wasabi/
 # download dependencies from https://crates.io and compile
 cargo build --release
-cp target/releas/wasabi .
+cp target/release/wasabi .
 # test: should print usage
 ./wasabi
 ```
