@@ -4,10 +4,7 @@
         i32.const 0
         call_indirect
     )
-    (func $indirect
-        nop
-    )
-    (export "f" (func $f))
+    (func $indirect nop)
     (elem (i32.const 0) $indirect)
     (start $f)
 )
