@@ -50,14 +50,13 @@
 ```bash
 git clone https://github.com/danleh/wasabi.git
 cd wasabi/wasabi/
-# download dependencies from https://crates.io and compile with optimizations
-cargo build --release
+# download dependencies from https://crates.io, compile with optimizations, make wasabi binary available in $PATH
+cargo install --path .
 
 # test
-target/release/wasabi
+wasabi
+> Error: expected at least one argument
 > Usage: wasabi <input_wasm_file> [<output_dir>]
-
-# (optional:) add target/release/wasabi to $PATH
 ```
 
 ## Usage Tutorial
