@@ -4,3 +4,4 @@ version = "0.1.0"
 authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
 
 [dependencies]
+walkdir = "2"

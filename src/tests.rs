@@ -5,7 +5,7 @@ use std::fs::{create_dir_all, File};
 use std::io::{self, Cursor, Read, sink, Write, BufWriter};
 use std::path::{Path, PathBuf};
 use test::Bencher;
-use wasm_validate::wasm_validate;
+use wasm_validate::*;
 
 /* Correctness tests */
 
@@ -112,14 +112,6 @@ fn clone_highlevel_module_speed(bencher: &mut Bencher) {
 
 
 /* Convenience functions */
-
-fn wasm_files<P: AsRef<Path>>(dir: P) -> impl Iterator<Item=PathBuf> {
-    use walkdir::WalkDir;
-    WalkDir::new(dir.as_ref()).into_iter()
-        .map(Result::unwrap)
-        .map(|entry| entry.path().to_owned())
-        .filter(|path| path.extension() == Some("wasm".as_ref()))
-}
 
 /// Read wasm module from test_file, instrument it, and write out to test/output/ directory
 fn instrument(test_file: &Path, instrument: impl Fn(&mut highlevel::Module) -> Option<String>, instrument_str: &str) -> io::Result<PathBuf> {
