@@ -13,7 +13,7 @@ Usage: wasabi <input_wasm_file> [<output_dir>]
 
 Produces two files in <output_dir> (default: out/):
   - an instrumented version of the <input_wasm_file> and
-  - a JavaScript file with static analysis information and (Wasabi internal) low-level hooks."#,
+  - a JavaScript file with static analysis information, (Wasabi-internal) low-level hooks, Wasabi runtime, and Wasabi loader."#,
                   error);
     }
 }
@@ -29,7 +29,7 @@ fn main_inner() -> io::Result<()> {
     let mut output_file_stem = output_dir.clone();
     output_file_stem.push(input_filename_no_ext);
     let output_file_wasm = output_file_stem.with_extension("wasm");
-    let output_file_js = output_file_stem.with_extension("js");
+    let output_file_js = output_file_stem.with_extension("wasabi.js");
 
     // instrument Wasm and generate JavaScript
     let mut module = Module::from_file(input_file.clone())?;
