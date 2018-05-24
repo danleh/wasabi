@@ -5,22 +5,7 @@ use std::fs::{create_dir_all, File};
 use std::io::{self, Cursor, Read, sink, Write, BufWriter};
 use std::path::{Path, PathBuf};
 use test::Bencher;
-
-/// "main"-like for quick and dirty testing
-#[test]
-#[ignore]
-fn debug() {
-//    use std::mem::size_of;
-//    println!("{}", size_of::<higherlevel::Funky>());
-
-    let file = "test/input/hello-emcc.wasm";
-    let _module = highlevel::Module::from_file(file).unwrap();
-//    println!("{}", serde_json::to_string(&module.functions[0].to_info()).unwrap())
-//    println!("{:?}", module);
-    instrument(&Path::new(file), add_hooks, "add-hooks").unwrap();
-//    module.to_file("test/debug.wasm").unwrap();
-}
-
+use wasm_validate::wasm_validate;
 
 /* Correctness tests */
 
@@ -153,19 +138,4 @@ fn instrument(test_file: &Path, instrument: impl Fn(&mut highlevel::Module) -> O
     }
 
     Ok(output_wasm_file)
-}
-
-fn wasm_validate(path: &Path) -> Result<(), String> {
-    use std::process::Command;
-    let validate_output = Command::new("wasm-validate")
-        .arg(path)
-        .output()
-        .map_err(|err| err.to_string())
-        .unwrap();
-    if validate_output.status.success() {
-        Ok(())
-    } else {
-        Err(format!("invalid wasm file {}\n", path.display()) +
-            &String::from_utf8(validate_output.stderr).unwrap())
-    }
 }
