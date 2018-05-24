@@ -10,11 +10,14 @@ extern crate rayon;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+extern crate test_utilities;
 
 pub mod ast;
 mod binary;
 pub use self::binary::WasmBinary;
 
+#[cfg(test)]
+mod tests;
 
 /*
  * convenience for working files (which is the most common io::Read/Write anyway)

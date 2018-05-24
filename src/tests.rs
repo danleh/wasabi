@@ -1,41 +1,17 @@
 use wasm::ast::*;
 use wasm::WasmBinary;
-use instrument::{add_hooks, direct::*};
+use instrument::{direct::*};
 use std::fs::{create_dir_all, File};
 use std::io::{self, Cursor, Read, sink, Write, BufWriter};
 use std::path::{Path, PathBuf};
 use test::Bencher;
-use wasm_validate::*;
+use test_utilities::*;
 
-/* Correctness tests */
-
-// TODO move these tests into their appropriate cargo projects
-
-#[test]
-fn can_lowlevel_decode_valid_wasm() {
-    for path in wasm_files("test/input") {
-        lowlevel::Module::from_file(&path).expect(&format!("could not decode valid wasm file {} to low-level AST", path.display()));
-    }
-}
-
-#[test]
-fn can_highlevel_decode_valid_wasm() {
-    for path in wasm_files("test/input") {
-        highlevel::Module::from_file(&path).expect(&format!("could not decode valid wasm file {} to high-level AST", path.display()));
-    }
-}
-
-#[test]
-fn identity_instrumentation_produces_valid_wasm() {
-    for path in wasm_files("test/input") {
-        let output = instrument(&path, identity, "identity").unwrap();
-        wasm_validate(&output).unwrap();
-    }
-}
+static TEST_INPUTS: &'static str = "../tests/inputs";
 
 #[test]
 fn add_empty_function_produces_valid_wasm() {
-    for path in wasm_files("test/input") {
+    for path in wasm_files(TEST_INPUTS) {
         let output = instrument(&path, add_empty_function, "add-empty-function").unwrap();
         wasm_validate(&output).unwrap();
     }
@@ -43,7 +19,7 @@ fn add_empty_function_produces_valid_wasm() {
 
 #[test]
 fn count_calls_instrumentation_produces_valid_wasm() {
-    for path in wasm_files("test/input") {
+    for path in wasm_files(TEST_INPUTS) {
         let output = instrument(&path, count_calls, "count-calls").unwrap();
         wasm_validate(&output).unwrap();
     }
@@ -51,13 +27,13 @@ fn count_calls_instrumentation_produces_valid_wasm() {
 
 #[test]
 fn add_hooks_instrumentation_produces_valid_wasm() {
-    for path in wasm_files("test/input") {
+    for path in wasm_files(TEST_INPUTS) {
         let output = instrument(&path, count_calls, "add-hooks").unwrap();
         wasm_validate(&output).unwrap();
     }
 }
 
-
+// TODO move into wasm tests
 /* Test encoding/decoding speed (without any instrumentation) on "large" wasm file (~2MB) */
 
 const LARGE_WASM_FILE: &'static str = "test/input/bananabread/bb.wasm";
@@ -117,7 +93,8 @@ fn clone_highlevel_module_speed(bencher: &mut Bencher) {
 fn instrument(test_file: &Path, instrument: impl Fn(&mut highlevel::Module) -> Option<String>, instrument_str: &str) -> io::Result<PathBuf> {
     assert!(test_file.to_string_lossy().contains("test/input"),
             "otherwise creating the output file and directories could fail/overwrite other stuff");
-    let output_dir = "output/".to_string() + instrument_str;
+    // TODO replace with test_utilities functions
+    let output_dir = "outputs/".to_string() + instrument_str;
     let output_wasm_file = PathBuf::from(test_file.to_string_lossy().replace("input", &output_dir));
     let output_js_file = PathBuf::from(output_wasm_file.to_string_lossy().replace(".wasm", ".js"));
     create_dir_all(output_wasm_file.parent().unwrap_or(&output_wasm_file))?;
