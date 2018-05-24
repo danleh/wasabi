@@ -585,7 +585,7 @@ Wasabi.module.lowlevelHooks = {{
     {}
 }};
 "#,
-            include_str!("../../../lib/long.js/long.js"),
+            include_str!("../../../lib/long.js/long.js").lines().next().unwrap(),
             include_str!("../../../lib/runtime.js"),
             serde_json::to_string_pretty(&module_info).unwrap(),
             hooks.iter().flat_map(|s| s.split("\n")).collect::<Vec<&str>>().join("\n    "))
