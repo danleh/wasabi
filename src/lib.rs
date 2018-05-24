@@ -6,7 +6,7 @@ extern crate serde;
 extern crate serde_derive;
 extern crate serde_json;
 extern crate test;
-extern crate wasm_validate;
+extern crate test_utilities;
 
 pub mod instrument;
 #[cfg(test)]

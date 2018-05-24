@@ -1,4 +1,4 @@
 [[package]]
-name = "wasm_validate"
+name = "test_utilities"
 version = "0.1.0"
 

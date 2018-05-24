@@ -5,7 +5,7 @@ authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
 
 [dependencies]
 wasm = { path = "lib/wasm" }
-wasm_validate = { path = "lib/wasm_validate" }
+test_utilities = { path = "lib/test_utilities" }
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
