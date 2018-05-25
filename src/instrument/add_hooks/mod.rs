@@ -444,7 +444,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     let ty = op.to_type();
                     type_stack.instr(&ty);
 
-                    let addr_tmp = function.add_fresh_local(I32);
+                    let addr_tmp = function.add_fresh_local(ty.inputs[0]);
                     let value_tmp = function.add_fresh_local(ty.results[0]);
 
                     instrumented_body.extend_from_slice(&[
@@ -463,8 +463,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     let ty = op.to_type();
                     type_stack.instr(&ty);
 
-                    let addr_tmp = function.add_fresh_local(I32);
-                    let value_tmp = function.add_fresh_local(ty.inputs[0]);
+                    let addr_tmp = function.add_fresh_local(ty.inputs[0]);
+                    let value_tmp = function.add_fresh_local(ty.inputs[1]);
 
                     instrumented_body.append(&mut save_stack_to_locals(&[addr_tmp, value_tmp]));
                     instrumented_body.extend_from_slice(&[
