@@ -10,11 +10,11 @@ const LARGE_WASM_FILE: &'static str = "../../tests/inputs/real-world/bananabread
 
 #[test]
 fn decode_encode_is_valid_wasm() {
-    for path in wasm_files(TEST_INPUTS) {
+    for path in wasm_files(TEST_INPUTS).unwrap() {
         let module = highlevel::Module::from_file(&path)
             .expect(&format!("could not decode valid wasm file '{}'", path.display()));
 
-        let output_path = &output_file(path, "encode");
+        let output_path = &output_file(path, "encode").unwrap();
         module.to_file(output_path)
             .expect(&format!("could not encode wasm to file '{}'", output_path.display()));
 

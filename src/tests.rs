@@ -21,14 +21,18 @@ fn add_hooks_instrumentation_produces_valid_wasm() {
 
 /// utility function
 fn test_instrument(instrument: impl Fn(&mut Module) -> Option<String>, instrument_name: &'static str) {
-    for path in wasm_files(TEST_INPUTS) {
+    for path in wasm_files(TEST_INPUTS).unwrap() {
         let mut module = Module::from_file(&path).unwrap();
-        instrument(&mut module);
+        let javascript = instrument(&mut module);
 
-        let output_path = output_file(&path, instrument_name);
+        let output_path = output_file(&path, instrument_name).unwrap();
         module.to_file(&output_path).unwrap();
 
         wasm_validate(&output_path)
             .expect(&format!("could not instrument wasm file '{}' with {}", path.display(), instrument_name));
+
+        for javascript in javascript {
+            ::std::fs::write(output_path.with_extension("wasabi.js"), javascript).unwrap();
+        }
     }
 }
