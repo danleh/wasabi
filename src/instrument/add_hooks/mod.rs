@@ -141,6 +141,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                 }
                 If(block_ty) => {
                     block_stack.begin_if(iidx);
+                    type_stack.instr(&InstrType::new(&[I32], &[]));
                     type_stack.begin(block_ty);
 
                     let condition_tmp = function.add_fresh_local(I32);
