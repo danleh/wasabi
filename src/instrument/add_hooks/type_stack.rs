@@ -76,7 +76,12 @@ impl TypeStack {
     }
 
     pub fn else_(&mut self) {
+        // reuse code from end...
         let block_ty = self.end().expect("else cannot end a function");
+        // but undo pushing of block result (this will be done by the "real" end)
+        if let BlockType(Some(ty)) = block_ty {
+            assert_eq!(ty, self.pop_val());
+        }
         self.begin(block_ty);
     }
 }
