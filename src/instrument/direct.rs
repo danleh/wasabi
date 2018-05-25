@@ -1,9 +1,7 @@
 use wasm::ast::{FunctionType, Mutability, Val, ValType::*};
 use wasm::ast::highlevel::{Instr::*, Module, GlobalOp::*, NumericOp::*};
 
-/* trivial or "low-level" instrumentations, i.e., where the byte code is manually modified */
-
-pub fn identity(_: &mut Module) -> Option<String> { None }
+/* direct or "low-level" instrumentations, i.e., where the byte code is manually modified */
 
 pub fn add_empty_function(module: &mut Module) -> Option<String> {
     module.add_function(
