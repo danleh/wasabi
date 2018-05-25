@@ -375,21 +375,21 @@ impl NumericOp {
 impl LoadOp {
     pub fn to_type(&self) -> InstrType {
         match *self {
-            I32Load => InstrType::new(&[], &[I32]),
-            I64Load => InstrType::new(&[], &[I64]),
-            F32Load => InstrType::new(&[], &[F32]),
-            F64Load => InstrType::new(&[], &[F64]),
+            I32Load => InstrType::new(&[I32], &[I32]),
+            I64Load => InstrType::new(&[I32], &[I64]),
+            F32Load => InstrType::new(&[I32], &[F32]),
+            F64Load => InstrType::new(&[I32], &[F64]),
 
-            I32Load8S => InstrType::new(&[], &[I32]),
-            I32Load8U => InstrType::new(&[], &[I32]),
-            I32Load16S => InstrType::new(&[], &[I32]),
-            I32Load16U => InstrType::new(&[], &[I32]),
-            I64Load8S => InstrType::new(&[], &[I64]),
-            I64Load8U => InstrType::new(&[], &[I64]),
-            I64Load16S => InstrType::new(&[], &[I64]),
-            I64Load16U => InstrType::new(&[], &[I64]),
-            I64Load32S => InstrType::new(&[], &[I64]),
-            I64Load32U => InstrType::new(&[], &[I64]),
+            I32Load8S => InstrType::new(&[I32], &[I32]),
+            I32Load8U => InstrType::new(&[I32], &[I32]),
+            I32Load16S => InstrType::new(&[I32], &[I32]),
+            I32Load16U => InstrType::new(&[I32], &[I32]),
+            I64Load8S => InstrType::new(&[I32], &[I64]),
+            I64Load8U => InstrType::new(&[I32], &[I64]),
+            I64Load16S => InstrType::new(&[I32], &[I64]),
+            I64Load16U => InstrType::new(&[I32], &[I64]),
+            I64Load32S => InstrType::new(&[I32], &[I64]),
+            I64Load32U => InstrType::new(&[I32], &[I64]),
         }
     }
 }
@@ -397,16 +397,16 @@ impl LoadOp {
 impl StoreOp {
     pub fn to_type(&self) -> InstrType {
         match *self {
-            I32Store => InstrType::new(&[I32], &[]),
-            I64Store => InstrType::new(&[I64], &[]),
-            F32Store => InstrType::new(&[F32], &[]),
-            F64Store => InstrType::new(&[F64], &[]),
+            I32Store => InstrType::new(&[I32, I32], &[]),
+            I64Store => InstrType::new(&[I32, I64], &[]),
+            F32Store => InstrType::new(&[I32, F32], &[]),
+            F64Store => InstrType::new(&[I32, F64], &[]),
 
-            I32Store8 => InstrType::new(&[I32], &[]),
-            I32Store16 => InstrType::new(&[I32], &[]),
-            I64Store8 => InstrType::new(&[I64], &[]),
-            I64Store16 => InstrType::new(&[I64], &[]),
-            I64Store32 => InstrType::new(&[I64], &[]),
+            I32Store8 => InstrType::new(&[I32, I32], &[]),
+            I32Store16 => InstrType::new(&[I32, I32], &[]),
+            I64Store8 => InstrType::new(&[I32, I64], &[]),
+            I64Store16 => InstrType::new(&[I32, I64], &[]),
+            I64Store32 => InstrType::new(&[I32, I64], &[]),
         }
     }
 }
