@@ -1,4 +1,4 @@
-#![feature(attr_literals, specialization, core_intrinsics)]
+#![feature(attr_literals, specialization, core_intrinsics, test)]
 
 #[macro_use]
 extern crate binary_derive;
@@ -10,6 +10,7 @@ extern crate rayon;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+extern crate test;
 extern crate test_utilities;
 
 pub mod ast;
