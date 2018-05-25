@@ -43,7 +43,7 @@ impl TypeStack {
     /// convenience, pops and validates input_tys, then pushes the result_tys
     pub fn instr(&mut self, ty: &InstrType) {
         for &input_ty in ty.inputs.iter().rev() {
-            assert_eq!(input_ty, self.pop_val());
+            assert_eq!(input_ty, self.pop_val(), "instruction expected input type, but stack top was");
         }
         for &result_ty in ty.results.iter() {
             self.push_val(result_ty);
