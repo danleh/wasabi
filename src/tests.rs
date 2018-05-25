@@ -1,54 +1,34 @@
-use wasm::ast::*;
-use instrument::{direct::*};
-use std::fs::{create_dir_all, File};
-use std::io::{self, Write, BufWriter};
-use std::path::{Path, PathBuf};
+use instrument::{add_hooks, direct::*};
 use test_utilities::*;
+use wasm::ast::highlevel::Module;
 
-static TEST_INPUTS: &'static str = "../tests/inputs";
+const TEST_INPUTS: &'static str = "tests/inputs";
 
 #[test]
 fn add_empty_function_produces_valid_wasm() {
-    for path in wasm_files(TEST_INPUTS) {
-        let output = instrument(&path, add_empty_function, "add-empty-function").unwrap();
-        wasm_validate(&output).unwrap();
-    }
+    test_instrument(add_empty_function, "add-empty-function");
 }
 
 #[test]
 fn count_calls_instrumentation_produces_valid_wasm() {
-    for path in wasm_files(TEST_INPUTS) {
-        let output = instrument(&path, count_calls, "count-calls").unwrap();
-        wasm_validate(&output).unwrap();
-    }
+    test_instrument(count_calls, "count-calls");
 }
 
 #[test]
 fn add_hooks_instrumentation_produces_valid_wasm() {
-    for path in wasm_files(TEST_INPUTS) {
-        let output = instrument(&path, count_calls, "add-hooks").unwrap();
-        wasm_validate(&output).unwrap();
-    }
+    test_instrument(add_hooks, "add-hooks");
 }
 
-/* Convenience functions */
+/// utility function
+fn test_instrument(instrument: impl Fn(&mut Module) -> Option<String>, instrument_name: &'static str) {
+    for path in wasm_files(TEST_INPUTS) {
+        let mut module = Module::from_file(&path).unwrap();
+        instrument(&mut module);
 
-/// Read wasm module from test_file, instrument it, and write out to test/output/ directory
-fn instrument(test_file: &Path, instrument: impl Fn(&mut highlevel::Module) -> Option<String>, instrument_str: &str) -> io::Result<PathBuf> {
-    assert!(test_file.to_string_lossy().contains("test/input"),
-            "otherwise creating the output file and directories could fail/overwrite other stuff");
-    // TODO replace with test_utilities functions
-    let output_dir = "outputs/".to_string() + instrument_str;
-    let output_wasm_file = PathBuf::from(test_file.to_string_lossy().replace("input", &output_dir));
-    let output_js_file = PathBuf::from(output_wasm_file.to_string_lossy().replace(".wasm", ".js"));
-    create_dir_all(output_wasm_file.parent().unwrap_or(&output_wasm_file))?;
+        let output_path = output_file(&path, instrument_name);
+        module.to_file(&output_path).unwrap();
 
-    let mut module = highlevel::Module::from_file(test_file)?;
-    let generated_js = instrument(&mut module);
-    module.to_file(&output_wasm_file)?;
-    if let Some(generated_js) = generated_js {
-        BufWriter::new(File::create(output_js_file)?).write_all(generated_js.as_bytes())?;
+        wasm_validate(&output_path)
+            .expect(&format!("could not instrument wasm file '{}' with {}", path.display(), instrument_name));
     }
-
-    Ok(output_wasm_file)
 }
