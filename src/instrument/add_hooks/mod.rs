@@ -304,7 +304,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     instrumented_body.push(hooks.call_post(&func_ty.results));
                 }
                 CallIndirect(ref func_ty, _ /* table idx == 0 in WASM version 1 */) => {
-                    type_stack.instr(&func_ty.into());
+                    type_stack.instr(&instr.to_type().unwrap());
 
                     /* pre call hook */
 

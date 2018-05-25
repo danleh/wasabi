@@ -424,13 +424,14 @@ impl Instr {
             MemoryGrow(_) => Some(InstrType::new(&[I32], &[I32])),
             Const(ref val) => Some(InstrType::new(&[], &[val.to_type()])),
             Numeric(ref op) => Some(op.to_type()),
+            CallIndirect(ref func_ty, _) => Some(InstrType::new(&[&func_ty.params[..], &[I32]].concat(), &func_ty.results)),
 
             // nesting...
             Block(_) | Loop(_) | If(_) | Else | End => None,
             // depends on branch target?
             Br(_) | BrIf(_) | BrTable(_, _) => None,
             // need to inspect function type
-            Return | Call(_) | CallIndirect(_, _) => None,
+            Return | Call(_) => None,
             // need abstract type stack "evaluation"
             Drop | Select => None,
             // need lookup in locals/globals
