@@ -13,7 +13,7 @@ function addLocation(location) {
 }
 
 function results() {
-    for (const [fnIdx, fn] of staticInfo.functions.entries()) {
+    for (const [fnIdx, fn] of Wasabi.module.info.functions.entries()) {
         // imported functions can naturally not have coverage information
         if (fn.import !== null) {
             continue;
