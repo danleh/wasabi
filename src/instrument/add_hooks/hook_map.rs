@@ -140,13 +140,15 @@ impl HookMap {
             Load(op, _) => {
                 let ty = op.to_type().results[0];
                 let args = args!(offset: I32, align: I32, addr: I32, value: ty);
-                let js_args = &format!("{{addr, offset, align}}, {}", &args[3].to_lowlevel_long_expr());
+                let instr_string = name.clone();
+                let js_args = &format!("\"{}\", {{addr, offset, align}}, {}", instr_string, &args[3].to_lowlevel_long_expr());
                 Hook::new(name, args, "load", js_args)
             }
             Store(op, _) => {
                 let ty = op.to_type().inputs[1];
                 let args = args!(offset: I32, align: I32, addr: I32, value: ty);
-                let js_args = &format!("{{addr, offset, align}}, {}", &args[3].to_lowlevel_long_expr());
+                let instr_string = name.clone();
+                let js_args = &format!("\"{}\", {{addr, offset, align}}, {}", instr_string, &args[3].to_lowlevel_long_expr());
                 Hook::new(name, args, "store", js_args)
             }
 
