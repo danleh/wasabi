@@ -27,6 +27,8 @@
     ./emsdk activate latest
     
     # add emcc to $PATH, e.g., by appending the following line to ~/.profile or ~/.bashrc
+    # WARNING unfortunately, this also exports a quite old emscripten-included clang version,
+    # so maybe do this manually before using emscripten and not for all shells. 
     source path/to/your/emsdk/emsdk_env.sh
     
     # test
