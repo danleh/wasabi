@@ -11,7 +11,7 @@
     cd wabt
     make
     
-    # add binaries to $PATH, e.g., by appending the following line to ~/.profile
+    # add binaries to $PATH, e.g., by appending the following line to ~/.profile or ~/.bashrc
     export PATH="path/to/your/wabt/bin:$PATH"
     
     # test
@@ -26,7 +26,7 @@
     ./emsdk install latest
     ./emsdk activate latest
     
-    # add emcc to $PATH, e.g., by appending the following line to ~/.profile
+    # add emcc to $PATH, e.g., by appending the following line to ~/.profile or ~/.bashrc
     source path/to/your/emsdk/emsdk_env.sh
     
     # test
