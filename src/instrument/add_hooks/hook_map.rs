@@ -140,15 +140,15 @@ impl HookMap {
             Load(op, _) => {
                 let ty = op.to_type().results[0];
                 let args = args!(offset: I32, align: I32, addr: I32, value: ty);
-                let instr_string = name.clone();
-                let js_args = &format!("\"{}\", {{addr, offset, align}}, {}", instr_string, &args[3].to_lowlevel_long_expr());
+                let instr_name = instr.to_name();
+                let js_args = &format!("\"{}\", {{addr, offset, align}}, {}", instr_name, &args[3].to_lowlevel_long_expr());
                 Hook::new(name, args, "load", js_args)
             }
             Store(op, _) => {
                 let ty = op.to_type().inputs[1];
                 let args = args!(offset: I32, align: I32, addr: I32, value: ty);
-                let instr_string = name.clone();
-                let js_args = &format!("\"{}\", {{addr, offset, align}}, {}", instr_string, &args[3].to_lowlevel_long_expr());
+                let instr_name = instr.to_name();
+                let js_args = &format!("\"{}\", {{addr, offset, align}}, {}", instr_name, &args[3].to_lowlevel_long_expr());
                 Hook::new(name, args, "store", js_args)
             }
 
@@ -167,8 +167,8 @@ impl HookMap {
                 let inputs = ty.inputs.iter().enumerate().map(|(i, &ty)| Arg { name: format!("input{}", i), ty });
                 let results = ty.results.iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{}", i), ty });
                 let args = inputs.chain(results).collect::<Vec<_>>();
-                let instr_string = name.clone();
-                let js_args = &format!("\"{}\", {}", instr_string, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
+                let instr_name = instr.to_name();
+                let js_args = &format!("\"{}\", {}", instr_name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
                 Hook::new(name, args, highlevel_name, js_args)
             }
 
@@ -197,13 +197,15 @@ impl HookMap {
             Local(_, _) => {
                 assert_eq!(polymorphic_tys.len(), 1, "local instructions have only one argument");
                 let args = args!(index: I32, value: polymorphic_tys[0]);
-                let js_args = &format!("\"{}\", {}", name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
+                let instr_name = instr.to_name();
+                let js_args = &format!("\"{}\", {}", instr_name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
                 Hook::new(name, args, "local", js_args)
             }
             Global(_, _) => {
                 assert_eq!(polymorphic_tys.len(), 1, "global instructions have only one argument");
                 let args = args!(index: I32, value: polymorphic_tys[0]);
-                let js_args = &format!("\"{}\", {}", name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
+                let instr_name = instr.to_name();
+                let js_args = &format!("\"{}\", {}", instr_name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
                 Hook::new(name, args, "global", js_args)
             }
             Return => {
