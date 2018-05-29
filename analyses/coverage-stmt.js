@@ -12,6 +12,7 @@ function addLocation(location) {
     }
 }
 
+// call after the program-to-analyze has completed
 function results() {
     for (const [fnIdx, fn] of Wasabi.module.info.functions.entries()) {
         // imported functions can naturally not have coverage information
@@ -26,9 +27,7 @@ function results() {
     }
 }
 
-// callbacks from analysis API
-
-// just let every callback report add its location to coverageData
-for (const callback of Wasabi.HOOK_NAMES) {
-    window[callback] = addLocation;
+// just let every callback add its location to coverageData
+for (const hook of Wasabi.HOOK_NAMES) {
+    Wasabi.analysis[hook] = addLocation;
 }

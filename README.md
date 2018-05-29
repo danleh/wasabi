@@ -146,7 +146,8 @@ wasabi
         cp /path/to/wasabi/analyses/log-all.js .
       
         # include analysis in emscripten-generated HTML harness (FIXME hacky)
-        sed -i '/<script async type="text\/javascript" src="hello.js"><\/script>/a <script src="log-all.js"></script>' hello.html
+        # NOTE analysis must be loaded *after* the Wasabi-generated JavaScript
+        sed -i '/<script src="hello.wasabi.js"><\/script>/a <script src="log-all.js"></script>' hello.html
       
         # run in browser again, see lots of output on JavaScript console
         emrun --no_browser --port 8080 .

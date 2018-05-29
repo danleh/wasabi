@@ -23,20 +23,20 @@ function results() {
     }
 }
 
-// callbacks from analysis API
+Wasabi.analysis = {
+    if_(location, condition) {
+        addBranch(location, condition);
+    },
 
-function if_(location, condition) {
-    addBranch(location, condition);
-}
+    br_if(location, conditionalTarget, condition) {
+        addBranch(location, condition);
+    },
 
-function br_if(location, conditionalTarget, condition) {
-    addBranch(location, condition);
-}
+    br_table(location, table, defaultTarget, tableIdx) {
+        addBranch(location, tableIdx);
+    },
 
-function br_table(location, table, defaultTarget, tableIdx) {
-    addBranch(location, tableIdx);
-}
-
-function select(location, condition) {
-    addBranch(location, condition);
-}
+    select(location, condition) {
+        addBranch(location, condition);
+    },
+};
