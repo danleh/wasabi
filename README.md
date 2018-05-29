@@ -64,7 +64,7 @@ wasabi
 - **Create** WebAssembly programs
     * Manually:
     ```sexp
-    ;; paste into hello.wat
+    ;; paste into hello-manual.wat
     (module
       (import "host" "print" (func $i (param i32)))
       (func $somefun
@@ -75,10 +75,10 @@ wasabi
     ```
     ```bash
     # assemble binary Wasm file
-    wat2wasm hello.wat
+    wat2wasm hello-manual.wat
     
     # run binary (imported function host.print is provided by the interpreter)
-    wasm-interp --host-print --run-all-exports hello.wasm
+    wasm-interp --host-print --run-all-exports hello-manual.wasm
     > called host host.print(i32:42) =>
     > somefun() =>
     ```
