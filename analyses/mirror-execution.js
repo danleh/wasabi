@@ -4,7 +4,13 @@ Array.prototype.peek = function () {
 };
 
 function check(op, location, jsValue, wasmValue) {
-    if ((jsValue === undefined ? "undefined" : jsValue).toString() !== wasmValue.toString()) {
+    if (jsValue === undefined) {
+        jsValue = "undefined";
+    }
+    if (wasmValue === undefined) {
+        wasmValue = "undefined";
+    }
+    if (jsValue.toString() !== wasmValue.toString()) {
         console.log(op, location, jsValue, wasmValue);
     }
 }
