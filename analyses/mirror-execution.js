@@ -90,10 +90,10 @@ Wasabi.analysis = {
         check("select", location, jsCondition, condition);
     },
 
-    call_pre(location, targetFunc, indirect, args) {
-        if (indirect) {
+    call_pre(location, targetFunc, args, indirectTableIdx) {
+        if (indirectTableIdx !== undefined) {
             const jsTargetTableIdx = values().pop();
-            check("call_indirect table idx", location, jsTargetTableIdx, targetFunc);
+            check("call_indirect table idx", location, jsTargetTableIdx, indirectTableIdx);
         }
         for (const arg of args.reverse()) {
             const jsArg = values().pop();

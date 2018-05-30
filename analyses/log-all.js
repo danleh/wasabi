@@ -47,8 +47,8 @@ Wasabi.analysis = {
         console.log(location, "select, condition =", cond, "first =", first, "second =", second);
     },
 
-    call_pre(location, targetFunc, indirect, args) {
-        console.log(location, (indirect ? "indirect" : "direct"), "call", "to func #", targetFunc, "args =", args);
+    call_pre(location, targetFunc, args, indirectTableIdx) {
+        console.log(location, (indirectTableIdx === undefined ? "direct" : "indirect"), "call", "to func #", targetFunc, "args =", args);
     },
 
     call_post(location, values) {

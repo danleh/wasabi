@@ -216,13 +216,14 @@ impl HookMap {
             Call(_) => {
                 let mut args = args!(targetFunc: I32);
                 args.extend(polymorphic_tys.iter().enumerate().map(|(i, &ty)| Arg { name: format!("arg{}", i), ty }));
-                let js_args = &format!("targetFunc, false, [{}]", args[1..].iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
+                // NOTE indirectTableIndex is undefined, since this is a direct call
+                let js_args = &format!("targetFunc, [{}], undefined", args[1..].iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
                 Hook::new(name, args, "call_pre", js_args)
             }
             CallIndirect(_, _) => {
                 let mut args = args!(tableIndex: I32);
                 args.extend(polymorphic_tys.iter().enumerate().map(|(i, &ty)| Arg { name: format!("arg{}", i), ty }));
-                let js_args = &format!("Wasabi.resolveTableIdx(tableIndex), true, [{}]", args[1..].iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
+                let js_args = &format!("Wasabi.resolveTableIdx(tableIndex), [{}], tableIndex", args[1..].iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
                 Hook::new(name, args, "call_pre", js_args)
             }
 
