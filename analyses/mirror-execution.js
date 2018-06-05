@@ -75,7 +75,7 @@ Wasabi.analysis = {
     end(location, type, beginLocation) {
         const [result] = stack.peek().blocks.pop();
         if (result !== undefined) {
-            stack.peek().blocks.peek().push(result);
+            values().push(result);
         }
     },
 
