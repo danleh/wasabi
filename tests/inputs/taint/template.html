@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+ 	<head><meta charset="utf-8"></head>
+ 	<body>
+		<h1>Source</h1>
+		<pre id="source"></pre>
+
+		<h1>Output</h1>
+		<pre id="output"></pre>
+
+        <script type="text/javascript" src="FILENAME_TEST.wasabi.js"></script>
+        <script type="text/javascript" src="../FILENAME_ANALYSIS.js"></script>
+        <script type="text/javascript">
+			function output(string) {
+				document.getElementById("output").innerHTML += string;
+			}
+
+			// "async main"
+			(async function() {
+				document.getElementById("source").innerHTML = 
+					await fetch("../FILENAME_TEST.wat")
+						.then(response => response.text());
+
+				let importObject = {
+					imports: {
+						output,
+					}
+				};
+
+				let {module, instance} = await fetch("FILENAME_INSTR.wasm")
+					.then(response => response.arrayBuffer())
+					.then(arrayBuffer => WebAssembly.instantiate(arrayBuffer, importObject));
+
+				// instance.exports.main();
+			})();
+		</script>
+	</body>
+</html>

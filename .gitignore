@@ -2,8 +2,15 @@
 /target/
 
 # Wasabi output
-/out/
+out/
 
 # IntelliJ Rust IDE
 /.idea/
 /wasabi.iml
+
+# vim
+*~
+*.swp
+
+# generated browser tests
+*_out/
