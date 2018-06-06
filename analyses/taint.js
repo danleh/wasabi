@@ -127,8 +127,10 @@
         },
 
         unary(location, op, input, result) {
-            values().pop();
-            values().push(result);
+            const taint = values().pop();
+            const taintResult = new Taint();
+            taintResult.label = taint.label;
+            values().push(taintResult);
         },
 
         binary(location, op, first, second, result) {
