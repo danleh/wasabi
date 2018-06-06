@@ -41,6 +41,13 @@
         this.label = 0; // can hold any kind of more complex label; for now, just 0 (not tained) and 1 (tainted)
     }
 
+    function join(taint1, taint2) {
+        const resultTaint = new Taint();
+        if (taint1.label == 1 || taint2.label == 1)
+            resultTaint.label = 1;
+        return resultTaint;
+    }
+
     Wasabi.analysis = {
         if_(location, condition) {
             values().pop();
@@ -125,9 +132,10 @@
         },
 
         binary(location, op, first, second, result) {
-            values().pop();
-            values().pop();
-            values().push(result);
+            const taint1 = values().pop();
+            const taint2 = values().pop();
+            const taintResult = join(taint1, taint2);
+            values().push(taintResult);
         },
 
         load(location, op, memarg, value) {
