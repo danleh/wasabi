@@ -12,8 +12,8 @@
         get_local $locA
         call $source
 
-        ;; copy from locA to locB
-        get_local $locA
+        ;; put fresh, untainted value into locB
+        i32.const 23
         set_local $locB
 
         ;; pass locB to sink
