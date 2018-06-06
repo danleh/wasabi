@@ -11,9 +11,9 @@
     * instruments bla.wasm and includes analysis.js in host harness
 - Website, cf. https://jacksongl.github.io/files/demo/jalangiff/index.html
     * with online demo (basically in-browser of "harness generator" above): 
-        | - | - | - |
+
         | Wat | Analysis in JS | Console output |
-        | - | - | - |
+        | --- | --- | --- |
 - Documentation on how to run (integration style, see below) tests
 
 # Features
