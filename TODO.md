@@ -31,6 +31,15 @@
             trap_hook()
         }
         ```
+- Compile Wasabi from Rust -> Wasm and run in the browser
+    * No more need to run Wasabi "offline", no need to include generated JS file
+- Dynamic re-instrumentation for Wasm: optimizing away hooks of functions that were not provided by
+the user (e.g. by detection default function stubs through a ```// EMPTY FUNCTION, PLEASE OPTIMIZE AWAY``` magic
+comment)
+- Long term/follow up: streaming instrumentation
+- Long term/follow up: Analysis in Wasm (not JS)
+    * needs merging of analysis code and program code
+        - how to handle memory/tables
 
 # Applications, Analyses
 
