@@ -21,6 +21,7 @@
 - automatic (```cargo test```-able) integration tests for analyses 
     * using Wasm in Node.js
     * make sure null- or log-all-analysis run without exception
+- implement own Error type, replace panics with ```Result<_, wasasbi::Error>```, implement ```From``` and ```Error``` traits
 - Q: should ```*_end``` hook be called *after* ```...end``` instruction for non-loops? (otherwise ```br 0``` will "jump" over the hook) 
 - How to handle Wasm traps?
     * (Hacky:) replace Wasm function by Wasm -> JS -> Wasm wrapper that does 
