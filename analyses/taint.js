@@ -8,9 +8,10 @@
 
 (function() {
 
+    console.log("=========================");
     console.log("Starting taint analysis");
 
-    Array.prototype.peek = function () {
+    Array.prototype.peek = function() {
         return this[this.length - 1];
     };
 
@@ -19,8 +20,8 @@
      * TODO: Move memory tracking into reusable analysis component
      */
     const stack = [{
-        blocks: [], // the value stack for each function contains substacks for each block
-        locals: []
+        blocks:[], // the value stack for each function contains substacks for each block
+        locals:[]
     }];
 
     function values() {
@@ -40,6 +41,10 @@
     function Taint() {
         this.label = 0; // can hold any kind of more complex label; for now, just 0 (not tained) and 1 (tainted)
     }
+
+    Taint.prototype.toString = function() {
+        return "taint-" + this.label;
+    };
 
     function join(taint1, taint2) {
         const resultTaint = new Taint();
@@ -99,14 +104,15 @@
                 const taint = values().pop();
                 if (targetFunc == sourceFctIdx) {
                     taint.label = 1;
+                    console.log("Source: Marking value as tainted -- " + taint);
                 }
                 if (targetFunc == sinkFctIdx && taint.label == 1) {
                     console.log("Tainted value reached sink at ", location);
                 }
             }
             stack.push({
-                blocks: [],
-                locals: [],
+                blocks:[],
+                locals:[],
             });
         },
 
@@ -141,19 +147,19 @@
         },
 
         load(location, op, memarg, value) {
-            // TODO propagate taints for memory
             values().pop();
             const effectiveAddr = memarg.addr + memarg.offset;
             const taint = memory[effectiveAddr];
-            values().push(value);
+            console.log("Memory load from address " + effectiveAddr + " with taint " + taint);
+            values().push(taint);
         },
 
         store(location, op, memarg, value) {
-            // TODO propagate taints for memory
-            values().pop();
+            const taint = values().pop();
             values().pop();
             const effectiveAddr = memarg.addr + memarg.offset;
-            memory[effectiveAddr] = value;
+            console.log("Memory store to address " + effectiveAddr + " with taint " + taint);
+            memory[effectiveAddr] = taint;
         },
 
         memory_size(location, currentSizePages) {
@@ -170,6 +176,7 @@
                 case "set_local": {
                     const taint = values().pop();
                     stack.peek().locals[localIndex] = taint;
+                    console.log("Setting local variable with taint " + taint);
                     return;
                 }
                 case "tee_local": {
@@ -180,6 +187,7 @@
                 case "get_local": {
                     const taint = stack.peek().locals[localIndex];
                     values().push(taint);
+                    console.log("Getting local variable with taint " + taint);
                     return;
                 }
             }
