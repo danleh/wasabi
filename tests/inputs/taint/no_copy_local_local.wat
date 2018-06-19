@@ -2,7 +2,9 @@
     (import "imports" "output" (func $print (param i32)))
 
     (func $source (param i32))
+    (export "taint_source" (func $source))
     (func $sink (param i32))
+    (export "taint_sink" (func $sink))
 
     (func $f (local $locA i32) (local $locB i32)
         i32.const 5

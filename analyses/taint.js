@@ -31,12 +31,27 @@
     const memory = [];
     const globals = [];
 
+
     /*
      * Taint policy: sources and sink
-     * TODO: use function names instead of hard-coded indices
      */
-    const sourceFctIdx = 1;
-    const sinkFctIdx = 2;
+    function findSourceSinkFcts() {
+        let sourceFctIdx = -1;
+        let sinkFctIdx = -1;
+        for (let i = 0; i < Wasabi.module.info.functions.length; i++) {
+            const fct = Wasabi.module.info.functions[i];
+            if (fct.export === "taint_source") {
+                sourceFctIdx = i;
+            }
+            if (fct.export === "taint_sink") {
+                sinkFctIdx = i;
+            }
+        }
+        if (sourceFctIdx === -1) console.log("Warning: No exported source function found.");
+        if (sinkFctIdx === -1) console.log("Warning: No exported sink function found.");
+        return {sourceFctIdx:sourceFctIdx, sinkFctIdx:sinkFctIdx};
+    }
+    const {sourceFctIdx, sinkFctIdx} = findSourceSinkFcts();
 
     function Taint() {
         this.label = 0; // can hold any kind of more complex label; for now, just 0 (not tained) and 1 (tainted)
@@ -53,7 +68,26 @@
         return resultTaint;
     }
 
+    function ensureTaint(value) {
+        if (value instanceof Taint) {
+            return value;
+        } else {
+            console.log("ensureTaint: creating taint for value");
+            return new Taint();
+        }
+    }
+
     Wasabi.analysis = {
+
+        start(location) {
+            // create taints for all globals
+            for (let i = 0; i < Wasabi.module.info.globals.length; i++) {
+                const global = Wasabi.module.info.globals[i];
+                console.log("Creating taint for globals[" + i + "]");
+                globals[i] = new Taint();
+            }
+        },
+
         if_(location, condition) {
             values().pop();
         },
@@ -101,7 +135,7 @@
                 values().pop();
             }
             for (const arg of args) {
-                const taint = values().pop();
+                const taint = ensureTaint(values().pop());
                 if (targetFunc == sourceFctIdx) {
                     taint.label = 1;
                     console.log("Source: Marking value as tainted -- " + taint);
@@ -133,15 +167,15 @@
         },
 
         unary(location, op, input, result) {
-            const taint = values().pop();
+            const taint = ensureTaint(values().pop());
             const taintResult = new Taint();
             taintResult.label = taint.label;
             values().push(taintResult);
         },
 
         binary(location, op, first, second, result) {
-            const taint1 = values().pop();
-            const taint2 = values().pop();
+            const taint1 = ensureTaint(values().pop());
+            const taint2 = ensureTaint(values().pop());
             const taintResult = join(taint1, taint2);
             values().push(taintResult);
         },
@@ -149,13 +183,13 @@
         load(location, op, memarg, value) {
             values().pop();
             const effectiveAddr = memarg.addr + memarg.offset;
-            const taint = memory[effectiveAddr];
+            const taint = ensureTaint(memory[effectiveAddr]);
             console.log("Memory load from address " + effectiveAddr + " with taint " + taint);
             values().push(taint);
         },
 
         store(location, op, memarg, value) {
-            const taint = values().pop();
+            const taint = ensureTaint(values().pop());
             values().pop();
             const effectiveAddr = memarg.addr + memarg.offset;
             console.log("Memory store to address " + effectiveAddr + " with taint " + taint);
@@ -174,18 +208,18 @@
         local(location, op, localIndex, value) {
             switch (op) {
                 case "set_local": {
-                    const taint = values().pop();
+                    const taint = ensureTaint(values().pop());
                     stack.peek().locals[localIndex] = taint;
                     console.log("Setting local variable with taint " + taint);
                     return;
                 }
                 case "tee_local": {
-                    const taint = values().peek();
+                    const taint = ensureTaint(values().peek());
                     stack.peek().locals[localIndex] = taint;
                     return;
                 }
                 case "get_local": {
-                    const taint = stack.peek().locals[localIndex];
+                    const taint = ensureTaint(stack.peek().locals[localIndex]);
                     values().push(taint);
                     console.log("Getting local variable with taint " + taint);
                     return;
@@ -194,13 +228,15 @@
         },
 
         global(location, op, globalIndex, value) {
+            let taint;
             switch (op) {
                 case "set_global":
-                    const jsValue = values().pop();
-                    globals[globalIndex] = value;
+                    taint = ensureTaint(values().pop());
+                    globals[globalIndex] = taint;
                     return;
                 case "get_global":
-                    values().push(value);
+                    taint = ensureTaint(globals[globalIndex]);
+                    values().push(taint);
                     return;
             }
         },

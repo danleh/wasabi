@@ -2,7 +2,9 @@
     (import "imports" "output" (func $print (param i32)))
 
     (func $source (param i32))
+    (export "taint_source" (func $source))
     (func $sink (param i32))
+    (export "taint_sink" (func $sink))
 
     (memory 1024)  ;; TODO what's the memory_type?
 
