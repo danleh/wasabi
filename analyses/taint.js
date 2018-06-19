@@ -86,6 +86,8 @@
                 console.log("Creating taint for globals[" + i + "]");
                 globals[i] = new Taint();
             }
+
+            // any other data for which need to initialize taints?
         },
 
         if_(location, condition) {
@@ -115,8 +117,7 @@
 
         end(location, type, beginLocation) {
             const [resultTaint] = stack.peek().blocks.pop();
-            // assumes that resultTaint is defined iff the end is due to a function return
-            if (resultTaint !== undefined && stack.length > 1) {
+            if (type === "function" && resultTaint !== undefined && stack.length > 1) {
                 // push return value onto caller's frame
                 stack[stack.length - 2].blocks.peek().push(ensureTaint(resultTaint, location));
             }
@@ -136,8 +137,10 @@
             if (indirectTableIdx !== undefined) {
                 values().pop();
             }
+            const argTaints = [];
             for (const arg of args) {
                 const taint = ensureTaint(values().pop(), location);
+                argTaints.push(taint);
                 if (targetFunc == sourceFctIdx) {
                     taint.label = 1;
                     console.log("Source: Marking value as ", taint);
@@ -148,7 +151,7 @@
             }
             stack.push({
                 blocks:[],
-                locals:[],
+                locals:argTaints,
             });
         },
 
@@ -196,12 +199,12 @@
         },
 
         memory_size(location, currentSizePages) {
-            values().push(currentSizePages);
+            values().push(new Taint());
         },
 
         memory_grow(location, byPages, previousSizePages) {
             values().pop();
-            values().push(previousSizePages);
+            values().push(new Taint());
         },
 
         local(location, op, localIndex, value) {
