@@ -113,9 +113,11 @@
         },
 
         end(location, type, beginLocation) {
-            const [result] = stack.peek().blocks.pop();
-            if (result !== undefined) {
-                values().push(result);
+            const [resultTaint] = stack.peek().blocks.pop();
+            // assumes that resultTaint is defined iff the end is due to a function return
+            if (resultTaint !== undefined && stack.length > 1) {
+                // push return value onto caller's frame
+                stack[stack.length-2].blocks.peek().push(ensureTaint(resultTaint));
             }
         },
 
@@ -149,11 +151,8 @@
             });
         },
 
-        call_post(location, values) {
+        call_post(location, vals) {
             stack.pop();
-            for (const val of values) {
-                values().push(val);
-            }
         },
 
         return_(location, values) {
