@@ -31,7 +31,6 @@
     const memory = [];
     const globals = [];
 
-
     /*
      * Taint policy: sources and sink
      */
@@ -54,7 +53,7 @@
     const {sourceFctIdx, sinkFctIdx} = findSourceSinkFcts();
 
     function Taint() {
-        this.label = 0; // can hold any kind of more complex label; for now, just 0 (not tained) and 1 (tainted)
+        this.label = 0; // can hold any kind of more complex label; for now, just 0 (not tainted) and 1 (tainted)
     }
 
     Taint.prototype.toString = function() {
