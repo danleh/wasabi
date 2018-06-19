@@ -111,7 +111,6 @@
         },
 
         begin(location, type) {
-            // TODO if type is "function", set locals to parameter values of function?
             stack.peek().blocks.push([]);
         },
 
