@@ -138,5 +138,7 @@ impl BlockStack {
             Loop { begin, .. } => begin,
             Function { end } | Block { end, .. } | If { end, .. } | Else { end, .. } => end,
         }
+        // TODO also return all intermediate blocks (as their begin indices) so that we can call
+        // all end hooks between this block and the target
     }
 }

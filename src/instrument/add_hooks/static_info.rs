@@ -81,6 +81,9 @@ impl BrTableInfo {
 /// to which this label resolves to (statically computed with block_stack)
 pub struct ResolvedLabel {
     pub label: Idx<Label>,
+    // TODO also include the block, in terms of its begin instruction location
+    // for calling end() hooks of all intermediate blocks
+    // TODO also include block type, as string, e.g. one of "block" | "loop" | "if" | "else" ...
     pub location: Location,
 }
 
