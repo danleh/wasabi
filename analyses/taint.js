@@ -3,10 +3,11 @@
 /*
  * Simple taint analysis that considers explicit flows only
  * (i.e., no flows caused by control flow dependencies, but only data flow).
- * TODO work-in-progress ...
  */
 
 (function() {
+
+    const debug = false;
 
     console.log("=========================");
     console.log("Starting taint analysis");
@@ -41,10 +42,10 @@
         let sinkFctIdx = -1;
         for (let i = 0; i < Wasabi.module.info.functions.length; i++) {
             const fct = Wasabi.module.info.functions[i];
-            if (fct.export === "taint_source") {
+            if (fct.export === "taint_source" || fct.export === "_markSource") {
                 sourceFctIdx = i;
             }
-            if (fct.export === "taint_sink") {
+            if (fct.export === "taint_sink" || fct.export === "_sink") {
                 sinkFctIdx = i;
             }
         }
@@ -74,7 +75,7 @@
         if (value instanceof Taint) {
             return value;
         } else {
-            console.log("ensureTaint: creating taint for value at ", location);
+            if (debug) console.log("ensureTaint: creating taint for value at ", location);
             return new Taint();
         }
     }
@@ -85,7 +86,7 @@
             // create taints for all globals
             for (let i = 0; i < Wasabi.module.info.globals.length; i++) {
                 const global = Wasabi.module.info.globals[i];
-                console.log("Creating taint for globals[" + i + "]");
+                if (debug) console.log("Creating taint for globals[" + i + "]");
                 globals[i] = new Taint();
             }
 
@@ -130,7 +131,7 @@
             const [resultTaint] = stack.peek().blocks.pop();
             if (type === "function" && resultTaint !== undefined) {
                 returnValue = ensureTaint(resultTaint, location);
-                console.log("end(): Storing return value's taint ", returnValue, " at ", location);
+                if (debug) console.log("end(): Storing return value's taint ", returnValue, " at ", location);
             }
         },
 
@@ -159,7 +160,7 @@
         call_post(location, vals) {
             stack.pop();
             if (returnValue !== undefined) {
-                console.log("Found return value's taint in call_post at ", location);
+                if (debug) console.log("Found return value's taint in call_post at ", location);
                 values().push(returnValue);
                 returnValue = undefined;
             }
@@ -175,12 +176,12 @@
             if (returnValue === undefined && stack.peek().blocks.length !== 0) {
                 const [resultTaint] = stack.peek().blocks.pop();
                 returnValue = ensureTaint(resultTaint, location);
-                console.log("return_(): Storing return value's taint ", returnValue, " at ", location);
+                if (debug) console.log("return_(): Storing return value's taint ", returnValue, " at ", location);
             }
         },
 
         const_(location, value) {
-            console.log("New taint at ", location);
+            if (debug) console.log("New taint at ", location);
             values().push(new Taint());
         },
 
@@ -195,7 +196,7 @@
             const taint1 = ensureTaint(values().pop(), location);
             const taint2 = ensureTaint(values().pop(), location);
             const taintResult = join(taint1, taint2);
-            console.log("Result of binary is ", taintResult, " at ", location);
+            if (debug) console.log("Result of binary is ", taintResult, " at ", location);
             values().push(taintResult);
         },
 
@@ -203,7 +204,7 @@
             values().pop();
             const effectiveAddr = memarg.addr + memarg.offset;
             const taint = ensureTaint(memory[effectiveAddr], location);
-            console.log("Memory load from address " + effectiveAddr + " with taint " + taint);
+            if (debug) console.log("Memory load from address " + effectiveAddr + " with taint " + taint);
             values().push(taint);
         },
 
@@ -211,7 +212,7 @@
             const taint = ensureTaint(values().pop(), location);
             values().pop();
             const effectiveAddr = memarg.addr + memarg.offset;
-            console.log("Memory store to address " + effectiveAddr + " with taint " + taint);
+            if (debug) console.log("Memory store to address " + effectiveAddr + " with taint " + taint);
             memory[effectiveAddr] = taint;
         },
 
@@ -229,7 +230,7 @@
                 case "set_local": {
                     const taint = ensureTaint(values().pop(), location);
                     stack.peek().locals[localIndex] = taint;
-                    console.log("Setting local variable with ", taint, " at ", location);
+                    if (debug) console.log("Setting local variable with ", taint, " at ", location);
                     return;
                 }
                 case "tee_local": {
@@ -240,7 +241,7 @@
                 case "get_local": {
                     const taint = ensureTaint(stack.peek().locals[localIndex], location);
                     values().push(taint);
-                    console.log("Getting local variable with ", taint, " at ", location);
+                    if (debug) console.log("Getting local variable with ", taint, " at ", location);
                     return;
                 }
             }
