@@ -31,6 +31,8 @@
     const memory = [];
     const globals = [];
 
+    let returnValue; // to propagate return value's taint from end() to call_post()
+
     /*
      * Taint policy: sources and sink
      */
@@ -110,18 +112,6 @@
             stack.peek().blocks.pop();
         },
 
-        begin(location, type) {
-            stack.peek().blocks.push([]);
-        },
-
-        end(location, type, beginLocation) {
-            const [resultTaint] = stack.peek().blocks.pop();
-            if (type === "function" && resultTaint !== undefined && stack.length > 1) {
-                // push return value onto caller's frame
-                stack[stack.length - 2].blocks.peek().push(ensureTaint(resultTaint, location));
-            }
-        },
-
         drop(location, value) {
             values().pop()
         },
@@ -130,6 +120,18 @@
             values().pop();
             values().pop();
             values().pop();
+        },
+
+        begin(location, type) {
+            stack.peek().blocks.push([]);
+        },
+
+        end(location, type, beginLocation) {
+            const [resultTaint] = stack.peek().blocks.pop();
+            if (type === "function" && resultTaint !== undefined) {
+                returnValue = ensureTaint(resultTaint, location);
+                console.log("end(): Storing return value's taint ", returnValue, " at ", location);
+            }
         },
 
         call_pre(location, targetFunc, args, indirectTableIdx) {
@@ -156,10 +158,25 @@
 
         call_post(location, vals) {
             stack.pop();
+            if (returnValue !== undefined) {
+                console.log("Found return value's taint in call_post at ", location);
+                values().push(returnValue);
+                returnValue = undefined;
+            }
         },
 
         return_(location, values) {
-            // TODO how does it influence the stack? Is this already handled by end_function?
+            // Note on interaction between end() and return_():
+            //  * end() may or may not be called on function returns
+            //  * return_() may or may not be called on function returns
+            //  * end() always happens before return_()
+            //  * We try to retrieve the return value taint in end(),
+            //    and if none found, we try to retrieve it in return_()
+            if (returnValue === undefined && stack.peek().blocks.length !== 0) {
+                const [resultTaint] = stack.peek().blocks.pop();
+                returnValue = ensureTaint(resultTaint, location);
+                console.log("return_(): Storing return value's taint ", returnValue, " at ", location);
+            }
         },
 
         const_(location, value) {
@@ -178,6 +195,7 @@
             const taint1 = ensureTaint(values().pop(), location);
             const taint2 = ensureTaint(values().pop(), location);
             const taintResult = join(taint1, taint2);
+            console.log("Result of binary is ", taintResult, " at ", location);
             values().push(taintResult);
         },
 
