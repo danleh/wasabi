@@ -18,11 +18,16 @@
 
 # Features
 
+- WebAssembly ```end``` instruction
+    * should ```*_end``` hook be called *after* ```...end``` instruction for non-loops? (otherwise ```br 0``` will "jump" over the hook)
+    * should all "intermediate" end hooks be called after a branch hook (but before the branch is exceuted)?
+        - same for ```return```s actually!
+        - for br/br_if we can statically determine the stacks from the label resolution already
+        - for br_table we need to save the blocks (as begin instr index) and type and call the end() hooks at runtime
 - automatic (```cargo test```-able) integration tests for analyses 
     * using Wasm in Node.js
     * make sure null- or log-all-analysis run without exception
 - implement own Error type, replace panics with ```Result<_, wasasbi::Error>```, implement ```From``` and ```Error``` traits
-- Q: should ```*_end``` hook be called *after* ```...end``` instruction for non-loops? (otherwise ```br 0``` will "jump" over the hook) 
 - How to handle Wasm traps?
     * (Hacky:) replace Wasm function by Wasm -> JS -> Wasm wrapper that does 
         ```
@@ -40,7 +45,8 @@ comment)
 - Long term/follow up: streaming instrumentation
 - Long term/follow up: Analysis in Wasm (not JS)
     * needs merging of analysis code and program code
-        - how to handle memory/tables
+    * how to handle memory/tables
+    * for Memory: "multiplex" two memories into a single one, by replacing maintaining a base pointer for the "second" memory and increasing the memory size to the sum of both memories. Each ```memory.grow``` and ```memory.size``` instruction is replaced by an appropriate function (that moves the second memory portion if the first portion has to grow and that maintains this base pointer). Each memory access to the second section is prepended by a load of the global base pointer + add instruction.
 
 # Applications, Analyses
 
