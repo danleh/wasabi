@@ -1,6 +1,6 @@
-use wasm::ast::{highlevel::Instr, Idx, Label};
 use self::BlockStackElement::*;
 use std::collections::HashMap;
+use wasm::ast::{highlevel::Instr, Idx, Label};
 
 /*
  * Data structure for representing the "control stack", i.e., the implicit nested block structure
@@ -17,7 +17,8 @@ pub struct BlockStack {
     begin_end_map: HashMap<Idx<Instr>, Idx<Instr>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum BlockStackElement {
     Function {
         end: Idx<Instr>,
@@ -127,18 +128,47 @@ impl BlockStack {
 
     /// resolves a relative label at the current instruction to an absolute instruction index
     /// this requires forward scanning for non-loop block ends (implemented as a precomputed HashMap lookup, so O(1))
-    pub fn br_target(&self, label: Idx<Label>) -> Idx<Instr> {
-        // resolve label to block begin
-        let target_block = self.block_stack.iter()
-            .rev().nth(label.0)
-            .expect(&format!("invalid label: cannot find target block for {:?}", label));
+    pub fn br_target(&self, label: Idx<Label>) -> BranchTarget {
+        // resolve label to all blocks between the current and the target block
+        let ended_blocks: Vec<BlockStackElement> = self.block_stack.iter().rev().take(label.0 + 1).cloned().collect();
+
         // resolve block begin to actual next instruction locations
         // backward branch when targeting loops, forward for all other blocks
-        match *target_block {
-            Loop { begin, .. } => begin,
-            Function { end } | Block { end, .. } | If { end, .. } | Else { end, .. } => end,
-        }
-        // TODO also return all intermediate blocks (as their begin indices) so that we can call
-        // all end hooks between this block and the target
+        let absolute_instr = {
+            // the last block of the ended ones is the actual target
+            let target_block = ended_blocks.get(label.0)
+                .expect(&format!("invalid label: cannot find target block for {:?}", label));
+
+            match *target_block {
+                Loop { begin, .. } => begin,
+                Function { end } | Block { end, .. } | If { end, .. } | Else { end, .. } => end,
+            }
+        };
+
+        BranchTarget { absolute_instr, ended_blocks }
     }
+
+    /// similar to br_target(), call to get all implicitly ended blocks by a return
+    pub fn return_target(&self) -> BranchTarget {
+        BranchTarget {
+            absolute_instr: if let Some(Function { end }) = self.block_stack.first() {
+                *end
+            } else {
+                panic!("missing function block on block stack")
+            },
+            ended_blocks: self.block_stack.iter().rev().cloned().collect(),
+        }
+    }
+
+    // TODO test case
+}
+
+#[derive(Debug, Clone)]
+pub struct BranchTarget {
+    /// the resolved absolute instruction index (from the relative branch label)
+    /// NOTE is either a begin or end, need to add +1 to get the next "real" instruction
+    pub absolute_instr: Idx<Instr>,
+    /// all blocks that are implicitly ended when performing the branch (including the target block)
+    /// in the order how they are left (i.e., innermost [== current block] to outermost [== target block])
+    pub ended_blocks: Vec<BlockStackElement>,
 }

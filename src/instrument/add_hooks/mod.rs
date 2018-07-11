@@ -211,7 +211,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     location.0,
                     location.1,
                     target_label.to_const(),
-                    block_stack.br_target(target_label).to_const(),
+                    block_stack.br_target(target_label).absolute_instr.to_const(),
                     hooks.instr(&instr, &[]),
                     instr
                 ]),
@@ -225,7 +225,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.0,
                         location.1,
                         target_label.to_const(),
-                        block_stack.br_target(target_label).to_const(),
+                        block_stack.br_target(target_label).absolute_instr.to_const(),
                         Local(GetLocal, condition_tmp),
                         hooks.instr(&instr, &[]),
                         instr

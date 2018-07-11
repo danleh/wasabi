@@ -1,6 +1,6 @@
+use super::block_stack::{BlockStack, BlockStackElement};
 use wasm::ast::{FunctionType, Idx, Label, ValType};
 use wasm::ast::highlevel::{Function, Instr, Module};
-use super::block_stack::BlockStack;
 
 /*
  * Structs for static information that is generated during instrumentation and output as JSON
@@ -67,7 +67,12 @@ impl BrTableInfo {
     /// needs block_stack for resolving the labels to actual locations
     pub fn from_br_table(table: &[Idx<Label>], default: Idx<Label>, block_stack: &BlockStack, func: Idx<Function>) -> Self {
         let resolve = |label: Idx<Label>| {
-            ResolvedLabel { label, location: Location { func, instr: block_stack.br_target(label) } }
+            let target = block_stack.br_target(label);
+            ResolvedLabel {
+                label,
+                location: Location { func, instr: target.absolute_instr },
+                ended_blocks: target.ended_blocks,
+            }
         };
         BrTableInfo {
             table: table.iter().cloned().map(resolve).collect(),
@@ -81,10 +86,10 @@ impl BrTableInfo {
 /// to which this label resolves to (statically computed with block_stack)
 pub struct ResolvedLabel {
     pub label: Idx<Label>,
-    // TODO also include the block, in terms of its begin instruction location
-    // for calling end() hooks of all intermediate blocks
-    // TODO also include block type, as string, e.g. one of "block" | "loop" | "if" | "else" ...
     pub location: Location,
+    // for calling end() hooks of all intermediate blocks at runtime
+    #[serde(rename = "endedBlocks")]
+    pub ended_blocks: Vec<BlockStackElement>,
 }
 
 #[derive(Serialize)]

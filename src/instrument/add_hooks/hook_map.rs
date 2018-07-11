@@ -132,6 +132,7 @@ impl HookMap {
             If(_) => Hook::new(name, args!(condition: I32), "if_", "condition === 1"),
             Br(_) => Hook::new(name, args!(targetLabel: I32, targetInstr: I32), name, "{label: targetLabel, location: {func, instr: targetInstr}}"),
             BrIf(_) => Hook::new(name, args!(condition: I32, targetLabel: I32, targetInstr: I32), name, "{label: targetLabel, location: {func, instr: targetInstr}}, condition === 1"),
+            // FIXME call end() hooks of all endedBlocks
             BrTable(_, _) => Hook::new(name, args!(brTablesInfoIdx: I32, tableIdx: I32), name, "Wasabi.module.info.brTables[brTablesInfoIdx].table, Wasabi.module.info.brTables[brTablesInfoIdx].default, tableIdx"),
 
             MemorySize(_) => Hook::new(name, args!(currentSizePages: I32), name, "currentSizePages"),
