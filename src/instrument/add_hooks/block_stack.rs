@@ -36,8 +36,8 @@ pub enum BlockStackElement {
         end: Idx<Instr>,
     },
     Else {
-        begin_if: Idx<Instr>,
         begin_else: Idx<Instr>,
+        begin_if: Idx<Instr>,
         end: Idx<Instr>,
     },
 }

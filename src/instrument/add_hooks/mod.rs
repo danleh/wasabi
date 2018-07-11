@@ -195,7 +195,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     instrumented_body.append(&mut match block {
                         BlockStackElement::Function { .. } => vec![],
                         BlockStackElement::Block { begin, .. } | BlockStackElement::Loop { begin, .. } | BlockStackElement::If { begin_if: begin, .. } => vec![begin.to_const()],
-                        BlockStackElement::Else { begin_if, begin_else, .. } => vec![begin_if.to_const(), begin_else.to_const()]
+                        BlockStackElement::Else { begin_else, begin_if, .. } => vec![begin_else.to_const(), begin_if.to_const()]
                     });
                     instrumented_body.extend_from_slice(&[
                         hooks.end(&block),

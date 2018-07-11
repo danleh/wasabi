@@ -274,7 +274,7 @@ impl HookMap {
             BlockStackElement::Block { .. } => Hook::new("end_block", args!(beginInstr: I32), "end", "\"block\", {func, instr: beginInstr}"),
             BlockStackElement::Loop { .. } => Hook::new("end_loop", args!(beginInstr: I32), "end", "\"loop\", {func, instr: beginInstr}"),
             BlockStackElement::If { .. } => Hook::new("end_if", args!(beginInstr: I32), "end", "\"if\", {func, instr: beginInstr}"),
-            BlockStackElement::Else { .. } => Hook::new("end_else", args!(ifInstr: I32, elseInstr: I32), "end", "\"else\", {func, instr: ifInstr}, {func, instr: elseInstr}"),
+            BlockStackElement::Else { .. } => Hook::new("end_else", args!(elseInstr: I32, ifInstr: I32), "end", "\"else\", {func, instr: elseInstr}, {func, instr: ifInstr}"),
         })
     }
 

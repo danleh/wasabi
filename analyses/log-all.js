@@ -35,8 +35,9 @@ Wasabi.analysis = {
         console.log(location, "begin", type);
     },
 
-    end(location, type, beginLocation) {
-        console.log(location, "end", type, "(begin @", beginLocation, ")");
+    // ifLocation === location of the matching if block for else
+    end(location, type, beginLocation, ifLocation) {
+        console.log(location, "end", type, "(begin @", beginLocation, ", if begin @", ifLocation, ")");
     },
 
     drop(location, value) {
@@ -47,6 +48,7 @@ Wasabi.analysis = {
         console.log(location, "select, condition =", cond, "first =", first, "second =", second);
     },
 
+    // indirectTableIdx === undefined iff direct call, for indirect calls it is a number
     call_pre(location, targetFunc, args, indirectTableIdx) {
         console.log(location, (indirectTableIdx === undefined ? "direct" : "indirect"), "call", "to func #", targetFunc, "args =", args);
     },
