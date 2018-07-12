@@ -84,7 +84,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
             hooks.begin_function()
         ]);
 
-        // check for implicit return now, since body gets consumed below
+        // remember implicit return for instrumentation: add "synthetic" return hook call to last end
         let implicit_return = !original_body.ends_with(&[Return, End]);
 
         for (iidx, instr) in original_body.into_iter().enumerate() {
@@ -185,18 +185,29 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                 }
                 End => {
                     let block = block_stack.end();
+                    assert_eq!(iidx, block.end());
                     type_stack.end();
 
-                    instrumented_body.extend_from_slice(&[
-                        location.0,
-                        location.1,
-                    ]);
-                    // arguments for end hook
-                    instrumented_body.append(&mut match block {
-                        BlockStackElement::Function { .. } => vec![],
-                        BlockStackElement::Block { begin, .. } | BlockStackElement::Loop { begin, .. } | BlockStackElement::If { begin_if: begin, .. } => vec![begin.to_const()],
-                        BlockStackElement::Else { begin_else, begin_if, .. } => vec![begin_else.to_const(), begin_if.to_const()]
-                    });
+                    // add "synthetic" return hook call for implicit returns
+                    if implicit_return {
+                        if let BlockStackElement::Function { .. } = block {
+                            let result_tys = &function.type_.results.clone();
+                            let result_tmps = function.add_fresh_locals(result_tys);
+
+                            instrumented_body.append(&mut save_stack_to_locals(&result_tmps));
+                            instrumented_body.extend_from_slice(&[
+                                location.0,
+                                Const(Val::I32(-1)),
+                            ]);
+                            instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &function));
+                            instrumented_body.push(hooks.instr(&Return, result_tys));
+                        }
+                    }
+
+                    // NOTE there is not duplication of the end hook call for explicit returns,
+                    // because the end hook that is inserted now is never called (dead code)
+
+                    instrumented_body.append(&mut block.to_end_hook_args(fidx));
                     instrumented_body.extend_from_slice(&[
                         hooks.end(&block),
                         instr
@@ -207,27 +218,57 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                 /* Control Instructions: Branches/Breaks */
                 // NOTE hooks must come before instr
 
-                Br(target_label) => instrumented_body.extend_from_slice(&[
-                    location.0,
-                    location.1,
-                    target_label.to_const(),
-                    block_stack.br_target(target_label).absolute_instr.to_const(),
-                    hooks.instr(&instr, &[]),
-                    instr
-                ]),
-                BrIf(target_label) => {
-                    type_stack.instr(&InstrType::new(&[I32], &[]));
+                Br(target_label) => {
+                    let br_target = block_stack.br_target(target_label);
 
-                    let condition_tmp = function.add_fresh_local(I32);
-
+                    // br hook
                     instrumented_body.extend_from_slice(&[
-                        Local(TeeLocal, condition_tmp),
                         location.0,
                         location.1,
                         target_label.to_const(),
-                        block_stack.br_target(target_label).absolute_instr.to_const(),
+                        br_target.absolute_instr.to_const(),
+                        hooks.instr(&instr, &[])
+                        ]);
+
+                    // call end hooks on all intermediate blocks that are "jumped over"
+                    for block in br_target.ended_blocks {
+                        instrumented_body.append(&mut block.to_end_hook_args(fidx));
+                        instrumented_body.push(hooks.end(&block));
+                    }
+
+                    instrumented_body.push(instr)
+                }
+                BrIf(target_label) => {
+                    type_stack.instr(&InstrType::new(&[I32], &[]));
+
+                    let br_target = block_stack.br_target(target_label);
+
+                    let condition_tmp = function.add_fresh_local(I32);
+
+                    // br_if hook
+                    instrumented_body.extend_from_slice(&[
+                        Local(TeeLocal, condition_tmp),
+                        location.0.clone(),
+                        location.1.clone(),
                         Local(GetLocal, condition_tmp),
-                        hooks.instr(&instr, &[]),
+                        target_label.to_const(),
+                        br_target.absolute_instr.to_const(),
+                        hooks.instr(&instr, &[])
+                    ]);
+
+                    // call end hooks on all intermediate blocks that are "jumped over"
+                    // iff the condition is true (-> insert artificial if block)
+                    instrumented_body.extend_from_slice(&[
+                        Local(GetLocal, condition_tmp),
+                        If(BlockType(None)),
+                    ]);
+                    for block in br_target.ended_blocks {
+                        instrumented_body.append(&mut block.to_end_hook_args(fidx));
+                        instrumented_body.push(hooks.end(&block));
+                    }
+                    instrumented_body.extend_from_slice(&[
+                        // of the artificially inserted if block before
+                        End,
                         instr
                     ])
                 }
@@ -239,6 +280,9 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     module_info.br_tables.push(BrTableInfo::from_br_table(target_table, default_target, &block_stack, fidx));
 
                     let target_idx_tmp = function.add_fresh_local(I32);
+
+                    // NOTE calling the end() hooks for the intermediate blocks is done at runtime
+                    // by the br_table low-level hook
 
                     instrumented_body.extend_from_slice(&[
                         Local(TeeLocal, target_idx_tmp),
@@ -261,15 +305,21 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     let result_tmps = function.add_fresh_locals(result_tys);
 
                     instrumented_body.append(&mut save_stack_to_locals(&result_tmps));
+
                     instrumented_body.extend_from_slice(&[
                         location.0,
                         location.1,
                     ]);
                     instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &function));
-                    instrumented_body.extend_from_slice(&[
-                        hooks.instr(&instr, result_tys),
-                        instr,
-                    ]);
+                    instrumented_body.push(hooks.instr(&instr, result_tys));
+
+                    // call end hooks on all intermediate blocks that are "jumped over"
+                    for block in block_stack.return_target().ended_blocks {
+                        instrumented_body.append(&mut block.to_end_hook_args(fidx));
+                        instrumented_body.push(hooks.end(&block));
+                    }
+
+                    instrumented_body.push(instr)
                 }
                 Call(target_func_idx) => {
                     let ref func_ty = module_info.functions[target_func_idx.0].type_;
@@ -515,25 +565,6 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
             }
         }
 
-        // add return hook, if function has an implicit return
-        // (can be distinguished from actual returns in analysis because of -1 as instr location)
-        if implicit_return {
-            let result_tys = &function.type_.results.clone();
-            let result_tmps = function.add_fresh_locals(result_tys);
-
-            assert_eq!(instrumented_body.pop(), Some(End));
-            instrumented_body.append(&mut save_stack_to_locals(&result_tmps));
-            instrumented_body.extend_from_slice(&[
-                fidx.to_const(),
-                Const(Val::I32(-1)),
-            ]);
-            instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &function));
-            instrumented_body.extend_from_slice(&[
-                hooks.instr(&Return, result_tys),
-                End,
-            ]);
-        }
-
         // finally, switch dummy body out against instrumented body
         ::std::mem::replace(&mut function.code.as_mut().unwrap().body, instrumented_body);
     }
@@ -559,6 +590,27 @@ trait ToConst {
 impl<T> ToConst for Idx<T> {
     fn to_const(self) -> Instr {
         Const(Val::I32(self.0 as i32))
+    }
+}
+
+impl BlockStackElement {
+    fn to_end_hook_args(&self, fidx: Idx<Function>) -> Vec<Instr> {
+        match self {
+            BlockStackElement::Function { end } => vec![fidx.to_const(), end.to_const()],
+            BlockStackElement::Block { begin, end }
+            | BlockStackElement::Loop { begin, end }
+            | BlockStackElement::If { begin_if: begin, end, .. } => vec![fidx.to_const(), end.to_const(), begin.to_const()],
+            BlockStackElement::Else { begin_else, begin_if, end } => vec![fidx.to_const(), end.to_const(), begin_else.to_const(), begin_if.to_const()]
+        }
+    }
+    fn end(&self) -> Idx<Instr> {
+        match self {
+            | BlockStackElement::Function { end }
+            | BlockStackElement::Block { end, .. }
+            | BlockStackElement::Loop { end, .. }
+            | BlockStackElement::If { end, .. }
+            | BlockStackElement::Else { end, .. } => *end
+        }
     }
 }
 
