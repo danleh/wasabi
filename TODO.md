@@ -18,12 +18,6 @@
 
 # Features
 
-- WebAssembly ```end``` instruction
-    * should ```*_end``` hook be called *after* ```...end``` instruction for non-loops? (otherwise ```br 0``` will "jump" over the hook)
-    * should all "intermediate" end hooks be called after a branch hook (but before the branch is exceuted)?
-        - same for ```return```s actually!
-        - for br/br_if we can statically determine the stacks from the label resolution already
-        - for br_table we need to save the blocks (as begin instr index) and type and call the end() hooks at runtime
 - automatic (```cargo test```-able) integration tests for analyses 
     * using Wasm in Node.js
     * make sure null- or log-all-analysis run without exception
