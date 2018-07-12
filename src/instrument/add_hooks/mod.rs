@@ -6,7 +6,7 @@ use self::static_info::*;
 use self::type_stack::TypeStack;
 use serde_json;
 use wasm::ast::{BlockType, Idx, InstrType, Mutability, Val, ValType::*};
-use wasm::ast::highlevel::{GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
+use wasm::ast::highlevel::{GlobalOp::*, Instr, Instr::*, LocalOp::*, Module, Function};
 
 mod convert_i64;
 mod static_info;
@@ -126,7 +126,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.0,
                         location.1,
                         hooks.begin_block(),
-                    ]);
+                    ])
                 }
                 Loop(block_ty) => {
                     block_stack.begin_loop(iidx);
@@ -137,7 +137,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.0,
                         location.1,
                         hooks.begin_loop(),
-                    ]);
+                    ])
                 }
                 If(block_ty) => {
                     block_stack.begin_if(iidx);
@@ -159,7 +159,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.0,
                         location.1,
                         hooks.begin_if(),
-                    ]);
+                    ])
                 }
                 Else => {
                     let if_block = block_stack.else_();
@@ -181,7 +181,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.1,
                         begin_if.to_const(),
                         hooks.begin_else(),
-                    ]);
+                    ])
                 }
                 End => {
                     let block = block_stack.end();
@@ -200,7 +200,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                     instrumented_body.extend_from_slice(&[
                         hooks.end(&block),
                         instr
-                    ]);
+                    ])
                 }
 
 
@@ -229,7 +229,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         Local(GetLocal, condition_tmp),
                         hooks.instr(&instr, &[]),
                         instr
-                    ]);
+                    ])
                 }
                 BrTable(ref target_table, default_target) => {
                     type_stack.instr(&InstrType::new(&[I32], &[]));
@@ -248,7 +248,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         Const(Val::I32((module_info.br_tables.len() - 1) as i32)),
                         hooks.instr(&instr, &[]),
                         instr.clone()
-                    ]);
+                    ])
                 }
 
 
@@ -301,7 +301,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         location.1,
                     ]);
                     instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &function));
-                    instrumented_body.push(hooks.call_post(&func_ty.results));
+                    instrumented_body.push(hooks.call_post(&func_ty.results))
                 }
                 CallIndirect(ref func_ty, _ /* table idx == 0 in WASM version 1 */) => {
                     type_stack.instr(&instr.to_type().unwrap());
@@ -551,6 +551,7 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
 }
 
 /// convenience to hand (function/instr/local/global) indices to hooks
+/// must be trait since inherent impl is disallowed by orphan rules for non-crate types (Idx<T>)
 trait ToConst {
     fn to_const(self) -> Instr;
 }
