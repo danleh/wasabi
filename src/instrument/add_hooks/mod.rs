@@ -244,8 +244,8 @@ pub fn add_hooks(module: &mut Module) -> Option<String> {
                         Local(TeeLocal, target_idx_tmp),
                         location.0,
                         location.1,
-                        Const(Val::I32((module_info.br_tables.len() - 1) as i32)),
                         Local(GetLocal, target_idx_tmp),
+                        Const(Val::I32((module_info.br_tables.len() - 1) as i32)),
                         hooks.instr(&instr, &[]),
                         instr.clone()
                     ]);
