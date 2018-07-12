@@ -1,5 +1,3 @@
-#![feature(from_ref)]
-
 extern crate wasm;
 extern crate serde;
 #[macro_use]
