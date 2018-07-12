@@ -159,8 +159,6 @@ impl BlockStack {
             ended_blocks: self.block_stack.iter().rev().cloned().collect(),
         }
     }
-
-    // TODO test case
 }
 
 #[derive(Debug, Clone)]
