@@ -18,7 +18,8 @@ pub struct BlockStack {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "lowercase")]
+// see https://serde.rs/enum-representations.html
+#[serde(rename_all = "lowercase", tag = "type")]
 pub enum BlockStackElement {
     Function {
         end: Idx<Instr>,
@@ -32,11 +33,13 @@ pub enum BlockStackElement {
         end: Idx<Instr>,
     },
     If {
+        #[serde(rename = "begin")]
         begin_if: Idx<Instr>,
         begin_else: Option<Idx<Instr>>,
         end: Idx<Instr>,
     },
     Else {
+        #[serde(rename = "begin")]
         begin_else: Idx<Instr>,
         begin_if: Idx<Instr>,
         end: Idx<Instr>,

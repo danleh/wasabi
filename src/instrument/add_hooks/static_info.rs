@@ -71,7 +71,7 @@ impl BrTableInfo {
             ResolvedLabel {
                 label,
                 location: Location { func, instr: target.absolute_instr },
-                ended_blocks: target.ended_blocks,
+                end_blocks: target.ended_blocks,
             }
         };
         BrTableInfo {
@@ -88,8 +88,8 @@ pub struct ResolvedLabel {
     pub label: Idx<Label>,
     pub location: Location,
     // for calling end() hooks of all intermediate blocks at runtime
-    #[serde(rename = "endedBlocks")]
-    pub ended_blocks: Vec<BlockStackElement>,
+    #[serde(rename = "endBlocks")]
+    pub end_blocks: Vec<BlockStackElement>,
 }
 
 #[derive(Serialize)]
