@@ -6,6 +6,9 @@ use wasabi::config::EnabledHooks;
 use wasabi::instrument::add_hooks;
 use wasm::ast::highlevel::Module;
 
+// TODO use proper command-line option parser like clap, or structopt on top of it (https://docs.rs/structopt/0.2.10/structopt/)
+// TODO use failure crate and failure::Error type for error handling
+
 fn main() {
     if let Err(error) = main_inner() {
         eprintln!(r#"Error: {}
