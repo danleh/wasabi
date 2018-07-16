@@ -7,6 +7,7 @@ use self::type_stack::TypeStack;
 use serde_json;
 use wasm::ast::{BlockType, Idx, InstrType, Mutability, Val, ValType::*};
 use wasm::ast::highlevel::{GlobalOp::*, Instr, Instr::*, LocalOp::*, Module, Function};
+use config::EnabledHooks;
 
 mod convert_i64;
 mod static_info;
@@ -17,7 +18,7 @@ mod duplicate_stack;
 
 /// instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, and
 /// other relevant information.
-pub fn add_hooks(module: &mut Module) -> Option<String> {
+pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<String> {
     /*
      * make sure every function and table is exported,
      * needed for Wasabi runtime to resolve table indices to function indices

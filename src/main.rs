@@ -2,6 +2,7 @@ extern crate wasabi;
 extern crate wasm;
 
 use std::{env, fs, io, path::PathBuf};
+use wasabi::config::EnabledHooks;
 use wasabi::instrument::add_hooks;
 use wasm::ast::highlevel::Module;
 
@@ -9,18 +10,27 @@ fn main() {
     if let Err(error) = main_inner() {
         eprintln!(r#"Error: {}
 
-Usage: wasabi <input_wasm_file> [<output_dir>]
+Usage: wasabi [options] <input_wasm_file> [<output_dir>]
 
 Produces two files in <output_dir> (default: out/):
   - an instrumented version of the <input_wasm_file> and
-  - a JavaScript file with static analysis information, (Wasabi-internal) low-level hooks, Wasabi runtime, and Wasabi loader."#,
+  - a JavaScript file with static analysis information, (Wasabi-internal) low-level hooks, Wasabi runtime, and Wasabi loader.
+
+Options:
+  --hooks=<comma-separated list>     Instrument ONLY for the given hooks.
+  --no-hooks=<comma-separated list>  Instrument for all BUT the given hooks.
+                                     (Default: Instrument for all hooks.)"#,
                   error);
     }
 }
 
 fn main_inner() -> io::Result<()> {
-    // skip first argument (program name)
-    let mut args = env::args().skip(1);
+    let (options, args): (Vec<String>, Vec<String>) = env::args()
+        // skip first argument (program name)
+        .skip(1)
+        // --hooks and --no-hooks options
+        .partition(|arg| arg.starts_with("--hooks") || arg.starts_with("--no-hooks"));
+    let mut args = args.into_iter();
     let input_file = PathBuf::from(args.next().ok_or(io_err("expected at least one argument"))?);
     let output_dir = PathBuf::from(args.next().unwrap_or("out".to_string()));
 
@@ -31,9 +41,18 @@ fn main_inner() -> io::Result<()> {
     let output_file_wasm = output_file_stem.with_extension("wasm");
     let output_file_js = output_file_stem.with_extension("wasabi.js");
 
+    let enabled_hooks = match options.as_slice() {
+        [] => EnabledHooks::all(),
+        [option] if option.starts_with("--hooks=") =>
+            EnabledHooks::from_hooks(option.trim_left_matches("--hooks="))?,
+        [option] if option.starts_with("--no-hooks=") =>
+            EnabledHooks::from_no_hooks(option.trim_left_matches("--no-hooks="))?,
+        _ => return Err(io_err("invalid options, can only give --hooks OR --no-hooks once"))
+    };
+
     // instrument Wasm and generate JavaScript
     let mut module = Module::from_file(input_file.clone())?;
-    let js = add_hooks(&mut module).unwrap();
+    let js = add_hooks(&mut module, &enabled_hooks).unwrap();
 
     // write output files
     fs::create_dir_all(output_dir)?;
