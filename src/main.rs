@@ -50,7 +50,7 @@ fn main_inner() -> io::Result<()> {
             EnabledHooks::from_hooks(option.trim_left_matches("--hooks="))?,
         [option] if option.starts_with("--no-hooks=") =>
             EnabledHooks::from_no_hooks(option.trim_left_matches("--no-hooks="))?,
-        _ => return Err(io_err("invalid options, can only give --hooks OR --no-hooks once"))
+        _ => return Err(io_err("invalid options, can only give --hooks=... OR --no-hooks=..."))
     };
 
     // instrument Wasm and generate JavaScript
