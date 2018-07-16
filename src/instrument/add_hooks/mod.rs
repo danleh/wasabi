@@ -508,7 +508,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                         Const(Val::I32(memarg.alignment as i32)),
                     ]);
                     instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &function));
-                    instrumented_body.push(hooks.instr(&instr, &[]));
+                    instrumented_body.push(hooks.instr(&instr, &[]))
                 }
                 Store(op, memarg) => {
                     let ty = op.to_type();
@@ -526,7 +526,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                         Const(Val::I32(memarg.alignment as i32)),
                     ]);
                     instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &function));
-                    instrumented_body.push(hooks.instr(&instr, &[]));
+                    instrumented_body.push(hooks.instr(&instr, &[]))
                 }
 
 
