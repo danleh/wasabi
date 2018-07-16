@@ -5,7 +5,7 @@ use std::io;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HighLevelHook {
-    // do not include Start hook, cannot be disabled because it has negligible overhead anyway
+    Start,
 
     Nop,
     Unreachable,
@@ -28,6 +28,7 @@ pub enum HighLevelHook {
     Const,
     Unary,
     Binary,
+
     Load,
     Store,
 
