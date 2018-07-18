@@ -50,3 +50,6 @@ start,nop,unreachable,memory_size,memory_grow,drop,select,call,return;grouped/ba
 start,nop,unreachable,memory_size,memory_grow,drop,select,br,br_if,br_table;grouped/basic+branches
 
 start,nop,unreachable,memory_size,memory_grow,drop,select,if,begin,end;grouped/basic+blocks
+
+# all hooks enabled, i.e., default if no --hooks given to Wasabi
+start,nop,unreachable,memory_size,memory_grow,drop,select,global,local,const,unary,binary,load,store,call,return,br,br_if,br_table,if,begin,end;all
