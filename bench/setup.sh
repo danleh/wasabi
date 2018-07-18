@@ -1,14 +1,15 @@
 #!/bin/sh
 
-# requirements: wget, tar, unzip, python 2.7, npm, node js, git
+# requirements: wget, tar, unzip, gzip, python 2.7, npm, node js, git
 
 # download and install emscripten, see https://kripken.github.io/emscripten-site/docs/getting_started/downloads.html
-git clone https://github.com/juj/emsdk.git
-cd emsdk
-./emsdk install latest
-./emsdk activate latest
-# to have emcc available, run: source ./emsdk_env.sh
-cd ..
+#git clone https://github.com/juj/emsdk.git
+#cd emsdk
+#./emsdk install latest
+#./emsdk activate latest
+# to have emcc available, run: 
+#source ./emsdk_env.sh
+#cd ..
 
 # download and extract nightly browsers
 mkdir -p browsers
