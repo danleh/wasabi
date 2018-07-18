@@ -327,7 +327,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     if enabled_hooks.is_enabled(HighLevelHook::BrTable)
                         // because end hooks are called at runtime, we need to instrument even if br_table is not enabled
                         || enabled_hooks.is_enabled(HighLevelHook::End) {
-                        
+
                         // NOTE calling the end() hooks for the intermediate blocks is done at runtime
                         // by the br_table low-level hook
 

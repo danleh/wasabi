@@ -53,9 +53,11 @@ impl EnabledHooks {
     pub fn from_hooks(s: &str) -> io::Result<Self> {
         let mut result = HashSet::new();
         for hook in s.split(',') {
-            result.insert(
-                serde_plain::from_str(hook)
-                    .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid hook".to_string()))?);
+            if !hook.is_empty() {
+                result.insert(
+                    serde_plain::from_str(hook)
+                        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid hook".to_string()))?);
+            }
         }
         Ok(EnabledHooks(result))
     }
