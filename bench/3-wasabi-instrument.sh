@@ -6,9 +6,13 @@ do
 	out_dir=wasm/instrumented/$(echo $line | cut -d';' -f 2)/
 	echo "output directory: $out_dir"
 	mkdir -p $out_dir
+	# parallelize instrumentation, see https://unix.stackexchange.com/questions/103920/parallelize-a-bash-for-loop
+	(
 	for file in wasm/original/*.wasm
 	do
 		echo "  $file"
-		cargo run --release -q -- --hooks=$hooks $file $out_dir
+		cargo run --release -q -- --hooks=$hooks $file $out_dir &
 	done
+	wait
+	)
 done
