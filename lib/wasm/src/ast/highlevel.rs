@@ -340,7 +340,7 @@ impl NumericOp {
 
             // conversions
             I32WrapI64 => InstrType::new(&[I64], &[I32]),
-            I32TruncSF32 | I32TruncUF32 => InstrType::new(&[I32], &[F32]),
+            I32TruncSF32 | I32TruncUF32 => InstrType::new(&[F32], &[I32]),
             I32TruncSF64 | I32TruncUF64 => InstrType::new(&[F64], &[I32]),
             I64ExtendSI32 | I64ExtendUI32 => InstrType::new(&[I32], &[I64]),
             I64TruncSF32 | I64TruncUF32 => InstrType::new(&[F32], &[I64]),
