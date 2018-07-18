@@ -3,39 +3,50 @@
 
 ;none
 
-#start,nop,unreachable,memory_size,memory_grow;basic
 start;start
 nop;nop
 unreachable;unreachable
 memory_size;memory_size
 memory_grow;memory_grow
 
-#drop,select;drop+select
 drop;drop
 select;select
 
-const;const
 global;global
 local;local
 
-#load,store;load+store
-load;load
-store;store
-
-#unary,binary;unary+binary
+const;const
 unary;unary
 binary;binary
 
-#call,return;call+return
+load;load
+store;store
+
 call;call
 return;return
 
-#br,br_if,br_table;branches
 br;br
 br_if;br_if
 br_table;br_table
 
-#if,begin,end;blocks
 if;if
 begin;begin
 end;end
+
+# the following hooks account for <2% code size increase (in sum!), so group them together
+start,nop,unreachable,memory_size,memory_grow,drop,select;grouped/basic
+
+start,nop,unreachable,memory_size,memory_grow,drop,select,global;grouped/basic+global
+start,nop,unreachable,memory_size,memory_grow,drop,select,local;grouped/basic+local
+
+start,nop,unreachable,memory_size,memory_grow,drop,select,const;grouped/basic+const
+start,nop,unreachable,memory_size,memory_grow,drop,select,unary;grouped/basic+unary
+start,nop,unreachable,memory_size,memory_grow,drop,select,binary;grouped/basic+binary
+
+start,nop,unreachable,memory_size,memory_grow,drop,select,load,store;grouped/basic+load+store
+
+start,nop,unreachable,memory_size,memory_grow,drop,select,call,return;grouped/basic+call+return
+
+start,nop,unreachable,memory_size,memory_grow,drop,select,br,br_if,br_table;grouped/basic+branches
+
+start,nop,unreachable,memory_size,memory_grow,drop,select,if,begin,end;grouped/basic+blocks
