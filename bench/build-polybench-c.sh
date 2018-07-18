@@ -7,6 +7,7 @@ while read srcfile
 do
 	srcdir=$(dirname $srcfile)
 	name=$(basename $srcfile .c)
+	echo $name
 	# for detailed options, see https://kripken.github.io/emscripten-site/docs/compiling/WebAssembly.html#webassembly
 	emcc -O3 -I utilities -I $srcdir utilities/polybench.c $srcfile -s ALLOW_MEMORY_GROWTH=1 --emrun -DPOLYBENCH_TIME -o build/$name.html
 done < utilities/benchmark_list
