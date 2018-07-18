@@ -1,9 +1,14 @@
 #!/bin/bash
-hooks=''
-# use "none" as directory name if instrumenting for no hook
-out_dir=wasm/instrumented/${hooks:-none}/
-mkdir -p $out_dir
-for file in wasm/original/*.wasm
+egrep -v '^#|^$' 3_hooks_to_instrument_list | while read line
 do
-	cargo run --release -- --hooks=$hooks $file $out_dir
+	hooks=$(echo $line | cut -d';' -f 1)
+	echo "--hooks argument: $hooks"
+	out_dir=wasm/instrumented/$(echo $line | cut -d';' -f 2)/
+	echo "output directory: $out_dir"
+	mkdir -p $out_dir
+	for file in wasm/original/*.wasm
+	do
+		echo "  $file"
+		cargo run --release -q -- --hooks=$hooks $file $out_dir
+	done
 done
