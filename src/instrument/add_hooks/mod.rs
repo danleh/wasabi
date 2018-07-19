@@ -701,11 +701,11 @@ impl<T> ToConst for Idx<T> {
 impl BlockStackElement {
     fn to_end_hook_args(&self, fidx: Idx<Function>) -> Vec<Instr> {
         match self {
-            BlockStackElement::Function { end } => vec![fidx.to_const(), end.to_const()],
-            BlockStackElement::Block { begin, end }
+            | BlockStackElement::Function { end } => vec![fidx.to_const(), end.to_const()],
+            | BlockStackElement::Block { begin, end }
             | BlockStackElement::Loop { begin, end }
             | BlockStackElement::If { begin_if: begin, end, .. } => vec![fidx.to_const(), end.to_const(), begin.to_const()],
-            BlockStackElement::Else { begin_else, begin_if, end } => vec![fidx.to_const(), end.to_const(), begin_else.to_const(), begin_if.to_const()]
+            | BlockStackElement::Else { begin_else, begin_if, end } => vec![fidx.to_const(), end.to_const(), begin_else.to_const(), begin_if.to_const()]
         }
     }
     fn end(&self) -> Idx<Instr> {
