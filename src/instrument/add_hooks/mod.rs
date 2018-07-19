@@ -6,7 +6,8 @@ use self::hook_map::HookMap;
 use self::static_info::*;
 use self::type_stack::TypeStack;
 use serde_json;
-use wasm::ast::{BlockType, Idx, InstrType, Mutability, Val, ValType::*};
+use std::collections::HashSet;
+use wasm::ast::{BlockType, FunctionType, Idx, InstrType, Mutability, Val, ValType::*};
 use wasm::ast::highlevel::{Function, GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
 
 mod convert_i64;
@@ -20,17 +21,30 @@ mod duplicate_stack;
 /// other relevant information.
 pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<String> {
     /*
-     * make sure every function and table is exported,
-     * needed for Wasabi runtime to resolve table indices to function indices
+     * make sure every "indirect-callable" function and table is exported,
+     * needed for Wasabi runtime to resolve table indices to function indices.
+     * "indirect-callable" == every function where the type signature matches ANY call_indirect signature
+     * exporting all functions is a problem, because, e.g., Firefox fails wasm validation if too many elements are exported :/
      */
     for table in &mut module.tables {
         if let None = table.export {
             table.export = Some("__wasabi_table".into());
         }
     }
+    // collect call_indirect signatures
+    let call_indirect_tys: HashSet<FunctionType> = module.functions.iter()
+        .flat_map(|func| func.code.iter()
+            .flat_map(|code| code.body.iter()
+                .filter_map(|instr| match instr {
+                    Instr::CallIndirect(ty, _) => Some(ty.clone()),
+                    _ => None
+                }))).collect();
     for (fidx, function) in module.functions() {
-        if let None = function.export {
-            function.export = Some(format!("__wasabi_function_{}", fidx.0));
+        // only export the functions that call_indirect signatures matches
+        if call_indirect_tys.contains(&function.type_) {
+            if let None = function.export {
+                function.export = Some(format!("__wasabi_function_{}", fidx.0));
+            }
         }
     }
 
