@@ -44,7 +44,3 @@ find wasm/instrumented/$hooks/ -type f ! -iname '*UE4*' -and ! -iname '*pspdf*' 
 cp ../analyses/$analysis.js programs-analysis/EpicZenGarden/2017-03-16-ZenGarden/analysis.js
 cp ../analyses/$analysis.js programs-analysis/pspdfkit-webassembly-benchmark-master/public/analysis.js
 cp ../analyses/$analysis.js programs-analysis/polybench-c-4.2.1-beta/analysis.js
-
-#emrun --browser ~/Downloads/nightly\ browsers\ as\ of\ 2018-07-11\ 13-30\ UTC+0/chrome-linux/chrome out/atax.html 
-#emrun --no_browser --port=8080 out/atax.html &
-#~/Downloads/nightly\ browsers\ as\ of\ 2018-07-11\ 13-30\ UTC+0/firefox-63.0a1.de.linux-x86_64/firefox/firefox -no-remote -new-instance -profile ./ffprofile/ http://localhost:8080/atax.html
