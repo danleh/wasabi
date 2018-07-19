@@ -33,14 +33,14 @@ impl<'a> From<&'a Module> for ModuleInfo {
     }
 }
 
-#[derive(Clone)]
-//#[derive(Serialize)]
+#[derive(Serialize)]
 pub struct FunctionInfo {
-//    #[serde(serialize_with = "serialize_function_type")]
+    // optimizations to keep the generated static info small: types and locals as strings
+    #[serde(serialize_with = "serialize_function_type")]
     pub type_: FunctionType,
     pub import: Option<(String, String)>,
     pub export: Option<String>,
-//    #[serde(serialize_with = "serialize_types")]
+    #[serde(serialize_with = "serialize_types")]
     pub locals: Vec<ValType>,
 }
 
@@ -52,26 +52,6 @@ impl<'a> From<&'a Function> for FunctionInfo {
             export: function.export.clone(),
             locals: function.code.iter().flat_map(|code| code.locals.clone()).collect(),
         }
-    }
-}
-
-// optimizations to keep the generated static info small:
-// - functions as tuples (= JS arrays), not objects
-// - types and locals as strings
-#[derive(Serialize)]
-struct FunctionInfoSerialized(
-    Option<(String, String)>,
-    Option<String>,
-    #[serde(serialize_with = "serialize_function_type")]
-    FunctionType,
-    #[serde(serialize_with = "serialize_types")]
-    Vec<ValType>,
-);
-
-impl Serialize for FunctionInfo {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
-        let this = self.clone();
-        FunctionInfoSerialized(this.import, this.export, this.type_, this.locals).serialize(serializer)
     }
 }
 
@@ -134,7 +114,7 @@ pub struct ResolvedLabel {
 #[derive(Serialize)]
 pub struct Location(pub Idx<Function>, pub Idx<Instr>);
 
-// space optimization when serializing block ends again
+// space optimization when serializing: save block stack elements as tuples, not objects with properties
 impl Serialize for BlockStackElement {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
         use self::BlockStackElement::*;
