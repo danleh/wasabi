@@ -46,6 +46,17 @@ impl fmt::Display for ValType {
     }
 }
 
+impl ValType {
+    pub fn to_char(&self) -> char {
+        match self {
+            ValType::I32 => 'i',
+            ValType::I64 => 'I',
+            ValType::F32 => 'f',
+            ValType::F64 => 'F',
+        }
+    }
+}
+
 /// not in the spec, but useful for static analysis etc.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
 pub struct InstrType {
