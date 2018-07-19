@@ -5,11 +5,11 @@
 const counts = {};
 
 Wasabi.analysisResult = function () {
-    const keysSorted = Object.keys(counts).sort(function(a,b){return counts[b]-counts[a]})
+    const keysSorted = Object.keys(counts).sort(function(a,b){return counts[b]-counts[a]});
     for (const key of keysSorted) {
         console.log(key, "\t", counts[key]);
     }
-}
+};
 
 function incInstr(instr) {
     counts[instr] = (counts[instr] === undefined) ? 1 : counts[instr] + 1;
