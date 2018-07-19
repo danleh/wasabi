@@ -1,3 +1,4 @@
+use serde::{Serialize, Serializer};
 use super::block_stack::{BlockStack, BlockStackElement};
 use wasm::ast::{FunctionType, Idx, Label, ValType};
 use wasm::ast::highlevel::{Function, Instr, Module};
@@ -10,6 +11,7 @@ use wasm::ast::highlevel::{Function, Instr, Module};
 #[derive(Serialize)]
 pub struct ModuleInfo {
     pub functions: Vec<FunctionInfo>,
+    #[serde(serialize_with = "serialize_types")]
     pub globals: Vec<ValType>,
     pub start: Option<Idx<Function>>,
     #[serde(rename = "tableExportName")]
@@ -31,17 +33,15 @@ impl<'a> From<&'a Module> for ModuleInfo {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone)]
+//#[derive(Serialize)]
 pub struct FunctionInfo {
-    #[serde(rename = "type")]
+//    #[serde(serialize_with = "serialize_function_type")]
     pub type_: FunctionType,
     pub import: Option<(String, String)>,
     pub export: Option<String>,
+//    #[serde(serialize_with = "serialize_types")]
     pub locals: Vec<ValType>,
-    #[serde(rename = "instrCount")]
-    /// this is the only field that differentiates FunctionInfo from a plain Function:
-    /// we do not want to save all instructions in the object, this seems a bit excessive...
-    pub instr_count: Option<usize>,
 }
 
 impl<'a> From<&'a Function> for FunctionInfo {
@@ -51,9 +51,48 @@ impl<'a> From<&'a Function> for FunctionInfo {
             import: function.import.clone(),
             export: function.export.clone(),
             locals: function.code.iter().flat_map(|code| code.locals.clone()).collect(),
-            instr_count: function.code.as_ref().map(|code| code.body.len()),
         }
     }
+}
+
+// optimizations to keep the generated static info small:
+// - functions as tuples (= JS arrays), not objects
+// - types and locals as strings
+#[derive(Serialize)]
+struct FunctionInfoSerialized(
+    Option<(String, String)>,
+    Option<String>,
+    #[serde(serialize_with = "serialize_function_type")]
+    FunctionType,
+    #[serde(serialize_with = "serialize_types")]
+    Vec<ValType>,
+);
+
+impl Serialize for FunctionInfo {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        let this = self.clone();
+        FunctionInfoSerialized(this.import, this.export, this.type_, this.locals).serialize(serializer)
+    }
+}
+
+fn serialize_function_type<S>(ty: &FunctionType, s: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    let mut type_str = String::new();
+    for ty in &ty.params {
+        type_str.push(ty.to_char());
+    }
+    type_str.push('|');
+    for ty in &ty.results {
+        type_str.push(ty.to_char());
+    }
+    s.serialize_str(&type_str)
+}
+
+fn serialize_types<S>(tys: &[ValType], s: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    let mut type_str = String::new();
+    for ty in tys {
+        type_str.push(ty.to_char());
+    }
+    s.serialize_str(&type_str)
 }
 
 #[derive(Serialize)]
@@ -70,7 +109,7 @@ impl BrTableInfo {
             let target = block_stack.br_target(label);
             ResolvedLabel {
                 label,
-                location: Location { func, instr: target.absolute_instr },
+                location: Location(func, target.absolute_instr),
                 end_blocks: target.ended_blocks,
             }
         };
@@ -88,12 +127,23 @@ pub struct ResolvedLabel {
     pub label: Idx<Label>,
     pub location: Location,
     // for calling end() hooks of all intermediate blocks at runtime
-    #[serde(rename = "endBlocks")]
+    #[serde(rename = "ends")]
     pub end_blocks: Vec<BlockStackElement>,
 }
 
 #[derive(Serialize)]
-pub struct Location {
-    pub func: Idx<Function>,
-    pub instr: Idx<Instr>,
+pub struct Location(pub Idx<Function>, pub Idx<Instr>);
+
+// space optimization when serializing block ends again
+impl Serialize for BlockStackElement {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        use self::BlockStackElement::*;
+        match self {
+            Function { end } => ("function", -1, end).serialize(serializer),
+            Block { begin, end } => ("block", begin, end).serialize(serializer),
+            Loop { begin, end } => ("loop", begin, end).serialize(serializer),
+            If { begin_if, end, begin_else } => ("if", begin_if, end, begin_else).serialize(serializer),
+            Else { begin_else, end, begin_if } => ("else", begin_else, end, begin_if).serialize(serializer),
+        }
+    }
 }
