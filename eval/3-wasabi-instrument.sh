@@ -10,8 +10,7 @@ do
 	(
 	for file in wasm/original/*.wasm
 	do
-		echo "  $file"
-		cargo run --release -q -- --hooks=$hooks $file $out_dir &
+		cargo run --release -- --hooks=$hooks $file $out_dir &
 	done
 	wait
 	)
