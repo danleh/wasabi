@@ -11,7 +11,7 @@
 #source ./emsdk_env.sh
 #cd ..
 
-# download and extract nightly browsers
+# download and extract nightly browsers (as of 2018-07-17)
 mkdir -p browsers
 cd browsers
 wget https://download-origin.cdn.mozilla.net/pub/firefox/nightly/2018/07/2018-07-16-22-14-18-mozilla-central/firefox-63.0a1.en-US.linux-x86_64.tar.bz2 -O firefox-63-nightly.tar.bz2
