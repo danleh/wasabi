@@ -1,0 +1,1 @@
+Wasabi.analysis = {};
