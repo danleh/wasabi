@@ -36,8 +36,8 @@ fi
 gzip --stdout --fast wasm/instrumented/$hooks/UE4Game-HTML5-Shipping.wasm > programs-analysis/EpicZenGarden/2017-03-16-ZenGarden/UE4Game-HTML5-Shipping.wasm.gz
 cp wasm/instrumented/$hooks/UE4Game-HTML5-Shipping.wasabi.js programs-analysis/EpicZenGarden/2017-03-16-ZenGarden/
 
-cp wasm/instrumented/$hooks/pspdfkit.wasabi.js programs-analysis/pspdfkit-webassembly-benchmark-master/public/
 cp wasm/instrumented/$hooks/pspdfkit.wasm programs-analysis/pspdfkit-webassembly-benchmark-master/public/vendor/pspdfkit/pspdfkit-lib/
+cp wasm/instrumented/$hooks/pspdfkit.wasabi.js programs-analysis/pspdfkit-webassembly-benchmark-master/public/
 
 find wasm/instrumented/$hooks/ -type f ! -iname '*UE4*' -and ! -iname '*pspdf*' -exec cp -t programs-analysis/polybench-c-4.2.1-beta/ {} +
 
