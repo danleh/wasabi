@@ -492,6 +492,9 @@ impl From<hl::Module> for ll::Module {
         }
 
         // Custom
+        // TODO put the pass-through custom sections in the same order as they were originally
+        // necessary, e.g., because custom section "name" must come in some specific order
+        // requires saving the order earlier when converting from ll -> hl
         for custom in module.custom_sections {
             sections.push(ll::Section::Custom(custom));
         }
