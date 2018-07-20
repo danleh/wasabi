@@ -15,9 +15,9 @@ use super::{*, ValType::*};
 #[derive(Debug, Clone, Default)]
 pub struct Module {
     pub functions: Vec<Function>,
+    pub globals: Vec<Global>,
     pub tables: Vec<Table>,
     pub memories: Vec<Memory>,
-    pub globals: Vec<Global>,
 
     pub start: Option<Idx<Function>>,
 
