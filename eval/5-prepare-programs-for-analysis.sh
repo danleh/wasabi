@@ -10,7 +10,8 @@ then
 	cp programs/polybench-c-4.2.1-beta/build/* programs-analysis/polybench-c-4.2.1-beta/
 
 	# insert *.wasabi.js and analysis.js scripts into html harnesses
-	sed -i "4i\    <script src=\"UE4Game-HTML5-Shipping.wasabi.js\"></script><script src=\"analysis.js\"></script>" programs-analysis/EpicZenGarden/2017-03-16-ZenGarden/EpicZenGarden.html
+	# also delete IndexedDB for UE4 so that everything is always compiled fresh (HACKY but works for now)
+	sed -i "4i\    <script src=\"UE4Game-HTML5-Shipping.wasabi.js\"></script><script src=\"analysis.js\"></script><script>indexedDB.deleteDatabase(\"UE4_assetDatabase_ZenGarden\");</script>" programs-analysis/EpicZenGarden/2017-03-16-ZenGarden/EpicZenGarden.html
 	sed -i "4i\    <script src=\"pspdfkit.wasabi.js\"></script><script src=\"analysis.js\"></script>" programs-analysis/pspdfkit-webassembly-benchmark-master/public/index.html
 	for file in programs-analysis/polybench-c-4.2.1-beta/*.html
 	do
