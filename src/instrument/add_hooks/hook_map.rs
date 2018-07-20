@@ -74,7 +74,7 @@ impl Hook {
                 type_: FunctionType::new(lowlevel_args, vec![]),
                 import: Some(("__wasabi_hooks".to_string(), lowlevel_name)),
                 code: None,
-                export: None,
+                export: Vec::new(),
             }
         };
 

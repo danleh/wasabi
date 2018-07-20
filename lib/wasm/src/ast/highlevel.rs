@@ -31,7 +31,8 @@ pub struct Function {
     // import and code are mutually exclusive, i.e., exactly one of both must be Some(...)
     pub import: Option<(String, String)>,
     pub code: Option<Code>,
-    pub export: Option<String>,
+    // functions (and other elements) can be exported multiple times under different names
+    pub export: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -40,7 +41,7 @@ pub struct Global {
     // import and init are mutually exclusive, i.e., exactly one of both must be Some(...)
     pub import: Option<(String, String)>,
     pub init: Option<Expr>,
-    pub export: Option<String>,
+    pub export: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -48,7 +49,7 @@ pub struct Table {
     pub type_: TableType,
     pub import: Option<(String, String)>,
     pub elements: Vec<Element>,
-    pub export: Option<String>,
+    pub export: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -56,7 +57,7 @@ pub struct Memory {
     pub type_: MemoryType,
     pub import: Option<(String, String)>,
     pub data: Vec<Data>,
-    pub export: Option<String>,
+    pub export: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -632,7 +633,7 @@ impl Module {
                 locals,
                 body,
             }),
-            export: None,
+            export: Vec::new(),
         });
         (self.functions.len() - 1).into()
     }
@@ -642,7 +643,7 @@ impl Module {
             type_,
             import: Some((module, name)),
             code: None,
-            export: None,
+            export: Vec::new(),
         });
         (self.functions.len() - 1).into()
     }
@@ -652,7 +653,7 @@ impl Module {
             type_: GlobalType(type_, mut_),
             import: None,
             init: Some(init),
-            export: None,
+            export: Vec::new(),
         });
         (self.globals.len() - 1).into()
     }

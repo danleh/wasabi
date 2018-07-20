@@ -21,8 +21,8 @@ mod duplicate_stack;
 pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<String> {
     // make sure table is exported, needed for Wasabi runtime to resolve table indices to function indices.
     for table in &mut module.tables {
-        if let None = table.export {
-            table.export = Some("__wasabi_table".into());
+        if table.export.is_empty() {
+            table.export.push("__wasabi_table".into());
         }
     }
 

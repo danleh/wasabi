@@ -23,7 +23,7 @@ impl From<ll::Module> for hl::Module {
                 ll::Section::Import(vec) => {
                     for import_ in vec.0 {
                         let import = Some((import_.module, import_.name));
-                        let export = None;
+                        let export = Vec::new();
                         match import_.type_ {
                             ll::ImportType::Function(type_idx) => module.functions.push(hl::Function {
                                 type_: types[type_idx.0].clone(),
@@ -61,7 +61,7 @@ impl From<ll::Module> for hl::Module {
                             type_: types[type_idx.0].clone(),
                             import: None,
                             code: None,
-                            export: None,
+                            export: Vec::new(),
                         });
                     }
                 }
@@ -71,7 +71,7 @@ impl From<ll::Module> for hl::Module {
                             type_,
                             import: None,
                             elements: Vec::new(),
-                            export: None,
+                            export: Vec::new(),
                         });
                     }
                 }
@@ -81,7 +81,7 @@ impl From<ll::Module> for hl::Module {
                             type_,
                             import: None,
                             data: Vec::new(),
-                            export: None,
+                            export: Vec::new(),
                         });
                     }
                 }
@@ -91,7 +91,7 @@ impl From<ll::Module> for hl::Module {
                             type_,
                             import: None,
                             init: Some(from_lowlevel_expr(init, &types)),
-                            export: None,
+                            export: Vec::new(),
                         });
                     }
                 }
@@ -100,12 +100,11 @@ impl From<ll::Module> for hl::Module {
 
                 ll::Section::Export(ll::WithSize(exports)) => {
                     for ll::Export { name, type_ } in exports {
-                        let export = Some(name);
                         match type_ {
-                            ll::ExportType::Function(idx) => module.functions[idx.0].export = export,
-                            ll::ExportType::Table(idx) => module.tables[idx.0].export = export,
-                            ll::ExportType::Memory(idx) => module.memories[idx.0].export = export,
-                            ll::ExportType::Global(idx) => module.globals[idx.0].export = export,
+                            ll::ExportType::Function(idx) => module.functions[idx.0].export.push(name),
+                            ll::ExportType::Table(idx) => module.tables[idx.0].export.push(name),
+                            ll::ExportType::Memory(idx) => module.memories[idx.0].export.push(name),
+                            ll::ExportType::Global(idx) => module.globals[idx.0].export.push(name),
                         }
                     }
                 }
@@ -566,13 +565,14 @@ fn to_lowlevel_exports(module: &hl::Module, state: &EncodeState) -> Vec<ll::Expo
 
     macro_rules! add_exports {
         ($elems: ident, $map_idx_fn: ident, $export_ty_variant: ident) => {
-            exports.extend(module.$elems.iter()
-                .enumerate()
-                .filter_map(|(i, element)|
-                    element.export.as_ref().map(|name| ll::Export {
+            for (idx, element) in module.$elems.iter().enumerate() {
+                for name in &element.export {
+                    exports.push(ll::Export {
                         name: name.clone(),
-                        type_: ll::ExportType::$export_ty_variant(state.$map_idx_fn(i)),
-                    })));
+                        type_: ll::ExportType::$export_ty_variant(state.$map_idx_fn(idx)),
+                    });
+                }
+            }
         };
     }
     add_exports!(functions, map_function_idx, Function);

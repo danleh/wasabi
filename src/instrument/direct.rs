@@ -18,7 +18,7 @@ pub fn count_calls(module: &mut Module) -> Option<String> {
         FunctionType::new(vec![], vec![I32]),
         vec![],
         vec![Global(GetGlobal, counter), End]);
-    module.function(getter).export = Some("get_counter".into());
+    module.function(getter).export = vec!["get_counter".into()];
 
     let increment = module.add_function(
         FunctionType::new(vec![], vec![]),

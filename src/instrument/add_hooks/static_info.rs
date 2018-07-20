@@ -27,7 +27,7 @@ impl<'a> From<&'a Module> for ModuleInfo {
             globals: module.globals.iter().map(|g| g.type_.0).collect(),
             start: module.start,
             // if the module has no table, there cannot be a call_indirect, so this null will never be read from JS runtime
-            table_export_name: module.tables.get(0).and_then(|table| table.export.clone()),
+            table_export_name: module.tables.get(0).and_then(|table| table.export.iter().cloned().next()),
             br_tables: vec![],
         }
     }
@@ -39,7 +39,7 @@ pub struct FunctionInfo {
     #[serde(serialize_with = "serialize_function_type")]
     pub type_: FunctionType,
     pub import: Option<(String, String)>,
-    pub export: Option<String>,
+    pub export: Vec<String>,
     #[serde(serialize_with = "serialize_types")]
     pub locals: Vec<ValType>,
 }
