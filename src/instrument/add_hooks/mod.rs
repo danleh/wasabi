@@ -153,10 +153,10 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     type_stack.instr(&InstrType::new(&[I32], &[]));
                     type_stack.begin(block_ty);
 
-                    let condition_tmp = function.add_fresh_local(I32);
-
                     // if_ hook for the condition (always executed on either branch)
                     if enabled_hooks.is_enabled(HighLevelHook::If) {
+                        let condition_tmp = function.add_fresh_local(I32);
+
                         instrumented_body.extend_from_slice(&[
                             Local(TeeLocal, condition_tmp),
                             location.0.clone(),
@@ -274,37 +274,41 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     let br_target = block_stack.br_target(target_label);
 
-                    // always save condition in local, needed by _both_ hooks
-                    let condition_tmp = function.add_fresh_local(I32);
-                    instrumented_body.push(Local(TeeLocal, condition_tmp));
+                    if enabled_hooks.is_enabled(HighLevelHook::BrIf)
+                        || enabled_hooks.is_enabled(HighLevelHook::End) {
 
-                    // br_if hook
-                    if enabled_hooks.is_enabled(HighLevelHook::BrIf) {
-                        instrumented_body.extend_from_slice(&[
-                            // NOTE see tee_local above
-                            location.0.clone(),
-                            location.1.clone(),
-                            Local(GetLocal, condition_tmp),
-                            target_label.to_const(),
-                            br_target.absolute_instr.to_const(),
-                            hooks.instr(&instr, &[])
-                        ]);
-                    }
+                        // saved condition local is needed by _both_ hooks
+                        let condition_tmp = function.add_fresh_local(I32);
+                        instrumented_body.push(Local(TeeLocal, condition_tmp));
 
-                    // end hooks for all intermediate blocks that are "jumped over"
-                    if enabled_hooks.is_enabled(HighLevelHook::End) {
-                        // call hooks only iff condition is true (-> insert artificial if block)
-                        instrumented_body.extend_from_slice(&[
-                            // NOTE see tee_local above
-                            Local(GetLocal, condition_tmp),
-                            If(BlockType(None)),
-                        ]);
-                        for block in br_target.ended_blocks {
-                            instrumented_body.append(&mut block.to_end_hook_args(fidx));
-                            instrumented_body.push(hooks.end(&block));
+                        // br_if hook
+                        if enabled_hooks.is_enabled(HighLevelHook::BrIf) {
+                            instrumented_body.extend_from_slice(&[
+                                // NOTE see tee_local above
+                                location.0.clone(),
+                                location.1.clone(),
+                                Local(GetLocal, condition_tmp),
+                                target_label.to_const(),
+                                br_target.absolute_instr.to_const(),
+                                hooks.instr(&instr, &[])
+                            ]);
                         }
-                        // of the artificially inserted if block before
-                        instrumented_body.push(End);
+
+                        // end hooks for all intermediate blocks that are "jumped over"
+                        if enabled_hooks.is_enabled(HighLevelHook::End) {
+                            // call hooks only iff condition is true (-> insert artificial if block)
+                            instrumented_body.extend_from_slice(&[
+                                // NOTE see tee_local above
+                                Local(GetLocal, condition_tmp),
+                                If(BlockType(None)),
+                            ]);
+                            for block in br_target.ended_blocks {
+                                instrumented_body.append(&mut block.to_end_hook_args(fidx));
+                                instrumented_body.push(hooks.end(&block));
+                            }
+                            // of the artificially inserted if block before
+                            instrumented_body.push(End);
+                        }
                     }
 
                     instrumented_body.push(instr)
