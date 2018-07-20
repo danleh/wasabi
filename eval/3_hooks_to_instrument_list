@@ -53,3 +53,8 @@ start,nop,unreachable,memory_size,memory_grow,drop,select,if,begin,end;grouped/b
 
 # all hooks enabled, i.e., default if no --hooks given to Wasabi
 start,nop,unreachable,memory_size,memory_grow,drop,select,global,local,const,unary,binary,load,store,call,return,br,br_if,br_table,if,begin,end;all
+
+# hook combinations that match the used hooks per analysis
+# coverage-instruction, log-all, taint, and instruction-count use all hooks -> already handled
+# call-graph uses just call hook -> also already handled
+if,br_if,br_table,select;coverage-branch
