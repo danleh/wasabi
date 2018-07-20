@@ -1,7 +1,3 @@
-/*
- * User-facing API for dynamic analyses.
- */
-
 const counts = {};
 
 Wasabi.analysisResult = function () {
