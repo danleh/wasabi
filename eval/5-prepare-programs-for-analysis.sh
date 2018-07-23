@@ -25,8 +25,7 @@ hooks=$2
 
 if [ -z $analysis ] || [ -z $hooks ]
 then
-	echo "usage:"
-	echo "  $0 <analysis> <hooks>"
+	echo "usage: $0 <analysis> <hooks>"
 	echo "where:"
 	echo "  <analysis> file from ../analyses/*, without .js extension"
 	echo "  <hooks>    subdirectory from ./wasm/instrumented/*"
