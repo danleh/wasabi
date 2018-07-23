@@ -11,6 +11,7 @@ do
 	name=$(basename $srcfile .c)
 	echo $name
 	# for detailed options, see https://kripken.github.io/emscripten-site/docs/compiling/WebAssembly.html#webassembly
-	emcc -O3 -I utilities -I $srcdir utilities/polybench.c $srcfile -s ALLOW_MEMORY_GROWTH=1 --emrun -DPOLYBENCH_TIME -o build/$name.html
+	# and http://web.cse.ohio-state.edu/~pouchet.2/software/polybench/#documentation
+	emcc -O3 -I utilities -I $srcdir utilities/polybench.c $srcfile -s ALLOW_MEMORY_GROWTH=1 --emrun -DPOLYBENCH_TIME -DSMALL_DATASET -o build/$name.html
 done < utilities/benchmark_list
 cd -
