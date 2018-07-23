@@ -3,53 +3,53 @@
 
 ;none
 
-start;start
-nop;nop
-unreachable;unreachable
-memory_size;memory_size
-memory_grow;memory_grow
+# start;start
+# nop;nop
+# unreachable;unreachable
+# memory_size;memory_size
+# memory_grow;memory_grow
 
-drop;drop
-select;select
+# drop;drop
+# select;select
 
-global;global
-local;local
+# global;global
+# local;local
 
-const;const
-unary;unary
-binary;binary
+# const;const
+# unary;unary
+# binary;binary
 
-load;load
-store;store
+# load;load
+# store;store
 
 call;call
-return;return
+# return;return
 
-br;br
-br_if;br_if
-br_table;br_table
+# br;br
+# br_if;br_if
+# br_table;br_table
 
-if;if
-begin;begin
-end;end
+# if;if
+# begin;begin
+# end;end
 
 # the following hooks account for ~10% code size increase (in sum), so group them together
-start,nop,unreachable,memory_size,memory_grow,drop,select;grouped/basic
+# start,nop,unreachable,memory_size,memory_grow,drop,select;grouped/basic
 
-start,nop,unreachable,memory_size,memory_grow,drop,select,global;grouped/basic+global
-start,nop,unreachable,memory_size,memory_grow,drop,select,local;grouped/basic+local
+# start,nop,unreachable,memory_size,memory_grow,drop,select,global;grouped/basic+global
+# start,nop,unreachable,memory_size,memory_grow,drop,select,local;grouped/basic+local
 
-start,nop,unreachable,memory_size,memory_grow,drop,select,const;grouped/basic+const
-start,nop,unreachable,memory_size,memory_grow,drop,select,unary;grouped/basic+unary
-start,nop,unreachable,memory_size,memory_grow,drop,select,binary;grouped/basic+binary
+# start,nop,unreachable,memory_size,memory_grow,drop,select,const;grouped/basic+const
+# start,nop,unreachable,memory_size,memory_grow,drop,select,unary;grouped/basic+unary
+# start,nop,unreachable,memory_size,memory_grow,drop,select,binary;grouped/basic+binary
 
-start,nop,unreachable,memory_size,memory_grow,drop,select,load,store;grouped/basic+load+store
+# start,nop,unreachable,memory_size,memory_grow,drop,select,load,store;grouped/basic+load+store
 
-start,nop,unreachable,memory_size,memory_grow,drop,select,call,return;grouped/basic+call+return
+# start,nop,unreachable,memory_size,memory_grow,drop,select,call,return;grouped/basic+call+return
 
-start,nop,unreachable,memory_size,memory_grow,drop,select,br,br_if,br_table;grouped/basic+branches
+# start,nop,unreachable,memory_size,memory_grow,drop,select,br,br_if,br_table;grouped/basic+branches
 
-start,nop,unreachable,memory_size,memory_grow,drop,select,if,begin,end;grouped/basic+blocks
+# start,nop,unreachable,memory_size,memory_grow,drop,select,if,begin,end;grouped/basic+blocks
 
 # all hooks enabled, i.e., default if no --hooks given to Wasabi
 start,nop,unreachable,memory_size,memory_grow,drop,select,global,local,const,unary,binary,load,store,call,return,br,br_if,br_table,if,begin,end;all
