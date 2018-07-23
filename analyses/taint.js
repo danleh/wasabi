@@ -26,7 +26,8 @@
     }];
 
     function values() {
-        return stack.peek().blocks.peek();
+        // FIXME || [] is a hack to get it to run without exceptions
+        return stack.peek().blocks.peek() || [];
     }
 
     const memory = [];
@@ -128,7 +129,11 @@
         },
 
         end(location, type, beginLocation) {
-            const [resultTaint] = stack.peek().blocks.pop();
+            const resultTaintArr = stack.peek().blocks.pop();
+            // FIXME sometimes pop() returns undefined, not just an empty []. Why? 
+            // hacky workaround: just return early if [resultTaint] pattern match would fail
+            if (resultTaintArr === undefined) return;
+            const [resultTaint] = resultTaintArr;
             if (type === "function" && resultTaint !== undefined) {
                 returnValue = ensureTaint(resultTaint, location);
                 if (debug) console.log("end(): Storing return value's taint ", returnValue, " at ", location);
