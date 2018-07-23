@@ -45,7 +45,7 @@ pub struct EnabledHooks(HashSet<HighLevelHook>);
 impl EnabledHooks {
     pub fn all() -> Self {
         use self::HighLevelHook::*;
-        static VARIANTS: [HighLevelHook; 21] = [Nop, Unreachable, Br, BrIf, BrTable, If, Begin, End, Call, Return, Drop, Select, Const, Unary, Binary, Load, Store, MemorySize, MemoryGrow, Local, Global];
+        static VARIANTS: [HighLevelHook; 22] = [Start, Nop, Unreachable, Br, BrIf, BrTable, If, Begin, End, Call, Return, Drop, Select, Const, Unary, Binary, Load, Store, MemorySize, MemoryGrow, Local, Global];
         EnabledHooks(VARIANTS.iter().cloned().collect())
     }
 
