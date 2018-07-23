@@ -179,33 +179,33 @@ firefox;none;none;large_dataset;syr2k;5.136000
 firefox;none;none;large_dataset;syrk;2.012000
 firefox;none;none;large_dataset;trisolv;0.003000
 firefox;none;none;large_dataset;trmm;2.948000
-firefox;none;all;large_dataset;2mm;timeout
-firefox;none;all;large_dataset;3mm;timeout
-firefox;none;all;large_dataset;adi;timeout
+firefox;none;all;large_dataset;2mm;timeout 180s
+firefox;none;all;large_dataset;3mm;timeout 180s
+firefox;none;all;large_dataset;adi;timeout 180s
 firefox;none;all;large_dataset;atax;1.846000
 firefox;none;all;large_dataset;bicg;1.434000
-firefox;none;all;large_dataset;cholesky;timeout
-firefox;none;all;large_dataset;correlation;timeout
-firefox;none;all;large_dataset;covariance;timeout
+firefox;none;all;large_dataset;cholesky;timeout 180s
+firefox;none;all;large_dataset;correlation;timeout 180s
+firefox;none;all;large_dataset;covariance;timeout 180s
 firefox;none;all;large_dataset;deriche;20.043000
 firefox;none;all;large_dataset;doitgen;147.140000
 firefox;none;all;large_dataset;durbin;0.894000
-firefox;none;all;large_dataset;fdtd-2d;timeout
-firefox;none;all;large_dataset;floyd-warshall;timeout
-firefox;none;all;large_dataset;gemm;timeout
+firefox;none;all;large_dataset;fdtd-2d;timeout 180s
+firefox;none;all;large_dataset;floyd-warshall;timeout 180s
+firefox;none;all;large_dataset;gemm;timeout 180s
 firefox;none;all;large_dataset;gemver;3.066000
 firefox;none;all;large_dataset;gesummv;0.632000
-firefox;none;all;large_dataset;gramschmidt;timeout
-firefox;none;all;large_dataset;heat-3d;timeout
+firefox;none;all;large_dataset;gramschmidt;timeout 180s
+firefox;none;all;large_dataset;heat-3d;timeout 180s
 firefox;none;all;large_dataset;jacobi-1d;0.561000
-firefox;none;all;large_dataset;jacobi-2d;timeout
-firefox;none;all;large_dataset;ludcmp;timeout
-firefox;none;all;large_dataset;lu;timeout
+firefox;none;all;large_dataset;jacobi-2d;timeout 180s
+firefox;none;all;large_dataset;ludcmp;timeout 180s
+firefox;none;all;large_dataset;lu;timeout 180s
 firefox;none;all;large_dataset;mvt;1.849000
-firefox;none;all;large_dataset;nussinov;timeout
-firefox;none;all;large_dataset;seidel-2d;timeout
-firefox;none;all;large_dataset;symm;timeout
-firefox;none;all;large_dataset;syr2k;timeout
-firefox;none;all;large_dataset;syrk;timeout
+firefox;none;all;large_dataset;nussinov;timeout 180s
+firefox;none;all;large_dataset;seidel-2d;timeout 180s
+firefox;none;all;large_dataset;symm;timeout 180s
+firefox;none;all;large_dataset;syr2k;timeout 180s
+firefox;none;all;large_dataset;syrk;timeout 180s
 firefox;none;all;large_dataset;trisolv;0.449000
 firefox;none;all;large_dataset;trmm;159.480000
