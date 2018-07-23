@@ -29,8 +29,8 @@ for file in programs-analysis/polybench-c-4.2.1-beta/*.html
 do
 	name=$(basename $file .html)
 	echo -n "firefox;$analysis;$hooks;$comment;$name;" >> $emrun_output
-	timeout 60s emrun --log_stdout "$emrun_output" --browser "$firefox_bin" --browser_args "$firefox_args" --kill_exit "$file"
-	if [ $? -eq 124]
+	timeout 300s emrun --log_stdout "$emrun_output" --browser "$firefox_bin" --browser_args "$firefox_args" --kill_exit "$file"
+	if [ $? -eq 124 ]
 	then
 		echo "timeout" >> $emrun_output
 	fi
