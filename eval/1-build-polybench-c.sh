@@ -1,6 +1,8 @@
 #!/bin/bash
+
 # ensure emcc is on PATH, e.g., by running 
 source ~/Documents/SOLA/WebAssembly/tools/emsdk/emsdk_env.sh
+
 cd programs/polybench-c-4.2.1-beta/
 mkdir -p build/
 while read srcfile
