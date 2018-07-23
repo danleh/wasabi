@@ -12,6 +12,7 @@ do
 	echo $name
 	# for detailed options, see https://kripken.github.io/emscripten-site/docs/compiling/WebAssembly.html#webassembly
 	# and http://web.cse.ohio-state.edu/~pouchet.2/software/polybench/#documentation
-	emcc -O3 -I utilities -I $srcdir utilities/polybench.c $srcfile -s ALLOW_MEMORY_GROWTH=1 --emrun -DPOLYBENCH_TIME -DSMALL_DATASET -o build/$name.html
+	# possible dataset sizes for polybench (with -D<size>_DATASET): SMALL, MEDIUM, LARGE, LARGE (default), EXTRALARGE
+	emcc -O3 -I utilities -I $srcdir utilities/polybench.c $srcfile -s ALLOW_MEMORY_GROWTH=1 --emrun -DPOLYBENCH_TIME -DMEDIUM_DATASET -o build/$name.html
 done < utilities/benchmark_list
 cd -
