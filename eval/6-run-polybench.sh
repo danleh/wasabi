@@ -8,7 +8,16 @@ chrome_args="--user-data-dir=$(readlink -f browsers/chromium-profile)"
 
 emrun_output="$(readlink -f 6_results)"
 
-analysis="$1"
+analysis=$1
+hooks=$2
+comment="$3"
+
+if [ -z $analysis ] ||  [ -z $hooks ]
+then
+	echo "usage: $0 <analysis> <hooks> [<comment>]"
+	echo "(all arguments are just passed as strings into the results.csv)"
+	exit
+fi
 
 # ensure emcc is on PATH, e.g., by running 
 source ~/Documents/SOLA/WebAssembly/tools/emsdk/emsdk_env.sh
@@ -19,6 +28,13 @@ trap exit SIGINT SIGTERM
 for file in programs-analysis/polybench-c-4.2.1-beta/*.html
 do
 	name=$(basename $file .html)
-	echo -n "firefox;$analysis;$name;" >> $emrun_output
-	emrun --log_stdout "$emrun_output" --browser "$firefox_bin" --browser_args "$firefox_args" --kill_exit "$file"
+	echo -n "firefox;$analysis;$hooks;$comment;$name;" >> $emrun_output
+	timeout 60s emrun --log_stdout "$emrun_output" --browser "$firefox_bin" --browser_args "$firefox_args" --kill_exit "$file"
+	if [ $? -eq 124]
+	then
+		echo "timeout" >> $emrun_output
+	fi
+
+	# emrun --browser "$firefox_bin" --browser_args "$firefox_args" --serve_after_exit --serve_after_close "$file"
+	# break
 done
