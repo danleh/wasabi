@@ -25,6 +25,12 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
             table.export.push("__wasabi_table".into());
         }
     }
+    // FIXME is this a valid workaround for wrong Firefox exported function .name property?
+//    if let Some(function) = module.functions.first_mut() {
+//        if function.export.is_empty() {
+//            function.export.push("__wasabi_first_function".into());
+//        }
+//    }
 
     // NOTE must be after exporting table and function, so that their export names are in the static info object
     let mut module_info: ModuleInfo = (&*module).into();

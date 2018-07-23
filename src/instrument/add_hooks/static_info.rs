@@ -16,6 +16,8 @@ pub struct ModuleInfo {
     pub start: Option<Idx<Function>>,
     #[serde(rename = "tableExportName")]
     pub table_export_name: Option<String>,
+//    #[serde(rename = "firstFunctionExportName")]
+//    pub first_function_export_name: Option<String>,
     #[serde(rename = "brTables")]
     pub br_tables: Vec<BrTableInfo>,
 }
@@ -28,6 +30,8 @@ impl<'a> From<&'a Module> for ModuleInfo {
             start: module.start,
             // if the module has no table, there cannot be a call_indirect, so this null will never be read from JS runtime
             table_export_name: module.tables.get(0).and_then(|table| table.export.iter().cloned().next()),
+            // FIXME is this a valid workaround for wrong Firefox exported function .name property?
+//            first_function_export_name: module.functions.get(0).and_then(|func| func.export.iter().cloned().next()),
             br_tables: vec![],
         }
     }
