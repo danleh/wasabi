@@ -13,7 +13,7 @@
 
     function fctName(fctId) {
         const fct = Wasabi.module.info.functions[fctId];
-        if (fct.export !== null) return fct.export;
+        if (fct.export[0] !== undefined) return fct.export[0];
         if (fct.import !== null) return fct.import;
         return fctId;
     }
@@ -22,9 +22,7 @@
         call_pre(location, targetFunc, args, indirectTableIdx) {
             const caller = fctName(location.func);
             const callee = fctName(targetFunc);
-            if (caller.indexOf("__wasabi_function_") === -1 && callee.indexOf("__wasabi_function_") === -1) {
-                callGraphEdges.add(caller + " --> " + callee);
-            }
+            callGraphEdges.add(caller + " --> " + callee);
         },
     };
 
