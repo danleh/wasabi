@@ -1,6 +1,7 @@
 use wasm::ast::{FunctionType, Idx, ValType, ValType::*};
 use wasm::ast::highlevel::{Function, Instr, Instr::*, Module};
 use std::collections::HashMap;
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use super::block_stack::BlockStackElement;
 use super::convert_i64::convert_i64_type;
 
@@ -94,7 +95,8 @@ impl Hook {
 
 pub struct HookMap {
     /// remember requested (= already inserted) hooks by their low-level name
-    map: HashMap<String, Hook>,
+    /// NOTE wrapped in RwLock to support concurrent lookup (and single-threaded insertion, but this is uncommon anyway)
+    map: RwLock<HashMap<String, Hook>>,
     /// needed to determine the function index of the created hooks (should start after the functions
     /// that are already present in the module)
     function_count: usize,
@@ -104,7 +106,7 @@ impl HookMap {
     pub fn new(module: &Module) -> Self {
         HookMap {
             function_count: module.functions.len(),
-            map: HashMap::new(),
+            map: RwLock::new(HashMap::new()),
         }
     }
 
@@ -113,12 +115,12 @@ impl HookMap {
     /// double-check whether no other functions were added to the module in the meantime).
     #[must_use]
     pub fn finish(self) -> Vec<Hook> {
-        let mut result: Vec<_> = self.map.into_iter().map(|(_k, v)| v).collect();
+        let mut result: Vec<_> = self.map.into_inner().into_iter().map(|(_k, v)| v).collect();
         result.sort_by_key(|hook| hook.idx);
         result
     }
 
-    pub fn instr(&mut self, instr: &Instr, polymorphic_tys: &[ValType]) -> Instr {
+    pub fn instr(&self, instr: &Instr, polymorphic_tys: &[ValType]) -> Instr {
         let name = &mangle_polymorphic_name(instr.to_name(), polymorphic_tys)[..];
         let hook = match *instr {
             /*
@@ -238,38 +240,38 @@ impl HookMap {
 
     /* special hooks that do not directly correspond to an instruction or need additional information */
 
-    pub fn start(&mut self) -> Instr {
+    pub fn start(&self) -> Instr {
         self.get_or_insert(Hook::new("start", vec![], "start", ""))
     }
 
-    pub fn call_post(&mut self, result_tys: &[ValType]) -> Instr {
+    pub fn call_post(&self, result_tys: &[ValType]) -> Instr {
         let name = mangle_polymorphic_name("call_post", result_tys);
         let args = result_tys.iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{}", i), ty }).collect::<Vec<_>>();
         let js_args = &format!("[{}]", args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
         self.get_or_insert(Hook::new(name, args, "call_post", js_args))
     }
 
-    pub fn begin_function(&mut self) -> Instr {
+    pub fn begin_function(&self) -> Instr {
         self.get_or_insert(Hook::new("begin_function", vec![], "begin", "\"function\""))
     }
 
-    pub fn begin_block(&mut self) -> Instr {
+    pub fn begin_block(&self) -> Instr {
         self.get_or_insert(Hook::new("begin_block", vec![], "begin", "\"block\""))
     }
 
-    pub fn begin_loop(&mut self) -> Instr {
+    pub fn begin_loop(&self) -> Instr {
         self.get_or_insert(Hook::new("begin_loop", vec![], "begin", "\"loop\""))
     }
 
-    pub fn begin_if(&mut self) -> Instr {
+    pub fn begin_if(&self) -> Instr {
         self.get_or_insert(Hook::new("begin_if", vec![], "begin", "\"if\""))
     }
 
-    pub fn begin_else(&mut self) -> Instr {
+    pub fn begin_else(&self) -> Instr {
         self.get_or_insert(Hook::new("begin_else", args!(ifInstr: I32), "begin", "\"else\", {func, instr: ifInstr}"))
     }
 
-    pub fn end(&mut self, block: &BlockStackElement) -> Instr {
+    pub fn end(&self, block: &BlockStackElement) -> Instr {
         self.get_or_insert(match *block {
             BlockStackElement::Function { .. } => Hook::new("end_function", vec![], "end", "\"function\", {func, instr: -1}"),
             BlockStackElement::Block { .. } => Hook::new("end_block", args!(beginInstr: I32), "end", "\"block\", {func, instr: beginInstr}"),
@@ -282,13 +284,35 @@ impl HookMap {
     /// returns a Call instruction to the requested hook, which either
     /// A) was freshly generated, since it was not requested with these types before,
     /// B) came from the internal hook map.
-    fn get_or_insert(&mut self, hook: Hook) -> Instr {
-        let hook_count = self.map.len();
-        let hook = self.map.entry(hook.lowlevel_name().to_string()).or_insert(Hook {
-            idx: (self.function_count + hook_count).into(),
-            ..hook
-        });
-        Call(hook.idx)
+    fn get_or_insert(&self, hook: Hook) -> Instr {
+        let hook_name = hook.lowlevel_name().to_string();
+        // This is quite tricky and currently not possible with the std::sync::RwLock:
+        // We want to allow parallel reads to the HashMap, but if a hook is not present, we need
+        // to insert it, thus requiring a full mutable lock (no parallelism). Always doing exclusive
+        // access is however very expensive and writing to the map is not that common anyway (ca.
+        // 200 low-level hooks vs. all instructions in the binary, i.e., for large binaries this is
+        // very small fraction <1%).
+        // Our solution is to aquire a read lock, BUT keep the option open for upgrading it later
+        // to a write lock, if the hook could not be found. This is not possible with the standard
+        // library. We would either have to
+        //   A) get a write lock from the beginning (slow)
+        //   B) get a read lock, then get a write lock when the hook was not found (dead lock!)
+        //      read lock is still active when waiting for writing :(
+        //   C) get a read lock, drop it explicitly, then get a write lock (race condition!)
+        //      if some parallel get_or_insert call inserts just between dropping the read lock,
+        //      and getting the write lock, we might end up with two hook implementations!
+        // Thus: parking_lot::RwLock, which offers an atomic upgrade from read -> write lock
+        let map = self.map.upgradable_read();
+        let hook_idx = match map.get(&hook_name).map(|h| h.idx) {
+            Some(hook_idx) => hook_idx,
+            None => {
+                let mut map = RwLockUpgradableReadGuard::upgrade(map);
+                let idx = (self.function_count + map.len()).into();
+                map.insert(hook_name, Hook { idx, ..hook });
+                idx
+            },
+        };
+        Call(hook_idx)
     }
 }
 
