@@ -8,6 +8,8 @@ use self::type_stack::TypeStack;
 use serde_json;
 use wasm::ast::{BlockType, Idx, InstrType, Mutability, Val, ValType::*};
 use wasm::ast::highlevel::{Function, GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
+use rayon::prelude::*;
+use parking_lot::RwLock;
 
 mod convert_i64;
 mod static_info;
@@ -33,16 +35,18 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 //    }
 
     // NOTE must be after exporting table and function, so that their export names are in the static info object
-    let mut module_info: ModuleInfo = (&*module).into();
-    let mut hooks = HookMap::new(&module);
+    let module_info: ModuleInfo = (&*module).into();
+    let module_info = RwLock::new(module_info);
+    let hooks = HookMap::new(&module);
 
     // add global for start, set to false on the first execution of the start function
     let start_not_executed_global = module.add_global(I32, Mutability::Mut, vec![Const(Val::I32(1)), End]);
 
-    for (fidx, function) in module.functions() {
+    module.functions.par_iter_mut().enumerate().for_each(&|(fidx, function): (usize, &mut Function)| {
+        let fidx = fidx.into();
         // only instrument non-imported functions
         if function.code.is_none() {
-            continue;
+            return;
         }
 
         // move body out of function, so that function is not borrowed during iteration over the original body
@@ -61,7 +65,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
         let mut type_stack = TypeStack::new();
 
         // execute start hook before anything else
-        if module_info.start == Some(fidx)
+        if module_info.read().start == Some(fidx)
             && enabled_hooks.is_enabled(HighLevelHook::Start) {
             instrumented_body.extend_from_slice(&[
                 Global(GetGlobal, start_not_executed_global),
@@ -351,7 +355,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     // each br_table instruction gets its own entry in the static info object
                     // that maps table index to label and location
-                    module_info.br_tables.push(BrTableInfo::from_br_table(target_table, default_target, &block_stack, fidx));
+                    module_info.write().br_tables.push(BrTableInfo::from_br_table(target_table, default_target, &block_stack, fidx));
 
                     if enabled_hooks.is_enabled(HighLevelHook::BrTable)
                         // because end hooks are called at runtime, we need to instrument even if br_table is not enabled
@@ -367,7 +371,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                             location.0,
                             location.1,
                             Local(GetLocal, target_idx_tmp),
-                            Const(Val::I32((module_info.br_tables.len() - 1) as i32)),
+                            Const(Val::I32((module_info.read().br_tables.len() - 1) as i32)),
                             hooks.instr(&instr, &[])
                         ])
                     }
@@ -410,7 +414,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     unreachable = 1;
                 }
                 Call(target_func_idx) => {
-                    let ref func_ty = module_info.functions[target_func_idx.0].type_;
+                    let ref func_ty = module_info.read().functions[target_func_idx.0].type_;
                     type_stack.instr(&func_ty.into());
 
                     if enabled_hooks.is_enabled(HighLevelHook::Call) {
@@ -552,7 +556,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     }
                 }
                 Global(op, global_idx) => {
-                    let global_ty = module_info.globals[global_idx.0];
+                    let global_ty = module_info.read().globals[global_idx.0];
 
                     type_stack.instr(&op.to_type(global_ty));
 
@@ -705,7 +709,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
         // finally, switch dummy body out against instrumented body
         ::std::mem::replace(&mut function.code.as_mut().unwrap().body, instrumented_body);
-    }
+    });
 
     // actually add the hooks to module and check that inserted Idx is the one on the Hook struct
     let hooks = hooks.finish();
@@ -716,7 +720,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
         module.functions.push(hook.wasm);
     }
 
-    Some(generate_js(module_info, &js_hooks))
+    Some(generate_js(module_info.into_inner(), &js_hooks))
 }
 
 /// convenience to hand (function/instr/local/global) indices to hooks
