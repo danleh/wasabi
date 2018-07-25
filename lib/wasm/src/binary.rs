@@ -261,11 +261,11 @@ impl WasmBinary for Expr {
             instructions.push(instr);
         }
 
-        Ok(instructions)
+        Ok(Expr(instructions))
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         let mut bytes_written = 0;
-        for instruction in self {
+        for instruction in &self.0 {
             bytes_written += instruction.encode(writer)?;
         }
         Ok(bytes_written)

@@ -106,7 +106,8 @@ pub struct Locals {
     pub type_: ValType,
 }
 
-pub type Expr = Vec<Instr>;
+#[derive(Debug, Clone)]
+pub struct Expr(pub Vec<Instr>);
 
 #[derive(WasmBinary, Debug, Clone)]
 pub enum Instr {

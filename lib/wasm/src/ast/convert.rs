@@ -158,7 +158,7 @@ fn from_lowlevel_code(code: ll::Code, types: &[FunctionType]) -> hl::Code {
 }
 
 fn from_lowlevel_expr(expr: ll::Expr, types: &[FunctionType]) -> hl::Expr {
-    expr.into_iter().map(|instr| from_lowlevel_instr(instr, types)).collect()
+    expr.0.into_iter().map(|instr| from_lowlevel_instr(instr, types)).collect()
 }
 
 fn from_lowlevel_instr(instr: ll::Instr, types: &[FunctionType]) -> hl::Instr {
@@ -604,7 +604,7 @@ fn to_lowlevel_code(code: hl::Code, state: &EncodeState) -> ll::Code {
 }
 
 fn to_lowlevel_expr(expr: &[hl::Instr], state: &EncodeState) -> ll::Expr {
-    expr.iter().map(|instr| to_lowlevel_instr(instr, state)).collect()
+    ll::Expr(expr.iter().map(|instr| to_lowlevel_instr(instr, state)).collect())
 }
 
 fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
