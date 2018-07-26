@@ -38,6 +38,7 @@ impl<'a> From<&'a Module> for ModuleInfo {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FunctionInfo {
     // optimizations to keep the generated static info small: types and locals as strings
     #[serde(serialize_with = "serialize_function_type")]
@@ -46,6 +47,7 @@ pub struct FunctionInfo {
     pub export: Vec<String>,
     #[serde(serialize_with = "serialize_types")]
     pub locals: Vec<ValType>,
+    pub instr_count: usize,
 }
 
 impl<'a> From<&'a Function> for FunctionInfo {
@@ -55,6 +57,7 @@ impl<'a> From<&'a Function> for FunctionInfo {
             import: function.import.clone(),
             export: function.export.clone(),
             locals: function.code.iter().flat_map(|code| code.locals.clone()).collect(),
+            instr_count: function.instr_count(),
         }
     }
 }
