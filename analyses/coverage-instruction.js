@@ -1,21 +1,16 @@
 {
-    const coverageData = [];
-    Wasabi.analysisResult = coverageData;
+    const coverage = [];
 
-    function addLocation(location) {
-        if (coverageData[location.func] === undefined) {
-            coverageData[location.func] = new Set();
-        }
-        // ignore "virtual instructions" that are not actually present in the binary
-        // (e.g., "begin_function" hook or implicit returns)
-        // for them location.instr === -1
-        if (location.instr >= 0) {
-            coverageData[location.func].add(location.instr);
-        }
+    function addLocation({func, instr}) {
+        coverage[func] = coverage[func] || [];
+        // JS engine optimizes this to sparse array anyway, no need for Sets
+        coverage[func][instr] = true;
     }
 
-    // just let every callback add its location to coverageData
+    // just let every callback add its location to coverage
     for (const hook of Wasabi.HOOK_NAMES) {
         Wasabi.analysis[hook] = addLocation;
     }
+
+    Wasabi.analysisResult = coverage;
 }
