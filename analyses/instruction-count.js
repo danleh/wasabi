@@ -10,7 +10,7 @@ Wasabi.analysisResult = function () {
 };
 
 function incInstr(instr) {
-    counts[instr] = (counts[instr] === undefined) ? 1 : counts[instr] + 1;
+    counts[instr] = (counts[instr] || 0) + 1;
 }
 
 Wasabi.analysis = {
