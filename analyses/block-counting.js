@@ -1,3 +1,13 @@
-// TODO
-// only begin hook
-// save execution cound in Map<location, count> and Map<location, block type>
+{
+	const counts = [];
+
+	Wasabi.analysis = {
+		begin({func, instr}, type) {
+			counts[func] = counts[func] || [];
+			counts[func][instr] = counts[func][instr] || { count: 0, type };
+			counts[func][instr].count++;
+		}
+	};
+
+	Wasabi.analysisResult = counts;
+}
