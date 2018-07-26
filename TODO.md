@@ -18,6 +18,7 @@
 
 # Features
 
+- use single-integer instruction locations, not ```{func, instr}```. You can easily map them back to func + instr by saving the function offsets (do not forget to account for instr === -1 for "virtual instructions") and computing in which range the loc falls.
 - automatic (```cargo test```-able) integration tests for analyses 
     * using Wasm in Node.js
     * make sure null- or log-all-analysis run without exception
