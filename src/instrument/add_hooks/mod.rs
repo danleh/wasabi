@@ -711,12 +711,13 @@ impl BlockStackElement {
         }
     }
     fn end(&self) -> Idx<Instr> {
+        use self::block_stack::BlockStackElement::*;
         match self {
-            | BlockStackElement::Function { end }
-            | BlockStackElement::Block { end, .. }
-            | BlockStackElement::Loop { end, .. }
-            | BlockStackElement::If { end, .. }
-            | BlockStackElement::Else { end, .. } => *end
+            | Function { end }
+            | Block { end, .. }
+            | Loop { end, .. }
+            | If { end, .. }
+            | Else { end, .. } => *end
         }
     }
 }
