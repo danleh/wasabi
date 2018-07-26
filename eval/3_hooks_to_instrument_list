@@ -17,7 +17,7 @@
 
 # const;const
 # unary;unary
-# binary;binary
+binary;binary
 
 # load;load
 # store;store
@@ -30,7 +30,7 @@ call;call
 # br_table;br_table
 
 # if;if
-# begin;begin
+begin;begin
 # end;end
 
 # the following hooks account for ~10% code size increase (in sum), so group them together
