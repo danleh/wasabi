@@ -1,10 +1,10 @@
 {
-    const coverage = [];
+	// TypedArray is ca 1s vs 8s of regular array of bools!
+    const totalInstr = Wasabi.module.info.instrCountCumulative[Wasabi.module.info.instrCountCumulative.length - 1];
+    const coverage = new Uint8Array(totalInstr);
 
-    function addLocation({func, instr}) {
-        coverage[func] = coverage[func] || [];
-        // JS engine optimizes this to sparse array anyway, no need for Sets
-        coverage[func][instr] = true;
+    function addLocation(location) {
+        coverage[location] = 1;
     }
 
     // just let every callback add its location to coverage
