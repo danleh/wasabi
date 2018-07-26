@@ -55,7 +55,7 @@ impl Hook {
 
         // generate JavaScript low-level hook that is called from Wasm and in turn calls the
         // high-level user analysis hook
-        let js = format!("\"{}\": function (func, instr, {}) {{\n    Wasabi.analysis.{}({{func, instr}}, {});\n}},",
+        let js = format!("\"{}\": function (loc, {}) {{\n    Wasabi.analysis.{}(loc, {});\n}},",
                          &lowlevel_name,
                          args.iter().map(Arg::to_lowlevel_param_name).collect::<Vec<_>>().join(", "),
                          highlevel_name,
@@ -63,8 +63,8 @@ impl Hook {
 
         // generate low-level Wasm function to insert into the intrumented module
         let wasm = {
-            // prepend two I32 for (function idx, instr idx)
-            let mut lowlevel_args = vec![I32, I32];
+            // prepend I32 for location
+            let mut lowlevel_args = vec![I32];
             lowlevel_args.extend(args.iter()
                 // and expand i64 to a tuple of (i32, i32) since there is no JS interop for i64
                 .flat_map(|Arg { name: _name, ref ty }| convert_i64_type(ty)));
@@ -130,10 +130,10 @@ impl HookMap {
             Nop | Unreachable => Hook::new(name, args!(), name, ""),
 
             If(_) => Hook::new(name, args!(condition: I32), "if_", "condition === 1"),
-            Br(_) => Hook::new(name, args!(targetLabel: I32, targetInstr: I32), name, "{label: targetLabel, location: {func, instr: targetInstr}}"),
-            BrIf(_) => Hook::new(name, args!(condition: I32, targetLabel: I32, targetInstr: I32), name, "{label: targetLabel, location: {func, instr: targetInstr}}, condition === 1"),
+            Br(_) => Hook::new(name, args!(label: I32, loc: I32), name, "{label, loc}"),
+            BrIf(_) => Hook::new(name, args!(condition: I32, label: I32, loc: I32), name, "{label, loc}, condition === 1"),
             // NOTE js_args is very hacky! We rely on the Hook constructor to close the parenthesis and insert the call statement to endBrTableBlock() here
-            BrTable(_, _) => Hook::new(name, args!(tableIdx: I32, brTablesInfoIdx: I32), name, "Wasabi.module.info.brTables[brTablesInfoIdx].table, Wasabi.module.info.brTables[brTablesInfoIdx].default, tableIdx); Wasabi.endBrTableBlocks(brTablesInfoIdx, tableIdx, func"),
+            BrTable(_, _) => Hook::new(name, args!(tableIdx: I32, brTablesInfoIdx: I32), name, "Wasabi.module.info.brTables[brTablesInfoIdx].table, Wasabi.module.info.brTables[brTablesInfoIdx].default, tableIdx); Wasabi.endBrTableBlocks(brTablesInfoIdx, tableIdx"),
 
             MemorySize(_) => Hook::new(name, args!(currentSizePages: I32), name, "currentSizePages"),
             MemoryGrow(_) => Hook::new(name, args!(deltaPages: I32, previousSizePages: I32), name, "deltaPages, previousSizePages"),
@@ -266,16 +266,16 @@ impl HookMap {
     }
 
     pub fn begin_else(&mut self) -> Instr {
-        self.get_or_insert(Hook::new("begin_else", args!(ifInstr: I32), "begin", "\"else\", {func, instr: ifInstr}"))
+        self.get_or_insert(Hook::new("begin_else", args!(ifLoc: I32), "begin", "\"else\", ifLoc"))
     }
 
     pub fn end(&mut self, block: &BlockStackElement) -> Instr {
         self.get_or_insert(match *block {
-            BlockStackElement::Function { .. } => Hook::new("end_function", vec![], "end", "\"function\", {func, instr: -1}"),
-            BlockStackElement::Block { .. } => Hook::new("end_block", args!(beginInstr: I32), "end", "\"block\", {func, instr: beginInstr}"),
-            BlockStackElement::Loop { .. } => Hook::new("end_loop", args!(beginInstr: I32), "end", "\"loop\", {func, instr: beginInstr}"),
-            BlockStackElement::If { .. } => Hook::new("end_if", args!(beginInstr: I32), "end", "\"if\", {func, instr: beginInstr}"),
-            BlockStackElement::Else { .. } => Hook::new("end_else", args!(elseInstr: I32, ifInstr: I32), "end", "\"else\", {func, instr: elseInstr}, {func, instr: ifInstr}"),
+            BlockStackElement::Function { .. } => Hook::new("end_function", args!(beginLoc: I32), "end", "\"function\", beginLoc"),
+            BlockStackElement::Block { .. } => Hook::new("end_block", args!(beginLoc: I32), "end", "\"block\", beginLoc"),
+            BlockStackElement::Loop { .. } => Hook::new("end_loop", args!(beginLoc: I32), "end", "\"loop\", beginLoc"),
+            BlockStackElement::If { .. } => Hook::new("end_if", args!(beginLoc: I32), "end", "\"if\", beginLoc"),
+            BlockStackElement::Else { .. } => Hook::new("end_else", args!(elseLoc: I32, ifLoc: I32), "end", "\"else\", elseLoc, ifLoc"),
         })
     }
 
