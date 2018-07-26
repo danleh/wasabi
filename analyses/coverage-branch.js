@@ -1,33 +1,21 @@
 {
-    const coverageData = [];
-    Wasabi.analysisResult = coverageData;
+    const coverage = [];
 
     // branch can be boolean (for if and br_if) or integer (for br_table, i.e., switches)
-    function addBranch(location, branch) {
-        if (coverageData[location.func] === undefined) {
-            coverageData[location.func] = [];
+    function addBranch({func, instr}, branch) {
+        coverage[func] = coverage[func] || [];
+        coverage[func][instr] = coverage[func][instr] || [];
+        if (!coverage[func][instr].includes(branch)) {
+            coverage[func][instr].push(branch);
         }
-        if (coverageData[location.func][location.instr] === undefined) {
-            coverageData[location.func][location.instr] = new Set();
-        }
-        coverageData[location.func][location.instr].add(branch);
     }
 
     Wasabi.analysis = {
-        if_(location, condition) {
-            addBranch(location, condition);
-        },
-
-        br_if(location, conditionalTarget, condition) {
-            addBranch(location, condition);
-        },
-
-        br_table(location, table, defaultTarget, tableIdx) {
-            addBranch(location, tableIdx);
-        },
-
-        select(location, condition) {
-            addBranch(location, condition);
-        },
+        if_(loc, cond) { addBranch(loc, cond) },
+        br_if(loc, target, cond) { addBranch(loc, cond) },
+        br_table(loc, tbl, df, idx) { addBranch(loc, idx) },
+        select(loc, cond) { addBranch(loc, cond) },
     };
+
+    Wasabi.analysisResult = coverage;
 }
