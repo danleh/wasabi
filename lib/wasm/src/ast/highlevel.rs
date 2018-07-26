@@ -716,4 +716,8 @@ impl Function {
                 .expect(&format!("invalid local index {}, function has {} parameters and {} locals", idx.0, param_count, locals.len()))
         }
     }
+
+    pub fn instr_count(&self) -> usize {
+        self.code.as_ref().map(|code| code.body.len()).unwrap_or(0)
+    }
 }
