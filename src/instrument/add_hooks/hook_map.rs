@@ -217,8 +217,8 @@ impl HookMap {
             Call(_) => {
                 let mut args = args!(targetFunc: I32);
                 args.extend(polymorphic_tys.iter().enumerate().map(|(i, &ty)| Arg { name: format!("arg{}", i), ty }));
-                // NOTE indirectTableIndex is undefined, since this is a direct call
-                let js_args = &format!("targetFunc, [{}], undefined", args[1..].iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
+                // NOTE calls the high-level call_pre hook with one argument less than call_indirect, thus tableIdx === undefined since this is a direct call
+                let js_args = &format!("targetFunc, [{}]", args[1..].iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
                 Hook::new(name, args, "call_pre", js_args)
             }
             CallIndirect(_, _) => {
