@@ -1,3 +1,5 @@
+// TODO rename to instruction-mix or so, counting sounds like just counting the total number of instructions
+
 const counts = {};
 
 Wasabi.analysisResult = function () {
