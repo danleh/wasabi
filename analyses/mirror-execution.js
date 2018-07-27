@@ -13,7 +13,9 @@ function check(op, location, jsValue, wasmValue) {
         wasmValue = "undefined";
     }
     if (jsValue.toString() !== wasmValue.toString()) {
-        console.log(op, location, jsValue, wasmValue);
+        console.warn(op, location, jsValue, wasmValue);
+        if (!op.includes("load"))
+            throw "mismatch";
     }
 }
 
