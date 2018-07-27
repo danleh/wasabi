@@ -23,16 +23,8 @@ function check(op, location, jsValue, wasmValue) {
  * WebAssembly program state, mirrored in JavaScript
  */
 
-const stack = [{
-    func: undefined,
-    // the value stack for each function contains substacks for each block
-    blocks: [],
-    locals: []
-}];
-
-function values() {
-    return stack.peek().blocks.peek();
-}
+const stack = [[]];
+const locals = [];
 
 const memory = [];
 const globals = [];
@@ -44,143 +36,136 @@ const globals = [];
 
 Wasabi.analysis = {
     if_(location, condition) {
-        const jsCondition = values().pop() === 1;
+        const jsCondition = stack.peek().pop() === 1;
         check("if", location, jsCondition, condition);
     },
 
-    br(location, target) {
-        const clearThisBlock = stack.peek().blocks.pop();
-    },
-
     br_if(location, conditionalTarget, condition) {
-        const jsCondition = values().pop() === 1;
+        const jsCondition = stack.peek().pop() === 1;
         check("br_if", location, jsCondition, condition);
-        if (condition) {
-            const clearThisBlock = stack.peek().blocks.pop();
-        }
     },
 
     br_table(location, table, defaultTarget, tableIdx) {
-        const jsTableIdx = values().pop();
+        const jsTableIdx = stack.peek().pop();
         check("br_table", location, jsTableIdx, tableIdx);
-        const clearThisBlock = stack.peek().blocks.pop();
     },
 
     begin(location, type) {
-        if (type === "function") {
-            // TODO set locals to parameter values of function?
-            stack.peek().func = location.func;
-        }
-        stack.peek().blocks.push([]);
+        console.log("begin", location, type, stack);
+
+        stack.push([]);
+        if (type === "function")
+            locals.push([]);
     },
 
     end(location, type, beginLocation) {
-        const [result] = stack.peek().blocks.pop();
+        console.log("end", location, beginLocation, type, stack);
+
+        const [result] = stack.pop();
         if (result !== undefined) {
-            values().push(result);
+            console.log("end result", type, result)
+            // stack.peek().push(result);
         }
+        if (type === "function")
+            locals.pop();
     },
 
     drop(location, value) {
-        check("drop", location, values().pop(), value);
+        check("drop", location, stack.peek().pop(), value);
     },
 
     select(location, condition, first, second) {
-        check("select", location, values().pop(), second);
-        check("select", location, values().pop(), first);
-        const jsCondition = values().pop() === 1;
+        check("select", location, stack.peek().pop(), second);
+        check("select", location, stack.peek().pop(), first);
+        const jsCondition = stack.peek().pop() === 1;
         check("select", location, jsCondition, condition);
     },
 
     call_pre(location, targetFunc, args, indirectTableIdx) {
         if (indirectTableIdx !== undefined) {
-            const jsTargetTableIdx = values().pop();
+            const jsTargetTableIdx = stack.peek().pop();
             check("call_indirect table idx", location, jsTargetTableIdx, indirectTableIdx);
         }
         for (const arg of args.reverse()) {
-            const jsArg = values().pop();
+            const jsArg = stack.peek().pop();
             check("call args", location, jsArg, arg);
         }
-        // add stack frame
-        stack.push({
-            func: targetFunc,
-            blocks: [],
-            locals: [],
-        });
+        // TODO locals setup in callee or caller (here)?
+        locals.push(args);
     },
 
     call_post(location, vals) {
-        // clear stack frame
-        stack.pop();
         for (const val of vals) {
-            values().push(val);
+            stack.peek().push(val);
         }
+        locals.pop();
     },
 
     return_(location, values) {
-        // TODO how does it influence the stack? Is this already handled by end_function?
+        console.log("return", location, values)
+        // TODO check return values on stack?
     },
 
     const_(location, value) {
-        values().push(value);
+        stack.peek().push(value);
     },
 
     unary(location, op, input, result) {
-        const jsInput = values().pop();
+        const jsInput = stack.peek().pop();
         check(op, location, jsInput, input);
-        values().push(result);
+        stack.peek().push(result);
     },
 
     binary(location, op, first, second, result) {
-        const jsSecond = values().pop();
+        const jsSecond = stack.peek().pop();
         check(op + " second arg", location, jsSecond, second);
-        const jsFirst = values().pop();
+        const jsFirst = stack.peek().pop();
         check(op + " first arg", location, jsFirst, first);
-        values().push(result);
+        stack.peek().push(result);
     },
 
     load(location, op, memarg, value) {
-        const jsAddr = values().pop();
+        const jsAddr = stack.peek().pop();
         check(op + " addr", location, jsAddr, memarg.addr);
         const effectiveAddr = memarg.addr + memarg.offset;
         const jsValue = memory[effectiveAddr];
         check(op + " value @ " + effectiveAddr + " (0x" + effectiveAddr.toString(16) + ")", location, jsValue, value); // FIXME doesn't work for initialized memory by Data section...
-        values().push(value);
+        stack.peek().push(value);
     },
 
     store(location, op, memarg, value) {
-        const jsValue = values().pop();
+        const jsValue = stack.peek().pop();
         check(op + " value", location, jsValue, value);
-        const jsAddr = values().pop();
+        const jsAddr = stack.peek().pop();
         check(op + " addr", location, jsAddr, memarg.addr);
         const effectiveAddr = memarg.addr + memarg.offset;
         memory[effectiveAddr] = value;
     },
 
     memory_size(location, currentSizePages) {
-        values().push(currentSizePages);
+        stack.peek().push(currentSizePages);
     },
 
     memory_grow(location, byPages, previousSizePages) {
-        let jsByPages = values().pop();
+        let jsByPages = stack.peek().pop();
         check("memory_grow", location, jsByPages, byPages);
-        values().push(previousSizePages);
+        stack.peek().push(previousSizePages);
     },
 
     local(location, op, localIndex, value) {
         switch (op) {
             case "set_local":
-                const jsValue = values().pop();
+                const jsValue = stack.peek().pop();
                 check(op, location, jsValue, value);
-                stack.peek().locals[localIndex] = value;
+                locals.peek()[localIndex] = value;
                 return;
             case "tee_local":
-                const jsValue2 = values().peek();
+                const jsValue2 = stack.peek().peek();
                 check(op, location, jsValue2, value);
-                stack.peek().locals[localIndex] = value;
+                locals.peek()[localIndex] = value;
                 return;
             case "get_local":
-                values().push(value);
+                stack.peek().push(value);
                 return;
         }
     },
@@ -188,12 +173,12 @@ Wasabi.analysis = {
     global(location, op, globalIndex, value) {
         switch (op) {
             case "set_global":
-                const jsValue = values().pop();
+                const jsValue = stack.peek().pop();
                 check(op, location, jsValue, value);
                 globals[globalIndex] = value;
                 return;
             case "get_global":
-                values().push(value);
+                stack.peek().push(value);
                 return;
         }
     },
