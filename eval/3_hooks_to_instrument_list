@@ -58,5 +58,7 @@ start,nop,unreachable,memory_size,memory_grow,drop,select,global,local,const,una
 # coverage-instruction, log-all, taint, and instruction-count use all hooks -> already handled
 # call-graph uses just call hook -> also already handled
 if,br_if,br_table,select;coverage-branch
-
 load,store;load+store
+# no start and end hooks for instruction-mix
+nop,unreachable,memory_size,memory_grow,drop,select,global,local,const,unary,binary,load,store,call,return,br,br_if,br_table,if,begin;instruction-mix
+
