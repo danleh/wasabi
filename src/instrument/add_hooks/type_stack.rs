@@ -19,6 +19,8 @@ enum TypeStackElement {
     Val(ValType),
     BlockBegin(BlockType),
     FunctionBegin,
+// TODO see add_hooks/mod.rs
+//    Unreachable,
 }
 
 impl TypeStack {
@@ -84,4 +86,9 @@ impl TypeStack {
         }
         self.begin(block_ty);
     }
+
+// TODO see add_hooks/mod.rs
+//    pub fn unreachable(&mut self) {
+//        self.0.push(TypeStackElement::Unreachable)
+//    }
 }
