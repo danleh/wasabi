@@ -376,7 +376,7 @@ impl EncodeState {
         (*self.types.entry(type_).or_insert(new_idx)).into()
     }
     fn get_type_idx(&self, type_: &FunctionType) -> Idx<FunctionType> {
-        (*self.types.get(type_).unwrap()).into()
+        (*self.types.get(type_).expect("call_indirect with unknown type")).into()
     }
 
     element_idx_fns!(insert_function_idx, map_function_idx, function_idx, ll::Function);
@@ -402,6 +402,17 @@ impl From<hl::Module> for ll::Module {
         let tables = to_lowlevel_tables(&module.tables, &mut state);
         let memories = to_lowlevel_memories(&module.memories, &mut state);
         let globals = to_lowlevel_globals(&module.globals, &mut state);
+
+        // also collect and insert types in all call_indirect instructions, maybe they are calling
+        // with a signature that not function mentions (which would be unpractical, because it could
+        // never be valid at runtime, but is done in the spec tests)
+        for function in &module.functions {
+            for instr in function.code.iter().flat_map(|c| c.body.iter()) {
+                if let hl::Instr::CallIndirect(ty, _) = instr {
+                    state.get_or_insert_type(ty.clone());
+                }
+            }
+        }
 
         /* All types and indices are now determined, so we can start writing out sections... */
 
