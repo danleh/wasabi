@@ -18,6 +18,7 @@
 
 # Features
 
+- Idea: "probabilistic instrumentation", combine ideas from sampling with instrumentation by instrumenting uniform randomly, e.g. with p=0.1. E.g., for cryptominer detection or memory performance analyses it would suffice to look only into every tenth binary instruction or memory access, not every single one. Tradeoff: accuracy vs. performance.
 - use single-integer instruction locations, not ```{func, instr}```. You can easily map them back to func + instr by saving the function offsets (do not forget to account for instr === -1 for "virtual instructions") and computing in which range the loc falls.
 - automatic (```cargo test```-able) integration tests for analyses 
     * using Wasm in Node.js
@@ -41,8 +42,10 @@
 the user (e.g. by detection default function stubs through a ```// EMPTY FUNCTION, PLEASE OPTIMIZE AWAY``` magic
 comment)
 - Long term/follow up: streaming instrumentation
+    * paper name idea: "Streaming and parallel instrumentation"
 - Long term/follow up: Analysis in Wasm (not JS)
     * needs merging of analysis code and program code
+    * paper name idea: "wasm-merge: Linking without relocation info"
     * how to handle memory/tables
     * for Memory: "multiplex" two memories into a single one, by replacing maintaining a base pointer for the "second" memory and increasing the memory size to the sum of both memories. Each ```memory.grow``` and ```memory.size``` instruction is replaced by an appropriate function (that moves the second memory portion if the first portion has to grow and that maintains this base pointer). Each memory access to the second section is prepended by a load of the global base pointer + add instruction.
     * for Tables: insert runtime comparison of Table index, if out of bounds for this "original modules table", perform
