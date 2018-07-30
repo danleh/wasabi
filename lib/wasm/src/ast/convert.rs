@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use super::*;
 use super::highlevel as hl;
 use super::lowlevel as ll;
+use rayon::prelude::*;
 
 /* Conversions between high-level and low-level AST. */
 
@@ -124,9 +125,11 @@ impl From<ll::Module> for hl::Module {
                     let imported_function_count = module.functions.iter()
                         .filter(|f| f.import.is_some())
                         .count();
-                    for (i, ll::WithSize(code)) in code.into_iter().enumerate() {
-                        module.functions[imported_function_count + i].code =
-                            Some(from_lowlevel_code(code, &types))
+                    let code_hl: Vec<_> = code.into_par_iter().map(|ll::WithSize(code)| {
+                        from_lowlevel_code(code, &types)
+                    }).collect();
+                    for (i, code) in code_hl.into_iter().enumerate() {
+                        module.functions[imported_function_count + i].code = Some(code);
                     }
                 }
                 ll::Section::Data(ll::WithSize(data)) => {
@@ -478,7 +481,7 @@ impl From<hl::Module> for ll::Module {
         }
 
         // Code
-        let code: Vec<ll::WithSize<ll::Code>> = module.functions.into_iter()
+        let code: Vec<ll::WithSize<ll::Code>> = module.functions.into_par_iter()
             .filter_map(|function|
                 function.code.map(|code| ll::WithSize(to_lowlevel_code(code, &state))))
             .collect();
