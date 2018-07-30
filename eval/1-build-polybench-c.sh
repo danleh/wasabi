@@ -20,6 +20,6 @@ do
 	# for detailed options, see https://kripken.github.io/emscripten-site/docs/compiling/WebAssembly.html#webassembly
 	# and http://web.cse.ohio-state.edu/~pouchet.2/software/polybench/#documentation
 	# possible dataset sizes for polybench (with -D<size>_DATASET): SMALL, MEDIUM, LARGE, LARGE (default), EXTRALARGE
-	emcc -s WASM=1 -O3 -I utilities -I $srcdir utilities/polybench.c $srcfile -s ALLOW_MEMORY_GROWTH=1 --emrun -DPOLYBENCH_TIME -D$dataset_size -o build/$name.html
+	emcc -O3 -I utilities -I $srcdir utilities/polybench.c $srcfile -s ALLOW_MEMORY_GROWTH=1 --emrun -DPOLYBENCH_TIME -D$dataset_size -o build/$name.html
 done < utilities/benchmark_list
 cd -
