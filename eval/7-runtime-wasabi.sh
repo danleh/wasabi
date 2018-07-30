@@ -1,11 +1,13 @@
 #!/bin/sh
-cargo -q install --path .. --force
-echo "file, real, user, sys"
+echo "file, time [ms]"
 for i in $(seq 1 10)
 do
 	for file in wasm/original/*.wasm
 	do
 		echo -n "$(basename $file), "
-		/usr/bin/time -f "%E, %U, %S" wasabi $file 2>&1
+		t_start=$(date +%s%N)
+		cargo run -q --release -- $file
+		t_ms=$((($(date +%s%N) - $t_start)/1000000))
+		echo "$t_ms"
 	done
 done
