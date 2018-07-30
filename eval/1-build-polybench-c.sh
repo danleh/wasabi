@@ -2,7 +2,7 @@
 
 # ensure emcc is on PATH, e.g., by running 
 # FIXME: the following path isn't machine-independent
-source ~/Documents/SOLA/WebAssembly/tools/emsdk/emsdk_env.sh
+# source ~/emsdk/emsdk_env.sh
 
 dataset_size_list=$(readlink -f 1_polybench_dataset_sizes)
 
