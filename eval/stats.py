@@ -1,4 +1,7 @@
 #!/usr/bin/python
+
+# helper script to compute median, mean, standard deviation from numbers from stdin
+
 import sys
 import numpy
 data = sys.stdin.read().splitlines()
