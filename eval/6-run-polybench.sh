@@ -22,6 +22,7 @@ then
 fi
 
 # ensure emcc is on PATH, e.g., by running 
+# FIXME: the following path isn't machine-independent
 source ~/Documents/SOLA/WebAssembly/tools/emsdk/emsdk_env.sh
 
 # break out of loop on Ctrl+C
