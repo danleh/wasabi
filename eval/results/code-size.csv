@@ -1,37 +1,289 @@
-bytes 	 wasm overhead 	 hooks
-48751 	 0% 	 <original>
-48355 	 -.81300% 	 memory_size
-48355 	 -.81300% 	 select
-48355 	 -.81300% 	 start
-48359 	 -.80500% 	 memory_grow
-48359 	 -.80500% 	 none
-48360 	 -.80300% 	 nop
-48458 	 -.60200% 	 unreachable
-48472 	 -.57300% 	 br_table
-49629 	 1.80000% 	 br_if
-49949 	 2.45700% 	 return
-50012 	 2.58600% 	 br
-50188 	 2.94700% 	 drop
-50292 	 3.16000% 	 basic
-50890 	 4.38700% 	 unary
-51662 	 5.97100% 	 global
-52788 	 8.28000% 	 if
-52843 	 8.39300% 	 basic+unary
-53326 	 9.38400% 	 basic+branches
-53590 	 9.92500% 	 basic+global
-54178 	 11.13200% 	 coverage-branch
-55843 	 14.54700% 	 begin
-68201 	 39.89600% 	 end
-70929 	 45.49200% 	 store
-73418 	 50.59700% 	 load
-75704 	 55.28700% 	 call
-79051 	 62.15200% 	 const
-79272 	 62.60500% 	 basic+call+return
-80983 	 66.11500% 	 basic+const
-82062 	 68.32800% 	 basic+blocks
-94823 	 94.50400% 	 binary
-96942 	 98.85100% 	 basic+binary
-98813 	 102.68900% 	 basic+load+store
-117522 	 141.06500% 	 local
-119453 	 145.02600% 	 basic+local
-319514 	 555.39900% 	 all
+path, filename, hooks, bytes
+wasm/instrumented/all/2mm.wasm, 2mm, all, 222668
+wasm/instrumented/all/3mm.wasm, 3mm, all, 224347
+wasm/instrumented/all/adi.wasm, adi, all, 231348
+wasm/instrumented/all/atax.wasm, atax, all, 219322
+wasm/instrumented/all/bicg.wasm, bicg, all, 220265
+wasm/instrumented/all/cholesky.wasm, cholesky, all, 223136
+wasm/instrumented/all/correlation.wasm, correlation, all, 222778
+wasm/instrumented/all/covariance.wasm, covariance, all, 220517
+wasm/instrumented/all/deriche.wasm, deriche, all, 225340
+wasm/instrumented/all/doitgen.wasm, doitgen, all, 220602
+wasm/instrumented/all/durbin.wasm, durbin, all, 218746
+wasm/instrumented/all/fdtd-2d.wasm, fdtd-2d, all, 226269
+wasm/instrumented/all/floyd-warshall.wasm, floyd-warshall, all, 218381
+wasm/instrumented/all/gemm.wasm, gemm, all, 220449
+wasm/instrumented/all/gemver.wasm, gemver, all, 223160
+wasm/instrumented/all/gesummv.wasm, gesummv, all, 219446
+wasm/instrumented/all/gramschmidt.wasm, gramschmidt, all, 223452
+wasm/instrumented/all/heat-3d.wasm, heat-3d, all, 225704
+wasm/instrumented/all/jacobi-1d.wasm, jacobi-1d, all, 218196
+wasm/instrumented/all/jacobi-2d.wasm, jacobi-2d, all, 221561
+wasm/instrumented/all/ludcmp.wasm, ludcmp, all, 226488
+wasm/instrumented/all/lu.wasm, lu, all, 223176
+wasm/instrumented/all/mvt.wasm, mvt, all, 221327
+wasm/instrumented/all/nussinov.wasm, nussinov, all, 220309
+wasm/instrumented/all/pspdfkit.wasm, pspdfkit, all, 74328676
+wasm/instrumented/all/seidel-2d.wasm, seidel-2d, all, 219667
+wasm/instrumented/all/symm.wasm, symm, all, 222326
+wasm/instrumented/all/syr2k.wasm, syr2k, all, 220740
+wasm/instrumented/all/syrk.wasm, syrk, all, 219598
+wasm/instrumented/all/trisolv.wasm, trisolv, all, 218527
+wasm/instrumented/all/trmm.wasm, trmm, all, 219874
+wasm/instrumented/all/UE4Game-HTML5-Shipping.wasm, UE4Game-HTML5-Shipping, all, 235164953
+wasm/instrumented/begin/2mm.wasm, 2mm, begin, 33626
+wasm/instrumented/begin/3mm.wasm, 3mm, begin, 33824
+wasm/instrumented/begin/adi.wasm, adi, begin, 34593
+wasm/instrumented/begin/atax.wasm, atax, begin, 33226
+wasm/instrumented/begin/bicg.wasm, bicg, begin, 33324
+wasm/instrumented/begin/cholesky.wasm, cholesky, begin, 33679
+wasm/instrumented/begin/correlation.wasm, correlation, begin, 33682
+wasm/instrumented/begin/covariance.wasm, covariance, begin, 33388
+wasm/instrumented/begin/deriche.wasm, deriche, begin, 33925
+wasm/instrumented/begin/doitgen.wasm, doitgen, begin, 33377
+wasm/instrumented/begin/durbin.wasm, durbin, begin, 33145
+wasm/instrumented/begin/fdtd-2d.wasm, fdtd-2d, begin, 34002
+wasm/instrumented/begin/floyd-warshall.wasm, floyd-warshall, begin, 33138
+wasm/instrumented/begin/gemm.wasm, gemm, begin, 33364
+wasm/instrumented/begin/gemver.wasm, gemver, begin, 33644
+wasm/instrumented/begin/gesummv.wasm, gesummv, begin, 33229
+wasm/instrumented/begin/gramschmidt.wasm, gramschmidt, begin, 33696
+wasm/instrumented/begin/heat-3d.wasm, heat-3d, begin, 33901
+wasm/instrumented/begin/jacobi-1d.wasm, jacobi-1d, begin, 33090
+wasm/instrumented/begin/jacobi-2d.wasm, jacobi-2d, begin, 33455
+wasm/instrumented/begin/ludcmp.wasm, ludcmp, begin, 34064
+wasm/instrumented/begin/lu.wasm, lu, begin, 33678
+wasm/instrumented/begin/mvt.wasm, mvt, begin, 33466
+wasm/instrumented/begin/nussinov.wasm, nussinov, begin, 33431
+wasm/instrumented/begin/pspdfkit.wasm, pspdfkit, begin, 11818503
+wasm/instrumented/begin/seidel-2d.wasm, seidel-2d, begin, 33259
+wasm/instrumented/begin/symm.wasm, symm, begin, 33607
+wasm/instrumented/begin/syr2k.wasm, syr2k, begin, 33374
+wasm/instrumented/begin/syrk.wasm, syrk, begin, 33262
+wasm/instrumented/begin/trisolv.wasm, trisolv, begin, 33129
+wasm/instrumented/begin/trmm.wasm, trmm, begin, 33327
+wasm/instrumented/begin/UE4Game-HTML5-Shipping.wasm, UE4Game-HTML5-Shipping, begin, 43962686
+wasm/instrumented/binary/2mm.wasm, 2mm, binary, 76860
+wasm/instrumented/binary/3mm.wasm, 3mm, binary, 77571
+wasm/instrumented/binary/adi.wasm, adi, binary, 82309
+wasm/instrumented/binary/atax.wasm, atax, binary, 75080
+wasm/instrumented/binary/bicg.wasm, bicg, binary, 75232
+wasm/instrumented/binary/cholesky.wasm, cholesky, binary, 77073
+wasm/instrumented/binary/correlation.wasm, correlation, binary, 76745
+wasm/instrumented/binary/covariance.wasm, covariance, binary, 75750
+wasm/instrumented/binary/deriche.wasm, deriche, binary, 78094
+wasm/instrumented/binary/doitgen.wasm, doitgen, binary, 75911
+wasm/instrumented/binary/durbin.wasm, durbin, binary, 74903
+wasm/instrumented/binary/fdtd-2d.wasm, fdtd-2d, binary, 78412
+wasm/instrumented/binary/floyd-warshall.wasm, floyd-warshall, binary, 74851
+wasm/instrumented/binary/gemm.wasm, gemm, binary, 75855
+wasm/instrumented/binary/gemver.wasm, gemver, binary, 76780
+wasm/instrumented/binary/gesummv.wasm, gesummv, binary, 75162
+wasm/instrumented/binary/gramschmidt.wasm, gramschmidt, binary, 77092
+wasm/instrumented/binary/heat-3d.wasm, heat-3d, binary, 79406
+wasm/instrumented/binary/jacobi-1d.wasm, jacobi-1d, binary, 74811
+wasm/instrumented/binary/jacobi-2d.wasm, jacobi-2d, binary, 76766
+wasm/instrumented/binary/ludcmp.wasm, ludcmp, binary, 78699
+wasm/instrumented/binary/lu.wasm, lu, binary, 77215
+wasm/instrumented/binary/mvt.wasm, mvt, binary, 75804
+wasm/instrumented/binary/nussinov.wasm, nussinov, binary, 75490
+wasm/instrumented/binary/pspdfkit.wasm, pspdfkit, binary, 20451724
+wasm/instrumented/binary/seidel-2d.wasm, seidel-2d, binary, 75581
+wasm/instrumented/binary/symm.wasm, symm, binary, 76838
+wasm/instrumented/binary/syr2k.wasm, syr2k, binary, 76104
+wasm/instrumented/binary/syrk.wasm, syrk, binary, 75484
+wasm/instrumented/binary/trisolv.wasm, trisolv, binary, 74783
+wasm/instrumented/binary/trmm.wasm, trmm, binary, 75552
+wasm/instrumented/binary/UE4Game-HTML5-Shipping.wasm, UE4Game-HTML5-Shipping, binary, 72281927
+wasm/instrumented/call/2mm.wasm, 2mm, call, 31860
+wasm/instrumented/call/3mm.wasm, 3mm, call, 32195
+wasm/instrumented/call/adi.wasm, adi, call, 32705
+wasm/instrumented/call/atax.wasm, atax, call, 31481
+wasm/instrumented/call/bicg.wasm, bicg, call, 31789
+wasm/instrumented/call/cholesky.wasm, cholesky, call, 31689
+wasm/instrumented/call/correlation.wasm, correlation, call, 31834
+wasm/instrumented/call/covariance.wasm, covariance, call, 31498
+wasm/instrumented/call/deriche.wasm, deriche, call, 32052
+wasm/instrumented/call/doitgen.wasm, doitgen, call, 31475
+wasm/instrumented/call/durbin.wasm, durbin, call, 31253
+wasm/instrumented/call/fdtd-2d.wasm, fdtd-2d, call, 32392
+wasm/instrumented/call/floyd-warshall.wasm, floyd-warshall, call, 31088
+wasm/instrumented/call/gemm.wasm, gemm, call, 31469
+wasm/instrumented/call/gemver.wasm, gemver, call, 32228
+wasm/instrumented/call/gesummv.wasm, gesummv, call, 31540
+wasm/instrumented/call/gramschmidt.wasm, gramschmidt, call, 31946
+wasm/instrumented/call/heat-3d.wasm, heat-3d, call, 31838
+wasm/instrumented/call/jacobi-1d.wasm, jacobi-1d, call, 31163
+wasm/instrumented/call/jacobi-2d.wasm, jacobi-2d, call, 31473
+wasm/instrumented/call/ludcmp.wasm, ludcmp, call, 32264
+wasm/instrumented/call/lu.wasm, lu, call, 31691
+wasm/instrumented/call/mvt.wasm, mvt, call, 31865
+wasm/instrumented/call/nussinov.wasm, nussinov, call, 31404
+wasm/instrumented/call/pspdfkit.wasm, pspdfkit, call, 14568144
+wasm/instrumented/call/seidel-2d.wasm, seidel-2d, call, 31226
+wasm/instrumented/call/symm.wasm, symm, call, 31680
+wasm/instrumented/call/syr2k.wasm, syr2k, call, 31492
+wasm/instrumented/call/syrk.wasm, syrk, call, 31303
+wasm/instrumented/call/trisolv.wasm, trisolv, call, 31275
+wasm/instrumented/call/trmm.wasm, trmm, call, 31343
+wasm/instrumented/call/UE4Game-HTML5-Shipping.wasm, UE4Game-HTML5-Shipping, call, 61305350
+wasm/instrumented/coverage-branch/2mm.wasm, 2mm, coverage-branch, 33675
+wasm/instrumented/coverage-branch/3mm.wasm, 3mm, coverage-branch, 33901
+wasm/instrumented/coverage-branch/adi.wasm, adi, coverage-branch, 34554
+wasm/instrumented/coverage-branch/atax.wasm, atax, coverage-branch, 33194
+wasm/instrumented/coverage-branch/bicg.wasm, bicg, coverage-branch, 33294
+wasm/instrumented/coverage-branch/cholesky.wasm, cholesky, coverage-branch, 33679
+wasm/instrumented/coverage-branch/correlation.wasm, correlation, coverage-branch, 33685
+wasm/instrumented/coverage-branch/covariance.wasm, covariance, coverage-branch, 33391
+wasm/instrumented/coverage-branch/deriche.wasm, deriche, coverage-branch, 33926
+wasm/instrumented/coverage-branch/doitgen.wasm, doitgen, coverage-branch, 33399
+wasm/instrumented/coverage-branch/durbin.wasm, durbin, coverage-branch, 33095
+wasm/instrumented/coverage-branch/fdtd-2d.wasm, fdtd-2d, coverage-branch, 34033
+wasm/instrumented/coverage-branch/floyd-warshall.wasm, floyd-warshall, coverage-branch, 33094
+wasm/instrumented/coverage-branch/gemm.wasm, gemm, coverage-branch, 33374
+wasm/instrumented/coverage-branch/gemver.wasm, gemver, coverage-branch, 33629
+wasm/instrumented/coverage-branch/gesummv.wasm, gesummv, coverage-branch, 33180
+wasm/instrumented/coverage-branch/gramschmidt.wasm, gramschmidt, coverage-branch, 33693
+wasm/instrumented/coverage-branch/heat-3d.wasm, heat-3d, coverage-branch, 33852
+wasm/instrumented/coverage-branch/jacobi-1d.wasm, jacobi-1d, coverage-branch, 33040
+wasm/instrumented/coverage-branch/jacobi-2d.wasm, jacobi-2d, coverage-branch, 33394
+wasm/instrumented/coverage-branch/ludcmp.wasm, ludcmp, coverage-branch, 34109
+wasm/instrumented/coverage-branch/lu.wasm, lu, coverage-branch, 33697
+wasm/instrumented/coverage-branch/mvt.wasm, mvt, coverage-branch, 33433
+wasm/instrumented/coverage-branch/nussinov.wasm, nussinov, coverage-branch, 33319
+wasm/instrumented/coverage-branch/pspdfkit.wasm, pspdfkit, coverage-branch, 11911948
+wasm/instrumented/coverage-branch/seidel-2d.wasm, seidel-2d, coverage-branch, 33203
+wasm/instrumented/coverage-branch/symm.wasm, symm, coverage-branch, 33586
+wasm/instrumented/coverage-branch/syr2k.wasm, syr2k, coverage-branch, 33368
+wasm/instrumented/coverage-branch/syrk.wasm, syrk, coverage-branch, 33254
+wasm/instrumented/coverage-branch/trisolv.wasm, trisolv, coverage-branch, 33084
+wasm/instrumented/coverage-branch/trmm.wasm, trmm, coverage-branch, 33299
+wasm/instrumented/coverage-branch/UE4Game-HTML5-Shipping.wasm, UE4Game-HTML5-Shipping, coverage-branch, 42242745
+wasm/instrumented/instruction-mix/2mm.wasm, 2mm, instruction-mix, 200598
+wasm/instrumented/instruction-mix/3mm.wasm, 3mm, instruction-mix, 202191
+wasm/instrumented/instruction-mix/adi.wasm, adi, instruction-mix, 209256
+wasm/instrumented/instruction-mix/atax.wasm, atax, instruction-mix, 197488
+wasm/instrumented/instruction-mix/bicg.wasm, bicg, instruction-mix, 198419
+wasm/instrumented/instruction-mix/cholesky.wasm, cholesky, instruction-mix, 201030
+wasm/instrumented/instruction-mix/correlation.wasm, correlation, instruction-mix, 200740
+wasm/instrumented/instruction-mix/covariance.wasm, covariance, instruction-mix, 198585
+wasm/instrumented/instruction-mix/deriche.wasm, deriche, instruction-mix, 203194
+wasm/instrumented/instruction-mix/doitgen.wasm, doitgen, instruction-mix, 198617
+wasm/instrumented/instruction-mix/durbin.wasm, durbin, instruction-mix, 196966
+wasm/instrumented/instruction-mix/fdtd-2d.wasm, fdtd-2d, instruction-mix, 204108
+wasm/instrumented/instruction-mix/floyd-warshall.wasm, floyd-warshall, instruction-mix, 196514
+wasm/instrumented/instruction-mix/gemm.wasm, gemm, instruction-mix, 198491
+wasm/instrumented/instruction-mix/gemver.wasm, gemver, instruction-mix, 201213
+wasm/instrumented/instruction-mix/gesummv.wasm, gesummv, instruction-mix, 197658
+wasm/instrumented/instruction-mix/gramschmidt.wasm, gramschmidt, instruction-mix, 201428
+wasm/instrumented/instruction-mix/heat-3d.wasm, heat-3d, instruction-mix, 203635
+wasm/instrumented/instruction-mix/jacobi-1d.wasm, jacobi-1d, instruction-mix, 196418
+wasm/instrumented/instruction-mix/jacobi-2d.wasm, jacobi-2d, instruction-mix, 199619
+wasm/instrumented/instruction-mix/ludcmp.wasm, ludcmp, instruction-mix, 204234
+wasm/instrumented/instruction-mix/lu.wasm, lu, instruction-mix, 201069
+wasm/instrumented/instruction-mix/mvt.wasm, mvt, instruction-mix, 199414
+wasm/instrumented/instruction-mix/nussinov.wasm, nussinov, instruction-mix, 198311
+wasm/instrumented/instruction-mix/pspdfkit.wasm, pspdfkit, instruction-mix, 66437421
+wasm/instrumented/instruction-mix/seidel-2d.wasm, seidel-2d, instruction-mix, 197815
+wasm/instrumented/instruction-mix/symm.wasm, symm, instruction-mix, 200326
+wasm/instrumented/instruction-mix/syr2k.wasm, syr2k, instruction-mix, 198827
+wasm/instrumented/instruction-mix/syrk.wasm, syrk, instruction-mix, 197696
+wasm/instrumented/instruction-mix/trisolv.wasm, trisolv, instruction-mix, 196733
+wasm/instrumented/instruction-mix/trmm.wasm, trmm, instruction-mix, 197946
+wasm/instrumented/instruction-mix/UE4Game-HTML5-Shipping.wasm, UE4Game-HTML5-Shipping, instruction-mix, 225268076
+wasm/instrumented/load+store/2mm.wasm, 2mm, load+store, 52680
+wasm/instrumented/load+store/3mm.wasm, 3mm, load+store, 52930
+wasm/instrumented/load+store/adi.wasm, adi, load+store, 54364
+wasm/instrumented/load+store/atax.wasm, atax, load+store, 52340
+wasm/instrumented/load+store/bicg.wasm, bicg, load+store, 52495
+wasm/instrumented/load+store/cholesky.wasm, cholesky, load+store, 52853
+wasm/instrumented/load+store/correlation.wasm, correlation, load+store, 52952
+wasm/instrumented/load+store/covariance.wasm, covariance, load+store, 52503
+wasm/instrumented/load+store/deriche.wasm, deriche, load+store, 53103
+wasm/instrumented/load+store/doitgen.wasm, doitgen, load+store, 52332
+wasm/instrumented/load+store/durbin.wasm, durbin, load+store, 52219
+wasm/instrumented/load+store/fdtd-2d.wasm, fdtd-2d, load+store, 53356
+wasm/instrumented/load+store/floyd-warshall.wasm, floyd-warshall, load+store, 51998
+wasm/instrumented/load+store/gemm.wasm, gemm, load+store, 52347
+wasm/instrumented/load+store/gemver.wasm, gemver, load+store, 53041
+wasm/instrumented/load+store/gesummv.wasm, gesummv, load+store, 52405
+wasm/instrumented/load+store/gramschmidt.wasm, gramschmidt, load+store, 53002
+wasm/instrumented/load+store/heat-3d.wasm, heat-3d, load+store, 53042
+wasm/instrumented/load+store/jacobi-1d.wasm, jacobi-1d, load+store, 52144
+wasm/instrumented/load+store/jacobi-2d.wasm, jacobi-2d, load+store, 52544
+wasm/instrumented/load+store/ludcmp.wasm, ludcmp, load+store, 53402
+wasm/instrumented/load+store/lu.wasm, lu, load+store, 52830
+wasm/instrumented/load+store/mvt.wasm, mvt, load+store, 52634
+wasm/instrumented/load+store/nussinov.wasm, nussinov, load+store, 52339
+wasm/instrumented/load+store/pspdfkit.wasm, pspdfkit, load+store, 19627342
+wasm/instrumented/load+store/seidel-2d.wasm, seidel-2d, load+store, 52306
+wasm/instrumented/load+store/symm.wasm, symm, load+store, 52770
+wasm/instrumented/load+store/syr2k.wasm, syr2k, load+store, 52415
+wasm/instrumented/load+store/syrk.wasm, syrk, load+store, 52235
+wasm/instrumented/load+store/trisolv.wasm, trisolv, load+store, 52178
+wasm/instrumented/load+store/trmm.wasm, trmm, load+store, 52326
+wasm/instrumented/load+store/UE4Game-HTML5-Shipping.wasm, UE4Game-HTML5-Shipping, load+store, 76087407
+wasm/instrumented/none/2mm.wasm, 2mm, none, 26437
+wasm/instrumented/none/3mm.wasm, 3mm, none, 26614
+wasm/instrumented/none/adi.wasm, adi, none, 27363
+wasm/instrumented/none/atax.wasm, atax, none, 26101
+wasm/instrumented/none/bicg.wasm, bicg, none, 26192
+wasm/instrumented/none/cholesky.wasm, cholesky, none, 26449
+wasm/instrumented/none/correlation.wasm, correlation, none, 26490
+wasm/instrumented/none/covariance.wasm, covariance, none, 26235
+wasm/instrumented/none/deriche.wasm, deriche, none, 26708
+wasm/instrumented/none/doitgen.wasm, doitgen, none, 26210
+wasm/instrumented/none/durbin.wasm, durbin, none, 26033
+wasm/instrumented/none/fdtd-2d.wasm, fdtd-2d, none, 26772
+wasm/instrumented/none/floyd-warshall.wasm, floyd-warshall, none, 25981
+wasm/instrumented/none/gemm.wasm, gemm, none, 26204
+wasm/instrumented/none/gemver.wasm, gemver, none, 26489
+wasm/instrumented/none/gesummv.wasm, gesummv, none, 26117
+wasm/instrumented/none/gramschmidt.wasm, gramschmidt, none, 26507
+wasm/instrumented/none/heat-3d.wasm, heat-3d, none, 26692
+wasm/instrumented/none/jacobi-1d.wasm, jacobi-1d, none, 25979
+wasm/instrumented/none/jacobi-2d.wasm, jacobi-2d, none, 26287
+wasm/instrumented/none/ludcmp.wasm, ludcmp, none, 26787
+wasm/instrumented/none/lu.wasm, lu, none, 26451
+wasm/instrumented/none/mvt.wasm, mvt, none, 26304
+wasm/instrumented/none/nussinov.wasm, nussinov, none, 26186
+wasm/instrumented/none/pspdfkit.wasm, pspdfkit, none, 9615460
+wasm/instrumented/none/seidel-2d.wasm, seidel-2d, none, 26121
+wasm/instrumented/none/symm.wasm, symm, none, 26415
+wasm/instrumented/none/syr2k.wasm, syr2k, none, 26227
+wasm/instrumented/none/syrk.wasm, syrk, none, 26117
+wasm/instrumented/none/trisolv.wasm, trisolv, none, 26010
+wasm/instrumented/none/trmm.wasm, trmm, none, 26157
+wasm/instrumented/none/UE4Game-HTML5-Shipping.wasm, UE4Game-HTML5-Shipping, none, 39100719
+wasm/original/2mm.wasm, 2mm, original, 26415
+wasm/original/3mm.wasm, 3mm, original, 26592
+wasm/original/adi.wasm, adi, original, 27341
+wasm/original/atax.wasm, atax, original, 26079
+wasm/original/bicg.wasm, bicg, original, 26170
+wasm/original/cholesky.wasm, cholesky, original, 26427
+wasm/original/correlation.wasm, correlation, original, 26468
+wasm/original/covariance.wasm, covariance, original, 26213
+wasm/original/deriche.wasm, deriche, original, 26686
+wasm/original/doitgen.wasm, doitgen, original, 26188
+wasm/original/durbin.wasm, durbin, original, 26011
+wasm/original/fdtd-2d.wasm, fdtd-2d, original, 26750
+wasm/original/floyd-warshall.wasm, floyd-warshall, original, 25959
+wasm/original/gemm.wasm, gemm, original, 26182
+wasm/original/gemver.wasm, gemver, original, 26467
+wasm/original/gesummv.wasm, gesummv, original, 26095
+wasm/original/gramschmidt.wasm, gramschmidt, original, 26485
+wasm/original/heat-3d.wasm, heat-3d, original, 26670
+wasm/original/jacobi-1d.wasm, jacobi-1d, original, 25957
+wasm/original/jacobi-2d.wasm, jacobi-2d, original, 26265
+wasm/original/ludcmp.wasm, ludcmp, original, 26765
+wasm/original/lu.wasm, lu, original, 26429
+wasm/original/mvt.wasm, mvt, original, 26282
+wasm/original/nussinov.wasm, nussinov, original, 26164
+wasm/original/pspdfkit.wasm, pspdfkit, original, 9615389
+wasm/original/seidel-2d.wasm, seidel-2d, original, 26099
+wasm/original/symm.wasm, symm, original, 26393
+wasm/original/syr2k.wasm, syr2k, original, 26205
+wasm/original/syrk.wasm, syrk, original, 26095
+wasm/original/trisolv.wasm, trisolv, original, 25988
+wasm/original/trmm.wasm, trmm, original, 26135
+wasm/original/UE4Game-HTML5-Shipping.wasm, UE4Game-HTML5-Shipping, original, 39510398
