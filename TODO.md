@@ -18,6 +18,11 @@
 
 # Features
 
+- Debug where heavy runtime slowdown comes from, see 2018_07_30 16_53 Office Lens.jpg. Options
+    1. added stack manipulation instructions (const, get_local, set_local etc)
+    2. calls in general, even if to wasm function -> to compare against previous point: replace calls by matching number of ```drop```s
+    3. calls to JS, i.e., interop -> to eval this problem: replace JS calls (imported functions) by function stubs implemented in wasm
+    4. JS code -> eval: remove JS code in low-level hooks (this is what I already did quickly: seems to bring only ~20%, i.e., is not the main factor)
 - Idea: "probabilistic instrumentation", combine ideas from sampling with instrumentation by instrumenting uniform randomly, e.g. with p=0.1. E.g., for cryptominer detection or memory performance analyses it would suffice to look only into every tenth binary instruction or memory access, not every single one. Tradeoff: accuracy vs. performance.
 - use single-integer instruction locations, not ```{func, instr}```. You can easily map them back to func + instr by saving the function offsets (do not forget to account for instr === -1 for "virtual instructions") and computing in which range the loc falls.
 - automatic (```cargo test```-able) integration tests for analyses 
