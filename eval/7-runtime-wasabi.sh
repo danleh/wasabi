@@ -1,19 +1,20 @@
 #!/bin/sh
 cargo install --path .. --force 1>&2
-echo "file, time [ms]"
-for i in $(seq 1 20)
+echo "file, num_threads, time_ms"
+# try for multiple CPU cores
+for num_threads in $(seq 0 8)
 do
-	for file in wasm/original/*.wasm
+	# average over multiple runs
+	for i in $(seq 1 20)
 	do
-		echo -n "$(basename $file), "
-		t_start=$(date +%s%N)
-		# sequential instrumentation
-		# (RAYON_NUM_THREADS=1 wasabi $file)
-		# parallel
-		wasabi $file
-		# write results to /dev/null
-		# wasabi $file /dev/null/out
-		t_ms=$((($(date +%s%N) - $t_start)/1000000))
-		echo "$t_ms"
+		for file in wasm/original/*.wasm
+		do
+			t_start=$(date +%s%N)
+			# write results to /dev/null -> faster?
+			# wasabi $file /dev/null/out
+			(RAYON_NUM_THREADS=$num_threads wasabi $file)
+			time_ms=$((($(date +%s%N) - $t_start)/1000000))
+			echo "$(basename $file), $num_threads, $time_ms"
+		done
 	done
 done
