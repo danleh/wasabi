@@ -46,8 +46,10 @@ for i, row in df.iterrows():
 # df.replace("br_table","   br_table",inplace=True)
 # print df[df.hooks == "all"].groupby("program").median()
 
-df_ = df.groupby(["hooks", "program_group"]).median()
-print df_[df_.overhead > 1.3]
+print df.groupby(["hooks"]).overhead.describe()
+# df_ = df.groupby(["hooks", "program"]).median().reset_index()
+# print df_[(df_.overhead < 1.1) & (df_.overhead > 1.01)]
+# print df_[(df_.hooks == "all")]
 
 # custom hooks sort order
 df.hooks = pd.Categorical(df.hooks, [
