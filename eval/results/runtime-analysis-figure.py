@@ -145,4 +145,4 @@ def change_width(ax, new_value) :
 
 change_width(g.ax, .24)
 
-g.savefig("runtime-analyis.pdf")
+g.savefig("runtime-analysis.pdf")
