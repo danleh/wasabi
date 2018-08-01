@@ -27,37 +27,32 @@ mpl.font_manager.USE_FONTCONFIG=True
 
 # print pd.__version__
 
-df = pd.read_csv("runtime-analysis.csv", skipinitialspace=True)
+df = pd.read_csv("code-size.csv", skipinitialspace=True)
 
 # drop some columns and rows that add clutter
-df = df.drop(["comment", "analysis", "browser"], axis=1)
-
-# mean over all runs, but still keep separate programs and hooks
-df = df.groupby(["hooks", "program"]).mean().reset_index()
+df = df.drop(["path"], axis=1)
 
 # add program_group column that combines all polybench programs into one and gives more readable names
 df.loc[df.program == "pspdfkit", "program_group"] = "PSPDFKit"
 df.loc[df.program == "UE4Game-HTML5-Shipping", "program_group"] = "Unreal Engine 4"
 df.loc[(df.program != "pspdfkit") & (df.program != "UE4Game-HTML5-Shipping"), "program_group"] = "PolyBench (geomean)"
 
-# add overhead column that is relative to the none execution
+# add overhead column that is relative to the original size
 for i, row in df.iterrows():
-	none_seconds = df[(df.hooks == "none") & (df.program == row.program)].seconds
-	assert len(none_seconds) == 1, "after mean there should be only one entry for hooks none"
-	df.ix[i, "overhead"] = row.seconds / float(none_seconds.iloc[0])
+	original_bytes = df[(df.hooks == "original") & (df.program == row.program)].bytes
+	assert len(original_bytes) == 1
+	df.ix[i, "overhead"] = row.bytes / float(original_bytes.iloc[0])
 
 # df.replace("br_table","   br_table",inplace=True)
-
 # print df[df.hooks == "all"].groupby("program").median()
 
-# or geo mean
-# df_ = df.groupby(["hooks", "program"]).median()
-# print df_
+df_ = df.groupby(["hooks", "program_group"]).median()
+print df_[df_.overhead > 1.3]
 
 # custom hooks sort order
 df.hooks = pd.Categorical(df.hooks, [
-	# "none",
 	# "start",
+	# "none",
 	"nop",
 	"unreachable",	
 	"memory_size",
@@ -103,9 +98,9 @@ g = sns.factorplot(x="hooks", y="overhead", hue="program_group", kind="bar", asp
 g.ax.yaxis.set_minor_locator(mpl.ticker.AutoMinorLocator())
 g.despine(offset=4,bottom=True)
 plt.xlabel("Instrumented Hooks", fontproperties=fp, fontsize=11,
-	labelpad=-12
+	labelpad=-8
 )
-plt.ylabel("Relative Runtime", fontproperties=fp, fontsize=11,
+plt.ylabel("Relative Binary Size", fontproperties=fp, fontsize=11,
 #	position=(0,.3)
 )
 legend = plt.legend(
@@ -120,7 +115,7 @@ legend.get_frame().set_linewidth(0)
 plt.tick_params(axis='x', 
 	bottom=False, # ticks along the bottom edge are off
 	labelbottom=True)
-plt.ylim((0,40))
+plt.ylim((0,3))
 g.ax.yaxis.grid(b=True,which="major",color=".7",linewidth=.5)
 g.ax.yaxis.grid(b=True,which="minor",color=".85",linewidth=.5,linestyle="--")
 # g.set_xticklabels(rotation=45, ha="center", position=(0,-.02), fontproperties="Inconsolata",fontsize="11", rotation_mode="anchor")
@@ -145,4 +140,4 @@ def change_width(ax, new_value) :
 
 change_width(g.ax, .24)
 
-g.savefig("runtime-analysis.pdf")
+g.savefig("code-size.pdf")
