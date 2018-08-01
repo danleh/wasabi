@@ -48,11 +48,10 @@ for i, row in df.iterrows():
 
 # df.replace("br_table","   br_table",inplace=True)
 
-# print df[df.hooks == "all"].groupby("program").median()
-
-# or geo mean
-# df_ = df.groupby(["hooks", "program"]).median()
-# print df_
+# print df.groupby(["hooks"]).overhead.describe()
+df_ = df.groupby(["hooks"]).overhead.describe().reset_index()
+print df_[(df_.level_1 == "min") | (df_.level_1 == "max")]
+# print df_[(df_.hooks == "all")]
 
 # custom hooks sort order
 df.hooks = pd.Categorical(df.hooks, [
