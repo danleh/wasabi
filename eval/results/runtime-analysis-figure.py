@@ -32,15 +32,19 @@ df = pd.read_csv("runtime-analysis.csv", skipinitialspace=True)
 # drop some columns and rows that add clutter
 df = df.drop(["comment", "analysis", "browser"], axis=1)
 
-# add Program column that combines all polybench programs into one and gives more readable names
+# mean over all runs, but still keep separate programs and hooks
+df = df.groupby(["hooks", "program"]).mean().reset_index()
+
+# add program_group column that combines all polybench programs into one and gives more readable names
 df.loc[df.program == "pspdfkit", "program_group"] = "PSPDFKit"
 df.loc[df.program == "UE4Game-HTML5-Shipping", "program_group"] = "Unreal Engine 4"
-df.loc[(df.program != "pspdfkit") & (df.program != "UE4Game-HTML5-Shipping"), "program_group"] = "PolyBench (median)"
+df.loc[(df.program != "pspdfkit") & (df.program != "UE4Game-HTML5-Shipping"), "program_group"] = "PolyBench (geomean)"
 
 # add overhead column that is relative to the none execution
 for i, row in df.iterrows():
-	none_seconds = df[(df.hooks == "none") & (df.program == row.program)].seconds.median()
-	df.ix[i, "overhead"] = row.seconds / float(none_seconds)
+	none_seconds = df[(df.hooks == "none") & (df.program == row.program)].seconds
+	assert len(none_seconds) == 1, "after mean there should be only one entry for hooks none"
+	df.ix[i, "overhead"] = row.seconds / float(none_seconds.iloc[0])
 
 # df.replace("br_table","   br_table",inplace=True)
 
@@ -52,8 +56,8 @@ for i, row in df.iterrows():
 
 # custom hooks sort order
 df.hooks = pd.Categorical(df.hooks, [
-	"none",
-	"start",
+	# "none",
+	# "start",
 	"nop",
 	"unreachable",	
 	"memory_size",
@@ -75,7 +79,7 @@ df.hooks = pd.Categorical(df.hooks, [
 	"br",
 	"br_if",
 	"br_table",
-	"all",
+	# "all",
 ])
 
 # print df
@@ -91,8 +95,8 @@ fp = mpl.font_manager.FontProperties(fname="/usr/share/fonts/truetype/fira/FiraS
 # print fp
 print mpl.font_manager.findfont("Fira Sans")
 
-g = sns.factorplot(x="hooks", y="overhead", hue="program_group", kind="bar", aspect=4, size=4, data=df, legend=False, estimator=sp.stats.gmean,
-	errwidth=.5,
+g = sns.factorplot(x="hooks", y="overhead", hue="program_group", kind="bar", aspect=4, size=4, data=df, legend=False, estimator=sp.stats.gmean,	
+	errwidth=0,
 	# capsize=.1,
 )
 g.ax.yaxis.set_minor_locator(mpl.ticker.AutoMinorLocator())
