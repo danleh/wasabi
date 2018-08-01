@@ -3,35 +3,35 @@
 
 ;none
 
-# start;start
-# nop;nop
-# unreachable;unreachable
-# memory_size;memory_size
-# memory_grow;memory_grow
+start;start
+nop;nop
+unreachable;unreachable
+memory_size;memory_size
+memory_grow;memory_grow
 
-# drop;drop
-# select;select
+drop;drop
+select;select
 
-# global;global
-# local;local
+global;global
+local;local
 
-# const;const
-# unary;unary
+const;const
+unary;unary
 binary;binary
 
-# load;load
-# store;store
+load;load
+store;store
 
 call;call
-# return;return
+return;return
 
-# br;br
-# br_if;br_if
-# br_table;br_table
+br;br
+br_if;br_if
+br_table;br_table
 
-# if;if
+if;if
 begin;begin
-# end;end
+end;end
 
 # the following hooks account for ~10% code size increase (in sum), so group them together
 # start,nop,unreachable,memory_size,memory_grow,drop,select;grouped/basic
