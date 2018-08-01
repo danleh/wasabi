@@ -1,4 +1,4 @@
-path, filename, hooks, bytes
+path, program, hooks, bytes
 wasm/instrumented/all/2mm.wasm, 2mm, all, 222668
 wasm/instrumented/all/3mm.wasm, 3mm, all, 224347
 wasm/instrumented/all/adi.wasm, adi, all, 231348
