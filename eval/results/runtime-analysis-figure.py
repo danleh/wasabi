@@ -95,27 +95,40 @@ fp = mpl.font_manager.FontProperties(fname="/usr/share/fonts/truetype/fira/FiraS
 # print fp
 print mpl.font_manager.findfont("Fira Sans")
 
-g = sns.factorplot(x="hooks", y="overhead", hue="program_group", kind="bar", aspect=4, size=4, data=df, legend=False, estimator=sp.stats.gmean,	
+g = sns.factorplot(x="hooks", y="overhead", hue="program_group", kind="bar", aspect=5, size=2.2, data=df, legend=False,
+	estimator=sp.stats.gmean,	
 	errwidth=0,
-	# capsize=.1,
+	# capsize=.1
 )
 g.ax.yaxis.set_minor_locator(mpl.ticker.AutoMinorLocator())
 g.despine(offset=4,bottom=True)
-plt.xlabel("Instrumented Hooks", fontproperties=fp, fontsize=11)
+plt.xlabel("Instrumented Hooks", fontproperties=fp, fontsize=11,
+	labelpad=-12
+)
 plt.ylabel("Relative Runtime", fontproperties=fp, fontsize=11,
 #	position=(0,.3)
 )
-# legend = plt.legend(loc="upper right",bbox_to_anchor=(1.04, 1.07),frameon=1,framealpha=1,prop=fp, fontsize=11)
-# legend.get_frame().set_linewidth(0)
+legend = plt.legend(
+	loc="upper right",
+	bbox_to_anchor=(1.02, 1.1),
+	frameon=1,
+	framealpha=1,
+	prop=fp,
+	fontsize=11
+)
+legend.get_frame().set_linewidth(0)
 plt.tick_params(axis='x', 
 	bottom=False, # ticks along the bottom edge are off
 	labelbottom=True)
+plt.ylim((0,40))
 g.ax.yaxis.grid(b=True,which="major",color=".7",linewidth=.5)
 g.ax.yaxis.grid(b=True,which="minor",color=".85",linewidth=.5,linestyle="--")
 # g.set_xticklabels(rotation=45, ha="center", position=(0,-.02), fontproperties="Inconsolata",fontsize="11", rotation_mode="anchor")
 g.set_xticklabels(fontproperties="Inconsolata",fontsize="10",
 	rotation=45,
-	position=(0,0.05)
+	rotation_mode="anchor",
+	ha="right",
+	position=(0,0.06),
 )
 g.set_yticklabels(g.ax.get_yticks(), fontproperties=fp)
 
@@ -130,6 +143,6 @@ def change_width(ax, new_value) :
         # we recenter the bar
         patch.set_x(patch.get_x() + diff * .5)
 
-# change_width(g.ax, .25)
+change_width(g.ax, .24)
 
 g.savefig("runtime-analyis.pdf")
