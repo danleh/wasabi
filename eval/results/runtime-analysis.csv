@@ -1,4 +1,4 @@
-# browser, analysis, instrumented hooks, comment, program, seconds, slowdown vs none/none, average slowdown vs none/none over all programs
+browser, analysis, hooks, comment, program, seconds
 firefox, none, all, "", 2mm, 3.659000
 firefox, none, all, "", 3mm, 5.882000
 firefox, none, all, "", adi, 7.263000
