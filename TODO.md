@@ -25,6 +25,7 @@
     4. JS code -> eval: remove JS code in low-level hooks (this is what I already did quickly: seems to bring only ~20%, i.e., is not the main factor)
 - Idea: "probabilistic instrumentation", combine ideas from sampling with instrumentation by instrumenting uniform randomly, e.g. with p=0.1. E.g., for cryptominer detection or memory performance analyses it would suffice to look only into every tenth binary instruction or memory access, not every single one. Tradeoff: accuracy vs. performance.
 - use single-integer instruction locations, not ```{func, instr}```. You can easily map them back to func + instr by saving the function offsets (do not forget to account for instr === -1 for "virtual instructions") and computing in which range the loc falls.
+- fix wrong handling of ```call_indirect``` in Firefox: exported function object .name property is NOT the Wasm index -> BUG report and compare with Chrome!
 - automatic (```cargo test```-able) integration tests for analyses 
     * using Wasm in Node.js
     * make sure null- or log-all-analysis run without exception
