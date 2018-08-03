@@ -3,13 +3,13 @@
 # requirements: wget, tar, unzip, gzip, python 2.7, npm, node js, git
 
 # download and install emscripten, see https://kripken.github.io/emscripten-site/docs/getting_started/downloads.html
-#git clone https://github.com/juj/emsdk.git
-#cd emsdk
-#./emsdk install latest
-#./emsdk activate latest
+git clone https://github.com/juj/emsdk.git
+cd emsdk
+./emsdk install latest
+./emsdk activate latest
 # to have emcc available, run: 
-#source ./emsdk_env.sh
-#cd ..
+source ./emsdk_env.sh
+cd ..
 
 # download and extract nightly browsers (as of 2018-07-17)
 mkdir -p browsers
@@ -38,13 +38,4 @@ unzip 2017-03-16-ZenGarden.zip
 # this license is valid 60 days from 2018-07-17 on
 wget https://github.com/PSPDFKit-labs/pspdfkit-webassembly-benchmark/archive/master.zip -O pspdfkit-webassembly-benchmark-master.zip
 unzip pspdfkit-webassembly-benchmark-master.zip
-cd pspdfkit-webassembly-benchmark-master
-# needs download key, register for trail to get
-npm install --save https://customers.pspdfkit.com/npm/TRIAL-oL6A8_VBUi1QGq68jzqPZ7B6OgMoqr7oAOQ8pXKOtZJUY4r-77rdz_fp3kTBbfUX9aOtbNz-PZF7nadrRWcItA/latest.tar.gz
-mkdir -p public/vendor
-cp -R node_modules/pspdfkit/dist public/vendor/pspdfkit
-npm install
-# needs license key, register for trail to get
-echo "kffP4ACBJVXTetVoyMiq0PAYaDCJKUDLwScSXoktG0mKLgSE9vtTFfvwvrSgEwdrZFkp4k4_4oJjSnMP7L9KAuD3yZj50OUQR9zFs9exY3gj3O56ft9XZ2R-_QAs1wqeZdp95zJ3V6bjo_DwqNmM9t8o6zLM1-6E45pXqRQnVEpcOumVMxacTn15_FwGlikMEnLHQux0oobMuO0n3yx7zhS6OHUZsRnaEZzfJe6xnw5fd9Nb5FJhP5yf96EnNt33NNyogHnkYON2cOSZ_FYGmu17c6W31xk7qSUGPeMlCdvOEhg-BRUEtLjolUjZMscxWEP0WJXnNSQEBUyfkyrcyCPT_hreJBmGrpMqPekT5NSo-7-sY7aWuBOxZQYAhXkKL72R20irjU_6Ginni_B_JnKbeFT4Dytn7jfAAFqwHWYxz-d1hcOABqdcl6J5Tatq" > public/license-key
-npm run build
 cd ..
