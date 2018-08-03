@@ -25,7 +25,8 @@ source ~/Documents/SOLA/WebAssembly/tools/emsdk/emsdk_env.sh
 
 echo -n "firefox, $analysis, $hooks, \"$comment\", UE4Game-HTML5-Shipping, " >> $emrun_output
 cd programs-analysis/EpicZenGarden/
-emrun --no_emrun_detect --log_stdout "$emrun_output" --browser "$firefox_bin" --browser_args "$firefox_args" --serve_root . "2017-03-16-ZenGarden/EpicZenGarden.html?playback&novsync&noaudio&fakegl"
+# optional: also disable vsync, audio, and rendering (more "pure-CPU" then, but less real workload), add &novsync&noaudio&fakegl
+emrun --no_emrun_detect --log_stdout "$emrun_output" --browser "$firefox_bin" --browser_args "$firefox_args" --serve_root . "2017-03-16-ZenGarden/EpicZenGarden.html?playback"
 cd - > /dev/null
 
 sleep 2s
