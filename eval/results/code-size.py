@@ -41,7 +41,8 @@ df.loc[(df.program != "pspdfkit") & (df.program != "UE4Game-HTML5-Shipping"), "p
 for i, row in df.iterrows():
 	original_bytes = df[(df.hooks == "original") & (df.program == row.program)].bytes
 	assert len(original_bytes) == 1
-	df.ix[i, "overhead"] = row.bytes / float(original_bytes.iloc[0])
+	original_bytes = original_bytes.iloc[0]
+	df.ix[i, "overhead"] = (row.bytes - original_bytes) / (original_bytes / 100.0)
 
 # df.replace("br_table","   br_table",inplace=True)
 # print df[df.hooks == "all"].groupby("program").median()
@@ -102,7 +103,7 @@ g.despine(offset=4,bottom=True)
 plt.xlabel("Instrumented Hooks", fontproperties=fp, fontsize=11,
 	labelpad=-8
 )
-plt.ylabel("Relative Binary Size", fontproperties=fp, fontsize=11,
+plt.ylabel("Binary Size Increase", fontproperties=fp, fontsize=11,
 #	position=(0,.3)
 )
 legend = plt.legend(
@@ -117,9 +118,10 @@ legend.get_frame().set_linewidth(0)
 plt.tick_params(axis='x', 
 	bottom=False, # ticks along the bottom edge are off
 	labelbottom=True)
-plt.ylim((0,3))
+plt.ylim((-20,200))
 g.ax.yaxis.grid(b=True,which="major",color=".7",linewidth=.5)
 g.ax.yaxis.grid(b=True,which="minor",color=".85",linewidth=.5,linestyle="--")
+plt.axhline(y=0,linewidth=.7,color="black")
 # g.set_xticklabels(rotation=45, ha="center", position=(0,-.02), fontproperties="Inconsolata",fontsize="11", rotation_mode="anchor")
 g.set_xticklabels(fontproperties="Inconsolata",fontsize="10",
 	rotation=45,
@@ -127,7 +129,7 @@ g.set_xticklabels(fontproperties="Inconsolata",fontsize="10",
 	ha="right",
 	position=(0,0.06),
 )
-g.set_yticklabels(g.ax.get_yticks(), fontproperties=fp)
+g.set_yticklabels([ str(int(label)) + "%" for label in g.ax.get_yticks()], fontproperties=fp)
 
 def change_width(ax, new_value) :
     for patch in ax.patches :
