@@ -353,13 +353,13 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                 BrTable(ref target_table, default_target) => {
                     type_stack.instr(&InstrType::new(&[I32], &[]));
 
-                    // each br_table instruction gets its own entry in the static info object
-                    // that maps table index to label and location
-                    module_info.write().br_tables.push(BrTableInfo::from_br_table(target_table, default_target, &block_stack, fidx));
-
                     if enabled_hooks.is_enabled(HighLevelHook::BrTable)
                         // because end hooks are called at runtime, we need to instrument even if br_table is not enabled
                         || enabled_hooks.is_enabled(HighLevelHook::End) {
+
+                        // each br_table instruction gets its own entry in the static info object
+                        // that maps table index to label and location
+                        module_info.write().br_tables.push(BrTableInfo::from_br_table(target_table, default_target, &block_stack, fidx));
 
                         // NOTE calling the end() hooks for the intermediate blocks is done at runtime
                         // by the br_table low-level hook
