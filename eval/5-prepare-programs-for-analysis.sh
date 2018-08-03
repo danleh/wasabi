@@ -15,9 +15,9 @@ then
 	# also delete IndexedDB so that everything is always compiled fresh (HACKY but works for now)
 	# also insert fetch call that posts result render time to emrun in benchmark mode
 	sed -i "4i\    <script src=\"UE4Game-HTML5-Shipping.wasabi.js\"></script><script src=\"analysis.js\"></script><script>indexedDB.deleteDatabase(\"UE4_assetDatabase_ZenGarden\");</script>" programs-analysis/EpicZenGarden/2017-03-16-ZenGarden/EpicZenGarden.html
-	sed -i "618i\fetch('stdio.html', { method: 'POST', body: '^out^0^'+totalRenderTime }).then(() => fetch('stdio.html', { method: 'POST', body: '^exit^0' })).then(() => window.close())" programs-analysis/EpicZenGarden/emtimer.js
+	sed -i "618i\        fetch('stdio.html', { method: 'POST', body: '^out^0^'+totalRenderTime }).then(() => fetch('stdio.html', { method: 'POST', body: '^exit^0' })).then(() => window.close())" programs-analysis/EpicZenGarden/emtimer.js
 	
-	# PSPDFKit: HACK see below, dont need wasabi.js and analysis.js file here
+	# PSPDFKit: HACK see below, dont need to insert wasabi.js and analysis.js script tags here
 	mv programs-analysis/pspdfkit/vendor/pspdfkit/pspdfkit.js programs-analysis/pspdfkit/vendor/pspdfkit/pspdfkit.js.orig
 
 	# PolyBench
