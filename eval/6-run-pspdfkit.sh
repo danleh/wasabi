@@ -26,7 +26,8 @@ source ~/Documents/SOLA/WebAssembly/tools/emsdk/emsdk_env.sh
 echo -n "firefox, $analysis, $hooks, \"$comment\", pspdfkit, " >> $emrun_output
 cd programs-analysis/pspdfkit/
 # save some time: don't do 20 runs (inside the benchmark => runsScaleFactor), because we average over multiple ("our") runs anyway
-emrun --no_emrun_detect --log_stdout "$emrun_output" --browser "$firefox_bin" --browser_args "$firefox_args" index.html?runsScaleFactor=0.5
+# ?runsScaleFactor=0.5
+emrun --no_emrun_detect --log_stdout "$emrun_output" --browser "$firefox_bin" --browser_args "$firefox_args" index.html
 cd - > /dev/null
 
 sleep 2s
