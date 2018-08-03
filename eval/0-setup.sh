@@ -46,5 +46,5 @@ cp -R node_modules/pspdfkit/dist public/vendor/pspdfkit
 npm install
 # needs license key, register for trail to get
 echo "kffP4ACBJVXTetVoyMiq0PAYaDCJKUDLwScSXoktG0mKLgSE9vtTFfvwvrSgEwdrZFkp4k4_4oJjSnMP7L9KAuD3yZj50OUQR9zFs9exY3gj3O56ft9XZ2R-_QAs1wqeZdp95zJ3V6bjo_DwqNmM9t8o6zLM1-6E45pXqRQnVEpcOumVMxacTn15_FwGlikMEnLHQux0oobMuO0n3yx7zhS6OHUZsRnaEZzfJe6xnw5fd9Nb5FJhP5yf96EnNt33NNyogHnkYON2cOSZ_FYGmu17c6W31xk7qSUGPeMlCdvOEhg-BRUEtLjolUjZMscxWEP0WJXnNSQEBUyfkyrcyCPT_hreJBmGrpMqPekT5NSo-7-sY7aWuBOxZQYAhXkKL72R20irjU_6Ginni_B_JnKbeFT4Dytn7jfAAFqwHWYxz-d1hcOABqdcl6J5Tatq" > public/license-key
-# to run: npm start
+npm run build
 cd ..
