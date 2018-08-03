@@ -1,4 +1,3 @@
-// online + offline phase
 {
 	// TODO possibly compress accesses to avoid OOM
 	const accesses /* : [{func, instr, addr, write: bool}] */ = [];
