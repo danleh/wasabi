@@ -1,16 +1,15 @@
 #!/bin/sh
-# for all hooks
-for hooks in wasm/instrumented/*
+while read hooks
 do
-	hooks=$(basename $hooks)
 	echo "hooks: $hooks"
 
 	./5-prepare-programs-for-analysis.sh none $hooks
 
 	# average over multiple runs
-	for i in $(seq 1 20)
+	for i in $(seq 1 3)
 	do
-		./6-run-polybench.sh none $hooks
-		# TODO PSPDF, UE4
+		# ./6-run-polybench.sh none $hooks
+		./6-run-ue4.sh none $hooks
+		# TODO PSPDF
 	done
-done
+done < 6_hooks_to_run_list
