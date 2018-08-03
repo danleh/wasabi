@@ -49,6 +49,7 @@ the user (e.g. by detection default function stubs through a ```// EMPTY FUNCTIO
 comment)
 - Long term/follow up: streaming instrumentation
     * paper name idea: "Streaming and parallel instrumentation"
+    * evaluation: latency from "first request sent" to "first function executed" will be MUCH lower with streaming instrumentation vs "blocking"
 - Long term/follow up: Analysis in Wasm (not JS)
     * needs merging of analysis code and program code
     * paper name idea: "wasm-merge: Linking without relocation info"
