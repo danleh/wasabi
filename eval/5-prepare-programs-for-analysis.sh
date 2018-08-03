@@ -11,7 +11,9 @@ then
 
 	# insert *.wasabi.js and analysis.js scripts into html harnesses
 	# also delete IndexedDB for UE4 so that everything is always compiled fresh (HACKY but works for now)
+	# also insert fetch call that posts result render time to emrun in benchmark mode for UE4
 	sed -i "4i\    <script src=\"UE4Game-HTML5-Shipping.wasabi.js\"></script><script src=\"analysis.js\"></script><script>indexedDB.deleteDatabase(\"UE4_assetDatabase_ZenGarden\");</script>" programs-analysis/EpicZenGarden/2017-03-16-ZenGarden/EpicZenGarden.html
+	sed -i "618i\fetch('stdio.html', { method: 'POST', body: '^out^0^'+totalRenderTime }).then(() => fetch('stdio.html', { method: 'POST', body: '^exit^0' })).then(() => window.close())" programs-analysis/EpicZenGarden/emtimer.js
 	sed -i "4i\    <script src=\"pspdfkit.wasabi.js\"></script><script src=\"analysis.js\"></script>" programs-analysis/pspdfkit-webassembly-benchmark-master/public/index.html
 	for file in programs-analysis/polybench-c-4.2.1-beta/*.html
 	do
