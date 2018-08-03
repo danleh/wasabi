@@ -27,3 +27,5 @@ echo -n "firefox, $analysis, $hooks, \"$comment\", UE4Game-HTML5-Shipping, " >> 
 cd programs-analysis/EpicZenGarden/
 emrun --no_emrun_detect --log_stdout "$emrun_output" --browser "$firefox_bin" --browser_args "$firefox_args" --serve_root . "2017-03-16-ZenGarden/EpicZenGarden.html?playback&novsync&noaudio&fakegl"
 cd - > /dev/null
+
+sleep 2s
