@@ -38,7 +38,7 @@ df = df.groupby(["hooks", "program"]).mean().reset_index()
 # add program_group column that combines all polybench programs into one and gives more readable names
 df.loc[df.program == "pspdfkit", "program_group"] = "PSPDFKit"
 df.loc[df.program == "UE4Game-HTML5-Shipping", "program_group"] = "Unreal Engine 4"
-df.loc[(df.program != "pspdfkit") & (df.program != "UE4Game-HTML5-Shipping"), "program_group"] = "PolyBench (geomean)"
+df.loc[(df.program != "pspdfkit") & (df.program != "UE4Game-HTML5-Shipping"), "program_group"] = "PolyBench"
 
 # add overhead column that is relative to the none execution
 for i, row in df.iterrows():
@@ -97,6 +97,7 @@ print mpl.font_manager.findfont("Fira Sans")
 g = sns.factorplot(x="hooks", y="overhead", hue="program_group", kind="bar", aspect=5, size=2.2, data=df, legend=False,
 	estimator=sp.stats.gmean,	
 	errwidth=0,
+	# errwidth=1,
 	# capsize=.1
 )
 g.ax.yaxis.set_minor_locator(mpl.ticker.AutoMinorLocator())
