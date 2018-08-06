@@ -713,6 +713,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
     // actually add the hooks to module and check that inserted Idx is the one on the Hook struct
     let hooks = hooks.finish();
+    println!("generated {} low-level hooks", hooks.len());
     let mut js_hooks = Vec::new();
     for hook in hooks {
         js_hooks.push(hook.js);
