@@ -23,7 +23,10 @@
         - if so: use single-integer instruction locations, not ```{func, instr}```. You can easily map them back to func + instr by saving the function offsets (do not forget to account for instr === -1 for "virtual instructions") and computing in which range the loc falls.
     2. calls in general, even if to wasm function -> to compare against previous point: replace calls by matching number of ```drop```s
     3. calls to JS, i.e., interop -> to eval this problem: replace JS calls (imported functions) by function stubs implemented in wasm
-    4. JS code -> eval: remove JS code in low-level hooks (this is what I already did quickly: seems to bring only ~20%, i.e., is not the main factor)
+    4. JS code 
+        - to eval if its this: remove JS code in low-level hooks (this is what I already did quickly: seems to bring only ~20%, i.e., is not the main factor)
+        - possible solution if allocating op strings (e.g., "i32.load_u8s") is expensive: use ```function.caller.name``` inside a ```op()``` utility function
+        - get rid of low-level <> high-level split altogether by (e.g. for br_table) putting all behavior prior to the user-defined analysis functions inside the Wasm module itself. For br_table we could do a "trampoline" function that uses a br_table itself to call end hooks at runtime.
 - Reduce memory allocations (see eval/perf/ heaptrack data) in hook_map::instr() and Hook::new()
     * more borrowing, less String
 - Idea: "probabilistic instrumentation", combine ideas from sampling with instrumentation by instrumenting uniform randomly, e.g. with p=0.1. E.g., for cryptominer detection or memory performance analyses it would suffice to look only into every tenth binary instruction or memory access, not every single one. Tradeoff: accuracy vs. performance.
