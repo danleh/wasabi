@@ -6,7 +6,7 @@ use self::hook_map::HookMap;
 use self::static_info::*;
 use self::type_stack::TypeStack;
 use serde_json;
-use wasm::ast::{BlockType, Idx, InstrType, Mutability, Val, ValType::*};
+use wasm::ast::{BlockType, Idx, InstrType, Mutability, Val, ValType::*, FunctionType};
 use wasm::ast::highlevel::{Function, GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
 use rayon::prelude::*;
 use parking_lot::RwLock;
@@ -714,6 +714,13 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
     // actually add the hooks to module and check that inserted Idx is the one on the Hook struct
     let hooks = hooks.finish();
     println!("generated {} low-level hooks", hooks.len());
+//    let mut hook_list: Vec<(String, FunctionType)> = hooks.iter().map(|hook| (hook.wasm.import.as_ref().map(|opt| opt.1.clone()).unwrap(), hook.wasm.type_.clone())).collect();
+//    hook_list.sort_by_key(|h| h.0.clone());
+//    for hook in hook_list {
+//        println!("{}: {:?}", hook.0, hook.1);
+//    }
+//    println!("{:?}", hook_list.iter().max_by_key(|hook| hook.1.params.len()));
+
     let mut js_hooks = Vec::new();
     for hook in hooks {
         js_hooks.push(hook.js);
