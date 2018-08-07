@@ -47,8 +47,7 @@ for i, row in df.iterrows():
 	df.ix[i, "overhead"] = row.seconds / float(none_seconds.iloc[0])
 
 # df.replace("br_table","   br_table",inplace=True)
-
-# print df.groupby(["hooks"]).overhead.describe()
+print df.groupby(["hooks"]).overhead.apply(sp.stats.gmean).sort_values()
 df_ = df.groupby(["hooks"]).overhead.describe().reset_index()
 print df_[(df_.level_1 == "min") | (df_.level_1 == "max")]
 # print df_[(df_.hooks == "all")]
