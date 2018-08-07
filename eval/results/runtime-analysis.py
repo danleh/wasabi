@@ -108,7 +108,13 @@ plt.xlabel("Instrumented Hooks", fontproperties=fp, fontsize=11,
 plt.ylabel("Relative Runtime", fontproperties=fp, fontsize=11,
 #	position=(0,.3)
 )
+
+plt.legend()
+handles, labels = g.ax.get_legend_handles_labels()
+handles.append(mpl.patches.Patch(color='none', label="(all geomean)"))
+
 legend = plt.legend(
+	handles=handles,
 	loc="upper right",
 	bbox_to_anchor=(1.02, 1.1),
 	frameon=1,
@@ -117,6 +123,10 @@ legend = plt.legend(
 	fontsize=11
 )
 legend.get_frame().set_linewidth(0)
+
+# plt.legend(handles=[mpl.patches.Patch(color='blue', label='The blue data')])
+# plt.text(18.65,21,"(all geomean)",fontproperties=fp)
+
 plt.tick_params(axis='x', 
 	bottom=False, # ticks along the bottom edge are off
 	labelbottom=True)
