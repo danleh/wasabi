@@ -7,7 +7,14 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import scipy as sp
 
-df = pd.read_csv("runtime-wasabi.laptop.csv", skipinitialspace=True)
+df = pd.read_csv("runtime-wasabi.csv", skipinitialspace=True)
+
+df.loc[df.file == "pspdfkit.wasm", "program_group"] = "PSPDFKit"
+df.loc[df.file == "UE4Game-HTML5-Shipping.wasm", "program_group"] = "Unreal Engine 4"
+df.loc[(df.file != "pspdfkit.wasm") & (df.file != "UE4Game-HTML5-Shipping.wasm"), "program_group"] = "PolyBench"
+
+print df[df.num_threads == 1].groupby(["program_group"]).time_ms.describe()
+print df[df.num_threads == 4].groupby(["program_group"]).sum()
 
 # average across runs with same file and num_threads
 df = df.groupby(["file", "num_threads"]).mean().reset_index()
@@ -18,9 +25,10 @@ for i, row in df.iterrows():
 	assert len(seq_ms) == 1
 	df.ix[i, "relative"] = row.time_ms / float(seq_ms.iloc[0])
 
+print df
 
 # drop all runs that are not UE4
-df = df[df.file == "UE4Game-HTML5-Shipping.wasm"]
+# df = df[df.file == "UE4Game-HTML5-Shipping.wasm"]
 
 sns.set_style("ticks")
 # sns.set_palette(
@@ -82,4 +90,4 @@ plt.ylim((0,1.1))
 
 # change_width(g.ax, .24)
 
-plt.savefig("runtime-wasabi.laptop.pdf")
+plt.savefig("runtime-wasabi.pdf")
