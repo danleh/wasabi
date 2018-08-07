@@ -66,3 +66,20 @@ comment)
 # Applications, Analyses
 
 - (cf. tracing JITs): detect hot loops by counting ```begin_loop``` hook invocations per loop location
+- dynamic signatures for WebAssembly programs, i.e., observing program 
+behavior and, e.g., deciding whether the running Wasm program is a crypto
+miner. (-> test on kinokrad.ru (?))
+- reverse engineer some WebAssembly programs
+    * automatic naming of functions based on their instructions or call graph
+    * inferring a "function profile" to aid the reverse engineer, e.g.
+    "this is a compute heavy function"
+    * something something Machine Learning
+- try to mount code-reuse attacks on WebAssembly
+    * indirect function calls with matching type signatures -> can we do ROP just
+    with ```call_indirect``` of matching functions?
+- fuzzing of WebAssembly VMs (in browsers)
+- compiling C Rowhammer/Spectre/Meltdown/<other low-level HW exploit> to Wasm
+- defending against Rowhammer/Spectre/Meltdown in Wasm with something like https://arxiv.org/pdf/1807.05843.pdf
+- integer signed/unsigned confusion, see https://www.youtube.com/watch?v=XrE-RfAYrzs
+    * data-flow analysis where three flavors: unsigned int, signed int, no information yet
+    * error when signed/unsigned data flows to instructions with the opposite flavor
