@@ -5,9 +5,8 @@ import sys
 # we will prepend our own JS before theirs (but after this haystack)
 HAYSTACK = "return n(382)('"
 
-# remove single quotes, escape newlines
-# TODO warn if stdin contains single quotes, code might break!
-to_insert = sys.stdin.read().replace("'", "").replace("\n", "\\n")
+# escape single quotes and newlines
+to_insert = sys.stdin.read().replace("'", "\\'").replace("\n", "\\n")
 
 # pspdfkit.js library file from command line argument
 pspdfkit = open(sys.argv[1]).read()
