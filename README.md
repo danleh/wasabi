@@ -1,6 +1,6 @@
 # Wasabi
 
-## Installation and Setup
+## Installation from Source
 
 - Dependencies and tools
     * Git, CMake, and GCC or Clang for building the dependencies (those for sure, but possibly more)
@@ -59,6 +59,20 @@ cargo install --path .
 wasabi
 > Error: expected at least one argument
 > Usage: wasabi <input_wasm_file> [<output_dir>]
+```
+
+## Alternative Setup via Docker
+
+- Thanks to [ctfhacker](https://github.com/ctfhacker) for the Dockerfile contribution.
+- After having cloned this repo, you build the Docker image with
+```bash
+docker build --rm -t wasabi .
+```
+- Once built, you can use the container via (assuming you have a hello.wasm file in your working directory)
+```bash
+ls
+> hello.wasm
+docker run --rm -t -v `pwd`:/data  wasabi /data/hello.wasm /data
 ```
 
 ## Usage Tutorial
