@@ -1,5 +1,5 @@
-use ast::*;
-use ast::lowlevel::*;
+use crate::ast::*;
+use crate::ast::lowlevel::*;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use leb128::*;
 use rayon::prelude::*;

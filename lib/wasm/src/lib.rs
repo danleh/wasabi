@@ -1,4 +1,4 @@
-#![feature(attr_literals, specialization, core_intrinsics, test)]
+#![feature(specialization, core_intrinsics, test)]
 
 #[macro_use]
 extern crate binary_derive;
@@ -24,7 +24,7 @@ mod tests;
  * convenience for working files (which is the most common io::Read/Write anyway)
  */
 
-use ast::{highlevel, lowlevel};
+use crate::ast::{highlevel, lowlevel};
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use std::path::Path;

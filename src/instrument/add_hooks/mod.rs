@@ -1,4 +1,4 @@
-use config::{EnabledHooks, HighLevelHook};
+use crate::config::{EnabledHooks, HighLevelHook};
 use self::block_stack::{BlockStack, BlockStackElement};
 use self::convert_i64::convert_i64_instr;
 use self::duplicate_stack::*;

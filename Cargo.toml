@@ -2,6 +2,7 @@
 name = "wasabi"
 version = "0.2.0"
 authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
+edition = "2018"
 
 [dependencies]
 wasm = { path = "lib/wasm" }

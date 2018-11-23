@@ -1,5 +1,5 @@
-use ast::{highlevel, lowlevel};
-use binary::WasmBinary;
+use crate::ast::{highlevel, lowlevel};
+use crate::binary::WasmBinary;
 use std::fs::File;
 use std::io::{self, Read};
 use test::Bencher;
