@@ -1,9 +1,11 @@
-use crate::WasmBinary;
-use serde::{Serialize, Serializer};
+use std::cmp::Ordering;
 use std::fmt::{self, Write};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use std::cmp::Ordering;
+
+use serde::{Serialize, Serializer};
+
+use crate::WasmBinary;
 
 /* AST nodes common to high- and low-level representations. */
 
@@ -22,6 +24,17 @@ impl Val {
             Val::I64(_) => ValType::I64,
             Val::F32(_) => ValType::F32,
             Val::F64(_) => ValType::F64,
+        }
+    }
+}
+
+impl fmt::Display for Val {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Val::I32(v) => write!(f, "{}", v),
+            Val::I64(v) => write!(f, "{}", v),
+            Val::F32(v) => write!(f, "{}", v),
+            Val::F64(v) => write!(f, "{}", v),
         }
     }
 }
@@ -138,6 +151,7 @@ impl<T> From<usize> for Idx<T> {
 }
 
 // custom Debug: print index type T, don't print PhantomData
+// e.g. Idx<Function>(3, PhantomData) as "Function 3"
 impl<T> fmt::Debug for Idx<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let type_name = unsafe { ::std::intrinsics::type_name::<T>() };
