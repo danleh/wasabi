@@ -1,6 +1,9 @@
-use self::{GlobalOp::*, LoadOp::*, LocalOp::*, StoreOp::*};
 use std::collections::HashSet;
+use std::fmt;
+
 use super::{*, ValType::*};
+
+use self::{GlobalOp::*, LoadOp::*, LocalOp::*, StoreOp::*};
 
 /* High-level AST:
     - types are inlined instead of referenced by type idx (i.e., no manual handling of Type "pool")
@@ -621,6 +624,47 @@ impl Instr {
     }
 }
 
+impl fmt::Display for Instr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.to_name())?;
+
+        // add arguments if instructions has any
+        use self::Instr::*;
+        match self {
+            // instructions without arguments
+            Unreachable | Nop | Drop | Select | Return
+            | Block(_) | Loop(_) | If(_) | Else | End
+            | MemorySize(_) | MemoryGrow(_)
+            | Numeric(_) => Ok(()),
+
+            Br(label) => write!(f, " {}", label.0),
+            BrIf(label) => write!(f, " {}", label.0),
+            BrTable(table, default_label) => {
+                for label in table {
+                    write!(f, " {}", label.0)?;
+                }
+                write!(f, " {}", default_label.0)
+            }
+
+            Call(func_idx) => write!(f, " {}", func_idx.0),
+            CallIndirect(_, table_idx) => write!(f, " {}", table_idx.0),
+
+            Local(_, local_idx) => write!(f, " {}", local_idx.0),
+            Global(_, global_idx) => write!(f, " {}", global_idx.0),
+            Load(_, memarg) | Store(_, memarg) => {
+                if memarg.offset != 0 {
+                    write!(f, " offset={}", memarg.offset)?;
+                }
+                if memarg.alignment != 0 {
+                    write!(f, " align={}", memarg.alignment)?;
+                }
+                Ok(())
+            }
+
+            Const(val) => write!(f, " {}", val)
+        }
+    }
+}
 
 /* Impls/functions for typical use cases on WASM modules. */
 
