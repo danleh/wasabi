@@ -279,7 +279,7 @@ impl WasmBinary for BlockType {
         Ok(BlockType(match u8::decode(reader)? {
             0x40 => None,
             byte => {
-                let mut buf = [byte; 1];
+                let buf = [byte; 1];
                 Some(ValType::decode(&mut &buf[..])?)
             }
         }))
