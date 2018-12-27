@@ -1,7 +1,9 @@
 use serde::{Serialize, Serializer};
-use super::block_stack::{BlockStack, BlockStackElement};
+use serde_derive::*;
 use wasm::ast::{FunctionType, Idx, Label, ValType};
 use wasm::ast::highlevel::{Function, Instr, Module};
+
+use super::block_stack::{BlockStack, BlockStackElement};
 
 /*
  * Structs for static information that is generated during instrumentation and output as JSON
@@ -16,7 +18,7 @@ pub struct ModuleInfo {
     pub start: Option<Idx<Function>>,
     #[serde(rename = "tableExportName")]
     pub table_export_name: Option<String>,
-//    #[serde(rename = "firstFunctionExportName")]
+    //    #[serde(rename = "firstFunctionExportName")]
 //    pub first_function_export_name: Option<String>,
     #[serde(rename = "brTables")]
     pub br_tables: Vec<BrTableInfo>,
