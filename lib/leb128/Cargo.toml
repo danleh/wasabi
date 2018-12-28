@@ -2,6 +2,7 @@
 name = "leb128"
 version = "0.2.0"
 authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
+edition = "2018"
 
 [dependencies]
 byteorder = "1"

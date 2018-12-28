@@ -1,8 +1,6 @@
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::io;
 
-extern crate byteorder;
-
 #[cfg(test)]
 mod tests;
 

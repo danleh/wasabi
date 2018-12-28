@@ -1,5 +1,5 @@
 [[package]]
-name = "derive"
+name = "binary_derive"
 version = "0.2.0"
 dependencies = [
  "quote 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
