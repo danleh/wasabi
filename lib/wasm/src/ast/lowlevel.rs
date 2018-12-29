@@ -1,7 +1,8 @@
-use crate::WasmBinary;
-use super::*;
-
+use crate::binary::WasmBinary;
+use binary_derive::WasmBinary;
 use typename::TypeName;
+
+use super::*;
 
 #[derive(Debug, Clone)]
 pub struct Module {

@@ -1,20 +1,6 @@
-#![feature(specialization, core_intrinsics, test)]
-
-#[macro_use]
-extern crate binary_derive;
-extern crate byteorder;
-#[macro_use]
-extern crate derive_new;
-extern crate leb128;
-extern crate rayon;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate test;
-extern crate test_utilities;
-
 pub mod ast;
 mod binary;
+// re-export WasmBinary trait
 pub use self::binary::WasmBinary;
 
 #[cfg(test)]
