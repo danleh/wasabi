@@ -1,0 +1,28 @@
+[[package]]
+name = "byteorder"
+version = "1.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "leb128"
+version = "0.2.0"
+dependencies = [
+ "byteorder 1.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "leb128"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "leb128-bench"
+version = "0.1.0"
+dependencies = [
+ "leb128 0.2.0",
+ "leb128 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[metadata]
+"checksum byteorder 1.2.7 (registry+https://github.com/rust-lang/crates.io-index)" = "94f88df23a25417badc922ab0f5716cc1330e87f71ddd9203b3a3ccd9cedf75d"
+"checksum leb128 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "667858d20b00532d1f54049323beb1e352df59664d16aa9c2de8a9e257d1e994"

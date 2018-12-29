@@ -1,0 +1,9 @@
+[package]
+name = "leb128-bench"
+version = "0.1.0"
+authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
+edition = "2018"
+
+[dependencies]
+leb128_daniel = { package = "leb128", path = "../leb128" }
+leb128 = "0.2.3"
