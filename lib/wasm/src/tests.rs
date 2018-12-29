@@ -1,9 +1,11 @@
-use crate::ast::{highlevel, lowlevel};
-use crate::binary::WasmBinary;
 use std::fs::File;
 use std::io::{self, Read};
-use test::Bencher;
+
+use bencher::{Bencher, benchmark_group, benchmark_main};
 use test_utilities::*;
+
+use crate::ast::{highlevel, lowlevel};
+use crate::binary::WasmBinary;
 
 const TEST_INPUTS: &'static str = "../../tests/inputs";
 const LARGE_WASM_FILE: &'static str = "../../tests/inputs/real-world/bananabread/bb.wasm";
@@ -27,7 +29,11 @@ fn decode_encode_is_valid_wasm() {
  * Speed benchmarks (for parallelization of decoding/encoding) on a "large" wasm file (~2MB for now)
  */
 
-#[bench]
+benchmark_group!(benches, decode_lowlevel_speed, encode_lowlevel_speed,
+                          convert_lowlevel_to_highlevel_speed, convert_highlevel_to_lowlevel_speed,
+                          clone_lowlevel_module_speed, clone_highlevel_module_speed);
+benchmark_main!(benches);
+
 fn decode_lowlevel_speed(bencher: &mut Bencher) {
     let mut buf = Vec::new();
     File::open(LARGE_WASM_FILE).unwrap().read_to_end(&mut buf).unwrap();
@@ -36,7 +42,6 @@ fn decode_lowlevel_speed(bencher: &mut Bencher) {
         lowlevel::Module::decode(&mut io::Cursor::new(&buf)).unwrap())
 }
 
-#[bench]
 fn encode_lowlevel_speed(bencher: &mut Bencher) {
     let module = lowlevel::Module::from_file(LARGE_WASM_FILE).unwrap();
 
@@ -44,7 +49,6 @@ fn encode_lowlevel_speed(bencher: &mut Bencher) {
         module.encode(&mut io::sink()).unwrap())
 }
 
-#[bench]
 fn convert_lowlevel_to_highlevel_speed(bencher: &mut Bencher) {
     let module = lowlevel::Module::from_file(LARGE_WASM_FILE).unwrap();
 
@@ -53,7 +57,6 @@ fn convert_lowlevel_to_highlevel_speed(bencher: &mut Bencher) {
     })
 }
 
-#[bench]
 fn convert_highlevel_to_lowlevel_speed(bencher: &mut Bencher) {
     let module = highlevel::Module::from_file(LARGE_WASM_FILE).unwrap();
 
@@ -63,13 +66,11 @@ fn convert_highlevel_to_lowlevel_speed(bencher: &mut Bencher) {
 }
 
 // as baseline for conversions high-level <-> low-level (where we need to clone -.-)
-#[bench]
 fn clone_lowlevel_module_speed(bencher: &mut Bencher) {
     let module = lowlevel::Module::from_file(LARGE_WASM_FILE).unwrap();
     bencher.iter(|| module.clone())
 }
 
-#[bench]
 fn clone_highlevel_module_speed(bencher: &mut Bencher) {
     let module = highlevel::Module::from_file(LARGE_WASM_FILE).unwrap();
     bencher.iter(|| module.clone())
