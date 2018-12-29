@@ -5,6 +5,8 @@ use std::marker::PhantomData;
 
 use serde::{Serialize, Serializer};
 
+use typename::TypeName;
+
 use crate::WasmBinary;
 
 /* AST nodes common to high- and low-level representations. */
@@ -101,7 +103,7 @@ impl<'a> From<&'a InstrType> for FunctionType {
     }
 }
 
-#[derive(WasmBinary, Debug, Clone, PartialEq, Eq, Hash, Serialize, new)]
+#[derive(WasmBinary, Debug, Clone, PartialEq, Eq, Hash, Serialize, new, TypeName)]
 #[tag = 0x60]
 pub struct FunctionType {
     pub params: Vec<ValType>,
@@ -152,9 +154,9 @@ impl<T> From<usize> for Idx<T> {
 
 // custom Debug: print index type T, don't print PhantomData
 // e.g. Idx<Function>(3, PhantomData) as "Function 3"
-impl<T> fmt::Debug for Idx<T> {
+impl<T: TypeName> fmt::Debug for Idx<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let type_name = unsafe { ::std::intrinsics::type_name::<T>() };
+        let type_name = T::type_name();
         let type_name = type_name.split("::").last().unwrap();
         f.write_str(type_name)?;
         f.write_char(' ')?;
@@ -206,10 +208,10 @@ impl<T> Ord for Idx<T> {
 // Unit structs as markers for indices that do not have their own "content" type
 // I.e., Local is just ValType, Label is not represented at all.
 
-#[derive(Debug)]
+#[derive(Debug, TypeName)]
 pub struct Local;
 
-#[derive(Debug)]
+#[derive(Debug, TypeName)]
 pub struct Label;
 
 

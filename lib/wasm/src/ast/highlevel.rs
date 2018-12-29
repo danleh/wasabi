@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::fmt;
 
+use typename::TypeName;
+
 use super::{*, ValType::*};
 
 use self::{GlobalOp::*, LoadOp::*, LocalOp::*, StoreOp::*};
@@ -27,7 +29,7 @@ pub struct Module {
     pub custom_sections: Vec<Vec<u8>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TypeName)]
 pub struct Function {
     // type is inlined here compared to low-level/binary/spec representation
     pub type_: FunctionType,
@@ -38,7 +40,7 @@ pub struct Function {
     pub export: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TypeName)]
 pub struct Global {
     pub type_: GlobalType,
     // import and init are mutually exclusive, i.e., exactly one of both must be Some(...)
@@ -47,7 +49,7 @@ pub struct Global {
     pub export: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TypeName)]
 pub struct Table {
     pub type_: TableType,
     pub import: Option<(String, String)>,
@@ -55,7 +57,7 @@ pub struct Table {
     pub export: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TypeName)]
 pub struct Memory {
     pub type_: MemoryType,
     pub import: Option<(String, String)>,
@@ -83,7 +85,7 @@ pub struct Data {
 
 pub type Expr = Vec<Instr>;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, TypeName)]
 pub enum Instr {
     Unreachable,
     Nop,
