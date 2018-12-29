@@ -1,8 +1,7 @@
 //! utility functions for testing
 
-extern crate walkdir;
-use std::path::{Path, PathBuf};
 use std::io;
+use std::path::{Path, PathBuf};
 
 /// call WABT's wasm-validate tool on a file (WABT needs to be on $PATH)
 pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), String> {
@@ -23,7 +22,7 @@ pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), String> {
     }
 }
 
-/// return all *.wasm files under a root directory
+/// return all *.wasm files recursively under a root directory
 pub fn wasm_files(root_dir: impl AsRef<Path>) -> Result<Vec<PathBuf>, String> {
     use walkdir::WalkDir;
 
@@ -37,6 +36,8 @@ pub fn wasm_files(root_dir: impl AsRef<Path>) -> Result<Vec<PathBuf>, String> {
     Ok(wasm_files)
 }
 
+/// very ad-hoc utility function: map input .wasm file to file in output dir with custom subdirectory
+/// e.g., bla.wasm + "transformXYZ" -> "outputs/transformXYZ/bla.wasm"
 pub fn output_file(test_input_file: impl AsRef<Path>, output_subdir: &'static str) -> io::Result<PathBuf> {
     use std::fs;
 
