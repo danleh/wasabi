@@ -20,12 +20,14 @@ pub trait WriteLeb128<T>: io::Write {
 
 const CONTINUATION_BIT: u8 = 0x80;
 
+#[inline]
 fn is_set_continuation_bit(byte: u8) -> bool {
     byte & CONTINUATION_BIT == CONTINUATION_BIT
 }
 
 const SIGN_BIT: u8 = 0x40;
 
+#[inline]
 fn is_set_sign_bit(byte: u8) -> bool {
     byte & SIGN_BIT == SIGN_BIT
 }
@@ -94,10 +96,12 @@ macro_rules! impl_leb128_integer {
     }
 }
 
+impl_leb128_integer!(u64);
 impl_leb128_integer!(u32);
 impl_leb128_integer!(usize);
 impl_leb128_integer!(i32);
 impl_leb128_integer!(i64);
+impl_leb128_integer!(isize);
 
 // for testing, can be exhaustively checked for correctness
 impl_leb128_integer!(u16);
