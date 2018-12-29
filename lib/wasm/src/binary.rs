@@ -120,7 +120,7 @@ impl<T: WasmBinary> WasmBinary for WithSize<T> {
 }
 
 impl<T: WasmBinary> WasmBinary for Vec<T> {
-    /* default */ fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let size = usize::decode(reader)?;
 
         let mut vec: Vec<T> = Vec::with_capacity(size * size_of::<T>());
@@ -131,7 +131,7 @@ impl<T: WasmBinary> WasmBinary for Vec<T> {
         Ok(vec)
     }
 
-    /* default */ fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         let mut bytes_written = self.len().encode(writer)?;
         for element in self.iter() {
             bytes_written += element.encode(writer)?;
@@ -158,52 +158,51 @@ impl WasmBinary for String {
     }
 }
 
-///// Uses trait specialization (https://github.com/rust-lang/rfcs/blob/master/text/1210-impl-specialization.md)
-///// to provide parallel decoding/encoding (right now only Code section has the necessary Vec<WithSize<T>> structure).
-//impl<T: WasmBinary + Send + Sync> WasmBinary for Vec<WithSize<T>> {
-//    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-//        let num_elements = usize::decode(reader)?;
-//
-//        // read all elements into buffers of the given size (non-parallel, but hopefully fast)
-//        let mut bufs = Vec::with_capacity(num_elements * size_of::<Vec<u8>>());
-//        for _ in 0..num_elements {
-//            let num_bytes = usize::decode(reader)?;
-//            let mut buf = vec![0u8; num_bytes];
-//            reader.read_exact(&mut buf)?;
-//            bufs.push(buf);
-//        }
-//
-//        // parallel decode of each buffer
-//        let decoded: io::Result<Vec<WithSize<T>>> = bufs.into_par_iter()
-//            .map(|buf| -> io::Result<WithSize<T>> {
-//                Ok(WithSize(T::decode(&mut &buf[..])?))
-//            })
-//            .collect();
-//
-//        Ok(decoded?)
-//    }
-//
-//    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-//        let new_size = self.len();
-//        let mut bytes_written = new_size.encode(writer)?;
-//
-//        // encode elements to buffers in parallel
-//        let encoded: io::Result<Vec<Vec<u8>>> = self.par_iter()
-//            .map(|element: &WithSize<T>| {
-//                let mut buf = Vec::new();
-//                element.0.encode(&mut buf)?;
-//                Ok(buf)
-//            })
-//            .collect();
-//
-//        // write sizes and buffer contents to actual writer (non-parallel, but hopefully fast)
-//        for buf in encoded? {
-//            bytes_written += buf.encode(writer)?;
-//        }
-//
-//        Ok(bytes_written)
-//    }
-//}
+/// provide parallel decoding/encoding when explicitly requested by Parallel<...> marker struct
+impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
+    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let num_elements = usize::decode(reader)?;
+
+        // read all elements into buffers of the given size (non-parallel, but hopefully fast)
+        let mut bufs = Vec::with_capacity(num_elements * size_of::<Vec<u8>>());
+        for _ in 0..num_elements {
+            let num_bytes = usize::decode(reader)?;
+            let mut buf = vec![0u8; num_bytes];
+            reader.read_exact(&mut buf)?;
+            bufs.push(buf);
+        }
+
+        // parallel decode of each buffer
+        let decoded: io::Result<Vec<WithSize<T>>> = bufs.into_par_iter()
+            .map(|buf| -> io::Result<WithSize<T>> {
+                Ok(WithSize(T::decode(&mut &buf[..])?))
+            })
+            .collect();
+
+        Ok(Parallel(decoded?))
+    }
+
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        let new_size = self.0.len();
+        let mut bytes_written = new_size.encode(writer)?;
+
+        // encode elements to buffers in parallel
+        let encoded: io::Result<Vec<Vec<u8>>> = self.0.par_iter()
+            .map(|element: &WithSize<T>| {
+                let mut buf = Vec::new();
+                element.0.encode(&mut buf)?;
+                Ok(buf)
+            })
+            .collect();
+
+        // write sizes and buffer contents to actual writer (non-parallel, but hopefully fast)
+        for buf in encoded? {
+            bytes_written += buf.encode(writer)?;
+        }
+
+        Ok(bytes_written)
+    }
+}
 
 
 /* Special cases that cannot be derived and need a manual impl */

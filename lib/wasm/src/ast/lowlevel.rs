@@ -13,6 +13,10 @@ pub struct Module {
 #[derive(Debug, Clone)]
 pub struct WithSize<T>(pub T);
 
+/// Just a marker to indicate that parallel decoding/encoding is possible
+#[derive(Debug, Clone)]
+pub struct Parallel<T>(pub T);
+
 /* Sections */
 
 #[derive(WasmBinary, Debug, Clone)]
@@ -27,7 +31,8 @@ pub enum Section {
     #[tag = 7] Export(WithSize<Vec<Export>>),
     #[tag = 8] Start(WithSize<Idx<Function>>),
     #[tag = 9] Element(WithSize<Vec<Element>>),
-    #[tag = 10] Code(WithSize<Vec<WithSize<Code>>>),
+    #[tag = 10] Code(WithSize<Parallel<Vec<WithSize<Code>>>>),
+//    #[tag = 10] Code(WithSize<Vec<WithSize<Code>>>),
     #[tag = 11] Data(WithSize<Vec<Data>>),
 }
 

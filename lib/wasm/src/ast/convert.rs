@@ -125,7 +125,7 @@ impl From<ll::Module> for hl::Module {
                     let imported_function_count = module.functions.iter()
                         .filter(|f| f.import.is_some())
                         .count();
-                    let code_hl: Vec<_> = code.into_par_iter().map(|ll::WithSize(code)| {
+                    let code_hl: Vec<_> = code.0.into_par_iter().map(|ll::WithSize(code)| {
                         from_lowlevel_code(code, &types)
                     }).collect();
                     for (i, code) in code_hl.into_iter().enumerate() {
@@ -486,7 +486,7 @@ impl From<hl::Module> for ll::Module {
                 function.code.map(|code| ll::WithSize(to_lowlevel_code(code, &state))))
             .collect();
         if !code.is_empty() {
-            sections.push(ll::Section::Code(ll::WithSize(code)));
+            sections.push(ll::Section::Code(ll::WithSize(ll::Parallel(code))));
         }
 
         // Data
