@@ -1,4 +1,4 @@
-use {ReadLeb128, WriteLeb128};
+use crate::{ReadLeb128, WriteLeb128};
 
 #[test]
 /// exhaustively test that decode(encode(value)) == value for u16 and i16

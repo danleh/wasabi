@@ -1,5 +1,6 @@
-use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::io;
+
+use byteorder::{ReadBytesExt, WriteBytesExt};
 
 #[cfg(test)]
 mod tests;
