@@ -1,15 +1,17 @@
+use parking_lot::RwLock;
+use rayon::prelude::*;
+use serde_json;
+use wasm::ast::{BlockType, FunctionType, Idx, InstrType, Mutability, Val, ValType::*};
+use wasm::ast::highlevel::{Function, GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
+
 use crate::config::{EnabledHooks, HighLevelHook};
+
 use self::block_stack::{BlockStack, BlockStackElement};
 use self::convert_i64::convert_i64_instr;
 use self::duplicate_stack::*;
 use self::hook_map::HookMap;
 use self::static_info::*;
 use self::type_stack::TypeStack;
-use serde_json;
-use wasm::ast::{BlockType, Idx, InstrType, Mutability, Val, ValType::*, FunctionType};
-use wasm::ast::highlevel::{Function, GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
-use rayon::prelude::*;
-use parking_lot::RwLock;
 
 mod convert_i64;
 mod static_info;
@@ -52,7 +54,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
         // move body out of function, so that function is not borrowed during iteration over the original body
         let original_body = {
             let dummy_body = Vec::new();
-            ::std::mem::replace(&mut function.code.as_mut().unwrap().body, dummy_body)
+            ::std::mem::replace(&mut function.code.as_mut().expect("internal error: function code should exist, see check above").body, dummy_body)
         };
 
         // allocate new instrumented body (i.e., do not modify in-place), since there are too many insertions anyway
