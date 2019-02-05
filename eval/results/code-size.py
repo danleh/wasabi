@@ -9,8 +9,8 @@ import scipy as sp
 
 mpl.font_manager.USE_FONTCONFIG=True
 
-# mpl.rcParams['pdf.fonttype'] = 42
-# mpl.rcParams['ps.fonttype'] = 42
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
 # mpl.rcParams['text.usetex'] = True
 # from matplotlib import font_manager
 # font_manager.USE_FONTCONFIG = True
@@ -125,7 +125,7 @@ legend.get_frame().set_linewidth(0)
 plt.tick_params(axis='x', 
 	bottom=False, # ticks along the bottom edge are off
 	labelbottom=True)
-# plt.ylim((-20,200))
+# plt.ylim((0,200))
 g.ax.yaxis.grid(b=True,which="major",color=".7",linewidth=.5)
 g.ax.yaxis.grid(b=True,which="minor",color=".85",linewidth=.5,linestyle="--")
 # plt.axhline(y=0,linewidth=.7,color="black")

@@ -9,8 +9,8 @@ import scipy as sp
 
 mpl.font_manager.USE_FONTCONFIG=True
 
-# mpl.rcParams['pdf.fonttype'] = 42
-# mpl.rcParams['ps.fonttype'] = 42
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
 # mpl.rcParams['text.usetex'] = True
 # from matplotlib import font_manager
 # font_manager.USE_FONTCONFIG = True
@@ -49,7 +49,7 @@ for i, row in df.iterrows():
 # df.replace("br_table","   br_table",inplace=True)
 print df.groupby(["hooks"]).overhead.apply(sp.stats.gmean).sort_values()
 df_ = df.groupby(["hooks"]).overhead.describe().reset_index()
-print df_[(df_.level_1 == "min") | (df_.level_1 == "max")]
+#print df_[(df_.level_1 == "min") | (df_.level_1 == "max")]
 # print df_[(df_.hooks == "all")]
 
 # custom hooks sort order
