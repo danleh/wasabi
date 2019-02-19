@@ -1,0 +1,14 @@
+[package]
+name = "leb128-bin"
+version = "0.1.0"
+authors = ["Daniel Lehmann <mail@dlehmann.eu>"]
+edition = "2018"
+
+[dependencies]
+leb128 = { path = "../leb128" }
+clap = "2"
+structopt = "0.2"
+hex = "0.3"
+
+[profile.release]
+lto = true
