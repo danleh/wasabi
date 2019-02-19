@@ -1,5 +1,5 @@
 use leb128::{ReadLeb128, WriteLeb128};
-use std::error::Error;
+use std::fmt;
 use std::io::{self, BufRead};
 use structopt::StructOpt;
 
@@ -7,21 +7,21 @@ use structopt::StructOpt;
 #[derive(StructOpt, Debug)]
 #[structopt(name = "leb128", bin_name = "leb128", raw(setting = "structopt::clap::AppSettings::AllowLeadingHyphen"))]
 struct Options {
-    /// Decode LEB128 to integer
+    /// Decode LEB128 to integer (default: encode integer to LEB128)
     #[structopt(short = "d", long = "decode", display_order = 1)]
     decode: bool,
 
-    /// Encode/decode signed LEB128 instead of unsigned
+    /// Encode/decode signed LEB128 (default: encode/decode unsigned LEB128)
     #[structopt(short = "s", long = "signed", display_order = 2)]
     signed: bool,
 
-    /// Integer (decimal) or LEB128 (hex bytes) input.
-    /// When not given, read standard input.
+    /// Integer (decimal) or LEB128 (hex bytes, optional '0x' prefix).
+    /// {n}When not given, read standard input.
     #[structopt(name = "INPUT")]
     input: Option<String>,
 }
 
-fn main() -> Result<(), Box<Error>> {
+fn main() -> Result<(), MainError> {
     let opt = Options::from_args();
 
     // take input either from command line (if given) or stdin
@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<Error>> {
             int.to_string()
         };
         if cursor.position() < input_num_bytes as u64 {
-            Err(io::Error::new(io::ErrorKind::InvalidData, "provided LEB128 has too many bytes"))?;
+            Err("provided LEB128 has too many bytes")?;
         }
         println!("{}", result)
     } else {
@@ -60,4 +60,25 @@ fn main() -> Result<(), Box<Error>> {
     }
 
     Ok(())
+}
+
+// NOTE 1) We do not impl Error for MainError.
+// This avoids the overlapping From impl for MainError (if MainError impl's Error itself,
+// then From<Error> overlaps with the reflexive impl From<T> for any T in the core crate.)
+// NOTE 2) We manually impl Debug for MainError instead of deriving it.
+// Rust uses Debug to present the error of main() to the user, which doesn't look nice by default.
+// So we hack around by using the "pretty" Display trait bound inside our Debug impl.
+
+struct MainError(String);
+
+impl<D: fmt::Display> From<D> for MainError {
+    fn from(d: D) -> Self {
+        MainError(d.to_string())
+    }
+}
+
+impl fmt::Debug for MainError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
