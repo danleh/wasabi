@@ -11,12 +11,14 @@ struct Options {
     #[structopt(short = "d", long = "decode", display_order = 1)]
     decode: bool,
 
-    /// Encode/decode signed LEB128 (default: encode/decode unsigned LEB128)
+    /// Encode/decode signed LEB128 (default: unsigned LEB128)
     #[structopt(short = "s", long = "signed", display_order = 2)]
     signed: bool,
 
-    /// Integer (decimal) or LEB128 (hex bytes, optional '0x' prefix).
-    /// {n}When not given, read standard input.
+    /// Integer (decimal) to encode or LEB128 (hex bytes) to decode.
+    /// {n}Read from standard input if not given.
+    /// {n}Hex bytes must have two digits each (one per nibble).
+    /// {n}Hex bytes may be prefixed with '0x' and may contain spaces.
     #[structopt(name = "INPUT")]
     input: Option<String>,
 }
@@ -63,8 +65,9 @@ fn main() -> Result<(), MainError> {
 }
 
 // NOTE 1) We do not impl Error for MainError.
-// This avoids the overlapping From impl for MainError (if MainError impl's Error itself,
+// This avoids an error because of overlapping From impl. (if MainError impl's Error itself,
 // then From<Error> overlaps with the reflexive impl From<T> for any T in the core crate.)
+// It is also not necessary, because Result<(), E> for main() only requires E: Debug, not E: Error.
 // NOTE 2) We manually impl Debug for MainError instead of deriving it.
 // Rust uses Debug to present the error of main() to the user, which doesn't look nice by default.
 // So we hack around by using the "pretty" Display trait bound inside our Debug impl.
