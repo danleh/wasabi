@@ -20,21 +20,22 @@ struct Options {
     /// {n}Hex bytes must have two digits each (one per nibble).
     /// {n}Hex bytes may be prefixed with '0x' and may contain spaces.
     #[structopt(name = "INPUT")]
-    input: Option<String>,
+    input: Vec<String>,
 }
 
 fn main() -> Result<(), MainError> {
     let opt = Options::from_args();
 
-    // take input either from command line (if given) or stdin
-    let input = if let Some(input_argument) = opt.input {
-        input_argument
+    let input = if opt.input.len() > 0 {
+        // concatenate a split-up number
+        opt.input.concat()
     } else {
+        // read input from stdin if not given
         io::stdin().lock().lines().next().unwrap()?
     };
 
     if opt.decode {
-        let input = input.trim_start_matches("0x");
+        let input = input.replace("0x", "").replace(" ", "");
         let buf = hex::decode(input)?;
         let input_num_bytes = buf.len();
         let mut cursor = io::Cursor::new(buf);
