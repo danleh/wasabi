@@ -5,7 +5,7 @@ use structopt::StructOpt;
 
 /// Utility to encode/decode integers to/from LEB128.
 #[derive(StructOpt, Debug)]
-#[structopt(name = "leb128", bin_name = "leb128", raw(setting = "structopt::clap::AppSettings::AllowLeadingHyphen"))]
+#[structopt(name = "leb128", raw(setting = "structopt::clap::AppSettings::AllowLeadingHyphen"))]
 struct Options {
     /// Decode LEB128 to integer (default: encode integer to LEB128)
     #[structopt(short = "d", long = "decode", display_order = 1)]
