@@ -110,9 +110,9 @@ impl<E: Into<Box<dyn Error>>> From<E> for MainError {
 
 // impl Debug (to satisfy trait bound for main()-Result error reporting), but use Display of wrapped
 // error internally (for nicer output).
-impl fmt::Debug for MainError {
+impl Debug for MainError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)?;
+        Display::fmt(&self.0, f)?;
         let mut source = self.0.source();
         while let Some(error) = source {
             write!(f, "\ncaused by: {}", error)?;
