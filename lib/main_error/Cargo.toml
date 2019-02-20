@@ -1,7 +1,13 @@
 [package]
 name = "main_error"
 version = "0.1.0"
-authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
+authors = ["Daniel Lehmann <mail@dlehmann.eu>"]
 edition = "2018"
+
+description = "Print errors with Display instead of Debug when using ? in main()."
+keywords = ["error", "main"]
+categories = ["command-line-interface"]
+
+publish = false
 
 [dependencies]
