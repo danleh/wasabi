@@ -47,32 +47,32 @@
 //!
 //! # Details and Drawbacks
 //!
-//! - `MainError` stores the original error as `Box<Error>`.
+//! - `MainError` stores the original error as `Box<dyn Error>`.
 //!   This incurs one allocation (on conversion) and one virtual call (on printing).
 //!   Since there can be exactly one error like this before the program ends, this cost is insignificant.
-//! - `MainError` implements [`From`] for all types that can be converted to a `Box<Error>`.
+//! - `MainError` implements [`From`] for all types that can be converted to a `Box<dyn Error>`.
 //!     1. This allows it to be used in place of any type that implements the [`Error`] trait (see example above).
-//!     2. It can also be used in place of any type that can be _converted_ to a `Box<Error>`, e.g., `String`.
+//!     2. It can also be used in place of any type that can be _converted_ to a `Box<dyn Error>`, e.g., `String`.
 //! - `MainError` does not implement the [`Error`] trait itself.
 //!     1. It doesn't _have to_, because the standard library only requires `E: Debug` for `main() -> Result<T, E>`.
 //!     2. It doesn't _need to_, because the [`Error`] trait is mostly for interoperability between libraries, whereas `MainError` should only be used in `main`.
 //!     3. It simply _cannot_, because this would create an overlapping `impl`.
-//!        `MainError` can be converted from `Into<Box<Error>>`.
-//!        `Into<Box<Error>>` [is implemented](https://doc.rust-lang.org/src/std/error.rs.html#219) for `Error` itself.
+//!        `MainError` can be converted from `Into<Box<dyn Error>>`.
+//!        `Into<Box<dyn Error>>` [is implemented](https://doc.rust-lang.org/src/std/error.rs.html#219) for `E: Error` itself.
 //!        If `MainError` impl's `Error`, it would mean `MainError` could be converted from itself.
 //!        This collides with the [reflexive `impl<T> From<T> for T` in core](https://doc.rust-lang.org/nightly/src/core/convert.rs.html#445-449).
 //! - `MainError` implements [`Debug`] in terms of [`Display`] of the underlying error.
 //!   This is hacky, but unfortunately, `Debug` as the output for the `main` error case is stable now.
-//!   The `Error: ` part at the beginning of the output comes [from the standard library](https://doc.rust-lang.org/src/std/process.rs.html#1621), thus it cannot be changed.
+//!   The `"Error: "` part at the beginning of the output comes [from the standard library](https://doc.rust-lang.org/src/std/process.rs.html#1621), thus it cannot be changed.
 
 use std::error::Error;
 use std::fmt::{self, Debug, Display};
 
 /// Newtype wrapper around a boxed [`std::error::Error`].
 /// - It implements [`Debug`] so that it can be used in `fn main() -> Result<(), MainError>`.
-/// - It implements [`From<E>`](From) for `E: Into<Box<Error>>` so that it works as a drop-in for any type that can be converted into a boxed [`Error`] (i.e., an `Error` trait object).
+/// - It implements [`From<E>`](From) for `E: Into<Box<dyn Error>>` so that it works as a drop-in for any type that can be converted into a boxed [`Error`] (i.e., an `Error` trait object).
 ///
-/// The only ways to construct a `MainError` is through the `From` impl:
+/// `MainError` can only be constructed through its [`From`] impl:
 /// Explicitly with `from`/`into` or implicitly through the `?` operator.
 ///
 /// # Example
@@ -80,14 +80,14 @@ use std::fmt::{self, Debug, Display};
 /// Explicit construction via `MainError::from`:
 /// ```
 /// # use main_error::MainError;
-/// let e = MainError::from("something convertible to Box<Error>");
+/// let e = MainError::from("something convertible to Box<dyn Error>");
 /// ```
 ///
 /// Or via `into()` when the target type can be inferred from the context:
 /// ```should_panic
 /// # use main_error::MainError;
 /// fn main() -> Result<(), MainError> {
-///     Err("something convertible to Box<Error>".into())
+///     Err("something convertible to Box<dyn Error>".into())
 /// }
 /// ```
 ///
@@ -95,12 +95,12 @@ use std::fmt::{self, Debug, Display};
 /// ```should_panic
 /// # use main_error::MainError;
 /// fn main() -> Result<(), MainError> {
-///     Err("something convertible to Box<Error>")?
+///     Err("something convertible to Box<dyn Error>")?
 /// }
 /// ```
-pub struct MainError(Box<Error>);
+pub struct MainError(Box<dyn Error>);
 
-impl<E: Into<Box<Error>>> From<E> for MainError {
+impl<E: Into<Box<dyn Error>>> From<E> for MainError {
     fn from(e: E) -> Self {
         MainError(e.into())
     }
