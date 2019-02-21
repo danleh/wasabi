@@ -1,11 +1,14 @@
 use leb128::{ReadLeb128, WriteLeb128};
-use std::fmt;
+use main_error::MainError;
 use std::io::{self, BufRead};
 use structopt::StructOpt;
 
 /// Utility to encode/decode integers to/from LEB128.
 #[derive(StructOpt, Debug)]
-#[structopt(name = "leb128", raw(setting = "structopt::clap::AppSettings::AllowLeadingHyphen"))]
+#[structopt(
+    name = "leb128",
+    raw(setting = "structopt::clap::AppSettings::AllowLeadingHyphen")
+)]
 struct Options {
     /// Decode LEB128 to integer (default: encode integer to LEB128)
     #[structopt(short = "d", long = "decode", display_order = 1)]
@@ -63,26 +66,4 @@ fn main() -> Result<(), MainError> {
     }
 
     Ok(())
-}
-
-// NOTE 1) We do not impl Error for MainError.
-// This avoids an error because of overlapping From impl. (if MainError impl's Error itself,
-// then From<Error> overlaps with the reflexive impl From<T> for any T in the core crate.)
-// It is also not necessary, because Result<(), E> for main() only requires E: Debug, not E: Error.
-// NOTE 2) We manually impl Debug for MainError instead of deriving it.
-// Rust uses Debug to present the error of main() to the user, which doesn't look nice by default.
-// So we hack around by using the "pretty" Display trait bound inside our Debug impl.
-
-struct MainError(String);
-
-impl<D: fmt::Display> From<D> for MainError {
-    fn from(d: D) -> Self {
-        MainError(d.to_string())
-    }
-}
-
-impl fmt::Debug for MainError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
 }

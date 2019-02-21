@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 leb128 = { path = "../leb128" }
+main_error = { path = "../main_error" }
 clap = "2"
 structopt = "0.2"
 hex = "0.3"
