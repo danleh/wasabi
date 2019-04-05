@@ -20,7 +20,7 @@ Produces two files in <output_dir> (default: out/):
   - a JavaScript file with static analysis information, (Wasabi-internal) low-level hooks, Wasabi runtime, and Wasabi loader.
 
 Options:
-  --hooks=<comma-separated list>     Instrument ONLY for the given hooks.
+  --hooks=<comma-separated list>     Instrument ONLY for the given hooks (e.g. call, load, store, ...).
   --no-hooks=<comma-separated list>  Instrument for all BUT the given hooks.
                                      (Default: Instrument for all hooks.)"#,
                   error);
