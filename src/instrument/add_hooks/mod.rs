@@ -1,7 +1,7 @@
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use serde_json;
-use wasm::ast::{BlockType, FunctionType, Idx, InstrType, Mutability, Val, ValType::*};
+use wasm::ast::{BlockType, Idx, InstrType, Mutability, Val, ValType::*};
 use wasm::ast::highlevel::{Function, GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
 
 use crate::config::{EnabledHooks, HighLevelHook};
