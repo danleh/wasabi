@@ -1,0 +1,19 @@
+[package]
+name = "nodejs"
+version = "0.1.0"
+authors = ["yabeow <yabeow@protonmail.com>"]
+license = "MIT"
+build = "build.rs"
+exclude = ["artifacts.json", "index.node"]
+
+[lib]
+name = "nodejs"
+crate-type = ["dylib"]
+
+[build-dependencies]
+neon-build = "0.2.0"
+
+[dependencies]
+neon = "0.2.0"
+wasm = { path = "../../lib/wasm" }
+wasabi = { path = "../../" }
