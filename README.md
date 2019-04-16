@@ -168,4 +168,4 @@ docker run --rm -t -v `pwd`:/data  wasabi /data/hello.wasm /data
         firefox http://localhost:8080/hello.html
         ```
 
--  Running WebAssembly and instrumenting with Wasabi for **Node.js**: **TODO**
+-  Running WebAssembly and instrumenting with Wasabi for **Node.js**: [Nodejs Wrapper for Wasabi](nodejs/).
