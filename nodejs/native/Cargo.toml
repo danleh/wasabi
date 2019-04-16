@@ -1,13 +1,13 @@
 [package]
-name = "nodejs"
-version = "0.1.0"
+name = "wasabi-nodejs"
+version = "0.2.0"
 authors = ["yabeow <yabeow@protonmail.com>"]
 license = "MIT"
 build = "build.rs"
 exclude = ["artifacts.json", "index.node"]
 
 [lib]
-name = "nodejs"
+name = "wasabi-nodejs"
 crate-type = ["dylib"]
 
 [build-dependencies]
