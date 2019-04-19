@@ -1,5 +1,5 @@
 [package]
-name = "wasabi-nodejs"
+name = "wasabi_nodejs"
 version = "0.2.0"
 authors = ["yabeow <yabeow@protonmail.com>"]
 license = "MIT"
@@ -7,7 +7,7 @@ build = "build.rs"
 exclude = ["artifacts.json", "index.node"]
 
 [lib]
-name = "wasabi-nodejs"
+name = "wasabi_nodejs"
 crate-type = ["dylib"]
 
 [build-dependencies]

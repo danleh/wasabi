@@ -7,22 +7,26 @@ use wasabi::config::EnabledHooks;
 use wasabi::config::HighLevelHook;
 use wasabi::instrument::add_hooks;
 use wasm::ast::highlevel::Module;
-use std::{fs, path::PathBuf};
 use std::str::FromStr;
 
 use neon::prelude::*;
 
 pub struct Wasabi {
-    input_file: String,
-    output_dir: String,
+    binary_file: Vec<u8>,
     enabled_hooks: EnabledHooks,
 }
 declare_types! {
     pub class JsWasabi for Wasabi {
         init(mut cx) {
-            let input_file: Handle<JsString> = cx.argument::<JsString>(0)?;
-            let output_dir: Handle<JsString> = cx.argument::<JsString>(1)?;
-            let enabled_hooks: EnabledHooks = match cx.argument_opt(2) {
+            let binary_file_buffer: Handle<JsBuffer> = cx.argument(0)?;
+            let mut binary_file = Vec::new();
+            cx.borrow(&binary_file_buffer, |data| {
+                let slice = data.as_slice::<u8>();
+                for (_i, item) in slice.iter().enumerate() {
+                    binary_file.push(*item)
+                }
+            });
+            let enabled_hooks: EnabledHooks = match cx.argument_opt(1) {
                 Some(arg) => {
                     let enabled_hooks_array = arg.downcast::<JsArray>().or_throw(&mut cx)?;
                     let enabled_hooks_vec: Vec<Handle<JsValue>> = enabled_hooks_array.to_vec(&mut cx)?;
@@ -37,9 +41,8 @@ declare_types! {
                 None => EnabledHooks::all(),
             };
             Ok(Wasabi {
-                input_file: input_file.value(),
-                output_dir: output_dir.value(),
                 enabled_hooks,
+                binary_file,
             })
         }
 
@@ -48,21 +51,20 @@ declare_types! {
 
             let this = cx.this();
             match &attr[..] {
-                "input_file" => {
-                    let input_file = {
+                "binary_file" => {
+                    let binary_file = {
                         let guard = cx.lock();
                         let wasabi = this.borrow(&guard);
-                        wasabi.input_file.clone()
+                        wasabi.binary_file.clone()
                     };
-                    Ok(cx.string(input_file).upcast())
-                },
-                "output_dir" => {
-                    let output_dir = {
-                        let guard = cx.lock();
-                        let wasabi = this.borrow(&guard);
-                        wasabi.output_dir.clone()
-                    };
-                    Ok(cx.string(output_dir).upcast())
+                    let mut js_buffer = JsBuffer::new(&mut cx, binary_file.len() as u32)?;
+                    cx.borrow_mut(&mut js_buffer, |data| {
+                        let slice = data.as_mut_slice::<u8>();
+                        for (i, item) in binary_file.iter().enumerate() {
+                            slice[i] = *item;
+                        }
+                    });
+                    Ok(js_buffer.upcast())
                 },
                 "enabled_hooks" => {
                     let enabled_hooks = {
@@ -86,21 +88,19 @@ declare_types! {
             let attr: String = cx.argument::<JsString>(0)?.value();
             let mut this = cx.this();
             match &attr[..] {
-                "input_file" => {
-                    let input_file: String = cx.argument::<JsString>(1)?.value();
+                "binary_file" => {
+                    let binary_file_buffer: Handle<JsBuffer> = cx.argument::<JsBuffer>(1)?;
+                    let mut binary_file = Vec::new();
+                    cx.borrow(&binary_file_buffer, |data| {
+                        let slice = data.as_slice::<u8>();
+                        for (_i, item) in slice.iter().enumerate() {
+                            binary_file.push(*item)
+                        }
+                    });
                     {
                         let guard = cx.lock();
                         let mut wasabi = this.borrow_mut(&guard);
-                        wasabi.input_file = input_file;
-                    }
-                    Ok(cx.boolean(true).upcast())
-                },
-                "output_dir" => {
-                    let output_dir: String = cx.argument::<JsString>(1)?.value();
-                    {
-                        let guard = cx.lock();
-                        let mut wasabi = this.borrow_mut(&guard);
-                        wasabi.output_dir = output_dir;
+                        wasabi.binary_file = binary_file;
                     }
                     Ok(cx.boolean(true).upcast())
                 },
@@ -127,30 +127,36 @@ declare_types! {
 
         method exec(mut cx) {
             let this = cx.this();
-            let (input_file, output_dir, enabled_hooks) = {
+            let (mut binary_file, enabled_hooks) = {
                 let guard = cx.lock();
                 let wasabi = this.borrow(&guard);
-                (wasabi.input_file.clone(), wasabi.output_dir.clone(), wasabi.enabled_hooks.0.clone())
+                (wasabi.binary_file.clone(), wasabi.enabled_hooks.0.clone())
             };
-            let input_file = PathBuf::from(&input_file);
-            let output_dir = PathBuf::from(&output_dir);
-            let mut output_file_stem = output_dir.clone();
-            let input_filename_no_ext = input_file.file_stem().unwrap();
-            output_file_stem.push(input_filename_no_ext);
-            let output_file_wasm = output_file_stem.with_extension("wasm");
-            let output_file_js = output_file_stem.with_extension("wasabi.js");
             
             let enabled_hooks = EnabledHooks(enabled_hooks);
 
             // instrument Wasm and generate JavaScript
-            let mut module = Module::from_file(input_file.clone()).unwrap();
+            let mut module = Module::from_buf(&mut binary_file).unwrap();
             let js = add_hooks(&mut module, &enabled_hooks).unwrap();
+            let js = cx.string(&js);
 
-            // write output files
-            fs::create_dir_all(output_dir).unwrap();
-            module.to_file(output_file_wasm).unwrap();
-            fs::write(output_file_js, js).unwrap();
-            Ok(cx.boolean(true).upcast())
+            let mut buffer: Vec<u8> = Vec::new();
+            module.to_buf(&mut buffer).unwrap();
+            
+            // Create the JS buffer
+            let mut js_buffer = JsBuffer::new(&mut cx, buffer.len() as u32)?;
+            cx.borrow_mut(&mut js_buffer, |data| {
+                let slice = data.as_mut_slice::<u8>();
+                for (i, obj) in buffer.iter().enumerate() {
+                    slice[i] = *obj;
+                }
+            });
+
+            // Create result object
+            let result = JsObject::new(&mut cx);
+            result.set(&mut cx, "wasm", js_buffer)?;
+            result.set(&mut cx, "js", js)?;
+            Ok(result.upcast())
         }
     }
 }

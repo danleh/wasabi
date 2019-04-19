@@ -188,16 +188,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nodejs"
-version = "0.1.0"
-dependencies = [
- "neon 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "neon-build 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "wasabi 0.2.0",
- "wasm 0.3.0",
-]
-
-[[package]]
 name = "nodrop"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -558,6 +548,16 @@ dependencies = [
  "strum 0.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "strum_macros 0.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "test_utilities 0.1.0",
+ "wasm 0.3.0",
+]
+
+[[package]]
+name = "wasabi_nodejs"
+version = "0.2.0"
+dependencies = [
+ "neon 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "neon-build 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wasabi 0.2.0",
  "wasm 0.3.0",
 ]
 

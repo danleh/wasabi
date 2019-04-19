@@ -15,28 +15,42 @@
 * Usage
 
 ```
+const fs = require("fs");
 const Wasabi = require("wasabi-nodejs");
 const { HIGH_LEVEL_HOOKS } = Wasabi;
 
+// Read .wasm file
+let binary_file = fs.readFileSync("/path/to/wasm/file");
+binary_file = Buffer.from(binary_file);
+
 const WasabiObj = new Wasabi(
-  // `input_file`
-  "/path/to/wasm/file",
-  // `output_dir`
-  "/path/to/output/folder",
+  // `binary_file`
+  binary_file,
   // `enabled_hooks`: List of hooks, not supply for all
   [HIGH_LEVEL_HOOKS.Begin, HIGH_LEVEL_HOOKS.If]
 );
 
 // Get fields
-console.log(WasabiObj.get("input_file"));
-console.log(WasabiObj.get("output_dir"));
-console.log(WasabiObj.get("enabled_hooks"));
+// console.log(WasabiObj.get("binary_file"));
+// console.log(WasabiObj.get("enabled_hooks"));
 
 // Set fields
-console.log(WasabiObj.set("input_file", "another/path/to/input"));
-console.log(WasabiObj.set("output_dir", "another/path/to/output"));
-console.log(WasabiObj.set("enabled_hooks", [HIGH_LEVEL_HOOKS.BrIf]));
+// console.log(WasabiObj.set("binary_file", "another_binary_file"));
+// console.log(WasabiObj.set("enabled_hooks", [HIGH_LEVEL_HOOKS.BrIf]));
 
-// Instrument Wasm and generate JavaScript
-WasabiObj.exec();
+let result = WasabiObj.exec();
+
+// JS hooks
+let js = result.js;
+
+// Write instrumented .wasm file
+let wasm = new Uint8Array(result.wasm);
+console.log(result.wasm);
+fs.writeFileSync("hello.wasm", new Buffer(wasm), function(err) {
+  if (err) {
+    console.log(err);
+  } else {
+    console.log(chunk.length);
+  }
+});
 ```
