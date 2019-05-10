@@ -1,5 +1,7 @@
 # Wasabi
 
+### We will [offer a tutorial](http://wasabi.software-lab.org/tutorial-pldi2019/) on how to use Wasabi for dynamically analyzing WebAssembly at [PLDI 2019](https://conf.researchr.org/home/pldi-2019)!
+
 ## Installation from Source
 
 - Dependencies and tools
