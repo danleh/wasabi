@@ -95,26 +95,11 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
         // remember implicit return for instrumentation: add "synthetic" return hook call to last end
         let implicit_return = !original_body.ends_with(&[Return, End]);
 
-        let mut unreachable = 0;
-
         for (iidx, instr) in original_body.into_iter().enumerate() {
             // FIXME super hacky: do not instrument dead code, since my type checking cannot handle
             // the unconstrained return types of return, br, br_table, unreachable and then
             // type_stack.pop_val() blows up because I cannot produce the right types "out of thin
             // air".
-            // TODO integrate the "Unreachable" type into type_stack, remove this integer
-            // "unreachable depth" abomination.
-            if unreachable > 0 {
-                match instr {
-                    Block(_) | Loop(_) | If(_) => unreachable += 1,
-                    End => unreachable -= 1,
-                    _ => {}
-                };
-                if unreachable > 0 {
-                    instrumented_body.push(instr.clone());
-                    continue;
-                }
-            }
 
 //            println!("{:?}:{:?}: {:?}", fidx.0, iidx, instr);
 
@@ -149,8 +134,6 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     }
 
                     instrumented_body.push(instr);
-
-                    unreachable = 1;
                 }
 
 
@@ -304,9 +287,6 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     }
 
                     instrumented_body.push(instr);
-
-                    // stop instrumentation for this block: we do not need to look at dead code
-                    unreachable += 1;
                 }
                 BrIf(target_label) => {
                     type_stack.instr(&InstrType::new(&[I32], &[]));
@@ -379,8 +359,6 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     }
 
                     instrumented_body.push(instr.clone());
-
-                    unreachable = 1;
                 }
 
 
@@ -412,8 +390,6 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     }
 
                     instrumented_body.push(instr);
-
-                    unreachable = 1;
                 }
                 Call(target_func_idx) => {
                     let ref func_ty = module_info.read().functions[target_func_idx.0].type_;
