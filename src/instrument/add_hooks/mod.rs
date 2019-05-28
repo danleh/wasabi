@@ -95,25 +95,65 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
         // remember implicit return for instrumentation: add "synthetic" return hook call to last end
         let implicit_return = !original_body.ends_with(&[Return, End]);
 
-        let mut unreachable = 0;
+        // WebAssembly's type rules are weird with unreachable code (i.e., code after an
+        // "unreachable" instruction or after unconditional branches like return/br/br_table):
+        // - Dead code needs to be type-correct for "existing types" on the stack. E.g,
+        //   unreachable; i32.const 0; f32.abs
+        //   is wrong because the second instruction pops a type-incompatible argument (f32 vs i32).
+        // - But "missing types" on the stack are "synthesized" from nothing. E.g.,
+        //   unreachable; f32.abs
+        //   is type correct as per the spec because unreachable "produces" the f32 on the stack
+        //   for the f32.abs instruction out of nothing.
+        //
+        // (I don't know if any real-world compiler produces unreachable code that exploits (2),
+        // but the spec test suite certainly does.
+        // Also, I have read somewhere that this is supposedly to make implementing compilers easier,
+        // but to me it looks like it makes type checking more _complicated_!?
+        // Since we can't change the spec now, I guess we are stuck with it though...)
+        //
+        // Unfortunately, Wasabi's type checking (in type_stack) is not powerful enough
+        // to "produce" the missing types for unreachable code.
+        // (TODO I think this needs some form of primitive unification. E.g., checking
+        // [unreachable, f32] against [i32, f32, f32]
+        // should "expand" or unify the type of the unreachable instruction to/with [i32, f32].)
+        //
+        // Since I don't want to introduce this kind of complexity, and because unreachable code
+        // is by definition never executed, a workaround is to simply not instrument unreachable
+        // code. Instead, I just copy it over unaltered. This should still be type-correct
+        // because Wasabi's instrumentation always leaves the stack after an instruction + hook
+        // the same as without instrumentation.
+        //
+        // Conceptually, when we encounter an "unreachable" instruction (or br/return/br_table),
+        // we switch to "unreachable mode" and do not instrument. We stop the "unreachable mode"
+        // (and start to properly instrument again) when we see an end or else (which closes the
+        // current dead block).
+        //
+        // However, because unreachable code can itself contain more blocks, we must actually
+        // count the depth for "how far we are in unreachable mode" and only stop once we reach 0.
+        let mut unreachable_depth = 0;
 
         for (iidx, instr) in original_body.into_iter().enumerate() {
-            // FIXME super hacky: do not instrument dead code, since my type checking cannot handle
-            // the unconstrained return types of return, br, br_table, unreachable and then
-            // type_stack.pop_val() blows up because I cannot produce the right types "out of thin
-            // air".
-            // TODO integrate the "Unreachable" type into type_stack, remove this integer
-            // "unreachable depth" abomination.
-            if unreachable > 0 {
+
+            // End or Else could end the current "unreachable" block.
+            if unreachable_depth > 0 {
                 match instr {
-                    Block(_) | Loop(_) | If(_) => unreachable += 1,
-                    End => unreachable -= 1,
+                    Else | End => unreachable_depth -= 1,
                     _ => {}
                 };
-                if unreachable > 0 {
-                    instrumented_body.push(instr.clone());
-                    continue;
-                }
+            }
+            // Still unreachable, even after closing the current block?
+            if unreachable_depth > 0 {
+                // 1. Copy over the instruction unaltered
+                instrumented_body.push(instr.clone());
+                // 2. If the unreachable code itself contains even deeper blocks, increase the "unreachable depth".
+                match instr {
+                    // NOTE Else can also open a "deeper" unreachable block, but only if we were unreachable to begin with.
+                    Block(_) | Loop(_) | If(_) | Else => unreachable_depth += 1,
+                    _ => {}
+                };
+                // 3. DO NOT instrument unreachable code, since type_stack will throw an exception on
+                // instructions that pop types that are "magically produced" by unreachable code.
+                continue;
             }
 
 //            println!("{:?}:{:?}: {:?}", fidx.0, iidx, instr);
@@ -150,7 +190,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     instrumented_body.push(instr);
 
-                    unreachable = 1;
+                    unreachable_depth = 1;
                 }
 
 
@@ -305,8 +345,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     instrumented_body.push(instr);
 
-                    // stop instrumentation for this block: we do not need to look at dead code
-                    unreachable += 1;
+                    unreachable_depth = 1;
                 }
                 BrIf(target_label) => {
                     type_stack.instr(&InstrType::new(&[I32], &[]));
@@ -380,7 +419,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     instrumented_body.push(instr.clone());
 
-                    unreachable = 1;
+                    unreachable_depth = 1;
                 }
 
 
@@ -413,7 +452,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     instrumented_body.push(instr);
 
-                    unreachable = 1;
+                    unreachable_depth = 1;
                 }
                 Call(target_func_idx) => {
                     let ref func_ty = module_info.read().functions[target_func_idx.0].type_;
