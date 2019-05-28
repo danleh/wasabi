@@ -2,7 +2,7 @@
 for file in build/*.wasm
 do
 	echo "wasabi $file"
-	cargo run -q -- $file
+	RAYON_NUM_THREADS=1 cargo run -q -- $file
 done
 
 for file in out/*.wasm
