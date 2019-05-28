@@ -1,0 +1,7 @@
+[package]
+name = "main_error"
+version = "0.1.0"
+authors = ["Daniel Lehmann <daniel.lehmann@crisp-da.de>"]
+edition = "2018"
+
+[dependencies]
