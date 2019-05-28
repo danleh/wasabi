@@ -1,13 +1,10 @@
-extern crate wasabi;
-extern crate wasm;
-
 use std::{env, fs, io, path::PathBuf};
 use wasabi::config::EnabledHooks;
 use wasabi::instrument::add_hooks;
 use wasm::ast::highlevel::Module;
 
 // TODO use proper command-line option parser like clap, or structopt on top of it (https://docs.rs/structopt/0.2.10/structopt/)
-// TODO use failure crate and failure::Error type for error handling
+// TODO use failure crate and failure::Error type for error handling or use custom error trait
 
 fn main() {
     if let Err(error) = main_inner() {
