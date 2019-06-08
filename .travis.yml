@@ -8,3 +8,4 @@ install:
   - pushd wabt && make && sudo make install && popd
 script:
   - cargo build --verbose
+  - cargo test --verbose -- --nocapture --test-threads 1
