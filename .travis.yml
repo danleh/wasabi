@@ -3,5 +3,8 @@ rust:
   - stable
   - beta
   - nightly
+install:
+  - git clone --recursive https://github.com/WebAssembly/wabt
+  - pushd wabt && make && sudo make install && popd
 script:
   - cargo build --verbose
