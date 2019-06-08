@@ -1,4 +1,4 @@
-# Wasabi
+# Wasabi [![Build Status](https://travis-ci.com/danleh/wasabi.svg?branch=master)](https://travis-ci.com/danleh/wasabi)
 
 ### We will [offer a tutorial](http://wasabi.software-lab.org/tutorial-pldi2019/) on how to use Wasabi for dynamically analyzing WebAssembly at [PLDI 2019](https://conf.researchr.org/home/pldi-2019)!
 
