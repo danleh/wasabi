@@ -1,4 +1,5 @@
-use instrument::{add_hooks, direct::*};
+use crate::instrument::{add_hooks, direct::*};
+use crate::config::EnabledHooks;
 use test_utilities::*;
 use wasm::ast::highlevel::Module;
 
@@ -16,12 +17,17 @@ fn count_calls_instrumentation_produces_valid_wasm() {
 
 #[test]
 fn add_hooks_instrumentation_produces_valid_wasm() {
-    test_instrument(add_hooks, "add-hooks");
+    fn add_all_hooks(module: &mut Module) -> Option<String> {
+        add_hooks(module, &EnabledHooks::all())
+    }
+    test_instrument(add_all_hooks, "add-hooks");
 }
 
 /// utility function
 fn test_instrument(instrument: impl Fn(&mut Module) -> Option<String>, instrument_name: &'static str) {
+    println!("Testing {}", instrument_name);
     for path in wasm_files(TEST_INPUTS).unwrap() {
+        println!("wasm file {:?}", path);
         let mut module = Module::from_file(&path).unwrap();
         let javascript = instrument(&mut module);
 
