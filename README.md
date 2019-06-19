@@ -7,7 +7,7 @@
 - Dependencies and tools
     * Git, CMake, and GCC or Clang for building the dependencies (those for sure, but possibly more)
     * **Firefox** >= 52 (which is what I use, or Chrome >= 57) for running WebAssembly
-    * **WebAssembly Binary Toolkit (WABT)**: ```wat2wasm```/```wasm2wat``` for converting Wasm binaries to/from text, ```wasm-objdump``` for inspecting binaries, and ```wasm-interp``` for a simple interpreter.
+    * **WebAssembly Binary Toolkit (WABT)**: ```wat2wasm```/```wasm2wat``` for converting Wasm binaries to/from text, ```wasm-objdump``` for inspecting binaries, and ```wasm-interp``` for a simple interpreter. (See https://github.com/WebAssembly/wabt#cloning.)
     ```bash
     git clone --recursive https://github.com/WebAssembly/wabt
     cd wabt
@@ -21,9 +21,9 @@
     > usage: wat2wasm [options] filename
     ```
     
-    * **Emscripten**: ```emcc``` for compiling C/C++ programs to WebAssembly.
+    * **Emscripten**: ```emcc``` for compiling C/C++ programs to WebAssembly. (See https://emscripten.org/docs/getting_started/downloads.html.)
     ```bash
-    git clone https://github.com/juj/emsdk.git
+    git clone https://github.com/emscripten-core/emsdk.git
     cd emsdk
     ./emsdk install latest
     ./emsdk activate latest
@@ -38,16 +38,16 @@
     > emcc (Emscripten gcc/clang-like replacement) 1.38.1
     ``` 
     
-    * **Rust** (>=1.27.0 nightly): ```cargo``` as Rust's package manager and build tool (no need to call ```rustc``` manually) and ```rustup``` for managing different Rust toolchain versions (e.g., nightly vs. stable).
+    * **Rust** (>=1.31.0 stable): ```cargo``` as Rust's package manager and build tool (no need to call ```rustc``` manually) and ```rustup``` for managing different Rust toolchain versions. (See https://www.rust-lang.org/tools/install.)
     ```bash
     curl https://sh.rustup.rs -o rustup-init.sh
     # follow instructions (typically just enter 1 to proceed)
     # should automatically change ~/.profile to include the binaries in $PATH
-    sh rustup-init.sh --default-toolchain=nightly
+    sh rustup-init.sh
     
     # test
     cargo --version
-    > cargo 1.27.0-nightly
+    > cargo 1.31.0-stable
     ```
 
 - **Wasabi** itself
