@@ -1,0 +1,29 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        <script>
+            // Let's not reload and compile the WebAssembly file each time.
+            fetch("add.wasm")
+                .then(response => response.arrayBuffer())
+                .then(buffer => WebAssembly.instantiate(buffer))
+                // Instead instantiate it now and save its exported add function to a global variable.
+                .then(obj => window.addWasm = obj.instance.exports.add)
+            
+            // JavaScript wrapper around the wasm function.
+            function add() {
+                // Wasm cannot interact with the DOM, so let's get the inputs here.
+                let a = document.getElementById("a").value;
+                let b = document.getElementById("b").value;
+                // Call the wasm function and assign its result to an input element.
+                document.getElementById("result").value = window.addWasm(a, b);
+            }
+        </script>
+    </head>
+    <body>
+        <input type="number" id="a">
+        &plus;
+        <input type="number" id="b">
+        <input type="button" value="&equals;" onclick="add()">
+        <input type="number" id="result" disabled>
+    </body>
+</html>
