@@ -1,0 +1,31 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        <script>
+            function runWasm() {
+                let importObject = {
+                    // This corresponds to the first "level" of the import in the wasm module.
+                    env: {
+                        // This corresponds to the second level.
+                        print: function(s) {
+                            document.getElementById("output").textContent += s + "\n";
+                        },
+                    }
+                };
+
+                // Request the wasm file.
+                fetch("hello.wasm")
+                    // Read it into an ArrayBuffer.
+                    .then(response => response.arrayBuffer())
+                    // "Instantiate" the module, which means (1) compiling it, and (2) providing the imports.
+                    .then(buffer => WebAssembly.instantiate(buffer, importObject))
+
+                // Since hello.wasm has a start function, we don't need to call anything manually.
+            }
+        </script>
+    </head>
+    <body>
+        <input type="button" value="Run hello.wasm" onclick="runWasm()">
+        <pre id="output"></pre>
+    </body>
+</html>
