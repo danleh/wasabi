@@ -1,17 +1,13 @@
-# Tasks for PLDI 2019 Tutorial: Dynamically Analyzing WebAssembly with Wasabi
+# PLDI 2019 Tutorial: Dynamically Analyzing WebAssembly with Wasabi
 
 (Under revision.)
 
-## WebAssembly Tasks
+See the respective subdirectories for instructions and input files.
 
-### Task 1.1: Assembling Text Format to Binary
+## Task 0: Creating WebAssembly Programs
 
-### Task 1.2: hello-world.c
+## Task 1: Your First Wasabi Analysis
 
-## Wasabi Tasks
+## Task 2: Building a Call-Graph
 
-### Task 2.1: Full Program Trace
-
-### Task 2.2:
-
-### Task 2.3:
+## Task 3: Reverse Engineering
