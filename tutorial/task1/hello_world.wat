@@ -1,7 +1,7 @@
 (module
   (import "imports" "output" (func $print (param i32)))
-  (func $somefun
+  (func $myfunction
     i32.const 42
     call $print)
-  (export "somefun" (func $somefun))
+  (start $myfunction)
 )

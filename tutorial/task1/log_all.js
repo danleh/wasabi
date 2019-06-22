@@ -1,8 +1,8 @@
 /*
- * User-facing API for dynamic analyses.
+ * Wasabi analysis that logs every invocation of every hook.
  */
 
-console.log("Initializing Wasabi analysis...")
+console.log("Initializating Wasabi analysis...")
 
 Wasabi.analysis = {
     start(location) {
