@@ -4,12 +4,13 @@ In this task, we want to simulate a very simple reverse engineering challenge.
 Start serving the `1-static` directory with `python -m SimpleHTTPServer` and open http://localhost:8000/password.html.
 You will be prompted for a password.
 If you give the wrong one, the website will only show "Incorrect :(".
+
 What is the right password?
 
 ## Step 1: Static Analysis
 
 To be fair, no hacker would directly turn to dynamic analysis, if there is an easier way.
-By inspecting password.html, we see that the check is performed by this line:
+By inspecting `password.html`, we see that the check is performed by this line:
 
 ```
 Module.ccall('check', 'number', ['string'], [ input ]);
@@ -18,18 +19,18 @@ Module.ccall('check', 'number', ['string'], [ input ]);
 The `Module` object is defined in `password.js` and with a bit of digging, we see that it loads `password.wasm`.
 Now, we can proceed in many ways, e.g.,
 
-- Disassemble `password.wasm` with `wasm2wat`
+- Disassemble `password.wasm` with `wasm2wat`,
 - Disassemble `password.wasm` with `wasm-objdump`, or
-- The simplest option of all (and simpler is better): just run `strings password.wasm`
+- The simplest option of all: just run `strings password.wasm`
 
 Mhm. That last line looks curious.
 Try it!
 
 ## Step 2: Dynamic Analysis
 
-Alright, so for the example in `1-static`, the password was just in cleartext in the binary and so dynamic analysis for finding it out, would be a bit overkill.
+Alright, so for the example in `1-static`, the password was in cleartext in the binary and so dynamic analysis would be a bit overkill.
 Let's look at `2-dynamic` now.
-Server it again with `python -m SimpleHTTPServer` and open http://localhost:8000/password.html.
+Serve it again with `python -m SimpleHTTPServer` and open http://localhost:8000/password.html.
 Everything looks to be the same, except that:
 
 - The password from the previous step is not working :(
@@ -37,6 +38,7 @@ Everything looks to be the same, except that:
 
 Disassembling `password.wasm` shows some interesting contents in the `data` WebAssembly section.
 But we are too lazy to find out how this is decrypted.
+
 Let's make the program do the work for us and observe all memory accesses with Wasabi.
 By now you know the drill:
 
