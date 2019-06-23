@@ -1,8 +1,8 @@
-# Task 0.1: A minimal WebAssembly program
+# Task 0.1: A Minimal WebAssembly Program
 
-## Text and binary format
+## Step 1: Understanding the Text Format
 
-Read `hello.wat` and copy it to an empty directory.
+Read and understand `hello.wat` and copy it to an empty directory.
 
 ```
 ;; hello.wat
@@ -17,6 +17,8 @@ Read `hello.wat` and copy it to an empty directory.
   (start $start)
 )
 ```
+
+## Step 2: Converting between Text and Binary Format
 
 Assemble the text file to a binary module with `wat2wasm`:
 
@@ -86,7 +88,7 @@ Code Disassembly:
  000031: 0b                         | end
 ```
 
-## Running WebAssembly
+## Step 3: Embedding WebAssembly into a Website
 
 Copy `hello.html` to the directory and look inside to see that:
 
@@ -94,12 +96,14 @@ Copy `hello.html` to the directory and look inside to see that:
 - The `hello.wasm` file is dynamically requested with the `fetch()` API and loaded into an `ArrayBuffer`.
 - That buffer and the `importObject` is passed to `WebAssembly.instantiate()`.
 
+## Step 4: Run WebAssembly in the Browser 
+
 Start a webserver in the directory with:
 
 ```
 python -m SimpleHTTPServer
 ```
 
-(The webserver is necessary due to browser security policies. Otherwise, fetch won't be allowed to access local files [except in Firefox].)
+(The webserver is necessary due to browser security policies. Otherwise, fetch won't be allowed to access local files.)
 
-Open http://localhost:8000/hello.html in a modern browser and click on the button to see the output `42` appear.
+Open http://localhost:8000/hello.html in a browser and click on the button to see the output `42` appear.
