@@ -1,6 +1,8 @@
 # Wasabi [![Build Status](https://travis-ci.com/danleh/wasabi.svg?branch=master)](https://travis-ci.com/danleh/wasabi)
 
-### We will [offer a tutorial](http://wasabi.software-lab.org/tutorial-pldi2019/) on how to use Wasabi for dynamically analyzing WebAssembly at [PLDI 2019](https://conf.researchr.org/home/pldi-2019)! The [slides are available here](https://docs.google.com/presentation/d/1lGiqopxNCNIN2YIMj2-IYV13kXT_lqQ5GaVo5Phgo6Q/edit?usp=sharing).
+## Tutorial at PLDI 2019
+
+We offered a tutorial on how to use Wasabi for dynamically analyzing WebAssembly at [PLDI 2019](https://conf.researchr.org/home/pldi-2019). Although the conference is now over, all the material is online at http://wasabi.software-lab.org/tutorial-pldi2019/. In particular, the [slides are available here](http://wasabi.software-lab.org/wasabi_tutorial_slides.pdf) and the hands-on tasks are in this repo under [tutorial/](https://github.com/danleh/wasabi/tree/master/tutorial).
 
 ## Installation from Source
 
