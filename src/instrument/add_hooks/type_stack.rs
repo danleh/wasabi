@@ -1,5 +1,5 @@
-use wasm::ast::{BlockType, ValType, InstrType};
 use self::TypeStackElement::*;
+use wasm::ast::{BlockType, InstrType, ValType};
 
 /*
  * Data structure for representing the abstract "value stack", i.e., for every value at runtime this
@@ -19,8 +19,8 @@ enum TypeStackElement {
     Val(ValType),
     BlockBegin(BlockType),
     FunctionBegin,
-// TODO see add_hooks/mod.rs
-//    Unreachable,
+    // TODO see add_hooks/mod.rs
+    //    Unreachable,
 }
 
 impl TypeStack {
@@ -45,7 +45,11 @@ impl TypeStack {
     /// convenience, pops and validates input_tys, then pushes the result_tys
     pub fn instr(&mut self, ty: &InstrType) {
         for &input_ty in ty.inputs.iter().rev() {
-            assert_eq!(input_ty, self.pop_val(), "instruction expected input type, but stack top was");
+            assert_eq!(
+                input_ty,
+                self.pop_val(),
+                "instruction expected input type, but stack top was"
+            );
         }
         for &result_ty in ty.results.iter() {
             self.push_val(result_ty);
@@ -72,7 +76,7 @@ impl TypeStack {
                     }
                     return Some(block_ty);
                 }
-                Some(FunctionBegin) => return None
+                Some(FunctionBegin) => return None,
             }
         }
     }
@@ -87,8 +91,8 @@ impl TypeStack {
         self.begin(block_ty);
     }
 
-// TODO see add_hooks/mod.rs
-//    pub fn unreachable(&mut self) {
-//        self.0.push(TypeStackElement::Unreachable)
-//    }
+    // TODO see add_hooks/mod.rs
+    //    pub fn unreachable(&mut self) {
+    //        self.0.push(TypeStackElement::Unreachable)
+    //    }
 }

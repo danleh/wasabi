@@ -1,6 +1,8 @@
-use wasm::ast::{Val, ValType, ValType::I32, ValType::I64};
-use wasm::ast::highlevel::{Instr, Instr::Const, Instr::Numeric, NumericOp::I32WrapI64, NumericOp::I64ShrS};
 use std::slice::from_ref;
+use wasm::ast::highlevel::{
+    Instr, Instr::Const, Instr::Numeric, NumericOp::I32WrapI64, NumericOp::I64ShrS,
+};
+use wasm::ast::{Val, ValType, ValType::I32, ValType::I64};
 
 /*
  * Helper functions for turning i64's into two i32's so that we can pass them to JavaScript

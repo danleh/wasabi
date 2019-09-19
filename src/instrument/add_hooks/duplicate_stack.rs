@@ -1,5 +1,5 @@
-use wasm::ast::{self, Idx};
 use wasm::ast::highlevel::{Function, Instr, Instr::Local, LocalOp::*};
+use wasm::ast::{self, Idx};
 
 /*
  * Helper functions for duplicating stack values
@@ -27,10 +27,16 @@ pub fn save_stack_to_locals(locals: &[Idx<ast::Local>]) -> Vec<Instr> {
 
 /// restores locals back onto stack and inserts code that converts i64 -> (i32, i32)
 /// function is necessary to get the types of the locals
-pub fn restore_locals_with_i64_handling(locals: &[Idx<ast::Local>], function: &Function) -> Vec<Instr> {
+pub fn restore_locals_with_i64_handling(
+    locals: &[Idx<ast::Local>],
+    function: &Function,
+) -> Vec<Instr> {
     let mut instrs = Vec::new();
     for &local in locals {
-        instrs.append(&mut super::convert_i64::convert_i64_instr(Local(GetLocal, local), function.local_type(local)));
+        instrs.append(&mut super::convert_i64::convert_i64_instr(
+            Local(GetLocal, local),
+            function.local_type(local),
+        ));
     }
     return instrs;
 }

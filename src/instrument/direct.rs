@@ -1,13 +1,10 @@
+use wasm::ast::highlevel::{GlobalOp::*, Instr::*, Module, NumericOp::*};
 use wasm::ast::{FunctionType, Mutability, Val, ValType::*};
-use wasm::ast::highlevel::{Instr::*, Module, GlobalOp::*, NumericOp::*};
 
 /* direct or "low-level" instrumentations, i.e., where the byte code is manually modified */
 
 pub fn add_empty_function(module: &mut Module) -> Option<String> {
-    module.add_function(
-        FunctionType::new(vec![], vec![]),
-        vec![],
-        vec![End]);
+    module.add_function(FunctionType::new(vec![], vec![]), vec![], vec![End]);
     None
 }
 
@@ -17,7 +14,8 @@ pub fn count_calls(module: &mut Module) -> Option<String> {
     let getter = module.add_function(
         FunctionType::new(vec![], vec![I32]),
         vec![],
-        vec![Global(GetGlobal, counter), End]);
+        vec![Global(GetGlobal, counter), End],
+    );
     module.function(getter).export = vec!["get_counter".into()];
 
     let increment = module.add_function(
@@ -28,15 +26,16 @@ pub fn count_calls(module: &mut Module) -> Option<String> {
             Const(Val::I32(1)),
             Numeric(I32Add),
             Global(SetGlobal, counter),
-            End
-        ]);
+            End,
+        ],
+    );
 
     for (i, function) in module.functions() {
         // ignore the functions we added
         if i != getter && i != increment {
             function.modify_instr(|instr| match instr {
                 Call(..) | CallIndirect(..) => vec![Call(increment), instr],
-                instr => vec![instr]
+                instr => vec![instr],
             })
         }
     }

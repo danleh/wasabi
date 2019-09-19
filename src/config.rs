@@ -47,7 +47,30 @@ pub struct EnabledHooks(HashSet<HighLevelHook>);
 impl EnabledHooks {
     pub fn all() -> Self {
         use self::HighLevelHook::*;
-        static VARIANTS: [HighLevelHook; 22] = [Start, Nop, Unreachable, Br, BrIf, BrTable, If, Begin, End, Call, Return, Drop, Select, Const, Unary, Binary, Load, Store, MemorySize, MemoryGrow, Local, Global];
+        static VARIANTS: [HighLevelHook; 22] = [
+            Start,
+            Nop,
+            Unreachable,
+            Br,
+            BrIf,
+            BrTable,
+            If,
+            Begin,
+            End,
+            Call,
+            Return,
+            Drop,
+            Select,
+            Const,
+            Unary,
+            Binary,
+            Load,
+            Store,
+            MemorySize,
+            MemoryGrow,
+            Local,
+            Global,
+        ];
         EnabledHooks(VARIANTS.iter().cloned().collect())
     }
 
@@ -56,9 +79,9 @@ impl EnabledHooks {
         let mut result = HashSet::new();
         for hook in s.split(',') {
             if !hook.is_empty() {
-                result.insert(
-                    serde_plain::from_str(hook)
-                        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid hook".to_string()))?);
+                result.insert(serde_plain::from_str(hook).map_err(|_| {
+                    io::Error::new(io::ErrorKind::InvalidInput, "invalid hook".to_string())
+                })?);
             }
         }
         Ok(EnabledHooks(result))
@@ -66,9 +89,11 @@ impl EnabledHooks {
 
     /// if this option is given, instrument all hooks by default, except for the given ones
     pub fn from_no_hooks(s: &str) -> io::Result<Self> {
-        let result = Self::all().0
+        let result = Self::all()
+            .0
             .difference(&Self::from_hooks(s)?.0)
-            .cloned().collect();
+            .cloned()
+            .collect();
         Ok(EnabledHooks(result))
     }
 

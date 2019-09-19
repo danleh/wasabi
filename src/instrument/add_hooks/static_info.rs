@@ -1,7 +1,7 @@
 use serde::{Serialize, Serializer};
 use serde_derive::*;
-use wasm::ast::{FunctionType, Idx, Label, ValType};
 use wasm::ast::highlevel::{Function, Instr, Module};
+use wasm::ast::{FunctionType, Idx, Label, ValType};
 
 use super::block_stack::{BlockStack, BlockStackElement};
 
@@ -19,7 +19,7 @@ pub struct ModuleInfo {
     #[serde(rename = "tableExportName")]
     pub table_export_name: Option<String>,
     //    #[serde(rename = "firstFunctionExportName")]
-//    pub first_function_export_name: Option<String>,
+    //    pub first_function_export_name: Option<String>,
     #[serde(rename = "brTables")]
     pub br_tables: Vec<BrTableInfo>,
 }
@@ -31,9 +31,12 @@ impl<'a> From<&'a Module> for ModuleInfo {
             globals: module.globals.iter().map(|g| g.type_.0).collect(),
             start: module.start,
             // if the module has no table, there cannot be a call_indirect, so this null will never be read from JS runtime
-            table_export_name: module.tables.get(0).and_then(|table| table.export.iter().cloned().next()),
+            table_export_name: module
+                .tables
+                .get(0)
+                .and_then(|table| table.export.iter().cloned().next()),
             // FIXME is this a valid workaround for wrong Firefox exported function .name property?
-//            first_function_export_name: module.functions.get(0).and_then(|func| func.export.iter().cloned().next()),
+            //            first_function_export_name: module.functions.get(0).and_then(|func| func.export.iter().cloned().next()),
             br_tables: vec![],
         }
     }
@@ -58,13 +61,20 @@ impl<'a> From<&'a Function> for FunctionInfo {
             type_: function.type_.clone(),
             import: function.import.clone(),
             export: function.export.clone(),
-            locals: function.code.iter().flat_map(|code| code.locals.clone()).collect(),
+            locals: function
+                .code
+                .iter()
+                .flat_map(|code| code.locals.clone())
+                .collect(),
             instr_count: function.instr_count(),
         }
     }
 }
 
-fn serialize_function_type<S>(ty: &FunctionType, s: S) -> Result<S::Ok, S::Error> where S: Serializer {
+fn serialize_function_type<S>(ty: &FunctionType, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
     let mut type_str = String::new();
     for ty in &ty.params {
         type_str.push(ty.to_char());
@@ -76,7 +86,10 @@ fn serialize_function_type<S>(ty: &FunctionType, s: S) -> Result<S::Ok, S::Error
     s.serialize_str(&type_str)
 }
 
-fn serialize_types<S>(tys: &[ValType], s: S) -> Result<S::Ok, S::Error> where S: Serializer {
+fn serialize_types<S>(tys: &[ValType], s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
     let mut type_str = String::new();
     for ty in tys {
         type_str.push(ty.to_char());
@@ -93,7 +106,12 @@ pub struct BrTableInfo {
 
 impl BrTableInfo {
     /// needs block_stack for resolving the labels to actual locations
-    pub fn from_br_table(table: &[Idx<Label>], default: Idx<Label>, block_stack: &BlockStack, func: Idx<Function>) -> Self {
+    pub fn from_br_table(
+        table: &[Idx<Label>],
+        default: Idx<Label>,
+        block_stack: &BlockStack,
+        func: Idx<Function>,
+    ) -> Self {
         let resolve = |label: Idx<Label>| {
             let target = block_stack.br_target(label);
             ResolvedLabel {
@@ -125,7 +143,10 @@ pub struct Location(pub Idx<Function>, pub Idx<Instr>);
 
 // space optimization when serializing: save block stack elements as tuples, not objects with properties
 impl Serialize for BlockStackElement {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         use self::BlockStackElement::*;
         match self {
             Function { end } => ("function", -1, end).serialize(serializer),

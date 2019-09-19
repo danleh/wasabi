@@ -53,7 +53,9 @@ impl BlockStack {
             match *instr {
                 Instr::Block(_) | Instr::Loop(_) | Instr::If(_) => begin_stack.push(iidx),
                 Instr::Else | Instr::End => {
-                    let begin_iidx = begin_stack.pop().expect("invalid block nesting: could not end block, stack was empty");
+                    let begin_iidx = begin_stack
+                        .pop()
+                        .expect("invalid block nesting: could not end block, stack was empty");
                     begin_end_map.insert(begin_iidx, iidx);
                     // special case: Else also starts its own block
                     if let Instr::Else = instr {
@@ -63,10 +65,16 @@ impl BlockStack {
                 _ => {}
             }
         }
-        assert!(begin_stack.is_empty(), "invalid block nesting: some blocks were not closed, stack at end is {:?}", begin_stack);
+        assert!(
+            begin_stack.is_empty(),
+            "invalid block nesting: some blocks were not closed, stack at end is {:?}",
+            begin_stack
+        );
 
         BlockStack {
-            block_stack: vec![Function { end: (instrs.len() - 1).into() }],
+            block_stack: vec![Function {
+                end: (instrs.len() - 1).into(),
+            }],
             begin_end_map,
         }
     }
@@ -74,22 +82,28 @@ impl BlockStack {
     pub fn begin_block(&mut self, begin: Idx<Instr>) {
         self.block_stack.push(Block {
             begin,
-            end: *self.begin_end_map.get(&begin)
-                .expect(&format!("invalid block nesting: could not find end for block begin at {:?}", begin)),
+            end: *self.begin_end_map.get(&begin).expect(&format!(
+                "invalid block nesting: could not find end for block begin at {:?}",
+                begin
+            )),
         });
     }
 
     pub fn begin_loop(&mut self, begin: Idx<Instr>) {
         self.block_stack.push(Loop {
             begin,
-            end: *self.begin_end_map.get(&begin)
-                .expect(&format!("invalid block nesting: could not find end for loop begin at {:?}", begin)),
+            end: *self.begin_end_map.get(&begin).expect(&format!(
+                "invalid block nesting: could not find end for loop begin at {:?}",
+                begin
+            )),
         });
     }
 
     pub fn begin_if(&mut self, begin_if: Idx<Instr>) {
-        let end_or_else = *self.begin_end_map.get(&begin_if)
-            .expect(&format!("invalid block nesting: could not find end/else for if begin at {:?}", begin_if));
+        let end_or_else = *self.begin_end_map.get(&begin_if).expect(&format!(
+            "invalid block nesting: could not find end/else for if begin at {:?}",
+            begin_if
+        ));
 
         let if_ = if let Some(&end) = self.begin_end_map.get(&end_or_else) {
             If {
@@ -111,32 +125,53 @@ impl BlockStack {
     pub fn else_(&mut self) -> BlockStackElement {
         match self.block_stack.pop() {
             Some(block_element) => match block_element {
-                If { begin_if, begin_else: Some(begin_else), end } => {
-                    self.block_stack.push(Else { begin_if, begin_else, end });
+                If {
+                    begin_if,
+                    begin_else: Some(begin_else),
+                    end,
+                } => {
+                    self.block_stack.push(Else {
+                        begin_if,
+                        begin_else,
+                        end,
+                    });
                     block_element
                 }
-                block => panic!("invalid block nesting: expected if with else on block stack, but got {:?}", block),
-            }
+                block => panic!(
+                    "invalid block nesting: expected if with else on block stack, but got {:?}",
+                    block
+                ),
+            },
             None => panic!("invalid block nesting: expected if, but stack was empty"),
         }
     }
 
     pub fn end(&mut self) -> BlockStackElement {
-        self.block_stack.pop().expect("invalid block nesting: could not end block, stack was empty")
+        self.block_stack
+            .pop()
+            .expect("invalid block nesting: could not end block, stack was empty")
     }
 
     /// resolves a relative label at the current instruction to an absolute instruction index
     /// this requires forward scanning for non-loop block ends (implemented as a precomputed HashMap lookup, so O(1))
     pub fn br_target(&self, label: Idx<Label>) -> BranchTarget {
         // resolve label to all blocks between the current and the target block
-        let ended_blocks: Vec<BlockStackElement> = self.block_stack.iter().rev().take(label.0 + 1).cloned().collect();
+        let ended_blocks: Vec<BlockStackElement> = self
+            .block_stack
+            .iter()
+            .rev()
+            .take(label.0 + 1)
+            .cloned()
+            .collect();
 
         // resolve block begin to actual next instruction locations
         // backward branch when targeting loops, forward for all other blocks
         let absolute_instr = {
             // the last block of the ended ones is the actual target
-            let target_block = ended_blocks.get(label.0)
-                .expect(&format!("invalid label: cannot find target block for {:?}", label));
+            let target_block = ended_blocks.get(label.0).expect(&format!(
+                "invalid label: cannot find target block for {:?}",
+                label
+            ));
 
             match *target_block {
                 Loop { begin, .. } => begin,
@@ -144,7 +179,10 @@ impl BlockStack {
             }
         };
 
-        BranchTarget { absolute_instr, ended_blocks }
+        BranchTarget {
+            absolute_instr,
+            ended_blocks,
+        }
     }
 
     /// similar to br_target(), call to get all implicitly ended blocks by a return

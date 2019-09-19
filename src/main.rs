@@ -31,7 +31,10 @@ fn main_inner() -> io::Result<()> {
         // --hooks and --no-hooks options
         .partition(|arg| arg.starts_with("--hooks") || arg.starts_with("--no-hooks"));
     let mut args = args.into_iter();
-    let input_file = PathBuf::from(args.next().ok_or(io_err("expected at least one argument"))?);
+    let input_file = PathBuf::from(
+        args.next()
+            .ok_or(io_err("expected at least one argument"))?,
+    );
     let output_dir = PathBuf::from(args.next().unwrap_or("out".to_string()));
 
     let input_filename_no_ext = input_file.file_stem().ok_or(io_err("invalid input file"))?;
@@ -43,11 +46,17 @@ fn main_inner() -> io::Result<()> {
 
     let enabled_hooks = match options.as_slice() {
         [] => EnabledHooks::all(),
-        [option] if option.starts_with("--hooks=") =>
-            EnabledHooks::from_hooks(option.trim_start_matches("--hooks="))?,
-        [option] if option.starts_with("--no-hooks=") =>
-            EnabledHooks::from_no_hooks(option.trim_start_matches("--no-hooks="))?,
-        _ => return Err(io_err("invalid options, can only give --hooks=... OR --no-hooks=..."))
+        [option] if option.starts_with("--hooks=") => {
+            EnabledHooks::from_hooks(option.trim_start_matches("--hooks="))?
+        }
+        [option] if option.starts_with("--no-hooks=") => {
+            EnabledHooks::from_no_hooks(option.trim_start_matches("--no-hooks="))?
+        }
+        _ => {
+            return Err(io_err(
+                "invalid options, can only give --hooks=... OR --no-hooks=...",
+            ))
+        }
     };
 
     // instrument Wasm and generate JavaScript

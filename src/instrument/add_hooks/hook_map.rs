@@ -1,9 +1,9 @@
-use wasm::ast::{FunctionType, Idx, ValType, ValType::*};
-use wasm::ast::highlevel::{Function, Instr, Instr::*, Module};
-use std::collections::HashMap;
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use super::block_stack::BlockStackElement;
 use super::convert_i64::convert_i64_type;
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use std::collections::HashMap;
+use wasm::ast::highlevel::{Function, Instr, Instr::*, Module};
+use wasm::ast::{FunctionType, Idx, ValType, ValType::*};
 
 /*
  * This does 3 things:
@@ -24,7 +24,7 @@ impl Arg {
     fn to_lowlevel_param_name(&self) -> String {
         match self.ty {
             I64 => self.name.clone() + "_low, " + &self.name + "_high",
-            _ => self.name.clone()
+            _ => self.name.clone(),
         }
     }
 
@@ -32,7 +32,7 @@ impl Arg {
     fn to_lowlevel_long_expr(&self) -> String {
         match self.ty {
             I64 => format!("new Long({})", self.to_lowlevel_param_name()),
-            _ => self.name.clone()
+            _ => self.name.clone(),
         }
     }
 }
@@ -51,7 +51,12 @@ pub struct Hook {
 impl Hook {
     /// args: do not include the (i32, i32) instruction location, also before i64 -> (i32, i32) lowering
     /// js_args: (quick and dirty, highly unsafe) JavaScript fragment, pasted into the high-level user hook call
-    pub fn new(lowlevel_name: impl Into<String>, args: Vec<Arg>, highlevel_name: &str, js_args: &str) -> Self {
+    pub fn new(
+        lowlevel_name: impl Into<String>,
+        args: Vec<Arg>,
+        highlevel_name: &str,
+        js_args: &str,
+    ) -> Self {
         let lowlevel_name = lowlevel_name.into();
 
         // generate JavaScript low-level hook that is called from Wasm and in turn calls the
@@ -66,9 +71,16 @@ impl Hook {
         let wasm = {
             // prepend two I32 for (function idx, instr idx)
             let mut lowlevel_args = vec![I32, I32];
-            lowlevel_args.extend(args.iter()
-                // and expand i64 to a tuple of (i32, i32) since there is no JS interop for i64
-                .flat_map(|Arg { name: _name, ref ty }| convert_i64_type(ty)));
+            lowlevel_args.extend(
+                args.iter()
+                    // and expand i64 to a tuple of (i32, i32) since there is no JS interop for i64
+                    .flat_map(
+                        |Arg {
+                             name: _name,
+                             ref ty,
+                         }| convert_i64_type(ty),
+                    ),
+            );
 
             Function {
                 // hooks do not return anything
@@ -91,7 +103,6 @@ impl Hook {
         self.wasm.import.as_ref().unwrap().1.clone()
     }
 }
-
 
 pub struct HookMap {
     /// remember requested (= already inserted) hooks by their low-level name
@@ -246,8 +257,21 @@ impl HookMap {
 
     pub fn call_post(&self, result_tys: &[ValType]) -> Instr {
         let name = mangle_polymorphic_name("call_post", result_tys);
-        let args = result_tys.iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{}", i), ty }).collect::<Vec<_>>();
-        let js_args = &format!("[{}]", args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
+        let args = result_tys
+            .iter()
+            .enumerate()
+            .map(|(i, &ty)| Arg {
+                name: format!("result{}", i),
+                ty,
+            })
+            .collect::<Vec<_>>();
+        let js_args = &format!(
+            "[{}]",
+            args.iter()
+                .map(Arg::to_lowlevel_long_expr)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         self.get_or_insert(Hook::new(name, args, "call_post", js_args))
     }
 
@@ -268,16 +292,46 @@ impl HookMap {
     }
 
     pub fn begin_else(&self) -> Instr {
-        self.get_or_insert(Hook::new("begin_else", args!(ifInstr: I32), "begin", "\"else\", {func, instr: ifInstr}"))
+        self.get_or_insert(Hook::new(
+            "begin_else",
+            args!(ifInstr: I32),
+            "begin",
+            "\"else\", {func, instr: ifInstr}",
+        ))
     }
 
     pub fn end(&self, block: &BlockStackElement) -> Instr {
         self.get_or_insert(match *block {
-            BlockStackElement::Function { .. } => Hook::new("end_function", vec![], "end", "\"function\", {func, instr: -1}"),
-            BlockStackElement::Block { .. } => Hook::new("end_block", args!(beginInstr: I32), "end", "\"block\", {func, instr: beginInstr}"),
-            BlockStackElement::Loop { .. } => Hook::new("end_loop", args!(beginInstr: I32), "end", "\"loop\", {func, instr: beginInstr}"),
-            BlockStackElement::If { .. } => Hook::new("end_if", args!(beginInstr: I32), "end", "\"if\", {func, instr: beginInstr}"),
-            BlockStackElement::Else { .. } => Hook::new("end_else", args!(elseInstr: I32, ifInstr: I32), "end", "\"else\", {func, instr: elseInstr}, {func, instr: ifInstr}"),
+            BlockStackElement::Function { .. } => Hook::new(
+                "end_function",
+                vec![],
+                "end",
+                "\"function\", {func, instr: -1}",
+            ),
+            BlockStackElement::Block { .. } => Hook::new(
+                "end_block",
+                args!(beginInstr: I32),
+                "end",
+                "\"block\", {func, instr: beginInstr}",
+            ),
+            BlockStackElement::Loop { .. } => Hook::new(
+                "end_loop",
+                args!(beginInstr: I32),
+                "end",
+                "\"loop\", {func, instr: beginInstr}",
+            ),
+            BlockStackElement::If { .. } => Hook::new(
+                "end_if",
+                args!(beginInstr: I32),
+                "end",
+                "\"if\", {func, instr: beginInstr}",
+            ),
+            BlockStackElement::Else { .. } => Hook::new(
+                "end_else",
+                args!(elseInstr: I32, ifInstr: I32),
+                "end",
+                "\"else\", {func, instr: elseInstr}, {func, instr: ifInstr}",
+            ),
         })
     }
 
@@ -310,12 +364,11 @@ impl HookMap {
                 let idx = (self.function_count + map.len()).into();
                 map.insert(hook_name, Hook { idx, ..hook });
                 idx
-            },
+            }
         };
         Call(hook_idx)
     }
 }
-
 
 /* utility functions */
 

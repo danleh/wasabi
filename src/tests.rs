@@ -1,5 +1,5 @@
-use crate::instrument::{add_hooks, direct::*};
 use crate::config::EnabledHooks;
+use crate::instrument::{add_hooks, direct::*};
 use test_utilities::*;
 use wasm::ast::highlevel::Module;
 
@@ -24,7 +24,10 @@ fn add_hooks_instrumentation_produces_valid_wasm() {
 }
 
 /// utility function
-fn test_instrument(instrument: impl Fn(&mut Module) -> Option<String>, instrument_name: &'static str) {
+fn test_instrument(
+    instrument: impl Fn(&mut Module) -> Option<String>,
+    instrument_name: &'static str,
+) {
     println!("Testing {}", instrument_name);
     for path in wasm_files(TEST_INPUTS).unwrap() {
         println!("wasm file {:?}", path);
@@ -34,8 +37,11 @@ fn test_instrument(instrument: impl Fn(&mut Module) -> Option<String>, instrumen
         let output_path = output_file(&path, instrument_name).unwrap();
         module.to_file(&output_path).unwrap();
 
-        wasm_validate(&output_path)
-            .expect(&format!("could not instrument wasm file '{}' with {}", path.display(), instrument_name));
+        wasm_validate(&output_path).expect(&format!(
+            "could not instrument wasm file '{}' with {}",
+            path.display(),
+            instrument_name
+        ));
 
         for javascript in javascript {
             ::std::fs::write(output_path.with_extension("wasabi.js"), javascript).unwrap();

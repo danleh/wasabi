@@ -1,8 +1,8 @@
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use serde_json;
-use wasm::ast::{BlockType, Idx, InstrType, Mutability, Val, ValType::*};
 use wasm::ast::highlevel::{Function, GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
+use wasm::ast::{BlockType, Idx, InstrType, Mutability, Val, ValType::*};
 
 use crate::config::{EnabledHooks, HighLevelHook};
 
@@ -13,12 +13,12 @@ use self::hook_map::HookMap;
 use self::static_info::*;
 use self::type_stack::TypeStack;
 
-mod convert_i64;
-mod static_info;
 mod block_stack;
-mod type_stack;
-mod hook_map;
+mod convert_i64;
 mod duplicate_stack;
+mod hook_map;
+mod static_info;
+mod type_stack;
 
 /// instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, and
 /// other relevant information.
@@ -30,11 +30,11 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
         }
     }
     // FIXME is this a valid workaround for wrong Firefox exported function .name property?
-//    if let Some(function) = module.functions.first_mut() {
-//        if function.export.is_empty() {
-//            function.export.push("__wasabi_first_function".into());
-//        }
-//    }
+    //    if let Some(function) = module.functions.first_mut() {
+    //        if function.export.is_empty() {
+    //            function.export.push("__wasabi_first_function".into());
+    //        }
+    //    }
 
     // NOTE must be after exporting table and function, so that their export names are in the static info object
     let module_info: ModuleInfo = (&*module).into();
@@ -42,7 +42,8 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
     let hooks = HookMap::new(&module);
 
     // add global for start, set to false on the first execution of the start function
-    let start_not_executed_global = module.add_global(I32, Mutability::Mut, vec![Const(Val::I32(1)), End]);
+    let start_not_executed_global =
+        module.add_global(I32, Mutability::Mut, vec![Const(Val::I32(1)), End]);
 
     module.functions.par_iter_mut().enumerate().for_each(&|(fidx, function): (usize, &mut Function)| {
         let fidx = fidx.into();
@@ -755,12 +756,12 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
     // actually add the hooks to module and check that inserted Idx is the one on the Hook struct
     let hooks = hooks.finish();
     println!("generated {} low-level hooks", hooks.len());
-//    let mut hook_list: Vec<(String, FunctionType)> = hooks.iter().map(|hook| (hook.wasm.import.as_ref().map(|opt| opt.1.clone()).unwrap(), hook.wasm.type_.clone())).collect();
-//    hook_list.sort_by_key(|h| h.0.clone());
-//    for hook in hook_list {
-//        println!("{}: {:?}", hook.0, hook.1);
-//    }
-//    println!("{:?}", hook_list.iter().max_by_key(|hook| hook.1.params.len()));
+    //    let mut hook_list: Vec<(String, FunctionType)> = hooks.iter().map(|hook| (hook.wasm.import.as_ref().map(|opt| opt.1.clone()).unwrap(), hook.wasm.type_.clone())).collect();
+    //    hook_list.sort_by_key(|h| h.0.clone());
+    //    for hook in hook_list {
+    //        println!("{}: {:?}", hook.0, hook.1);
+    //    }
+    //    println!("{:?}", hook_list.iter().max_by_key(|hook| hook.1.params.len()));
 
     let mut js_hooks = Vec::new();
     for hook in hooks {
@@ -787,21 +788,34 @@ impl<T> ToConst for Idx<T> {
 impl BlockStackElement {
     fn to_end_hook_args(&self, fidx: Idx<Function>) -> Vec<Instr> {
         match self {
-            | BlockStackElement::Function { end } => vec![fidx.to_const(), end.to_const()],
-            | BlockStackElement::Block { begin, end }
+            BlockStackElement::Function { end } => vec![fidx.to_const(), end.to_const()],
+            BlockStackElement::Block { begin, end }
             | BlockStackElement::Loop { begin, end }
-            | BlockStackElement::If { begin_if: begin, end, .. } => vec![fidx.to_const(), end.to_const(), begin.to_const()],
-            | BlockStackElement::Else { begin_else, begin_if, end } => vec![fidx.to_const(), end.to_const(), begin_else.to_const(), begin_if.to_const()]
+            | BlockStackElement::If {
+                begin_if: begin,
+                end,
+                ..
+            } => vec![fidx.to_const(), end.to_const(), begin.to_const()],
+            BlockStackElement::Else {
+                begin_else,
+                begin_if,
+                end,
+            } => vec![
+                fidx.to_const(),
+                end.to_const(),
+                begin_else.to_const(),
+                begin_if.to_const(),
+            ],
         }
     }
     fn end(&self) -> Idx<Instr> {
         use self::block_stack::BlockStackElement::*;
         match self {
-            | Function { end }
+            Function { end }
             | Block { end, .. }
             | Loop { end, .. }
             | If { end, .. }
-            | Else { end, .. } => *end
+            | Else { end, .. } => *end,
         }
     }
 }
@@ -813,7 +827,8 @@ fn generate_js(module_info: ModuleInfo, hooks: &[String]) -> String {
     //    - users need to install another tool
     //    - needs to be run after every instrumentation
     // * Alternative B: compile Wasabi itself to WebAssembly, instrument at runtime
-    format!(r#"/*
+    format!(
+        r#"/*
  * Generated by Wasabi. DO NOT EDIT.
  * Contains:
  *   - independent of program-to-instrument: long.js dependency, Wasabi loader and runtime
@@ -831,8 +846,16 @@ Wasabi.module.lowlevelHooks = {{
     {}
 }};
 "#,
-            include_str!("../../../lib/long.js/long.js").lines().next().unwrap(),
-            include_str!("../../../lib/runtime.js"),
-            serde_json::to_string(&module_info).unwrap(),
-            hooks.iter().flat_map(|s| s.split("\n")).collect::<Vec<&str>>().join("\n    "))
+        include_str!("../../../lib/long.js/long.js")
+            .lines()
+            .next()
+            .unwrap(),
+        include_str!("../../../lib/runtime.js"),
+        serde_json::to_string(&module_info).unwrap(),
+        hooks
+            .iter()
+            .flat_map(|s| s.split("\n"))
+            .collect::<Vec<&str>>()
+            .join("\n    ")
+    )
 }
