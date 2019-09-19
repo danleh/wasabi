@@ -168,7 +168,8 @@ impl HookMap {
 
             Const(val) => {
                 let args = args!(value: val.to_type());
-                let js_args = &args[0].to_lowlevel_long_expr();
+                let instr_name = instr.to_name();
+                let js_args = &format!("\"{}\", {}", instr_name, args[0].to_lowlevel_long_expr());
                 Hook::new(name, args, "const_", js_args)
             }
             Numeric(op) => {

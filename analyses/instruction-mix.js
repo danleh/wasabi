@@ -37,9 +37,8 @@
         call_pre(loc, func, args, tableIdx) {
             incInstr((tableIdx === undefined) ? "call" : "call_indirect");
         },
-        const_(loc, val) {
-            // FIXME cannot determine const type, so record just as T.const
-            incInstr("T.const");
+        const_(loc, op, val) {
+            incInstr(op);
         },
         begin(loc, type, end) {
             // if is already counted by if_ hook, function begin is implicit

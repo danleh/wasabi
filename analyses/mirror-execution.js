@@ -106,7 +106,7 @@ Wasabi.analysis = {
         // TODO check return values on stack?
     },
 
-    const_(location, value) {
+    const_(location, op, value) {
         stack.peek().push(value);
     },
 
