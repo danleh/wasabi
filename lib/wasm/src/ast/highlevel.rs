@@ -121,10 +121,10 @@ pub enum Instr {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub enum LocalOp { GetLocal, SetLocal, TeeLocal }
+pub enum LocalOp { LocalGet, LocalSet, LocalTee }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub enum GlobalOp { GetGlobal, SetGlobal }
+pub enum GlobalOp { GlobalGet, GlobalSet }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum LoadOp {
@@ -192,28 +192,28 @@ pub enum NumericOp {
     F64Sqrt,
 
     I32WrapI64,
-    I32TruncSF32,
-    I32TruncUF32,
-    I32TruncSF64,
-    I32TruncUF64,
+    I32TruncF32S,
+    I32TruncF32U,
+    I32TruncF64S,
+    I32TruncF64U,
 
-    I64ExtendSI32,
-    I64ExtendUI32,
-    I64TruncSF32,
-    I64TruncUF32,
-    I64TruncSF64,
-    I64TruncUF64,
+    I64ExtendI32S,
+    I64ExtendI32U,
+    I64TruncF32S,
+    I64TruncF32U,
+    I64TruncF64S,
+    I64TruncF64U,
 
-    F32ConvertSI32,
-    F32ConvertUI32,
-    F32ConvertSI64,
-    F32ConvertUI64,
+    F32ConvertI32S,
+    F32ConvertI32U,
+    F32ConvertI64S,
+    F32ConvertI64U,
     F32DemoteF64,
 
-    F64ConvertSI32,
-    F64ConvertUI32,
-    F64ConvertSI64,
-    F64ConvertUI64,
+    F64ConvertI32S,
+    F64ConvertI32U,
+    F64ConvertI64S,
+    F64ConvertI64U,
     F64PromoteF32,
 
     I32ReinterpretF32,
@@ -313,9 +313,9 @@ pub enum NumericOp {
 impl LocalOp {
     pub fn to_type(&self, local_ty: ValType) -> InstrType {
         match *self {
-            LocalOp::GetLocal => InstrType::new(&[], &[local_ty]),
-            LocalOp::SetLocal => InstrType::new(&[local_ty], &[]),
-            LocalOp::TeeLocal => InstrType::new(&[local_ty], &[local_ty]),
+            LocalOp::LocalGet => InstrType::new(&[], &[local_ty]),
+            LocalOp::LocalSet => InstrType::new(&[local_ty], &[]),
+            LocalOp::LocalTee => InstrType::new(&[local_ty], &[local_ty]),
         }
     }
 }
@@ -323,8 +323,8 @@ impl LocalOp {
 impl GlobalOp {
     pub fn to_type(&self, global_ty: ValType) -> InstrType {
         match *self {
-            GlobalOp::GetGlobal => InstrType::new(&[], &[global_ty]),
-            GlobalOp::SetGlobal => InstrType::new(&[global_ty], &[]),
+            GlobalOp::GlobalGet => InstrType::new(&[], &[global_ty]),
+            GlobalOp::GlobalSet => InstrType::new(&[global_ty], &[]),
         }
     }
 }
@@ -346,16 +346,16 @@ impl NumericOp {
 
             // conversions
             I32WrapI64 => InstrType::new(&[I64], &[I32]),
-            I32TruncSF32 | I32TruncUF32 => InstrType::new(&[F32], &[I32]),
-            I32TruncSF64 | I32TruncUF64 => InstrType::new(&[F64], &[I32]),
-            I64ExtendSI32 | I64ExtendUI32 => InstrType::new(&[I32], &[I64]),
-            I64TruncSF32 | I64TruncUF32 => InstrType::new(&[F32], &[I64]),
-            I64TruncSF64 | I64TruncUF64 => InstrType::new(&[F64], &[I64]),
-            F32ConvertSI32 | F32ConvertUI32 => InstrType::new(&[I32], &[F32]),
-            F32ConvertSI64 | F32ConvertUI64 => InstrType::new(&[I64], &[F32]),
+            I32TruncF32S | I32TruncF32U => InstrType::new(&[F32], &[I32]),
+            I32TruncF64S | I32TruncF64U => InstrType::new(&[F64], &[I32]),
+            I64ExtendI32S | I64ExtendI32U => InstrType::new(&[I32], &[I64]),
+            I64TruncF32S | I64TruncF32U => InstrType::new(&[F32], &[I64]),
+            I64TruncF64S | I64TruncF64U => InstrType::new(&[F64], &[I64]),
+            F32ConvertI32S | F32ConvertI32U => InstrType::new(&[I32], &[F32]),
+            F32ConvertI64S | F32ConvertI64U => InstrType::new(&[I64], &[F32]),
             F32DemoteF64 => InstrType::new(&[F64], &[F32]),
-            F64ConvertSI32 | F64ConvertUI32 => InstrType::new(&[I32], &[F64]),
-            F64ConvertSI64 | F64ConvertUI64 => InstrType::new(&[I64], &[F64]),
+            F64ConvertI32S | F64ConvertI32U => InstrType::new(&[I32], &[F64]),
+            F64ConvertI64S | F64ConvertI64U => InstrType::new(&[I64], &[F64]),
             F64PromoteF32 => InstrType::new(&[F32], &[F64]),
             I32ReinterpretF32 => InstrType::new(&[F32], &[I32]),
             I64ReinterpretF64 => InstrType::new(&[F64], &[I64]),
@@ -465,11 +465,11 @@ impl Instr {
             CallIndirect(_, _) => "call_indirect",
             Drop => "drop",
             Select => "select",
-            Local(GetLocal, _) => "get_local",
-            Local(SetLocal, _) => "set_local",
-            Local(TeeLocal, _) => "tee_local",
-            Global(GetGlobal, _) => "get_global",
-            Global(SetGlobal, _) => "set_global",
+            Local(LocalGet, _) => "local.get",
+            Local(LocalSet, _) => "local.set",
+            Local(LocalTee, _) => "local.tee",
+            Global(GlobalGet, _) => "global.get",
+            Global(GlobalSet, _) => "global.set",
             MemorySize(_) => "memory.size",
             MemoryGrow(_) => "memory.grow",
             Const(Val::I32(_)) => "i32.const",
@@ -521,31 +521,31 @@ impl Instr {
             Numeric(F64Trunc) => "f64.trunc",
             Numeric(F64Nearest) => "f64.nearest",
             Numeric(F64Sqrt) => "f64.sqrt",
-            Numeric(I32WrapI64) => "i32.wrap/i64",
-            Numeric(I32TruncSF32) => "i32.trunc_s/f32",
-            Numeric(I32TruncUF32) => "i32.trunc_u/f32",
-            Numeric(I32TruncSF64) => "i32.trunc_s/f64",
-            Numeric(I32TruncUF64) => "i32.trunc_u/f64",
-            Numeric(I64ExtendSI32) => "i64.extend_s/i32",
-            Numeric(I64ExtendUI32) => "i64.extend_u/i32",
-            Numeric(I64TruncSF32) => "i64.trunc_s/f32",
-            Numeric(I64TruncUF32) => "i64.trunc_u/f32",
-            Numeric(I64TruncSF64) => "i64.trunc_s/f64",
-            Numeric(I64TruncUF64) => "i64.trunc_u/f64",
-            Numeric(F32ConvertSI32) => "f32.convert_s/i32",
-            Numeric(F32ConvertUI32) => "f32.convert_u/i32",
-            Numeric(F32ConvertSI64) => "f32.convert_s/i64",
-            Numeric(F32ConvertUI64) => "f32.convert_u/i64",
-            Numeric(F32DemoteF64) => "f32.demote/f64",
-            Numeric(F64ConvertSI32) => "f64.convert_s/i32",
-            Numeric(F64ConvertUI32) => "f64.convert_u/i32",
-            Numeric(F64ConvertSI64) => "f64.convert_s/i64",
-            Numeric(F64ConvertUI64) => "f64.convert_u/i64",
-            Numeric(F64PromoteF32) => "f64.promote/f32",
-            Numeric(I32ReinterpretF32) => "i32.reinterpret/f32",
-            Numeric(I64ReinterpretF64) => "i64.reinterpret/f64",
-            Numeric(F32ReinterpretI32) => "f32.reinterpret/i32",
-            Numeric(F64ReinterpretI64) => "f64.reinterpret/i64",
+            Numeric(I32WrapI64) => "i32.wrap_i64",
+            Numeric(I32TruncF32S) => "i32.trunc_f32_s",
+            Numeric(I32TruncF32U) => "i32.trunc_f32_u",
+            Numeric(I32TruncF64S) => "i32.trunc_f64_s",
+            Numeric(I32TruncF64U) => "i32.trunc_f64_u",
+            Numeric(I64ExtendI32S) => "i64.extend_i32_s",
+            Numeric(I64ExtendI32U) => "i64.extend_i32_u",
+            Numeric(I64TruncF32S) => "i64.trunc_f32_s",
+            Numeric(I64TruncF32U) => "i64.trunc_f32_u",
+            Numeric(I64TruncF64S) => "i64.trunc_f64_s",
+            Numeric(I64TruncF64U) => "i64.trunc_f64_u",
+            Numeric(F32ConvertI32S) => "f32.convert_i32_s",
+            Numeric(F32ConvertI32U) => "f32.convert_i32_u",
+            Numeric(F32ConvertI64S) => "f32.convert_i64_s",
+            Numeric(F32ConvertI64U) => "f32.convert_i64_u",
+            Numeric(F32DemoteF64) => "f32.demote_f64",
+            Numeric(F64ConvertI32S) => "f64.convert_i32_s",
+            Numeric(F64ConvertI32U) => "f64.convert_i32_u",
+            Numeric(F64ConvertI64S) => "f64.convert_i64_s",
+            Numeric(F64ConvertI64U) => "f64.convert_i64_u",
+            Numeric(F64PromoteF32) => "f64.promote_f32",
+            Numeric(I32ReinterpretF32) => "i32.reinterpret_f32",
+            Numeric(I64ReinterpretF64) => "i64.reinterpret_f64",
+            Numeric(F32ReinterpretI32) => "f32.reinterpret_i32",
+            Numeric(F64ReinterpretI64) => "f64.reinterpret_i64",
             Numeric(I32Eq) => "i32.eq",
             Numeric(I32Ne) => "i32.ne",
             Numeric(I32LtS) => "i32.lt_s",

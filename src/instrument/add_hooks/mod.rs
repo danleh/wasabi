@@ -71,11 +71,11 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
         if module_info.read().start == Some(fidx)
             && enabled_hooks.is_enabled(HighLevelHook::Start) {
             instrumented_body.extend_from_slice(&[
-                Global(GetGlobal, start_not_executed_global),
+                Global(GlobalGet, start_not_executed_global),
                 // ...(if this is the start function and it hasn't run yet)
                 If(BlockType(None)),
                 Const(Val::I32(0)),
-                Global(SetGlobal, start_not_executed_global),
+                Global(GlobalSet, start_not_executed_global),
                 fidx.to_const(),
                 Const(Val::I32(-1)),
                 hooks.start(),
@@ -235,10 +235,10 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                         let condition_tmp = function.add_fresh_local(I32);
 
                         instrumented_body.extend_from_slice(&[
-                            Local(TeeLocal, condition_tmp),
+                            Local(LocalTee, condition_tmp),
                             location.0.clone(),
                             location.1.clone(),
-                            Local(GetLocal, condition_tmp),
+                            Local(LocalGet, condition_tmp),
                             hooks.instr(&instr, &[])
                         ]);
                     }
@@ -358,15 +358,15 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                         // saved condition local is needed by _both_ hooks
                         let condition_tmp = function.add_fresh_local(I32);
-                        instrumented_body.push(Local(TeeLocal, condition_tmp));
+                        instrumented_body.push(Local(LocalTee, condition_tmp));
 
                         // br_if hook
                         if enabled_hooks.is_enabled(HighLevelHook::BrIf) {
                             instrumented_body.extend_from_slice(&[
-                                // NOTE see tee_local above
+                                // NOTE see local.tee above
                                 location.0.clone(),
                                 location.1.clone(),
-                                Local(GetLocal, condition_tmp),
+                                Local(LocalGet, condition_tmp),
                                 target_label.to_const(),
                                 br_target.absolute_instr.to_const(),
                                 hooks.instr(&instr, &[])
@@ -377,8 +377,8 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                         if enabled_hooks.is_enabled(HighLevelHook::End) {
                             // call hooks only iff condition is true (-> insert artificial if block)
                             instrumented_body.extend_from_slice(&[
-                                // NOTE see tee_local above
-                                Local(GetLocal, condition_tmp),
+                                // NOTE see local.tee above
+                                Local(LocalGet, condition_tmp),
                                 If(BlockType(None)),
                             ]);
                             for block in br_target.ended_blocks {
@@ -409,10 +409,10 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                         let target_idx_tmp = function.add_fresh_local(I32);
 
                         instrumented_body.extend_from_slice(&[
-                            Local(TeeLocal, target_idx_tmp),
+                            Local(LocalTee, target_idx_tmp),
                             location.0,
                             location.1,
-                            Local(GetLocal, target_idx_tmp),
+                            Local(LocalGet, target_idx_tmp),
                             Const(Val::I32((module_info.read().br_tables.len() - 1) as i32)),
                             hooks.instr(&instr, &[])
                         ])
@@ -500,13 +500,13 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                         let target_table_idx_tmp = function.add_fresh_local(I32);
                         let arg_tmps = function.add_fresh_locals(&func_ty.params);
 
-                        instrumented_body.push(Local(SetLocal, target_table_idx_tmp));
+                        instrumented_body.push(Local(LocalSet, target_table_idx_tmp));
                         instrumented_body.append(&mut save_stack_to_locals(&arg_tmps));
                         instrumented_body.extend_from_slice(&[
-                            Local(GetLocal, target_table_idx_tmp),
+                            Local(LocalGet, target_table_idx_tmp),
                             location.0.clone(),
                             location.1.clone(),
-                            Local(GetLocal, target_table_idx_tmp),
+                            Local(LocalGet, target_table_idx_tmp),
                         ]);
                         instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &function));
                         instrumented_body.extend_from_slice(&[
@@ -540,11 +540,11 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                         let tmp = function.add_fresh_local(ty);
 
                         instrumented_body.extend_from_slice(&[
-                            Local(SetLocal, tmp),
+                            Local(LocalSet, tmp),
                             location.0,
                             location.1,
                         ]);
-                        instrumented_body.append(&mut convert_i64_instr(Local(GetLocal, tmp), ty));
+                        instrumented_body.append(&mut convert_i64_instr(Local(LocalGet, tmp), ty));
                         // replace drop with hook call
                         instrumented_body.push(hooks.instr(&instr, &[ty]));
                     } else {
@@ -566,7 +566,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                             instr.clone(),
                             location.0,
                             location.1,
-                            Local(GetLocal, condition_tmp),
+                            Local(LocalGet, condition_tmp),
                         ]);
                         instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &function));
                         // replace select with hook call
@@ -586,14 +586,14 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     instrumented_body.push(instr.clone());
 
-                    // insert hook AFTER instruction, so that we can use get_local instead of duplicating the value through a new local
+                    // insert hook AFTER instruction, so that we can use local.get instead of duplicating the value through a new local
                     if enabled_hooks.is_enabled(HighLevelHook::Local) {
                         instrumented_body.extend_from_slice(&[
                             location.0,
                             location.1,
                             local_idx.to_const(),
                         ]);
-                        instrumented_body.append(&mut convert_i64_instr(Local(GetLocal, local_idx), local_ty));
+                        instrumented_body.append(&mut convert_i64_instr(Local(LocalGet, local_idx), local_ty));
                         instrumented_body.push(hooks.instr(&instr, &[local_ty]));
                     }
                 }
@@ -604,14 +604,14 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     instrumented_body.push(instr.clone());
 
-                    // insert hook AFTER instruction, so that we can use get_global instead of duplicating the value through a new local
+                    // insert hook AFTER instruction, so that we can use global.get instead of duplicating the value through a new local
                     if enabled_hooks.is_enabled(HighLevelHook::Global) {
                         instrumented_body.extend_from_slice(&[
                             location.0,
                             location.1,
                             global_idx.to_const(),
                         ]);
-                        instrumented_body.append(&mut convert_i64_instr(Global(GetGlobal, global_idx), global_ty));
+                        instrumented_body.append(&mut convert_i64_instr(Global(GlobalGet, global_idx), global_ty));
                         instrumented_body.push(hooks.instr(&instr, &[global_ty]));
                     }
                 }
@@ -642,13 +642,13 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                         let result_tmp = function.add_fresh_local(I32);
 
                         instrumented_body.extend_from_slice(&[
-                            Local(TeeLocal, input_tmp),
+                            Local(LocalTee, input_tmp),
                             instr.clone(),
-                            Local(TeeLocal, result_tmp),
+                            Local(LocalTee, result_tmp),
                             location.0,
                             location.1,
-                            Local(GetLocal, input_tmp),
-                            Local(GetLocal, result_tmp),
+                            Local(LocalGet, input_tmp),
+                            Local(LocalGet, result_tmp),
                             hooks.instr(&instr, &[])
                         ]);
                     } else {
@@ -667,9 +667,9 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                         let value_tmp = function.add_fresh_local(ty.results[0]);
 
                         instrumented_body.extend_from_slice(&[
-                            Local(TeeLocal, addr_tmp),
+                            Local(LocalTee, addr_tmp),
                             instr.clone(),
-                            Local(TeeLocal, value_tmp),
+                            Local(LocalTee, value_tmp),
                             location.0,
                             location.1,
                             Const(Val::I32(memarg.offset as i32)),

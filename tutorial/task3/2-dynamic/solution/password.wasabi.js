@@ -174,11 +174,11 @@ Wasabi.module.lowlevelHooks = {
     "begin_function": function (func, instr, ) {
         Wasabi.analysis.begin({func, instr}, "function");
     },
-    "get_local_i": function (func, instr, index, value) {
-        Wasabi.analysis.local({func, instr}, "get_local", index, value);
+    "local.get_i": function (func, instr, index, value) {
+        Wasabi.analysis.local({func, instr}, "local.get", index, value);
     },
-    "set_global_i": function (func, instr, index, value) {
-        Wasabi.analysis.global({func, instr}, "set_global", index, value);
+    "global.set_i": function (func, instr, index, value) {
+        Wasabi.analysis.global({func, instr}, "global.set", index, value);
     },
     "return": function (func, instr, ) {
         Wasabi.analysis.return_({func, instr}, []);
@@ -189,11 +189,11 @@ Wasabi.module.lowlevelHooks = {
     "i32.const": function (func, instr, value) {
         Wasabi.analysis.const_({func, instr}, value);
     },
-    "get_global_i": function (func, instr, index, value) {
-        Wasabi.analysis.global({func, instr}, "get_global", index, value);
+    "global.get_i": function (func, instr, index, value) {
+        Wasabi.analysis.global({func, instr}, "global.get", index, value);
     },
-    "set_local_i": function (func, instr, index, value) {
-        Wasabi.analysis.local({func, instr}, "set_local", index, value);
+    "local.set_i": function (func, instr, index, value) {
+        Wasabi.analysis.local({func, instr}, "local.set", index, value);
     },
     "return_i": function (func, instr, result0) {
         Wasabi.analysis.return_({func, instr}, [result0]);
@@ -201,8 +201,8 @@ Wasabi.module.lowlevelHooks = {
     "i32.load8_s": function (func, instr, offset, align, addr, value) {
         Wasabi.analysis.load({func, instr}, "i32.load8_s", {addr, offset, align}, value);
     },
-    "tee_local_i": function (func, instr, index, value) {
-        Wasabi.analysis.local({func, instr}, "tee_local", index, value);
+    "local.tee_i": function (func, instr, index, value) {
+        Wasabi.analysis.local({func, instr}, "local.tee", index, value);
     },
     "if": function (func, instr, condition) {
         Wasabi.analysis.if_({func, instr}, condition === 1);

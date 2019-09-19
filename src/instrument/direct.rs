@@ -14,7 +14,7 @@ pub fn count_calls(module: &mut Module) -> Option<String> {
     let getter = module.add_function(
         FunctionType::new(vec![], vec![I32]),
         vec![],
-        vec![Global(GetGlobal, counter), End],
+        vec![Global(GlobalGet, counter), End],
     );
     module.function(getter).export = vec!["get_counter".into()];
 
@@ -22,10 +22,10 @@ pub fn count_calls(module: &mut Module) -> Option<String> {
         FunctionType::new(vec![], vec![]),
         vec![],
         vec![
-            Global(GetGlobal, counter),
+            Global(GlobalGet, counter),
             Const(Val::I32(1)),
             Numeric(I32Add),
-            Global(SetGlobal, counter),
+            Global(GlobalSet, counter),
             End,
         ],
     );

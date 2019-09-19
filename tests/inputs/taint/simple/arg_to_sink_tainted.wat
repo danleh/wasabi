@@ -5,17 +5,17 @@
     (export "taint_sink" (func $sink))
 
     (func $propagateArgToSink (param i32)
-        get_local 0
+        local.get 0
         call $sink
     )
 
     (func $f (local $loc i32)
         i32.const 33
-        set_local $loc
-        get_local $loc
+        local.set $loc
+        local.get $loc
         call $source
 
-        get_local $loc
+        local.get $loc
         call $propagateArgToSink
     )
 

@@ -10,15 +10,15 @@
 
     (func $f (local $locA i32) (local $locB i32)
         i32.const 7
-        set_local $locA
+        local.set $locA
 
         ;; mark locA as tainted
-        get_local $locA
+        local.get $locA
         call $source
 
         ;; copy tainted value via memory
         i32.const 42    ;; address for store
-        get_local $locA ;; value for store
+        local.get $locA ;; value for store
         i32.store
 
         i32.const 42    ;; address for load
