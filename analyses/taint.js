@@ -232,18 +232,18 @@
 
         local(location, op, localIndex, value) {
             switch (op) {
-                case "set_local": {
+                case "local.set": {
                     const taint = ensureTaint(values().pop(), location);
                     stack.peek().locals[localIndex] = taint;
                     if (debug) console.log("Setting local variable with ", taint, " at ", location);
                     return;
                 }
-                case "tee_local": {
+                case "local.tee": {
                     const taint = ensureTaint(values().peek(), location);
                     stack.peek().locals[localIndex] = taint;
                     return;
                 }
-                case "get_local": {
+                case "local.get": {
                     const taint = ensureTaint(stack.peek().locals[localIndex], location);
                     values().push(taint);
                     if (debug) console.log("Getting local variable with ", taint, " at ", location);
@@ -255,11 +255,11 @@
         global(location, op, globalIndex, value) {
             let taint;
             switch (op) {
-                case "set_global":
+                case "global.set":
                     taint = ensureTaint(values().pop(), location);
                     globals[globalIndex] = taint;
                     return;
-                case "get_global":
+                case "global.get":
                     taint = ensureTaint(globals[globalIndex], location);
                     values().push(taint);
                     return;

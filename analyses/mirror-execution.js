@@ -30,7 +30,7 @@ const memory = [];
 const globals = [];
 
 /*
- * "mirror execution" analysis, that performs all "writing operations" (like memory stores or set_global) also in
+ * "mirror execution" analysis, that performs all "writing operations" (like memory stores or global.set) also in
  * JavaScript and compares "reading operation" results between JavaScript and WebAssembly.
  */
 
@@ -154,17 +154,17 @@ Wasabi.analysis = {
 
     local(location, op, localIndex, value) {
         switch (op) {
-            case "set_local":
+            case "local.set":
                 const jsValue = stack.peek().pop();
                 check(op, location, jsValue, value);
                 locals.peek()[localIndex] = value;
                 return;
-            case "tee_local":
+            case "local.tee":
                 const jsValue2 = stack.peek().peek();
                 check(op, location, jsValue2, value);
                 locals.peek()[localIndex] = value;
                 return;
-            case "get_local":
+            case "local.get":
                 stack.peek().push(value);
                 return;
         }
@@ -172,12 +172,12 @@ Wasabi.analysis = {
 
     global(location, op, globalIndex, value) {
         switch (op) {
-            case "set_global":
+            case "global.set":
                 const jsValue = stack.peek().pop();
                 check(op, location, jsValue, value);
                 globals[globalIndex] = value;
                 return;
-            case "get_global":
+            case "global.get":
                 stack.peek().push(value);
                 return;
         }
