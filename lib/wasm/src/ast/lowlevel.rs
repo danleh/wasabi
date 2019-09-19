@@ -140,11 +140,11 @@ pub enum Instr {
     #[tag = 0x1a] Drop,
     #[tag = 0x1b] Select,
 
-    #[tag = 0x20] GetLocal(Idx<Local>),
-    #[tag = 0x21] SetLocal(Idx<Local>),
-    #[tag = 0x22] TeeLocal(Idx<Local>),
-    #[tag = 0x23] GetGlobal(Idx<Global>),
-    #[tag = 0x24] SetGlobal(Idx<Global>),
+    #[tag = 0x20] LocalGet(Idx<Local>),
+    #[tag = 0x21] LocalSet(Idx<Local>),
+    #[tag = 0x22] LocalTee(Idx<Local>),
+    #[tag = 0x23] GlobalGet(Idx<Global>),
+    #[tag = 0x24] GlobalSet(Idx<Global>),
 
     #[tag = 0x28] I32Load(Memarg),
     #[tag = 0x29] I64Load(Memarg),

@@ -8,7 +8,7 @@ use wasm::ast::{BlockType, InstrType, ValType};
  *  - type checking (although this is incomplete here: the stack at the end of blocks and functions is not checked to contain the correct result types)
  *  - monomorphization of polymorphic instructions Drop and Select:
  *      - they do not carry their argument types in the instruction itself (unlike, e.g., i32.add)
- *      - their argument types can also not be determined easily from the module information (e.g., function type for call instruction or local types for get_local etc.)
+ *      - their argument types can also not be determined easily from the module information (e.g., function type for call instruction or local types for local.get etc.)
  */
 
 #[derive(Debug)]

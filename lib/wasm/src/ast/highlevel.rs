@@ -121,10 +121,10 @@ pub enum Instr {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub enum LocalOp { GetLocal, SetLocal, TeeLocal }
+pub enum LocalOp { LocalGet, LocalSet, LocalTee }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub enum GlobalOp { GetGlobal, SetGlobal }
+pub enum GlobalOp { GlobalGet, GlobalSet }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum LoadOp {
@@ -313,9 +313,9 @@ pub enum NumericOp {
 impl LocalOp {
     pub fn to_type(&self, local_ty: ValType) -> InstrType {
         match *self {
-            LocalOp::GetLocal => InstrType::new(&[], &[local_ty]),
-            LocalOp::SetLocal => InstrType::new(&[local_ty], &[]),
-            LocalOp::TeeLocal => InstrType::new(&[local_ty], &[local_ty]),
+            LocalOp::LocalGet => InstrType::new(&[], &[local_ty]),
+            LocalOp::LocalSet => InstrType::new(&[local_ty], &[]),
+            LocalOp::LocalTee => InstrType::new(&[local_ty], &[local_ty]),
         }
     }
 }
@@ -323,8 +323,8 @@ impl LocalOp {
 impl GlobalOp {
     pub fn to_type(&self, global_ty: ValType) -> InstrType {
         match *self {
-            GlobalOp::GetGlobal => InstrType::new(&[], &[global_ty]),
-            GlobalOp::SetGlobal => InstrType::new(&[global_ty], &[]),
+            GlobalOp::GlobalGet => InstrType::new(&[], &[global_ty]),
+            GlobalOp::GlobalSet => InstrType::new(&[global_ty], &[]),
         }
     }
 }
@@ -465,11 +465,11 @@ impl Instr {
             CallIndirect(_, _) => "call_indirect",
             Drop => "drop",
             Select => "select",
-            Local(GetLocal, _) => "get_local",
-            Local(SetLocal, _) => "set_local",
-            Local(TeeLocal, _) => "tee_local",
-            Global(GetGlobal, _) => "get_global",
-            Global(SetGlobal, _) => "set_global",
+            Local(LocalGet, _) => "local.get",
+            Local(LocalSet, _) => "local.set",
+            Local(LocalTee, _) => "local.tee",
+            Global(GlobalGet, _) => "global.get",
+            Global(GlobalSet, _) => "global.set",
             MemorySize(_) => "memory.size",
             MemoryGrow(_) => "memory.grow",
             Const(Val::I32(_)) => "i32.const",
