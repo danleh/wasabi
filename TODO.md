@@ -13,7 +13,6 @@
 
 # Engineering, small Features, Tests
 
-- fix broken begin/end nesting: pushing a block (location+type) at every begin, popping at end should be consistent with results from end hook, but isnt on Florians SF4.0 demo program.c
 - Reduce memory allocations (see eval/perf/ heaptrack data) in hook_map::instr() and Hook::new()
     * more borrowing, less String
 - fix wrong handling of ```call_indirect``` in Firefox: exported function object .name property is NOT the Wasm index -> BUG report and compare with Chrome!
