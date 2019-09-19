@@ -8,22 +8,22 @@
 
     (func $f (local $locA i32) (local $locB i32)
         i32.const 5
-        set_local $locA
+        local.set $locA
 
         ;; mark locA as tainted
-        get_local $locA
+        local.get $locA
         call $source
 
         ;; copy from locA to locB
-        get_local $locA
-        set_local $locB
+        local.get $locA
+        local.set $locB
 
         ;; pass locB to sink
-        get_local $locB
+        local.get $locB
         call $sink
 
         ;; sanity check: should print 5
-        get_local $locB
+        local.get $locB
         call $print
     )
 

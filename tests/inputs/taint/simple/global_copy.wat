@@ -8,10 +8,10 @@
 
     (func $f
         ;; mark globA as tainted
-        get_global $globA
+        global.get $globA
         call $source
 
-        get_global $globA
+        global.get $globA
         call $sink
     )
 

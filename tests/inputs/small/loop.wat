@@ -2,13 +2,13 @@
     (func $start
         (local $loop i32)
         i32.const 3
-        set_local $loop
+        local.set $loop
         loop
             ;; subtract 1 from loop counter
-            get_local $loop
+            local.get $loop
             i32.const -1
             i32.add
-            tee_local $loop
+            local.tee $loop
 
             ;; backward branch (== continue) while $loop > 0
             i32.const 0

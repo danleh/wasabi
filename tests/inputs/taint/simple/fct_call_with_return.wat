@@ -7,13 +7,13 @@
     (func $addToTainted (param i32) (result i32) (local $locA i32)
         ;; create tainted value
         i32.const 49
-        set_local $locA
-        get_local $locA
+        local.set $locA
+        local.get $locA
         call $source
 
         ;; add tainted value to argument and return the result
-        get_local $locA
-        get_local 0
+        local.get $locA
+        local.get 0
         i32.add
         return
     )

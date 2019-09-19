@@ -6,7 +6,7 @@
 
     (func $f (local $loc i32)
         call $foo
-        set_local $loc
+        local.set $loc
     )
 
     (start $f)

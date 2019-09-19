@@ -8,14 +8,14 @@
 
     (func $f (local $locA i32) (local $locB i32)
         i32.const 5
-        set_local $locA
+        local.set $locA
 
         ;; mark locA as tainted
-        get_local $locA
+        local.get $locA
         call $source
 
         ;; unary operation involving tainted locA
-        get_local $locA
+        local.get $locA
         i32.eqz
 
         ;; pass result to sink

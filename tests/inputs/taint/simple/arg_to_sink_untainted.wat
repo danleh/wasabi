@@ -5,7 +5,7 @@
     (export "taint_sink" (func $sink))
 
     (func $propagateArgToSink (param i32)
-        get_local 0
+        local.get 0
         call $sink
     )
 
