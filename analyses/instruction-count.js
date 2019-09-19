@@ -60,9 +60,8 @@ Wasabi.analysis = {
         incInstr("return");
     },
 
-    const_(location, value) {
-        // FIXME const type?
-        incInstr("*.const");
+    const_(location, op, value) {
+        incInstr(op);
     },
 
     unary(location, op, input, result) {

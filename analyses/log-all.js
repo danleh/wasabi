@@ -61,8 +61,8 @@ Wasabi.analysis = {
         console.log(location, (location.instr === -1) ? "implicit" : "explicit", "return, values = ", values);
     },
 
-    const_(location, value) {
-        console.log(location, "const, value =", value);
+    const_(location, op, value) {
+        console.log(location, op, "value =", value);
     },
 
     unary(location, op, input, result) {

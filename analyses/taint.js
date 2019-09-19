@@ -185,7 +185,7 @@
             }
         },
 
-        const_(location, value) {
+        const_(location, op, value) {
             if (debug) console.log("New taint at ", location);
             values().push(new Taint());
         },
