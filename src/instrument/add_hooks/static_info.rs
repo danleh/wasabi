@@ -1,5 +1,4 @@
 use serde::{Serialize, Serializer};
-use serde_derive::*;
 use wasm::ast::highlevel::{Function, Instr, Module};
 use wasm::ast::{FunctionType, Idx, Label, ValType};
 

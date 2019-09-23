@@ -4,7 +4,6 @@ use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 
 use serde::{Serialize, Serializer};
-use serde_derive::Serialize;
 
 use typename::TypeName;
 

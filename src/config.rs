@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::io;
 
-use serde_derive::*;
+use serde::Deserialize;
 use serde_plain;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Deserialize)]
