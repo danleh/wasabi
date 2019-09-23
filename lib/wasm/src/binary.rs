@@ -19,7 +19,7 @@ pub trait WasmBinary: Sized {
 
     /// convenience method
     fn error<E>(reason: E) -> io::Result<Self>
-        where E: Into<Box<Error + Send + Sync>>
+        where E: Into<Box<dyn Error + Send + Sync>>
     {
         Err(io::Error::new(io::ErrorKind::InvalidData, reason))
     }
