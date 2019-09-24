@@ -23,7 +23,7 @@ serde_plain = "0.3.0"
 # command-line interface and error handling
 structopt = "0.3.2"
 enumset = "0.4.0"
-main_error = { path = "lib/main_error" }
+main_error = "0.1.0"
 
 [profile.release]
 lto = true
