@@ -8,7 +8,7 @@ Have a look at the following files:
 
 * `hello_world.wat`: A minimal WebAssembly module that defines a function "myfunction", which prints the answer to number 42.
 
-* `log_all.js`: A simple Wasabi analysis that plements all availabe hooks and logs every invocation of every hook.
+* `log_all.js`: A simple Wasabi analysis that implements all available hooks and logs every invocation of every hook.
 
 ## Step 2: Build
 
