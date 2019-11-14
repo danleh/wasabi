@@ -4,9 +4,11 @@ version = "0.2.0"
 authors = ["Daniel Lehmann <mail@dlehmann.eu>"]
 edition = "2018"
 
+[dev-dependencies]
+test_utilities = { path = "lib/test_utilities" }
+
 [dependencies]
 wasm = { path = "lib/wasm" }
-test_utilities = { path = "lib/test_utilities" }
 
 # for parallel instrumentation of functions
 rayon = "1.0"

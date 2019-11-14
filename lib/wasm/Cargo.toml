@@ -7,10 +7,12 @@ edition = "2018"
 [dependencies]
 binary_derive = { path = "binary_derive" }
 leb128 = { path = "../leb128" }
-test_utilities = { path = "../test_utilities" }
 byteorder = "1"
 rayon = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 derive-new = "0.5"
 typename = "0.1"
+
+[dev-dependencies]
+test_utilities = { path = "../test_utilities" }
 bencher = "0.1.5"
