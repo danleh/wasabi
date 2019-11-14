@@ -3,11 +3,12 @@ use main_error::MainError;
 use std::io::{self, BufRead};
 use structopt::StructOpt;
 
-/// Utility to encode/decode integers to/from LEB128.
+/// Utility to encode/decode (decimal) integers to/from (hex) LEB128.
 #[derive(StructOpt, Debug)]
 #[structopt(
     name = "leb128",
-    raw(setting = "structopt::clap::AppSettings::AllowLeadingHyphen")
+    // Allow to pass, e.g., -1 as a number to convert (and do not parse it as an option/flag).
+    setting = structopt::clap::AppSettings::AllowNegativeNumbers
 )]
 struct Options {
     /// Decode LEB128 to integer (default: encode integer to LEB128)
@@ -29,12 +30,12 @@ struct Options {
 fn main() -> Result<(), MainError> {
     let opt = Options::from_args();
 
-    let input = if opt.input.len() > 0 {
-        // concatenate a split-up number
-        opt.input.concat()
-    } else {
-        // read input from stdin if not given
+    let input = if opt.input.is_empty() {
+        // Read input from stdin if no number is given as argument.
         io::stdin().lock().lines().next().unwrap()?
+    } else {
+        // Concatenate space-separated groups of a single number.
+        opt.input.concat()
     };
 
     if opt.decode {
