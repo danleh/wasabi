@@ -42,8 +42,11 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String>
     let hooks = HookMap::new(&module);
 
     // add global for start, set to false on the first execution of the start function
-    let start_not_executed_global =
-        module.add_global(I32, Mutability::Mut, vec![Const(Val::I32(1)), End]);
+    let start_not_executed_global = if enabled_hooks.contains(Hook::Start) {
+        Some(module.add_global(I32, Mutability::Mut, vec![Const(Val::I32(1)), End]))
+    } else {
+        None
+    };
 
     module.functions.par_iter_mut().enumerate().for_each(&|(fidx, function): (usize, &mut Function)| {
         let fidx = fidx.into();
@@ -71,11 +74,11 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String>
         if module_info.read().start == Some(fidx)
             && enabled_hooks.contains(Hook::Start) {
             instrumented_body.extend_from_slice(&[
-                Global(GlobalGet, start_not_executed_global),
+                Global(GlobalGet, start_not_executed_global.unwrap()),
                 // ...(if this is the start function and it hasn't run yet)
                 If(BlockType(None)),
                 Const(Val::I32(0)),
-                Global(GlobalSet, start_not_executed_global),
+                Global(GlobalSet, start_not_executed_global.unwrap()),
                 fidx.to_const(),
                 Const(Val::I32(-1)),
                 hooks.start(),
