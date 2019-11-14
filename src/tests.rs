@@ -1,5 +1,5 @@
-use crate::config::EnabledHooks;
 use crate::instrument::{add_hooks, direct::*};
+use crate::options::HookSet;
 use test_utilities::*;
 use wasm::ast::highlevel::Module;
 
@@ -18,7 +18,7 @@ fn count_calls_instrumentation_produces_valid_wasm() {
 #[test]
 fn add_hooks_instrumentation_produces_valid_wasm() {
     fn add_all_hooks(module: &mut Module) -> Option<String> {
-        add_hooks(module, &EnabledHooks::all())
+        add_hooks(module, &HookSet::all())
     }
     test_instrument(add_all_hooks, "add-hooks");
 }
