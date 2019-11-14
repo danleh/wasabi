@@ -1,3 +1,5 @@
+# TODO rename to wasabi_leb128_bin, move into wasabi_leb128 repo
+
 [package]
 name = "leb128-bin"
 version = "0.1.0"
@@ -9,8 +11,8 @@ name = "leb128"
 path = "src/main.rs"
 
 [dependencies]
-leb128 = { path = "../leb128" }
-main_error = { path = "../main_error" }
+wasabi_leb128 = "0.3.0"
+main_error = "0.1.0"
 structopt = "0.3.2"
 hex = "0.4.0"
 

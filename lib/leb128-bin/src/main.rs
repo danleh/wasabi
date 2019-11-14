@@ -1,4 +1,4 @@
-use leb128::{ReadLeb128, WriteLeb128};
+use wasabi_leb128::{ReadLeb128, WriteLeb128};
 use main_error::MainError;
 use std::io::{self, BufRead};
 use structopt::StructOpt;
