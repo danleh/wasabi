@@ -21,6 +21,8 @@ pub struct ModuleInfo {
     //    pub first_function_export_name: Option<String>,
     #[serde(rename = "brTables")]
     pub br_tables: Vec<BrTableInfo>,
+    #[serde(rename = "importCount")]
+    pub import_count: usize,
 }
 
 impl<'a> From<&'a Module> for ModuleInfo {
@@ -37,6 +39,7 @@ impl<'a> From<&'a Module> for ModuleInfo {
             // FIXME is this a valid workaround for wrong Firefox exported function .name property?
             //            first_function_export_name: module.functions.get(0).and_then(|func| func.export.iter().cloned().next()),
             br_tables: vec![],
+            import_count: module.functions.iter().filter(|f| f.import.is_some()).count(),
         }
     }
 }
