@@ -3,8 +3,11 @@ use std::io;
 
 use serde::Deserialize;
 use serde_plain;
+extern crate strum;
+extern crate strum_macros;
+use strum_macros::{AsRefStr, EnumString};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Deserialize, AsRefStr, EnumString)]
 #[serde(rename_all = "snake_case")]
 pub enum HighLevelHook {
     Start,
@@ -42,9 +45,9 @@ pub enum HighLevelHook {
 }
 
 #[derive(Debug)]
-pub struct EnabledHooks(HashSet<HighLevelHook>);
+pub struct EnabledHooks(pub HashSet<HighLevelHook>);
 
-impl EnabledHooks {
+impl EnabledHooks {    
     pub fn all() -> Self {
         use self::HighLevelHook::*;
         static VARIANTS: [HighLevelHook; 22] = [
