@@ -117,7 +117,7 @@ impl fmt::Display for FunctionType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct BlockType(pub Option<ValType>);
 
 #[derive(WasmBinary, Debug, Clone)]

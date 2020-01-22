@@ -120,13 +120,15 @@ pub enum Instr {
     Numeric(NumericOp),
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+// TODO Remove Local prefix from variants, just use LocalOp::Get to disambiguate against GlobalOp.
 pub enum LocalOp { LocalGet, LocalSet, LocalTee }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+// TODO Remove Global prefix from variants, just use GlobalOp::Get to disambiguate against LocalOp.
 pub enum GlobalOp { GlobalGet, GlobalSet }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum LoadOp {
     I32Load,
     I64Load,
@@ -146,7 +148,7 @@ pub enum LoadOp {
     I64Load32U,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum StoreOp {
     I32Store,
     I64Store,
@@ -161,7 +163,7 @@ pub enum StoreOp {
     I64Store32,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum NumericOp {
     /* Unary */
     I32Eqz,
