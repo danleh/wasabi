@@ -58,9 +58,7 @@ pub enum ValType {
 
 impl fmt::Display for ValType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut s = String::with_capacity(3);
-        write!(s, "{:?}", self)?;
-        write!(f, "{}", s.to_lowercase())
+        f.write_str(&format!("{:?}", self).to_lowercase())
     }
 }
 
@@ -111,6 +109,12 @@ impl<'a> From<&'a InstrType> for FunctionType {
 pub struct FunctionType {
     pub params: Vec<ValType>,
     pub results: Vec<ValType>,
+}
+
+impl fmt::Display for FunctionType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(&format!("{:?} -> {:?}", self.params, self.results).to_lowercase())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
