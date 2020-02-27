@@ -104,7 +104,7 @@ impl<'a> From<&'a InstrType> for FunctionType {
     }
 }
 
-#[derive(WasmBinary, Debug, Clone, PartialEq, Eq, Hash, Serialize, new, TypeName)]
+#[derive(WasmBinary, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, new, TypeName)]
 #[tag = 0x60]
 pub struct FunctionType {
     pub params: Vec<ValType>,
@@ -152,6 +152,8 @@ pub enum Mutability {
 /* Indices */
 
 #[derive(WasmBinary)]
+// TODO Idx<T> and Idx<U> cannot be distinguished at runtime, which is potentially bad.
+// Could we include a "generic tag" somewhere in the Idx?
 pub struct Idx<T>(pub usize, PhantomData<T>);
 
 impl<T> From<usize> for Idx<T> {
