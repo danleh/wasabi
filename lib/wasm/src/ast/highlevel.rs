@@ -29,11 +29,19 @@ pub struct Module {
     pub custom_sections: Vec<Vec<u8>>,
 }
 
+// TODO finish this refactoring:
+// replace import/code in highlevel Function and import/init in highlevel Global with this.
+pub enum ImportOr<T> {
+    Imported(String, String),
+    NotImported(T)
+}
+
 #[derive(Debug, Clone, TypeName)]
 pub struct Function {
     // type is inlined here compared to low-level/binary/spec representation
     pub type_: FunctionType,
     // import and code are mutually exclusive, i.e., exactly one of both must be Some(...)
+    // TODO introduce enum that makes only either of import or code possible
     pub import: Option<(String, String)>,
     pub code: Option<Code>,
     // functions (and other elements) can be exported multiple times under different names
@@ -44,6 +52,7 @@ pub struct Function {
 pub struct Global {
     pub type_: GlobalType,
     // import and init are mutually exclusive, i.e., exactly one of both must be Some(...)
+    // see TODO above
     pub import: Option<(String, String)>,
     pub init: Option<Expr>,
     pub export: Vec<String>,
