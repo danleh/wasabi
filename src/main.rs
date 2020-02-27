@@ -38,11 +38,15 @@ fn main_inner() -> io::Result<()> {
     let output_dir = PathBuf::from(args.next().unwrap_or("out".to_string()));
 
     let input_filename_no_ext = input_file.file_stem().ok_or(io_err("invalid input file"))?;
+    eprintln!("input_filename_no_ext: {:?}", input_filename_no_ext);
 
-    let mut output_file_stem = output_dir.clone();
-    output_file_stem.push(input_filename_no_ext);
-    let output_file_wasm = output_file_stem.with_extension("wasm");
-    let output_file_js = output_file_stem.with_extension("wasabi.js");
+    let mut output_file_wasm = input_filename_no_ext.to_owned();
+    output_file_wasm.push(".wasm");
+    let output_file_wasm = output_dir.join(output_file_wasm);
+
+    let mut output_file_js = input_filename_no_ext.to_owned();
+    output_file_js.push(".wasabi.js");
+    let output_file_js = output_dir.join(output_file_js);
 
     let enabled_hooks = match options.as_slice() {
         [] => EnabledHooks::all(),
