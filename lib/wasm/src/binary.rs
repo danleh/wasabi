@@ -129,13 +129,30 @@ impl<T: WasmBinary> WasmBinary for WithSize<T> {
     }
 }
 
+/// Do not blindly trust the decoded element_count for pre-allocating a vector, but instead limit
+/// the pre-allocation to some sensible size (e.g., 1 MB).
+/// Otherwise a (e.g., malicious) Wasm file could request very large amounts of memory just by
+/// having a large vec-size in the binary.
+/// (We got struck by plenty such out of memory errors when testing our Wasm parser with AFL.
+/// See tests/invalid/oom-large-vector-size/oom.wasm)
+fn limit_prealloc_capacity<T>(element_count: usize) -> usize {
+    // Limit to 1 MB, which should be hit almost never for real (benign) Wasm binaries:
+    // The Wasm vectors with the largest number of elements are most likely bodies of functions
+    // (i.e., vectors of instructions), and a single function is likely not having that many
+    // instructions.
+    const PREALLOC_LIMIT_BYTES: usize = 1 << 20;
+    // Vec::with_capacity() takes number of elements, not bytes; so divide bytes by element size.
+    let element_limit = PREALLOC_LIMIT_BYTES / size_of::<T>();
+    std::cmp::min(element_count, element_limit)
+}
+
+// see https://webassembly.github.io/spec/core/binary/conventions.html#vectors
 impl<T: WasmBinary> WasmBinary for Vec<T> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let size = usize::decode(reader)?;
+        let element_count = usize::decode(reader)?;
 
-        // FIXME oom, also multiplying with size_of is wrong since capacity is in elements, not bytes.
-        let mut vec: Vec<T> = Vec::with_capacity(size * size_of::<T>());
-        for _ in 0..size {
+        let mut vec: Vec<T> = Vec::with_capacity(limit_prealloc_capacity::<T>(element_count));
+        for _ in 0..element_count {
             vec.push(T::decode(reader)?);
         };
 
@@ -172,12 +189,11 @@ impl WasmBinary for String {
 /// provide parallel decoding/encoding when explicitly requested by Parallel<...> marker struct
 impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let num_elements = usize::decode(reader)?;
+        let element_count = usize::decode(reader)?;
 
         // read all elements into buffers of the given size (non-parallel, but hopefully fast)
-        // FIXME oom, also multiplying with size_of is wrong since capacity is in elements, not bytes.
-        let mut bufs = Vec::with_capacity(num_elements * size_of::<Vec<u8>>());
-        for _ in 0..num_elements {
+        let mut bufs = Vec::with_capacity(limit_prealloc_capacity::<Vec<u8>>(element_count));
+        for _ in 0..element_count {
             let num_bytes = usize::decode(reader)?;
             let mut buf = vec![0u8; num_bytes];
             reader.read_exact(&mut buf)?;
@@ -236,7 +252,16 @@ impl WasmBinary for Module {
         loop {
             match Section::decode(reader) {
                 Ok(section) => sections.push(section),
-                // FIXME
+                // FIXME this will silently end parsing on EOF (without a domain-specific Wasm error!)
+                // but sometimes, we _do_ expect more data, so not every io::Error::UnexpectedEof
+                // is a valid reason to break!
+                // In particular, I encountered this error during fuzzing: when a binary gets a very
+                // large LEB128, e.g., the size of a Vec (as per the Wasm spec grammar), and we try
+                // to parse that many entries of the Vec, and then there are less entries than
+                // expected, the resulting UnexpectedEof will silently be caught here.
+                // See tests/invalid/oom-large-vector-size.
+                // TODO instead of breaking on an error after/during parsing of a section, we should
+                // check if there is more data, _before_ parsing the next section.
                 Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(e)
             };
