@@ -25,6 +25,16 @@ pub trait WasmBinary: Sized {
     }
 }
 
+// TODO define typeful Wasm parsing errors
+//pub enum WasmParseError {
+//    /// expected type as string, actual tag
+//    InvalidTag(&'static str, u32),
+//    InvalidString(Utf8Error),
+//    // leb error
+//    // magic byte, version
+//    // add offset to all errors?
+//}
+
 
 /* Primitive types */
 
@@ -123,6 +133,7 @@ impl<T: WasmBinary> WasmBinary for Vec<T> {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let size = usize::decode(reader)?;
 
+        // FIXME oom, also multiplying with size_of is wrong since capacity is in elements, not bytes.
         let mut vec: Vec<T> = Vec::with_capacity(size * size_of::<T>());
         for _ in 0..size {
             vec.push(T::decode(reader)?);
@@ -164,6 +175,7 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
         let num_elements = usize::decode(reader)?;
 
         // read all elements into buffers of the given size (non-parallel, but hopefully fast)
+        // FIXME oom, also multiplying with size_of is wrong since capacity is in elements, not bytes.
         let mut bufs = Vec::with_capacity(num_elements * size_of::<Vec<u8>>());
         for _ in 0..num_elements {
             let num_bytes = usize::decode(reader)?;
@@ -224,6 +236,7 @@ impl WasmBinary for Module {
         loop {
             match Section::decode(reader) {
                 Ok(section) => sections.push(section),
+                // FIXME
                 Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(e)
             };

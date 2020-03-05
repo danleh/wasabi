@@ -6,12 +6,18 @@ use wasabi::options::*;
 use wasm::ast::highlevel::Module;
 
 // TODO use failure crate and failure::Error type for error handling or use custom error trait
+// TODO remove most, if not all unwrap() and panic!()
+// Error kinds:
+// - OptionsError: invalid option...
+// - ParseError: error parsing wasm file at offset 0x0000: unknown upcode 0xf7f7 (test with SIMD file)
+// - TypeError: cannot type check...
+// TODO use upstream (crates.io) leb128 crate, remove this version one from lib/
 
 fn main() -> Result<(), MainError> {
     let opt = Options::from_args();
 
     let mut enabled_hooks = if opt.hooks.is_empty() {
-        // if --hooks is not given, everything shall be instrumented.
+        // If --hooks is not given, everything shall be instrumented.
         HookSet::all()
     } else {
         let mut enabled_hooks = HookSet::new();

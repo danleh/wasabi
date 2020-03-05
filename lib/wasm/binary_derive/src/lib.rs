@@ -1,5 +1,8 @@
 #![recursion_limit = "128"]
 
+// TODO update to Rust 2018
+// TODO update to syn and quote >= 1.0
+
 extern crate proc_macro;
 #[macro_use]
 extern crate syn;
