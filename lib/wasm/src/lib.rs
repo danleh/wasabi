@@ -2,14 +2,17 @@ pub mod ast;
 mod binary;
 mod error;
 
-// re-export WasmBinary trait
-pub use self::binary::WasmBinary;
+// Re-export WasmBinary trait.
+pub use crate::binary::WasmBinary;
+
+// Re-export Error and ErrorKind.
+pub use crate::error::{Error, ErrorKind};
 
 #[cfg(test)]
 mod tests;
 
 /*
- * convenience for working files (which is the most common io::Read/Write anyway)
+ * Convenience for working files (which is the most common io::Read/Write anyway).
  */
 
 use crate::ast::{highlevel, lowlevel};
@@ -18,7 +21,7 @@ use std::io::{self, BufReader, BufWriter};
 use std::path::Path;
 
 impl lowlevel::Module {
-    pub fn from_file<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
         Self::decode(&mut BufReader::new(File::open(path)?))
     }
 
@@ -28,7 +31,7 @@ impl lowlevel::Module {
 }
 
 impl highlevel::Module {
-    pub fn from_file<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
         Ok(lowlevel::Module::from_file(path)?.into())
     }
 

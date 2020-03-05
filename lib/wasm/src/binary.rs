@@ -8,27 +8,21 @@ use rayon::prelude::*;
 
 use crate::ast::*;
 use crate::ast::lowlevel::*;
+use crate::error::{Error, ErrorKind};
 
 /* Trait and impl for decoding/encoding between binary format (as per spec) and our own formats (see ast module) */
 
 pub trait WasmBinary: Sized {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self>;
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error>;
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize>;
-
-    /// convenience method
-    fn error<E>(reason: E) -> io::Result<Self>
-        where E: Into<Box<dyn std::error::Error + Send + Sync>>
-    {
-        Err(io::Error::new(io::ErrorKind::InvalidData, reason))
-    }
 }
 
 
 /* Primitive types */
 
 impl WasmBinary for u8 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        reader.read_u8()
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
+        Ok(reader.read_u8()?)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_u8(*self)?;
@@ -37,29 +31,31 @@ impl WasmBinary for u8 {
 }
 
 impl WasmBinary for u32 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        reader.read_leb128()
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
+        Ok(reader.read_leb128()?)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_leb128(*self)
     }
 }
 
+// FIXME remove this impl: if the wasm spec only allows u32s anyway, why have usize in memory?
 impl WasmBinary for usize {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        reader.read_leb128()
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
+        Ok(reader.read_leb128()?)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        if *self > u32::max_value() as usize {
-            Self::error("WASM spec does not allow unsigned larger than u32")?;
-        }
+        // FIXME
+//        if *self > u32::max_value() as usize {
+//            Self::error("WASM spec does not allow unsigned larger than u32")?;
+//        }
         writer.write_leb128(*self)
     }
 }
 
 impl WasmBinary for i32 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        reader.read_leb128()
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
+        Ok(reader.read_leb128()?)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_leb128(*self)
@@ -67,8 +63,8 @@ impl WasmBinary for i32 {
 }
 
 impl WasmBinary for i64 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        reader.read_leb128()
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
+        Ok(reader.read_leb128()?)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_leb128(*self)
@@ -76,8 +72,8 @@ impl WasmBinary for i64 {
 }
 
 impl WasmBinary for f32 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        reader.read_f32::<LittleEndian>()
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
+        Ok(reader.read_f32::<LittleEndian>()?)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_f32::<LittleEndian>(*self)?;
@@ -86,8 +82,8 @@ impl WasmBinary for f32 {
 }
 
 impl WasmBinary for f64 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        reader.read_f64::<LittleEndian>()
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
+        Ok(reader.read_f64::<LittleEndian>()?)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_f64::<LittleEndian>(*self)?;
@@ -99,7 +95,7 @@ impl WasmBinary for f64 {
 /* Generic "AST combinators" */
 
 impl<T: WasmBinary> WasmBinary for WithSize<T> {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
         let _forget_original_size = u32::decode(reader)?;
         Ok(WithSize(T::decode(reader)?))
     }
@@ -136,7 +132,7 @@ fn limit_prealloc_capacity<T>(element_count: usize) -> usize {
 
 // see https://webassembly.github.io/spec/core/binary/conventions.html#vectors
 impl<T: WasmBinary> WasmBinary for Vec<T> {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
         let element_count = usize::decode(reader)?;
 
         let mut vec: Vec<T> = Vec::with_capacity(limit_prealloc_capacity::<T>(element_count));
@@ -157,12 +153,10 @@ impl<T: WasmBinary> WasmBinary for Vec<T> {
 }
 
 impl WasmBinary for String {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
         // reuse Vec<u8> implementation, then consume buf so no re-allocation is necessary
         let buf: Vec<u8> = Vec::decode(reader)?;
-        String::from_utf8(buf).map_err(|e| io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("utf-8 conversion error: {}", e.to_string())))
+        Ok(String::from_utf8(buf)?)
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
@@ -176,7 +170,7 @@ impl WasmBinary for String {
 
 /// provide parallel decoding/encoding when explicitly requested by Parallel<...> marker struct
 impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
         let element_count = usize::decode(reader)?;
 
         // read all elements into buffers of the given size (non-parallel, but hopefully fast)
@@ -189,8 +183,8 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
         }
 
         // parallel decode of each buffer
-        let decoded: io::Result<Vec<WithSize<T>>> = bufs.into_par_iter()
-            .map(|buf| -> io::Result<WithSize<T>> {
+        let decoded: Result<Vec<WithSize<T>>, Error> = bufs.into_par_iter()
+            .map(|buf| -> Result<WithSize<T>, Error> {
                 Ok(WithSize(T::decode(&mut &buf[..])?))
             })
             .collect();
@@ -224,16 +218,16 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
 /* Special cases that cannot be derived and need a manual impl */
 
 impl WasmBinary for Module {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
         let mut magic_number = [0u8; 4];
         reader.read_exact(&mut magic_number)?;
         if &magic_number != b"\0asm" {
-            return Self::error("magic bytes do not match");
+            return Err(Error { offset: Some(0), kind: ErrorKind::MagicNumber });
         }
 
         let version = reader.read_u32::<LittleEndian>()?;
         if version != 1 {
-            return Self::error("not version 1");
+            return Err(Error { offset: Some(4), kind: ErrorKind::MagicNumber });
         }
 
         let mut sections = Vec::new();
@@ -250,13 +244,14 @@ impl WasmBinary for Module {
                 // See tests/invalid/oom-large-vector-size.
                 // TODO instead of breaking on an error after/during parsing of a section, we should
                 // check if there is more data, _before_ parsing the next section.
-                Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(Error { kind: ErrorKind::Io(e), .. }) if e.kind() == io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(e)
             };
         }
 
         Ok(Module { sections })
     }
+
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_all(b"\0asm")?;
         writer.write_all(&[1, 0, 0, 0])?;
@@ -270,7 +265,7 @@ impl WasmBinary for Module {
 
 /// needs manual impl because of block handling: End op-code terminates body, but only if block stack is empty
 impl WasmBinary for Expr {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
         let mut instructions = Vec::new();
 
         let mut block_depth = 0;
@@ -290,6 +285,7 @@ impl WasmBinary for Expr {
 
         Ok(Expr(instructions))
     }
+
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         let mut bytes_written = 0;
         for instruction in &self.0 {
@@ -302,7 +298,7 @@ impl WasmBinary for Expr {
 /// needs manual impl because of compressed format: even though BlockType is "logically" an enum,
 /// it has no tag, because they know that 0x40 (empty block) and ValType are disjoint.
 impl WasmBinary for BlockType {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
         Ok(BlockType(match u8::decode(reader)? {
             0x40 => None,
             byte => {
@@ -311,6 +307,7 @@ impl WasmBinary for BlockType {
             }
         }))
     }
+
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         match self {
             &BlockType(None) => 0x40u8.encode(writer),
@@ -322,7 +319,7 @@ impl WasmBinary for BlockType {
 /// needs manual impl because the tag if max is present comes at the beginning of the struct, not
 /// before the max field.
 impl WasmBinary for Limits {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
         Ok(match u8::decode(reader)? {
             0x00 => Limits {
                 initial_size: u32::decode(reader)?,
@@ -332,7 +329,7 @@ impl WasmBinary for Limits {
                 initial_size: u32::decode(reader)?,
                 max_size: Some(u32::decode(reader)?),
             },
-            byte => Self::error(format!("expected tag for Limits, got 0x{:02x}", byte))?
+            byte => Err(Error::invalid_tag("Limits", byte))?
         })
     }
 
@@ -354,6 +351,6 @@ impl WasmBinary for Limits {
 }
 
 impl<T> WasmBinary for PhantomData<T> {
-    fn decode<R: io::Read>(_: &mut R) -> io::Result<Self> { Ok(PhantomData) }
+    fn decode<R: io::Read>(_: &mut R) -> Result<Self, Error> { Ok(PhantomData) }
     fn encode<W: io::Write>(&self, _: &mut W) -> io::Result<usize> { Ok(0) }
 }

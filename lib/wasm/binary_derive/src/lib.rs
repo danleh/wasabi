@@ -25,7 +25,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
             let decode_tag = tag.map(|tag| quote! {
                 let byte = u8::decode(reader)?;
                 if byte != #tag {
-                    return Self::error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte));
+                    return Err(crate::error::Error::invalid_tag(stringify!(#data_name), byte));
                 }
             });
             let decode_fields = decode_fields(&parse_quote!(#data_name), &fields);
@@ -40,7 +40,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
 
             quote!(match u8::decode(reader)? {
                 #( #decode_variants )*
-                byte => Self::error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte))?
+                byte => Err(crate::error::Error::invalid_tag(stringify!(#data_name), byte))?
             })
         }
         _ => unimplemented!("can only derive(WasmBinary) for structs and enums")
@@ -61,7 +61,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     quote!(
         impl #impl_generics WasmBinary for #data_name #ty_generics #where_clause {
-            fn decode<R: ::std::io::Read>(reader: &mut R) -> ::std::io::Result<Self> {
+            fn decode<R: ::std::io::Read>(reader: &mut R) -> ::std::result::Result<Self, crate::error::Error> {
                 Ok(#decode_expr)
             }
             fn encode<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<usize> {
