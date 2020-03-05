@@ -152,7 +152,11 @@ impl Serialize for BlockStackElement {
             Block { begin, end } => ("block", begin, end).serialize(serializer),
             Loop { begin, end } => ("loop", begin, end).serialize(serializer),
             If { begin_if, end, .. } => ("if", begin_if, end).serialize(serializer),
-            Else { begin_else, end, begin_if } => ("else", begin_else, end, begin_if).serialize(serializer),
+            Else {
+                begin_else,
+                end,
+                begin_if,
+            } => ("else", begin_else, end, begin_if).serialize(serializer),
         }
     }
 }

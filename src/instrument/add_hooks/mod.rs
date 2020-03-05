@@ -4,7 +4,7 @@ use serde_json;
 use wasm::ast::highlevel::{Function, GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
 use wasm::ast::{BlockType, Idx, InstrType, Mutability, Val, ValType::*};
 
-use crate::config::{EnabledHooks, HighLevelHook};
+use crate::options::{Hook, HookSet};
 
 use self::block_stack::{BlockStack, BlockStackElement};
 use self::convert_i64::convert_i64_instr;
@@ -22,7 +22,7 @@ mod type_stack;
 
 /// instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, and
 /// other relevant information.
-pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<String> {
+pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String> {
     // make sure table is exported, needed for Wasabi runtime to resolve table indices to function indices.
     for table in &mut module.tables {
         if table.export.is_empty() {
@@ -69,7 +69,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
         // execute start hook before anything else
         if module_info.read().start == Some(fidx)
-            && enabled_hooks.is_enabled(HighLevelHook::Start) {
+            && enabled_hooks.contains(Hook::Start) {
             instrumented_body.extend_from_slice(&[
                 Global(GlobalGet, start_not_executed_global),
                 // ...(if this is the start function and it hasn't run yet)
@@ -84,7 +84,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
         }
 
         // function_begin hook
-        if enabled_hooks.is_enabled(HighLevelHook::Begin) {
+        if enabled_hooks.contains(Hook::Begin) {
             instrumented_body.extend_from_slice(&[
                 fidx.to_const(),
                 // function begin does not correspond to any instruction, so take -1 as instruction index
@@ -171,7 +171,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
              * 5. call hook
              */
             match instr {
-                Nop => if enabled_hooks.is_enabled(HighLevelHook::Nop) {
+                Nop => if enabled_hooks.contains(Hook::Nop) {
                     // size optimization: replace nop fully with hook
                     instrumented_body.extend_from_slice(&[
                         location.0,
@@ -181,7 +181,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                 },
                 Unreachable => {
                     // hook must come before unreachable instruction, otherwise it prevents hook from being called
-                    if enabled_hooks.is_enabled(HighLevelHook::Unreachable) {
+                    if enabled_hooks.contains(Hook::Unreachable) {
                         instrumented_body.extend_from_slice(&[
                             location.0,
                             location.1,
@@ -203,7 +203,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     instrumented_body.push(instr);
 
-                    if enabled_hooks.is_enabled(HighLevelHook::Begin) {
+                    if enabled_hooks.contains(Hook::Begin) {
                         instrumented_body.extend_from_slice(&[
                             location.0,
                             location.1,
@@ -217,7 +217,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     instrumented_body.push(instr);
 
-                    if enabled_hooks.is_enabled(HighLevelHook::Begin) {
+                    if enabled_hooks.contains(Hook::Begin) {
                         instrumented_body.extend_from_slice(&[
                             location.0,
                             location.1,
@@ -231,7 +231,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     type_stack.begin(block_ty);
 
                     // if_ hook for the condition (always executed on either branch)
-                    if enabled_hooks.is_enabled(HighLevelHook::If) {
+                    if enabled_hooks.contains(Hook::If) {
                         let condition_tmp = function.add_fresh_local(I32);
 
                         instrumented_body.extend_from_slice(&[
@@ -247,7 +247,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     instrumented_body.push(instr);
 
                     // begin hook (not executed when condition implies else branch)
-                    if enabled_hooks.is_enabled(HighLevelHook::Begin) {
+                    if enabled_hooks.contains(Hook::Begin) {
                         instrumented_body.extend_from_slice(&[
                             location.0,
                             location.1,
@@ -265,7 +265,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     type_stack.else_();
 
-                    if enabled_hooks.is_enabled(HighLevelHook::End) {
+                    if enabled_hooks.contains(Hook::End) {
                         instrumented_body.extend_from_slice(&[
                             location.0.clone(),
                             location.1.clone(),
@@ -276,7 +276,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     instrumented_body.push(instr);
 
-                    if enabled_hooks.is_enabled(HighLevelHook::Begin) {
+                    if enabled_hooks.contains(Hook::Begin) {
                         instrumented_body.extend_from_slice(&[
                             location.0,
                             location.1,
@@ -292,7 +292,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     // add "synthetic" return hook call for implicit returns
                     if implicit_return
-                        && enabled_hooks.is_enabled(HighLevelHook::Return) {
+                        && enabled_hooks.contains(Hook::Return) {
                         if let BlockStackElement::Function { .. } = block {
                             let result_tys = &function.type_.results.clone();
                             let result_tmps = function.add_fresh_locals(result_tys);
@@ -310,7 +310,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     // NOTE there is not duplication of the end hook call for explicit returns,
                     // because the end hook that is inserted now is never called (dead code)
 
-                    if enabled_hooks.is_enabled(HighLevelHook::End) {
+                    if enabled_hooks.contains(Hook::End) {
                         instrumented_body.append(&mut block.to_end_hook_args(fidx));
                         instrumented_body.push(hooks.end(&block))
                     }
@@ -326,7 +326,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     let br_target = block_stack.br_target(target_label);
 
                     // br hook
-                    if enabled_hooks.is_enabled(HighLevelHook::Br) {
+                    if enabled_hooks.contains(Hook::Br) {
                         instrumented_body.extend_from_slice(&[
                             location.0,
                             location.1,
@@ -337,7 +337,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     }
 
                     // end hooks for all intermediate blocks that are "jumped over"
-                    if enabled_hooks.is_enabled(HighLevelHook::End) {
+                    if enabled_hooks.contains(Hook::End) {
                         for block in br_target.ended_blocks {
                             instrumented_body.append(&mut block.to_end_hook_args(fidx));
                             instrumented_body.push(hooks.end(&block));
@@ -353,15 +353,15 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     let br_target = block_stack.br_target(target_label);
 
-                    if enabled_hooks.is_enabled(HighLevelHook::BrIf)
-                        || enabled_hooks.is_enabled(HighLevelHook::End) {
+                    if enabled_hooks.contains(Hook::BrIf)
+                        || enabled_hooks.contains(Hook::End) {
 
                         // saved condition local is needed by _both_ hooks
                         let condition_tmp = function.add_fresh_local(I32);
                         instrumented_body.push(Local(LocalTee, condition_tmp));
 
                         // br_if hook
-                        if enabled_hooks.is_enabled(HighLevelHook::BrIf) {
+                        if enabled_hooks.contains(Hook::BrIf) {
                             instrumented_body.extend_from_slice(&[
                                 // NOTE see local.tee above
                                 location.0.clone(),
@@ -374,7 +374,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                         }
 
                         // end hooks for all intermediate blocks that are "jumped over"
-                        if enabled_hooks.is_enabled(HighLevelHook::End) {
+                        if enabled_hooks.contains(Hook::End) {
                             // call hooks only iff condition is true (-> insert artificial if block)
                             instrumented_body.extend_from_slice(&[
                                 // NOTE see local.tee above
@@ -395,9 +395,9 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                 BrTable(ref target_table, default_target) => {
                     type_stack.instr(&InstrType::new(&[I32], &[]));
 
-                    if enabled_hooks.is_enabled(HighLevelHook::BrTable)
+                    if enabled_hooks.contains(Hook::BrTable)
                         // because end hooks are called at runtime, we need to instrument even if br_table is not enabled
-                        || enabled_hooks.is_enabled(HighLevelHook::End) {
+                        || enabled_hooks.contains(Hook::End) {
 
                         // each br_table instruction gets its own entry in the static info object
                         // that maps table index to label and location
@@ -430,7 +430,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     type_stack.instr(&InstrType::new(&[], &function.type_.results));
 
                     // return hook
-                    if enabled_hooks.is_enabled(HighLevelHook::Return) {
+                    if enabled_hooks.contains(Hook::Return) {
                         let result_tys = &function.type_.results.clone();
                         let result_tmps = function.add_fresh_locals(result_tys);
 
@@ -444,7 +444,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     }
 
                     // end hooks for all intermediate blocks that are "jumped over"
-                    if enabled_hooks.is_enabled(HighLevelHook::End) {
+                    if enabled_hooks.contains(Hook::End) {
                         for block in block_stack.return_target().ended_blocks {
                             instrumented_body.append(&mut block.to_end_hook_args(fidx));
                             instrumented_body.push(hooks.end(&block));
@@ -459,7 +459,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     let ref func_ty = module_info.read().functions[target_func_idx.0].type_;
                     type_stack.instr(&func_ty.into());
 
-                    if enabled_hooks.is_enabled(HighLevelHook::Call) {
+                    if enabled_hooks.contains(Hook::Call) {
                         /* pre call hook */
 
                         let arg_tmps = function.add_fresh_locals(&func_ty.params);
@@ -494,7 +494,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                 CallIndirect(ref func_ty, _ /* table idx == 0 in WASM version 1 */) => {
                     type_stack.instr(&instr.to_type().unwrap());
 
-                    if enabled_hooks.is_enabled(HighLevelHook::Call) {
+                    if enabled_hooks.contains(Hook::Call) {
                         /* pre call hook */
 
                         let target_table_idx_tmp = function.add_fresh_local(I32);
@@ -536,7 +536,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                 Drop => {
                     let ty = type_stack.pop_val();
 
-                    if enabled_hooks.is_enabled(HighLevelHook::Drop) {
+                    if enabled_hooks.contains(Hook::Drop) {
                         let tmp = function.add_fresh_local(ty);
 
                         instrumented_body.extend_from_slice(&[
@@ -557,7 +557,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     assert_eq!(type_stack.pop_val(), ty, "select arguments should have same type");
                     type_stack.push_val(ty);
 
-                    if enabled_hooks.is_enabled(HighLevelHook::Drop) {
+                    if enabled_hooks.contains(Hook::Drop) {
                         let condition_tmp = function.add_fresh_local(I32);
                         let arg_tmps = function.add_fresh_locals(&[ty, ty]);
 
@@ -587,7 +587,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     instrumented_body.push(instr.clone());
 
                     // insert hook AFTER instruction, so that we can use local.get instead of duplicating the value through a new local
-                    if enabled_hooks.is_enabled(HighLevelHook::Local) {
+                    if enabled_hooks.contains(Hook::Local) {
                         instrumented_body.extend_from_slice(&[
                             location.0,
                             location.1,
@@ -605,7 +605,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     instrumented_body.push(instr.clone());
 
                     // insert hook AFTER instruction, so that we can use global.get instead of duplicating the value through a new local
-                    if enabled_hooks.is_enabled(HighLevelHook::Global) {
+                    if enabled_hooks.contains(Hook::Global) {
                         instrumented_body.extend_from_slice(&[
                             location.0,
                             location.1,
@@ -624,7 +624,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     instrumented_body.push(instr.clone());
 
-                    if enabled_hooks.is_enabled(HighLevelHook::MemorySize) {
+                    if enabled_hooks.contains(Hook::MemorySize) {
                         instrumented_body.extend_from_slice(&[
                             location.0,
                             location.1,
@@ -637,7 +637,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                 MemoryGrow(_ /* memory idx == 0 in WASM version 1 */) => {
                     type_stack.instr(&instr.to_type().unwrap());
 
-                    if enabled_hooks.is_enabled(HighLevelHook::MemoryGrow) {
+                    if enabled_hooks.contains(Hook::MemoryGrow) {
                         let input_tmp = function.add_fresh_local(I32);
                         let result_tmp = function.add_fresh_local(I32);
 
@@ -662,7 +662,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     let ty = op.to_type();
                     type_stack.instr(&ty);
 
-                    if enabled_hooks.is_enabled(HighLevelHook::Load) {
+                    if enabled_hooks.contains(Hook::Load) {
                         let addr_tmp = function.add_fresh_local(ty.inputs[0]);
                         let value_tmp = function.add_fresh_local(ty.results[0]);
 
@@ -685,7 +685,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     let ty = op.to_type();
                     type_stack.instr(&ty);
 
-                    if enabled_hooks.is_enabled(HighLevelHook::Store) {
+                    if enabled_hooks.contains(Hook::Store) {
                         let addr_tmp = function.add_fresh_local(ty.inputs[0]);
                         let value_tmp = function.add_fresh_local(ty.inputs[1]);
 
@@ -712,7 +712,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
 
                     instrumented_body.push(instr.clone());
 
-                    if enabled_hooks.is_enabled(HighLevelHook::Const) {
+                    if enabled_hooks.contains(Hook::Const) {
                         instrumented_body.extend_from_slice(&[
                             location.0,
                             location.1,
@@ -726,8 +726,8 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &EnabledHooks) -> Option<St
                     let ty = op.to_type();
                     type_stack.instr(&ty);
 
-                    if (enabled_hooks.is_enabled(HighLevelHook::Unary) && ty.inputs.len() == 1)
-                        || (enabled_hooks.is_enabled(HighLevelHook::Binary) && ty.inputs.len() == 2) {
+                    if (enabled_hooks.contains(Hook::Unary) && ty.inputs.len() == 1)
+                        || (enabled_hooks.contains(Hook::Binary) && ty.inputs.len() == 2) {
                         let input_tmps = function.add_fresh_locals(&ty.inputs);
                         let result_tmps = function.add_fresh_locals(&ty.results);
 
