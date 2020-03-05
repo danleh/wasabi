@@ -1,5 +1,7 @@
 pub mod ast;
 mod binary;
+mod error;
+
 // re-export WasmBinary trait
 pub use self::binary::WasmBinary;
 

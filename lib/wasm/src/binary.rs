@@ -1,10 +1,9 @@
-use std::error::Error;
 use std::io;
 use std::marker::PhantomData;
 use std::mem::size_of;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use leb128::*;
+use wasabi_leb128::*;
 use rayon::prelude::*;
 
 use crate::ast::*;
@@ -12,28 +11,17 @@ use crate::ast::lowlevel::*;
 
 /* Trait and impl for decoding/encoding between binary format (as per spec) and our own formats (see ast module) */
 
-
 pub trait WasmBinary: Sized {
     fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self>;
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize>;
 
     /// convenience method
     fn error<E>(reason: E) -> io::Result<Self>
-        where E: Into<Box<dyn Error + Send + Sync>>
+        where E: Into<Box<dyn std::error::Error + Send + Sync>>
     {
         Err(io::Error::new(io::ErrorKind::InvalidData, reason))
     }
 }
-
-// TODO define typeful Wasm parsing errors
-//pub enum WasmParseError {
-//    /// expected type as string, actual tag
-//    InvalidTag(&'static str, u32),
-//    InvalidString(Utf8Error),
-//    // leb error
-//    // magic byte, version
-//    // add offset to all errors?
-//}
 
 
 /* Primitive types */
