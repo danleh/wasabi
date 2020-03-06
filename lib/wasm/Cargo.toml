@@ -6,9 +6,7 @@ edition = "2018"
 
 [dependencies]
 binary_derive = { path = "binary_derive" }
-# TODO use upstream wasabi_leb128, not this outdated one in lib/,
-# then delete lib/leb128, leb128-bench, and leb128-bin (not so sure about the last one?)
-leb128 = { path = "../leb128" }
+wasabi_leb128 = "0.3.0"
 byteorder = "1"
 rayon = "1.0"
 serde = { version = "1.0", features = ["derive"] }

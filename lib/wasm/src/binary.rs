@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use wasabi_leb128::*;
 use rayon::prelude::*;
+use wasabi_leb128::*;
 
 use crate::ast::*;
 use crate::ast::lowlevel::*;
@@ -13,7 +13,7 @@ use crate::error::{Error, ErrorKind};
 /* Trait and impl for decoding/encoding between binary format (as per spec) and our own formats (see ast module) */
 
 pub trait WasmBinary: Sized {
-    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error>;
+    fn decode<R: io::Read + io::Seek>(reader: &mut R) -> Result<Self, Error>;
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize>;
 }
 
@@ -95,7 +95,7 @@ impl WasmBinary for f64 {
 /* Generic "AST combinators" */
 
 impl<T: WasmBinary> WasmBinary for WithSize<T> {
-    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
+    fn decode<R: io::Read + io::Seek>(reader: &mut R) -> Result<Self, Error> {
         let _forget_original_size = u32::decode(reader)?;
         Ok(WithSize(T::decode(reader)?))
     }
@@ -132,7 +132,7 @@ fn limit_prealloc_capacity<T>(element_count: usize) -> usize {
 
 // see https://webassembly.github.io/spec/core/binary/conventions.html#vectors
 impl<T: WasmBinary> WasmBinary for Vec<T> {
-    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
+    fn decode<R: io::Read + io::Seek>(reader: &mut R) -> Result<Self, Error> {
         let element_count = usize::decode(reader)?;
 
         let mut vec: Vec<T> = Vec::with_capacity(limit_prealloc_capacity::<T>(element_count));
@@ -153,7 +153,7 @@ impl<T: WasmBinary> WasmBinary for Vec<T> {
 }
 
 impl WasmBinary for String {
-    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
+    fn decode<R: io::Read + io::Seek>(reader: &mut R) -> Result<Self, Error> {
         // reuse Vec<u8> implementation, then consume buf so no re-allocation is necessary
         let buf: Vec<u8> = Vec::decode(reader)?;
         Ok(String::from_utf8(buf)?)
@@ -168,68 +168,87 @@ impl WasmBinary for String {
     }
 }
 
-/// provide parallel decoding/encoding when explicitly requested by Parallel<...> marker struct
 impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
-    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
-        let element_count = usize::decode(reader)?;
-
-        // read all elements into buffers of the given size (non-parallel, but hopefully fast)
-        let mut bufs = Vec::with_capacity(limit_prealloc_capacity::<Vec<u8>>(element_count));
-        for _ in 0..element_count {
-            let num_bytes = usize::decode(reader)?;
-            let mut buf = vec![0u8; num_bytes];
-            reader.read_exact(&mut buf)?;
-            bufs.push(buf);
-        }
-
-        // parallel decode of each buffer
-        let decoded: Result<Vec<WithSize<T>>, Error> = bufs.into_par_iter()
-            .map(|buf| -> Result<WithSize<T>, Error> {
-                Ok(WithSize(T::decode(&mut &buf[..])?))
-            })
-            .collect();
-
-        Ok(Parallel(decoded?))
+    fn decode<R: io::Read + io::Seek>(reader: &mut R) -> Result<Self, Error> {
+        Ok(Parallel(Vec::<WithSize<T>>::decode(reader)?))
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        let new_size = self.0.len();
-        let mut bytes_written = new_size.encode(writer)?;
-
-        // encode elements to buffers in parallel
-        let encoded: io::Result<Vec<Vec<u8>>> = self.0.par_iter()
-            .map(|element: &WithSize<T>| {
-                let mut buf = Vec::new();
-                element.0.encode(&mut buf)?;
-                Ok(buf)
-            })
-            .collect();
-
-        // write sizes and buffer contents to actual writer (non-parallel, but hopefully fast)
-        for buf in encoded? {
-            bytes_written += buf.encode(writer)?;
-        }
-
-        Ok(bytes_written)
+        self.0.encode(writer)
     }
 }
+
+/// provide parallel decoding/encoding when explicitly requested by Parallel<...> marker struct
+//impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
+//    fn decode<R: io::Read + io::Seek>(reader: &mut R) -> Result<Self, Error> {
+//        let element_count = usize::decode(reader)?;
+//
+//        // read all elements into buffers of the given size (non-parallel, but hopefully fast)
+//        let mut bufs = Vec::with_capacity(limit_prealloc_capacity::<Vec<u8>>(element_count));
+//        for _ in 0..element_count {
+//            let num_bytes = usize::decode(reader)?;
+//            let mut buf = vec![0u8; num_bytes];
+//            reader.read_exact(&mut buf)?;
+//            bufs.push(buf);
+//        }
+//
+//        // parallel decode of each buffer
+//        let decoded: Result<Vec<WithSize<T>>, Error> = bufs.into_par_iter()
+//            .map(|buf| -> Result<WithSize<T>, Error> {
+//                // FIXME wrap buf in Cursor
+//                // FIXME but then the reported error offsets are wrong, add the base offsets of the buffers before reporting
+//                Ok(WithSize(T::decode(&mut &buf[..])?))
+//            })
+//            .collect();
+//
+//        Ok(Parallel(decoded?))
+//    }
+//
+//    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+//        let new_size = self.0.len();
+//        let mut bytes_written = new_size.encode(writer)?;
+//
+//        // encode elements to buffers in parallel
+//        let encoded: io::Result<Vec<Vec<u8>>> = self.0.par_iter()
+//            .map(|element: &WithSize<T>| {
+//                let mut buf = Vec::new();
+//                element.0.encode(&mut buf)?;
+//                Ok(buf)
+//            })
+//            .collect();
+//
+//        // write sizes and buffer contents to actual writer (non-parallel, but hopefully fast)
+//        for buf in encoded? {
+//            bytes_written += buf.encode(writer)?;
+//        }
+//
+//        Ok(bytes_written)
+//    }
+//}
 
 
 /* Special cases that cannot be derived and need a manual impl */
 
 impl WasmBinary for Module {
-    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
+    fn decode<R: io::Read + io::Seek>(reader: &mut R) -> Result<Self, Error> {
+        // Check magic number
+        let magic_number_err = Error::new(ErrorKind::MagicNumber).with_offset(reader);
         let mut magic_number = [0u8; 4];
-        reader.read_exact(&mut magic_number)?;
-        if &magic_number != b"\0asm" {
-            return Err(Error { offset: Some(0), kind: ErrorKind::MagicNumber });
+        match reader.read_exact(&mut magic_number) {
+            Err(io_err) => Err(magic_number_err.with_source(io_err))?,
+            Ok(()) if &magic_number != b"\0asm" => Err(magic_number_err)?,
+            Ok(()) => ()
         }
 
-        let version = reader.read_u32::<LittleEndian>()?;
-        if version != 1 {
-            return Err(Error { offset: Some(4), kind: ErrorKind::MagicNumber });
+        // Check version
+        let version_err = Error::new(ErrorKind::Version).with_offset(reader);
+        match reader.read_u32::<LittleEndian>() {
+            Err(io_err) => Err(version_err.with_source(io_err))?,
+            Ok(version) if version != 1 => Err(version_err)?,
+            Ok(_) => ()
         }
 
+        // Parse sections
         let mut sections = Vec::new();
         loop {
             match Section::decode(reader) {
@@ -244,7 +263,9 @@ impl WasmBinary for Module {
                 // See tests/invalid/oom-large-vector-size.
                 // TODO instead of breaking on an error after/during parsing of a section, we should
                 // check if there is more data, _before_ parsing the next section.
-                Err(Error { kind: ErrorKind::Io(e), .. }) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(Error { kind: ErrorKind::Io, source: Some(e), .. })
+                if e.downcast_ref::<io::Error>().unwrap().kind() == io::ErrorKind::UnexpectedEof
+                => break,
                 Err(e) => return Err(e)
             };
         }
@@ -265,7 +286,7 @@ impl WasmBinary for Module {
 
 /// needs manual impl because of block handling: End op-code terminates body, but only if block stack is empty
 impl WasmBinary for Expr {
-    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
+    fn decode<R: io::Read + io::Seek>(reader: &mut R) -> Result<Self, Error> {
         let mut instructions = Vec::new();
 
         let mut block_depth = 0;
@@ -298,12 +319,13 @@ impl WasmBinary for Expr {
 /// needs manual impl because of compressed format: even though BlockType is "logically" an enum,
 /// it has no tag, because they know that 0x40 (empty block) and ValType are disjoint.
 impl WasmBinary for BlockType {
-    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
+    fn decode<R: io::Read + io::Seek>(reader: &mut R) -> Result<Self, Error> {
         Ok(BlockType(match u8::decode(reader)? {
             0x40 => None,
-            byte => {
-                let buf = [byte; 1];
-                Some(ValType::decode(&mut &buf[..])?)
+            _ => {
+                // Back up reader by one byte and retry, now interpreting as ValType.
+                reader.seek(io::SeekFrom::Current(-1))?;
+                Some(ValType::decode(reader)?)
             }
         }))
     }
@@ -319,7 +341,7 @@ impl WasmBinary for BlockType {
 /// needs manual impl because the tag if max is present comes at the beginning of the struct, not
 /// before the max field.
 impl WasmBinary for Limits {
-    fn decode<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
+    fn decode<R: io::Read + io::Seek>(reader: &mut R) -> Result<Self, Error> {
         Ok(match u8::decode(reader)? {
             0x00 => Limits {
                 initial_size: u32::decode(reader)?,
@@ -351,6 +373,6 @@ impl WasmBinary for Limits {
 }
 
 impl<T> WasmBinary for PhantomData<T> {
-    fn decode<R: io::Read>(_: &mut R) -> Result<Self, Error> { Ok(PhantomData) }
+    fn decode<R: io::Read + io::Seek>(_: &mut R) -> Result<Self, Error> { Ok(PhantomData) }
     fn encode<W: io::Write>(&self, _: &mut W) -> io::Result<usize> { Ok(0) }
 }

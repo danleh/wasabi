@@ -61,7 +61,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     quote!(
         impl #impl_generics WasmBinary for #data_name #ty_generics #where_clause {
-            fn decode<R: ::std::io::Read>(reader: &mut R) -> ::std::result::Result<Self, crate::error::Error> {
+            fn decode<R: ::std::io::Read + ::std::io::Seek>(reader: &mut R) -> ::std::result::Result<Self, crate::error::Error> {
                 Ok(#decode_expr)
             }
             fn encode<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<usize> {
