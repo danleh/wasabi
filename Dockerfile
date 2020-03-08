@@ -3,7 +3,7 @@
 # Based on Ubuntu
 ############################################################
 
-FROM rust:1.31.1 as build
+FROM rust:1.41.1 as build
 
 RUN USER=root cargo new --bin wasabi
 WORKDIR /wasabi
