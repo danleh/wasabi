@@ -40,7 +40,7 @@ We offered a tutorial on how to use Wasabi for dynamically analyzing WebAssembly
     > emcc (Emscripten gcc/clang-like replacement) 1.38.1
     ``` 
     
-    * **Rust** (>=1.31.0 stable): ```cargo``` as Rust's package manager and build tool (no need to call ```rustc``` manually) and ```rustup``` for managing different Rust toolchain versions. (See https://www.rust-lang.org/tools/install.)
+    * **Rust**: ```cargo``` as Rust's package manager and build tool (no need to call ```rustc``` manually) and ```rustup``` for managing different Rust toolchain versions. See https://www.rust-lang.org/tools/install. If there are build errors, please make sure you use a recent stable version of Rust.
     ```bash
     curl https://sh.rustup.rs -o rustup-init.sh
     # follow instructions (typically just enter 1 to proceed)
@@ -49,7 +49,7 @@ We offered a tutorial on how to use Wasabi for dynamically analyzing WebAssembly
     
     # test
     cargo --version
-    > cargo 1.31.0-stable
+    > cargo 1.41.1-stable
     ```
 
 - **Wasabi** itself
