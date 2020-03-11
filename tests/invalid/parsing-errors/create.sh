@@ -8,7 +8,6 @@ echo -ne '\x00asm\x02\x00\x00\x00' > version-invalid.wasm
 # last byte: section id 0 == custom section
 echo -ne '\x00asm\x01\x00\x00\x00\x00' > custom-section-size-missing.wasm
 # last byte: section length in bytes (as LEB128)
-echo -ne '\x00asm\x01\x00\x00\x00\x00\x00' > custom-section-size-0-name-missing.wasm
 echo -ne '\x00asm\x01\x00\x00\x00\x00\x01' > custom-section-size-too-large.wasm
 # last byte: custom section name length in bytes (as LEB128)
 # invalid because section size in bytes is zero, so there cannot be enough space for the section name length alone
@@ -20,6 +19,10 @@ echo -ne '\x00asm\x01\x00\x00\x00\xFF' > section-id-invalid.wasm
 # section size: 1 byte
 # type count: 2
 echo -ne '\x00asm\x01\x00\x00\x00\x01\x01\x02' > type-section-too-many-elements-for-size.wasm
+# two function types (both starting with 0x60 and having 0 args and results), 
+echo -ne '\x60\x00\x00\x60\x00\x00' >> type-section-too-many-elements-for-size.wasm
+# section size: 2 bytes
+# type count: 1
 echo -ne '\x00asm\x01\x00\x00\x00\x01\x02\x01' > type-section-elements-missing.wasm
 
 
@@ -27,6 +30,7 @@ echo -ne '\x00asm\x01\x00\x00\x00\x01\x02\x01' > type-section-elements-missing.w
 # start with smallest first
 for file in $(ls -Sr *.wasm)
 do
+    echo ""
     echo "$file"
     wasm-validate "$file"
     cargo run -q -- "$file"
