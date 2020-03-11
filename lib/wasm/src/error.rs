@@ -13,6 +13,7 @@ pub struct Error {
     /// Position of the reader when parsing failed.
     /// I.e., the byte offset in the input binary just before the parsing error.
     pub offset: usize,
+    // TODO add grammar_element: TypeId and remove from Size, Tag, Eof
     /// The type of error.
     pub kind: ErrorKind,
 }

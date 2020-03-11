@@ -20,27 +20,32 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
 
     let decode_expr = match &input.data {
         &Data::Struct(DataStruct { ref fields, .. }) => {
-            let tag: Option<u8> = attributes_to_tag(&input.attrs);
+            // Structs can also be annotated with a tag attribute, which means that the struct
+            // _must_ be preceded by the given byte.
+            let tag_constant: Option<u8> = attributes_to_tag(&input.attrs);
 
-            let decode_tag = tag.map(|tag| quote! {
-                let byte = u8::decode(reader, offset)?;
-                if byte != #tag {
-                    return Err(crate::error::Error::invalid_tag(*offset, stringify!(#data_name), byte));
+            let check_tag = tag_constant.map(|tag_constant| quote! {
+                let tag = crate::binary::read_byte(reader, offset, stringify!(#data_name))?;
+                if tag != #tag_constant {
+                    return Err(crate::error::Error::invalid_tag(*offset, stringify!(#data_name), tag));
                 }
             });
             let decode_fields = decode_fields(&parse_quote!(#data_name), &fields);
 
             quote!({
-                #( #decode_tag )*
+                #( #check_tag )*
                 #decode_fields
             })
         }
         &Data::Enum(DataEnum { ref variants, .. }) => {
             let decode_variants = variants.iter().map(|variant| decode_variant(data_name, variant));
 
-            quote!(match u8::decode(reader, offset)? {
-                #( #decode_variants )*
-                byte => Err(crate::error::Error::invalid_tag(*offset, stringify!(#data_name), byte))?
+            quote!({
+                let tag = crate::binary::read_byte(reader, offset, stringify!(#data_name))?;
+                match tag {
+                    #( #decode_variants )*
+                    byte => Err(crate::error::Error::invalid_tag(*offset, stringify!(#data_name), byte))?
+                }
             })
         }
         _ => unimplemented!("can only derive(WasmBinary) for structs and enums")
@@ -141,7 +146,7 @@ fn encode_variant(super_name: &Ident, variant: &Variant) -> Tokens {
 fn encode_fields(name: &TypePath, tag: Option<u8>, fields: &Fields) -> Tokens {
     let field_names: &Vec<_> = &fields.iter().enumerate().map(encode_field_name).collect();
     let body = quote!({
-        #( bytes_written += #tag.encode(writer)?; )*
+        #( bytes_written += crate::binary::write_byte(writer, #tag)?; )*
         #( bytes_written += #field_names.encode(writer)? );*
     });
     match *fields {

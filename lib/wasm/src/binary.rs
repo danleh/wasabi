@@ -3,7 +3,8 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use rayon::prelude::*;
+// FIXME
+//use rayon::prelude::*;
 use wasabi_leb128::*;
 
 use crate::ast::*;
@@ -20,16 +21,20 @@ pub trait WasmBinary: Sized {
 
 /* Primitive types */
 
-impl WasmBinary for u8 {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let byte = reader.read_u8().add_err_info(*offset, "u8")?;
-        *offset += 1;
-        Ok(byte)
-    }
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        writer.write_u8(*self)?;
-        Ok(1)
-    }
+/// Convenience function for reading a single byte (e.g., an enum tag).
+/// Used by the procedural macro for WasmBinary. Also takes as input the current grammar element
+/// for better error reporting than just "I was just about to parse a byte".
+pub fn read_byte<R: io::Read>(reader: &mut R, offset: &mut usize, grammar_element: &'static str) -> Result<u8, Error> {
+    let byte = reader.read_u8().add_err_info(*offset, grammar_element)?;
+    *offset += 1;
+    Ok(byte)
+}
+
+/// Convenience function for writing a single byte.
+/// This would be equivalent to the WasmBinary method, but since reading bytes is not, it comes here.
+pub fn write_byte<W: io::Write>(writer: &mut W, byte: u8) -> io::Result<usize> {
+    writer.write_u8(byte)?;
+    Ok(1)
 }
 
 impl WasmBinary for u32 {
@@ -108,6 +113,48 @@ impl WasmBinary for f64 {
 
 /* Generic "AST combinators" */
 
+/// Vector of plain bytes.
+impl WasmBinary for Vec<u8> {
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        let offset_before = *offset;
+        let byte_count = usize::decode(reader, offset)?;
+
+        let mut vec = vec![0u8; byte_count];
+        reader.read_exact(&mut vec).add_err_info(offset_before, "bytes")?;
+        *offset += byte_count;
+
+        Ok(vec)
+    }
+
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        let mut bytes_written = self.len().encode(writer)?;
+        writer.write_all(self)?;
+        bytes_written += self.len();
+        Ok(bytes_written)
+    }
+}
+
+/// UTF-8 strings.
+impl WasmBinary for String {
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        // Reuse Vec<u8> implementation, then convert to UTF-8, consuming the buffer so no
+        // re-allocation is necessary.
+        let offset_before = *offset;
+        let buf: Vec<u8> = Vec::decode(reader, offset)?;
+        Ok(String::from_utf8(buf).add_err_info(offset_before)?)
+    }
+
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        // Cannot reuse implementation of Vec<u8> for writing, because we only have the string
+        // borrowed, but conversion via into_bytes requires owning it.
+        // Effectively equal to the Vec<u8> implementation.
+        let mut bytes_written = self.len().encode(writer)?;
+        writer.write_all(self.as_bytes())?;
+        bytes_written += self.len();
+        Ok(bytes_written)
+    }
+}
+
 impl<T: WasmBinary> WasmBinary for WithSize<T> {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
         // The expected size is only necessary to speed up parallel decoding.
@@ -160,12 +207,13 @@ fn limit_prealloc_capacity<T>(element_count: u32) -> usize {
     std::cmp::min(element_count as usize, element_limit)
 }
 
-// see https://webassembly.github.io/spec/core/binary/conventions.html#vectors
+/// Generic vectors of T.
+/// see https://webassembly.github.io/spec/core/binary/conventions.html#vectors
 impl<T: WasmBinary> WasmBinary for Vec<T> {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
         let element_count = u32::decode(reader, offset)?;
 
-        let mut vec: Vec<T> = Vec::with_capacity(limit_prealloc_capacity::<T>(element_count));
+        let mut vec = Vec::with_capacity(limit_prealloc_capacity::<T>(element_count));
         for _ in 0..element_count {
             vec.push(T::decode(reader, offset)?);
         };
@@ -175,26 +223,8 @@ impl<T: WasmBinary> WasmBinary for Vec<T> {
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         let mut bytes_written = self.len().encode(writer)?;
-        for element in self.iter() {
+        for element in self {
             bytes_written += element.encode(writer)?;
-        }
-        Ok(bytes_written)
-    }
-}
-
-impl WasmBinary for String {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        // Reuse Vec<u8> implementation, then consume buf so no re-allocation is necessary
-        let old_offset = *offset;
-        let buf: Vec<u8> = Vec::decode(reader, offset)?;
-        Ok(String::from_utf8(buf).add_err_info(old_offset)?)
-    }
-
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        let mut bytes_written = self.len().encode(writer)?;
-        // TODO use io::copy or similar to directly copy over instead of this loop
-        for byte in self.bytes() {
-            bytes_written += byte.encode(writer)?;
         }
         Ok(bytes_written)
     }
@@ -263,7 +293,7 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
 
 impl WasmBinary for Module {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        // Check magic number
+        // Check magic number.
         let mut magic_number = [0u8; 4];
         reader.read_exact(&mut magic_number).add_err_info(0, "magic number")?;
         if &magic_number != b"\0asm" {
@@ -271,29 +301,23 @@ impl WasmBinary for Module {
         }
         *offset += 4;
 
-        // Check version
+        // Check version.
         let version = reader.read_u32::<LittleEndian>().add_err_info(4, "version")?;
         if version != 1 {
             return Err(Error::new(4, ErrorKind::Version { actual: version }));
         }
         *offset += 4;
 
-        // Parse sections
+        // Parse sections until EOF.
         let mut sections = Vec::new();
         loop {
             match Section::decode(reader, offset) {
                 Ok(section) => sections.push(section),
-                // FIXME this will silently end parsing on EOF (without a domain-specific Wasm error!)
-                // but sometimes, we _do_ expect more data, so not every io::Error::UnexpectedEof
-                // is a valid reason to break!
-                // In particular, I encountered this error during fuzzing: when a binary gets a very
-                // large LEB128, e.g., the size of a Vec (as per the Wasm spec grammar), and we try
-                // to parse that many entries of the Vec, and then there are less entries than
-                // expected, the resulting UnexpectedEof will silently be caught here.
-                // See tests/invalid/oom-large-vector-size.
-                // TODO instead of breaking on an error after/during parsing of a section, we should
-                // check if there is more data, _before_ parsing the next section.
-                Err(Error { kind: ErrorKind::Io(io_err), .. }) if io_err.kind() == io::ErrorKind::UnexpectedEof => break,
+                // If we cannot read the first byte of the next section (the section ID), we are done.
+                // TODO "Stringly-typed" match is brittle, replace grammar_element with TypeId.
+                Err(Error { kind: ErrorKind::Eof { grammar_element: "Section" }, ..}) => break,
+                // All other errors (including Eof in the _middle_ of a section, i.e., on any
+                // type except for Section, are an error and should be reported.
                 Err(e) => return Err(e)
             };
         }
@@ -344,11 +368,12 @@ impl WasmBinary for Expr {
     }
 }
 
-/// needs manual impl because of compressed format: even though BlockType is "logically" an enum,
-/// it has no tag, because they know that 0x40 (empty block) and ValType are disjoint.
+/// Needs manual impl because of compressed format: even though BlockType is "logically" an enum,
+/// it has no tag, because they know that 0x40 (empty block) and ValType bytes are disjoint.
 impl WasmBinary for BlockType {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        Ok(BlockType(match u8::decode(reader, offset)? {
+        let tag = read_byte(reader, offset, "BlockType")?;
+        Ok(BlockType(match tag {
             0x40 => None,
             byte => {
                 // Retry, now interpreting as ValType.
@@ -360,17 +385,18 @@ impl WasmBinary for BlockType {
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         match self {
-            &BlockType(None) => 0x40u8.encode(writer),
+            &BlockType(None) => write_byte(writer, 0x40),
             &BlockType(Some(ref val_type)) => val_type.encode(writer)
         }
     }
 }
 
-/// needs manual impl because the tag if max is present comes at the beginning of the struct, not
+/// Needs manual impl because the tag if max is present comes at the beginning of the struct, not
 /// before the max field.
 impl WasmBinary for Limits {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        Ok(match u8::decode(reader, offset)? {
+        let tag = read_byte(reader, offset, "Limits")?;
+        Ok(match tag {
             0x00 => Limits {
                 initial_size: u32::decode(reader, offset)?,
                 max_size: None,
@@ -387,11 +413,11 @@ impl WasmBinary for Limits {
         let mut bytes_written = 0;
         match self.max_size {
             None => {
-                bytes_written += 0x00u8.encode(writer)?;
+                bytes_written += write_byte(writer, 0x00)?;
                 bytes_written += self.initial_size.encode(writer)?;
             }
             Some(ref max_size) => {
-                bytes_written += 0x01u8.encode(writer)?;
+                bytes_written += write_byte(writer, 0x01)?;
                 bytes_written += self.initial_size.encode(writer)?;
                 bytes_written += max_size.encode(writer)?;
             }
