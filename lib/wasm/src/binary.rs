@@ -9,7 +9,7 @@ use wasabi_leb128::*;
 
 use crate::ast::*;
 use crate::ast::lowlevel::*;
-use crate::error::{Error, ErrorKind, IoResultExt, ResultExt};
+use crate::error::{Error, ErrorKind, ResultExt};
 
 /* Trait and impl for decoding/encoding between binary format (as per spec) and our own formats (see ast module) */
 
@@ -39,7 +39,7 @@ pub fn write_byte<W: io::Write>(writer: &mut W, byte: u8) -> io::Result<usize> {
 
 impl WasmBinary for u32 {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let (value, bytes_read) = reader.read_leb128().add_err_info(*offset)?;
+        let (value, bytes_read) = reader.read_leb128().add_err_info(*offset, "u32")?;
         *offset += bytes_read;
         Ok(value)
     }
@@ -51,7 +51,7 @@ impl WasmBinary for u32 {
 //// FIXME remove this impl: if the wasm spec only allows u32s anyway, why have usize in memory?
 impl WasmBinary for usize {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let (value, bytes_read) = reader.read_leb128().add_err_info(*offset)?;
+        let (value, bytes_read) = reader.read_leb128().add_err_info(*offset, "usize")?;
         *offset += bytes_read;
         Ok(value)
     }
@@ -66,7 +66,7 @@ impl WasmBinary for usize {
 
 impl WasmBinary for i32 {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let (value, bytes_read) = reader.read_leb128().add_err_info(*offset)?;
+        let (value, bytes_read) = reader.read_leb128().add_err_info(*offset, "i32")?;
         *offset += bytes_read;
         Ok(value)
     }
@@ -77,7 +77,7 @@ impl WasmBinary for i32 {
 
 impl WasmBinary for i64 {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let (value, bytes_read) = reader.read_leb128().add_err_info(*offset)?;
+        let (value, bytes_read) = reader.read_leb128().add_err_info(*offset, "i64")?;
         *offset += bytes_read;
         Ok(value)
     }
@@ -120,7 +120,7 @@ impl WasmBinary for Vec<u8> {
         let byte_count = usize::decode(reader, offset)?;
 
         let mut vec = vec![0u8; byte_count];
-        reader.read_exact(&mut vec).add_err_info(offset_before, "bytes")?;
+        reader.read_exact(&mut vec).add_err_info(offset_before, "Vec<u8>")?;
         *offset += byte_count;
 
         Ok(vec)
@@ -141,7 +141,7 @@ impl WasmBinary for String {
         // re-allocation is necessary.
         let offset_before = *offset;
         let buf: Vec<u8> = Vec::decode(reader, offset)?;
-        Ok(String::from_utf8(buf).add_err_info(offset_before)?)
+        Ok(String::from_utf8(buf).add_err_info(offset_before, "String")?)
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
@@ -166,11 +166,13 @@ impl<T: WasmBinary> WasmBinary for WithSize<T> {
         let actual_size_bytes = *offset - offset_before;
 
         if actual_size_bytes != expected_size_bytes as usize {
-            return Err(Error::new(offset_before, ErrorKind::Size {
-                grammar_element: std::any::type_name::<T>(),
-                expected: expected_size_bytes,
-                actual: actual_size_bytes,
-            }));
+            return Err(Error::new(
+                offset_before,
+                std::any::type_name::<T>(),
+                ErrorKind::Size {
+                    expected: expected_size_bytes,
+                    actual: actual_size_bytes,
+                }));
         }
 
         Ok(WithSize(t))
@@ -297,14 +299,14 @@ impl WasmBinary for Module {
         let mut magic_number = [0u8; 4];
         reader.read_exact(&mut magic_number).add_err_info(0, "magic number")?;
         if &magic_number != b"\0asm" {
-            return Err(Error::new(0, ErrorKind::MagicNumber { actual: magic_number }));
+            return Err(Error::new(0, "magic number", ErrorKind::MagicNumber { actual: magic_number }));
         }
         *offset += 4;
 
         // Check version.
         let version = reader.read_u32::<LittleEndian>().add_err_info(4, "version")?;
         if version != 1 {
-            return Err(Error::new(4, ErrorKind::Version { actual: version }));
+            return Err(Error::new(4, "version", ErrorKind::Version { actual: version }));
         }
         *offset += 4;
 
@@ -315,7 +317,7 @@ impl WasmBinary for Module {
                 Ok(section) => sections.push(section),
                 // If we cannot read the first byte of the next section (the section ID), we are done.
                 // TODO "Stringly-typed" match is brittle, replace grammar_element with TypeId.
-                Err(Error { kind: ErrorKind::Eof { grammar_element: "Section" }, ..}) => break,
+                Err(Error { kind: ErrorKind::Eof, grammar_element: "Section", .. }) => break,
                 // All other errors (including Eof in the _middle_ of a section, i.e., on any
                 // type except for Section, are an error and should be reported.
                 Err(e) => return Err(e)

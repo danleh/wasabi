@@ -16,7 +16,7 @@ mod tests;
  */
 
 use crate::ast::{highlevel, lowlevel};
-use crate::error::IoResultExt;
+use crate::error::ResultExt;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use std::path::Path;
