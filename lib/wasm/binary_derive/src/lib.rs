@@ -25,9 +25,9 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
             let tag_constant: Option<u8> = attributes_to_tag(&input.attrs);
 
             let check_tag = tag_constant.map(|tag_constant| quote! {
-                let tag = crate::binary::read_byte(reader, offset, stringify!(#data_name))?;
+                let tag = crate::binary::read_byte::<#data_name, R>(reader, offset)?;
                 if tag != #tag_constant {
-                    return Err(crate::error::Error::invalid_tag(*offset, stringify!(#data_name), tag));
+                    return Err(crate::error::Error::invalid_tag::<#data_name>(*offset, tag));
                 }
             });
             let decode_fields = decode_fields(&parse_quote!(#data_name), &fields);
@@ -41,10 +41,10 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
             let decode_variants = variants.iter().map(|variant| decode_variant(data_name, variant));
 
             quote!({
-                let tag = crate::binary::read_byte(reader, offset, stringify!(#data_name))?;
+                let tag = crate::binary::read_byte::<#data_name, R>(reader, offset)?;
                 match tag {
                     #( #decode_variants )*
-                    byte => Err(crate::error::Error::invalid_tag(*offset, stringify!(#data_name), byte))?
+                    byte => Err(crate::error::Error::invalid_tag::<#data_name>(*offset, byte))?
                 }
             })
         }

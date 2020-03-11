@@ -9,7 +9,7 @@ use wasabi_leb128::*;
 
 use crate::ast::*;
 use crate::ast::lowlevel::*;
-use crate::error::{Error, ErrorKind, ResultExt};
+use crate::error::{AddErrInfo, Error, ErrorKind, SetErrElem};
 
 /* Trait and impl for decoding/encoding between binary format (as per spec) and our own formats (see ast module) */
 
@@ -24,8 +24,9 @@ pub trait WasmBinary: Sized {
 /// Convenience function for reading a single byte (e.g., an enum tag).
 /// Used by the procedural macro for WasmBinary. Also takes as input the current grammar element
 /// for better error reporting than just "I was just about to parse a byte".
-pub fn read_byte<R: io::Read>(reader: &mut R, offset: &mut usize, grammar_element: &'static str) -> Result<u8, Error> {
-    let byte = reader.read_u8().add_err_info(*offset, grammar_element)?;
+// FIXME maybe we can implement this with the trait, but override the grammar_element in its callers
+pub fn read_byte<U, R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<u8, Error> {
+    let byte = reader.read_u8().add_err_info::<U>(*offset)?;
     *offset += 1;
     Ok(byte)
 }
@@ -39,7 +40,7 @@ pub fn write_byte<W: io::Write>(writer: &mut W, byte: u8) -> io::Result<usize> {
 
 impl WasmBinary for u32 {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let (value, bytes_read) = reader.read_leb128().add_err_info(*offset, "u32")?;
+        let (value, bytes_read) = reader.read_leb128().add_err_info::<u32>(*offset)?;
         *offset += bytes_read;
         Ok(value)
     }
@@ -51,7 +52,7 @@ impl WasmBinary for u32 {
 //// FIXME remove this impl: if the wasm spec only allows u32s anyway, why have usize in memory?
 impl WasmBinary for usize {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let (value, bytes_read) = reader.read_leb128().add_err_info(*offset, "usize")?;
+        let (value, bytes_read) = reader.read_leb128().add_err_info::<usize>(*offset)?;
         *offset += bytes_read;
         Ok(value)
     }
@@ -66,7 +67,7 @@ impl WasmBinary for usize {
 
 impl WasmBinary for i32 {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let (value, bytes_read) = reader.read_leb128().add_err_info(*offset, "i32")?;
+        let (value, bytes_read) = reader.read_leb128().add_err_info::<u32>(*offset)?;
         *offset += bytes_read;
         Ok(value)
     }
@@ -77,7 +78,7 @@ impl WasmBinary for i32 {
 
 impl WasmBinary for i64 {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let (value, bytes_read) = reader.read_leb128().add_err_info(*offset, "i64")?;
+        let (value, bytes_read) = reader.read_leb128().add_err_info::<i64>(*offset)?;
         *offset += bytes_read;
         Ok(value)
     }
@@ -88,7 +89,7 @@ impl WasmBinary for i64 {
 
 impl WasmBinary for f32 {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let value = reader.read_f32::<LittleEndian>().add_err_info(*offset, "f32")?;
+        let value = reader.read_f32::<LittleEndian>().add_err_info::<f32>(*offset)?;
         *offset += 4;
         Ok(value)
     }
@@ -100,7 +101,7 @@ impl WasmBinary for f32 {
 
 impl WasmBinary for f64 {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let value = reader.read_f64::<LittleEndian>().add_err_info(*offset, "f64")?;
+        let value = reader.read_f64::<LittleEndian>().add_err_info::<f64>(*offset)?;
         *offset += 8;
         Ok(value)
     }
@@ -117,10 +118,10 @@ impl WasmBinary for f64 {
 impl WasmBinary for Vec<u8> {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
         let offset_before = *offset;
-        let byte_count = usize::decode(reader, offset)?;
+        let byte_count = usize::decode(reader, offset).set_err_elem::<Self>()?;
 
         let mut vec = vec![0u8; byte_count];
-        reader.read_exact(&mut vec).add_err_info(offset_before, "Vec<u8>")?;
+        reader.read_exact(&mut vec).add_err_info::<Vec<u8>>(offset_before)?;
         *offset += byte_count;
 
         Ok(vec)
@@ -140,8 +141,8 @@ impl WasmBinary for String {
         // Reuse Vec<u8> implementation, then convert to UTF-8, consuming the buffer so no
         // re-allocation is necessary.
         let offset_before = *offset;
-        let buf: Vec<u8> = Vec::decode(reader, offset)?;
-        Ok(String::from_utf8(buf).add_err_info(offset_before, "String")?)
+        let buf: Vec<u8> = Vec::decode(reader, offset).set_err_elem::<String>()?;
+        Ok(String::from_utf8(buf).add_err_info::<String>(offset_before)?)
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
@@ -159,16 +160,15 @@ impl<T: WasmBinary> WasmBinary for WithSize<T> {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
         // The expected size is only necessary to speed up parallel decoding.
         // In this (serial) case, we just use it for error checking.
-        let expected_size_bytes = u32::decode(reader, offset)?;
+        let expected_size_bytes = u32::decode(reader, offset).set_err_elem::<Self>()?;
 
         let offset_before = *offset;
         let t = T::decode(reader, offset)?;
         let actual_size_bytes = *offset - offset_before;
 
         if actual_size_bytes != expected_size_bytes as usize {
-            return Err(Error::new(
+            return Err(Error::new::<T>(
                 offset_before,
-                std::any::type_name::<T>(),
                 ErrorKind::Size {
                     expected: expected_size_bytes,
                     actual: actual_size_bytes,
@@ -213,7 +213,7 @@ fn limit_prealloc_capacity<T>(element_count: u32) -> usize {
 /// see https://webassembly.github.io/spec/core/binary/conventions.html#vectors
 impl<T: WasmBinary> WasmBinary for Vec<T> {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let element_count = u32::decode(reader, offset)?;
+        let element_count = u32::decode(reader, offset).set_err_elem::<Self>()?;
 
         let mut vec = Vec::with_capacity(limit_prealloc_capacity::<T>(element_count));
         for _ in 0..element_count {
@@ -297,29 +297,29 @@ impl WasmBinary for Module {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
         // Check magic number.
         let mut magic_number = [0u8; 4];
-        reader.read_exact(&mut magic_number).add_err_info(0, "magic number")?;
+        reader.read_exact(&mut magic_number).add_err_info::<Module>(0)?;
         if &magic_number != b"\0asm" {
-            return Err(Error::new(0, "magic number", ErrorKind::MagicNumber { actual: magic_number }));
+            return Err(Error::new::<Module>(0, ErrorKind::MagicNumber { actual: magic_number }));
         }
         *offset += 4;
 
         // Check version.
-        let version = reader.read_u32::<LittleEndian>().add_err_info(4, "version")?;
+        let version = reader.read_u32::<LittleEndian>().add_err_info::<Module>(4)?;
         if version != 1 {
-            return Err(Error::new(4, "version", ErrorKind::Version { actual: version }));
+            return Err(Error::new::<Module>(4, ErrorKind::Version { actual: version }));
         }
         *offset += 4;
 
         // Parse sections until EOF.
         let mut sections = Vec::new();
         loop {
+            let offset_before = *offset;
             match Section::decode(reader, offset) {
                 Ok(section) => sections.push(section),
-                // If we cannot read the first byte of the next section (the section ID), we are done.
-                // TODO "Stringly-typed" match is brittle, replace grammar_element with TypeId.
-                Err(Error { kind: ErrorKind::Eof, grammar_element: "Section", .. }) => break,
-                // All other errors (including Eof in the _middle_ of a section, i.e., on any
-                // type except for Section, are an error and should be reported.
+                // If we cannot even read one more byte (the ID of the next section), we are done.
+                Err(Error { kind: ErrorKind::Eof, .. }) if *offset == offset_before => break,
+                // All other errors (including Eof in the _middle_ of a section, i.e.,
+                // where we read at least some bytes), are an error and should be reported.
                 Err(e) => return Err(e)
             };
         }
@@ -374,7 +374,7 @@ impl WasmBinary for Expr {
 /// it has no tag, because they know that 0x40 (empty block) and ValType bytes are disjoint.
 impl WasmBinary for BlockType {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let tag = read_byte(reader, offset, "BlockType")?;
+        let tag = read_byte::<BlockType, R>(reader, offset).set_err_elem::<Self>()?;
         Ok(BlockType(match tag {
             0x40 => None,
             byte => {
@@ -397,7 +397,7 @@ impl WasmBinary for BlockType {
 /// before the max field.
 impl WasmBinary for Limits {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let tag = read_byte(reader, offset, "Limits")?;
+        let tag = read_byte::<Limits, R>(reader, offset).set_err_elem::<Self>()?;
         Ok(match tag {
             0x00 => Limits {
                 initial_size: u32::decode(reader, offset)?,
@@ -407,7 +407,7 @@ impl WasmBinary for Limits {
                 initial_size: u32::decode(reader, offset)?,
                 max_size: Some(u32::decode(reader, offset)?),
             },
-            byte => Err(Error::invalid_tag(*offset, "limits", byte))?
+            byte => Err(Error::invalid_tag::<Limits>(*offset, byte))?
         })
     }
 

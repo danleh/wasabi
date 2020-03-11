@@ -16,14 +16,14 @@ mod tests;
  */
 
 use crate::ast::{highlevel, lowlevel};
-use crate::error::ResultExt;
+use crate::error::AddErrInfo;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use std::path::Path;
 
 impl lowlevel::Module {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
-        Self::decode(&mut BufReader::new(File::open(path).add_err_info(0, "file")?), &mut 0)
+        Self::decode(&mut BufReader::new(File::open(path).add_err_info::<File>(0)?), &mut 0)
     }
 
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> io::Result<usize> {

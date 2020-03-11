@@ -13,7 +13,7 @@ pub struct Module {
 #[derive(Debug, Clone)]
 pub struct WithSize<T>(pub T);
 
-/// Just a marker to indicate that parallel decoding/encoding is possible
+/// Just a marker to indicate that parallel decoding/encoding is possible.
 #[derive(Debug, Clone)]
 pub struct Parallel<T>(pub T);
 

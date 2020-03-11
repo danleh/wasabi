@@ -1,3 +1,4 @@
+use std::any;
 use std::error;
 use std::fmt;
 use std::io;
@@ -13,11 +14,21 @@ pub struct Error {
     /// Position of the reader when parsing failed.
     /// I.e., the byte offset in the input binary just before the parsing error.
     pub offset: usize,
-    /// Grammar element that we attempted to parse when the error occurred.
-    // TODO change to TypeId
-    pub grammar_element: &'static str,
+
     /// The type of error.
     pub kind: ErrorKind,
+
+    /// Grammar element that we attempted to parse when the error occurred.
+    /// Tries to be more high-level than just primitive types. E.g., if parsing of a section size
+    /// failed, we would want "Section" here, not "u32".
+    // TODO This is makeshift run-time type information, is there a better way to do this?
+    // Some things I tried that do not work:
+    // - PhantomData: pollutes Error with a type parameter and becomes too unwieldy.
+    // - TypeId: does not allow to derive the type_name from it, it is basically just a u64.
+    // - Any: would have to produce a value of that type, but the point is that I could not parse
+    // that type in the first place, so would have to introduce a dummy value.
+    // - hand-written &str: does not work inside derived impls, where
+    pub grammar_element: String,
 }
 
 #[derive(Debug)]
@@ -50,13 +61,13 @@ impl fmt::Display for Error {
             ErrorKind::Version { actual } =>
                 write!(f, "version was 0x{:x}, but can only parse WebAssembly v1 (MVP)", actual),
             ErrorKind::Size { expected, actual } =>
-                write!(f, "wrong size for {}: expected (declared in the binary) {} bytes, but actually read {} bytes", self.grammar_element, expected, actual),
+                write!(f, "declared size doesn't match after parsing {}: expected {} bytes, but actually read {} bytes", self.grammar_element, expected, actual),
             ErrorKind::Tag { actual } =>
                 write!(f, "unexpected tag byte 0x{:02x} for {}", actual, self.grammar_element),
             ErrorKind::Eof =>
-                write!(f, "unexpected end of input while reading {}", self.grammar_element),
+                write!(f, "unexpected end of input while parsing {}", self.grammar_element),
             ErrorKind::Leb128(_) =>
-                write!(f, "invalid LEB128 number inside {}", self.grammar_element),
+                write!(f, "invalid LEB128 number while parsing {}", self.grammar_element),
             ErrorKind::Utf8(_) => f.write_str("invalid UTF-8 string"),
             ErrorKind::Io(_) => f.write_str("I/O error")
         }
@@ -75,42 +86,61 @@ impl error::Error for Error {
 }
 
 /// Extension trait for Result<T, E> that allows convenient conversion of the error to our own type.
-pub trait ResultExt<T> {
+pub trait AddErrInfo<T> {
+    // FIXME documentation
+    /// TODO document U
     /// Adds the error offset and the current parsed type as additional information to the existing
     /// error. Does not change the Ok(_) variant of the Result.
-    fn add_err_info(self: Self, offset: usize, grammar_element: &'static str) -> Result<T, Error>;
+    fn add_err_info<U>(self: Self, offset: usize) -> Result<T, Error>;
 }
 
-impl<T> ResultExt<T> for Result<T, ParseLeb128Error> {
-    fn add_err_info(self: Result<T, ParseLeb128Error>, offset: usize, grammar_element: &'static str) -> Result<T, Error> {
-        self.map_err(|err| Error { offset, grammar_element, kind: ErrorKind::Leb128(err) })
+impl<T> AddErrInfo<T> for Result<T, ParseLeb128Error> {
+    fn add_err_info<U>(self: Result<T, ParseLeb128Error>, offset: usize) -> Result<T, Error> {
+        self.map_err(|err| Error::new::<U>(offset, ErrorKind::Leb128(err)))
     }
 }
 
-impl<T> ResultExt<T> for Result<T, FromUtf8Error> {
-    fn add_err_info(self: Result<T, FromUtf8Error>, offset: usize, grammar_element: &'static str) -> Result<T, Error> {
-        self.map_err(|err| Error { offset, grammar_element, kind: ErrorKind::Utf8(err) })
+impl<T> AddErrInfo<T> for Result<T, FromUtf8Error> {
+    fn add_err_info<U>(self: Result<T, FromUtf8Error>, offset: usize) -> Result<T, Error> {
+        self.map_err(|err| Error::new::<U>(offset, ErrorKind::Utf8(err)))
     }
 }
 
-impl<T> ResultExt<T> for Result<T, io::Error> {
-    fn add_err_info(self: io::Result<T>, offset: usize, grammar_element: &'static str) -> Result<T, Error> {
-        self.map_err(|io_err| Error::from_io_err(io_err, offset, grammar_element))
+impl<T> AddErrInfo<T> for Result<T, io::Error> {
+    fn add_err_info<U>(self: io::Result<T>, offset: usize) -> Result<T, Error> {
+        self.map_err(|io_err| Error::from_io_err::<U>(io_err, offset))
+    }
+}
+
+/// Extension trait for Result<T, Error> (i.e., Result with our own error type).
+pub trait SetErrElem<T> {
+    /// Update the grammar element that was currently parsed when the error happened to something
+    /// more specific (e.g., "Section" instead of a not very useful "u32").
+    /// TODO document U
+    fn set_err_elem<U>(self: Self) -> Self;
+}
+
+impl<T> SetErrElem<T> for Result<T, Error> {
+    fn set_err_elem<U>(self: Self) -> Self {
+        self.map_err(|mut err| {
+            err.grammar_element = grammar_element::<U>();
+            err
+        })
     }
 }
 
 impl Error {
-    pub fn new(offset: usize, grammar_element: &'static str, kind: ErrorKind) -> Self {
-        Error { offset, grammar_element, kind }
+    pub fn new<U>(offset: usize, kind: ErrorKind) -> Self {
+        Error { offset, grammar_element: grammar_element::<U>(), kind }
     }
 
     /// Convenience constructor for the most common kind of error.
-    pub fn invalid_tag(offset: usize, grammar_element: &'static str, actual_tag: u8) -> Self {
-        Error::new(offset, grammar_element, ErrorKind::Tag { actual: actual_tag })
+    pub fn invalid_tag<U>(offset: usize, actual_tag: u8) -> Self {
+        Error::new::<U>(offset, ErrorKind::Tag { actual: actual_tag })
     }
 
     /// Conversion from an io::Error has special variant for Eof, where additional information is added.
-    pub fn from_io_err(io_err: io::Error, offset: usize, grammar_element: &'static str) -> Self {
+    pub fn from_io_err<U>(io_err: io::Error, offset: usize) -> Self {
         // Special case EOF io::Errors, because we want to add information which grammar element
         // was currently in the process of parsing.
         let kind = if io_err.kind() == io::ErrorKind::UnexpectedEof {
@@ -118,6 +148,12 @@ impl Error {
         } else {
             ErrorKind::Io(io_err)
         };
-        Error::new(offset, grammar_element, kind)
+        Error::new::<U>(offset, kind)
     }
+}
+
+/// Utitlity function. Makes the type_name a bit more user-friendly by removing at least some common
+/// type path prefixes.
+fn grammar_element<T>() -> String {
+    any::type_name::<T>().replace("alloc::vec::", "")
 }
