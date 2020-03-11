@@ -23,9 +23,9 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
             let tag: Option<u8> = attributes_to_tag(&input.attrs);
 
             let decode_tag = tag.map(|tag| quote! {
-                let byte = u8::decode(reader)?;
+                let byte = u8::decode(reader, offset)?;
                 if byte != #tag {
-                    return Err(crate::error::Error::invalid_tag(stringify!(#data_name), byte));
+                    return Err(crate::error::Error::invalid_tag(*offset, stringify!(#data_name), byte));
                 }
             });
             let decode_fields = decode_fields(&parse_quote!(#data_name), &fields);
@@ -38,9 +38,9 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
         &Data::Enum(DataEnum { ref variants, .. }) => {
             let decode_variants = variants.iter().map(|variant| decode_variant(data_name, variant));
 
-            quote!(match u8::decode(reader)? {
+            quote!(match u8::decode(reader, offset)? {
                 #( #decode_variants )*
-                byte => Err(crate::error::Error::invalid_tag(stringify!(#data_name), byte))?
+                byte => Err(crate::error::Error::invalid_tag(*offset, stringify!(#data_name), byte))?
             })
         }
         _ => unimplemented!("can only derive(WasmBinary) for structs and enums")
@@ -61,7 +61,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     quote!(
         impl #impl_generics WasmBinary for #data_name #ty_generics #where_clause {
-            fn decode<R: ::std::io::Read + ::std::io::Seek>(reader: &mut R) -> ::std::result::Result<Self, crate::error::Error> {
+            fn decode<R: ::std::io::Read>(reader: &mut R, offset: &mut usize) -> ::std::result::Result<Self, crate::error::Error> {
                 Ok(#decode_expr)
             }
             fn encode<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<usize> {
@@ -110,7 +110,7 @@ fn decode_fields(name: &TypePath, fields: &Fields) -> Tokens {
 fn decode_field(field: &Field) -> Tokens {
     let field_name = field.ident;
     let field_ty = remove_type_arguments(&field.ty);
-    quote!( #( #field_name: )* #field_ty::decode(reader)? )
+    quote!( #( #field_name: )* #field_ty::decode(reader, offset)? )
 }
 
 /// Transform, e.g., Vec<T> into just Vec. Useful when calling trait methods on a generic type, i.e.,
