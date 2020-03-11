@@ -132,6 +132,7 @@ pub enum Instr {
 
     #[tag = 0x0c] Br(Idx<Label>),
     #[tag = 0x0d] BrIf(Idx<Label>),
+    // TODO use named fields here
     #[tag = 0x0e] BrTable(Vec<Idx<Label>>, Idx<Label>),
 
     #[tag = 0x0f] Return,
