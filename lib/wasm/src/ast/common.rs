@@ -154,10 +154,13 @@ pub enum Mutability {
 #[derive(WasmBinary)]
 // TODO Idx<T> and Idx<U> cannot be distinguished at runtime, which is potentially bad.
 // Could we include a "generic tag" somewhere in the Idx?
+// TODO remove pub from usize, force everybody to use into to usize conversion
+// TODO use u32 instead of usize, since that is what is allowed by wasm anyway.
 pub struct Idx<T>(pub usize, PhantomData<T>);
 
 impl<T> From<usize> for Idx<T> {
     #[inline]
+    // TODO panic if usize > u32::MAX
     fn from(u: usize) -> Self { Idx(u, PhantomData) }
 }
 
