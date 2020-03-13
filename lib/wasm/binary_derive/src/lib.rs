@@ -25,7 +25,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
             let tag_constant: Option<u8> = attributes_to_tag(&input.attrs);
 
             let check_tag = tag_constant.map(|tag_constant| quote! {
-                let tag = crate::binary::read_byte::<#data_name, R>(reader, offset)?;
+                let tag = u8::decode(reader, offset).set_err_elem::<Self>()?;
                 if tag != #tag_constant {
                     return Err(crate::error::Error::invalid_tag::<#data_name>(*offset, tag));
                 }
@@ -41,7 +41,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
             let decode_variants = variants.iter().map(|variant| decode_variant(data_name, variant));
 
             quote!({
-                let tag = crate::binary::read_byte::<#data_name, R>(reader, offset)?;
+                let tag = u8::decode(reader, offset).set_err_elem::<Self>()?;
                 match tag {
                     #( #decode_variants )*
                     byte => Err(crate::error::Error::invalid_tag::<#data_name>(*offset, byte))?
@@ -67,6 +67,7 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
     quote!(
         impl #impl_generics WasmBinary for #data_name #ty_generics #where_clause {
             fn decode<R: ::std::io::Read>(reader: &mut R, offset: &mut usize) -> ::std::result::Result<Self, crate::error::Error> {
+                use crate::error::SetErrElem;
                 Ok(#decode_expr)
             }
             fn encode<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<usize> {
@@ -146,7 +147,7 @@ fn encode_variant(super_name: &Ident, variant: &Variant) -> Tokens {
 fn encode_fields(name: &TypePath, tag: Option<u8>, fields: &Fields) -> Tokens {
     let field_names: &Vec<_> = &fields.iter().enumerate().map(encode_field_name).collect();
     let body = quote!({
-        #( bytes_written += crate::binary::write_byte(writer, #tag)?; )*
+        #( bytes_written += #tag.encode(writer)?; )*
         #( bytes_written += #field_names.encode(writer)? );*
     });
     match *fields {

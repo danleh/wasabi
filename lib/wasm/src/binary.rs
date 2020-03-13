@@ -9,7 +9,7 @@ use wasabi_leb128::*;
 
 use crate::ast::*;
 use crate::ast::lowlevel::*;
-use crate::error::{AddErrInfo, Error, ErrorKind, SetErrElem};
+use crate::error::{Error, ErrorKind, AddErrInfo, SetErrElem};
 
 /* Trait and impl for decoding/encoding between binary format (as per spec) and our own formats (see ast module) */
 
@@ -21,21 +21,17 @@ pub trait WasmBinary: Sized {
 
 /* Primitive types */
 
-/// Convenience function for reading a single byte (e.g., an enum tag).
-/// Used by the procedural macro for WasmBinary. Also takes as input the current grammar element
-/// for better error reporting than just "I was just about to parse a byte".
-// FIXME maybe we can implement this with the trait, but override the grammar_element in its callers
-pub fn read_byte<U, R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<u8, Error> {
-    let byte = reader.read_u8().add_err_info::<U>(*offset)?;
-    *offset += 1;
-    Ok(byte)
-}
+impl WasmBinary for u8 {
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        let byte = reader.read_u8().add_err_info::<u8>(*offset)?;
+        *offset += 1;
+        Ok(byte)
+    }
 
-/// Convenience function for writing a single byte.
-/// This would be equivalent to the WasmBinary method, but since reading bytes is not, it comes here.
-pub fn write_byte<W: io::Write>(writer: &mut W, byte: u8) -> io::Result<usize> {
-    writer.write_u8(byte)?;
-    Ok(1)
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        writer.write_u8(*self)?;
+        Ok(1)
+    }
 }
 
 impl WasmBinary for u32 {
@@ -113,48 +109,6 @@ impl WasmBinary for f64 {
 
 
 /* Generic "AST combinators" */
-
-/// Vector of plain bytes.
-impl WasmBinary for Vec<u8> {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let offset_before = *offset;
-        let byte_count = usize::decode(reader, offset).set_err_elem::<Self>()?;
-
-        let mut vec = vec![0u8; byte_count];
-        reader.read_exact(&mut vec).add_err_info::<Vec<u8>>(offset_before)?;
-        *offset += byte_count;
-
-        Ok(vec)
-    }
-
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        let mut bytes_written = self.len().encode(writer)?;
-        writer.write_all(self)?;
-        bytes_written += self.len();
-        Ok(bytes_written)
-    }
-}
-
-/// UTF-8 strings.
-impl WasmBinary for String {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        // Reuse Vec<u8> implementation, then convert to UTF-8, consuming the buffer so no
-        // re-allocation is necessary.
-        let offset_before = *offset;
-        let buf: Vec<u8> = Vec::decode(reader, offset).set_err_elem::<String>()?;
-        Ok(String::from_utf8(buf).add_err_info::<String>(offset_before)?)
-    }
-
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        // Cannot reuse implementation of Vec<u8> for writing, because we only have the string
-        // borrowed, but conversion via into_bytes requires owning it.
-        // Effectively equal to the Vec<u8> implementation.
-        let mut bytes_written = self.len().encode(writer)?;
-        writer.write_all(self.as_bytes())?;
-        bytes_written += self.len();
-        Ok(bytes_written)
-    }
-}
 
 impl<T: WasmBinary> WasmBinary for WithSize<T> {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
@@ -290,6 +244,26 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
 //    }
 //}
 
+/// UTF-8 strings.
+impl WasmBinary for String {
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        // Reuse Vec<u8> implementation, then convert to UTF-8, consuming the buffer so no
+        // re-allocation is necessary.
+        let offset_before = *offset;
+        let buf: Vec<u8> = Vec::decode(reader, offset).set_err_elem::<String>()?;
+        Ok(String::from_utf8(buf).add_err_info::<String>(offset_before)?)
+    }
+
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        // Cannot reuse implementation of Vec<u8> for writing, because we only have the string
+        // borrowed, but conversion via into_bytes requires owning it.
+        let mut bytes_written = self.len().encode(writer)?;
+        writer.write_all(self.as_bytes())?;
+        bytes_written += self.len();
+        Ok(bytes_written)
+    }
+}
+
 
 /* Special cases that cannot be derived and need a manual impl */
 
@@ -317,7 +291,7 @@ impl WasmBinary for Module {
             match Section::decode(reader, offset) {
                 Ok(section) => sections.push(section),
                 // If we cannot even read one more byte (the ID of the next section), we are done.
-                Err(Error { kind: ErrorKind::Eof, .. }) if *offset == offset_before => break,
+                Err(e) if e.kind() == &ErrorKind::Eof && e.offset() == offset_before => break,
                 // All other errors (including Eof in the _middle_ of a section, i.e.,
                 // where we read at least some bytes), are an error and should be reported.
                 Err(e) => return Err(e)
@@ -374,7 +348,7 @@ impl WasmBinary for Expr {
 /// it has no tag, because they know that 0x40 (empty block) and ValType bytes are disjoint.
 impl WasmBinary for BlockType {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let tag = read_byte::<BlockType, R>(reader, offset).set_err_elem::<Self>()?;
+        let tag = u8::decode(reader, offset).set_err_elem::<Self>()?;
         Ok(BlockType(match tag {
             0x40 => None,
             byte => {
@@ -387,7 +361,7 @@ impl WasmBinary for BlockType {
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         match self {
-            &BlockType(None) => write_byte(writer, 0x40),
+            &BlockType(None) => 0x40u8.encode(writer),
             &BlockType(Some(ref val_type)) => val_type.encode(writer)
         }
     }
@@ -397,7 +371,7 @@ impl WasmBinary for BlockType {
 /// before the max field.
 impl WasmBinary for Limits {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let tag = read_byte::<Limits, R>(reader, offset).set_err_elem::<Self>()?;
+        let tag = u8::decode(reader, offset).set_err_elem::<Self>()?;
         Ok(match tag {
             0x00 => Limits {
                 initial_size: u32::decode(reader, offset)?,
@@ -415,11 +389,11 @@ impl WasmBinary for Limits {
         let mut bytes_written = 0;
         match self.max_size {
             None => {
-                bytes_written += write_byte(writer, 0x00)?;
+                bytes_written += 0x00u8.encode(writer)?;
                 bytes_written += self.initial_size.encode(writer)?;
             }
             Some(ref max_size) => {
-                bytes_written += write_byte(writer, 0x01)?;
+                bytes_written += 0x01u8.encode(writer)?;
                 bytes_written += self.initial_size.encode(writer)?;
                 bytes_written += max_size.encode(writer)?;
             }
