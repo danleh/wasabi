@@ -354,6 +354,7 @@ impl WasmBinary for BlockType {
             byte => {
                 // Retry, now interpreting as ValType.
                 let buf = [byte; 1];
+                *offset -= 1;
                 Some(ValType::decode(&mut &buf[..], offset)?)
             }
         }))
