@@ -8,7 +8,7 @@ use wasabi_leb128::*;
 
 use crate::ast::*;
 use crate::ast::lowlevel::*;
-use crate::error::{Error, ErrorKind, AddErrInfo, SetErrElem};
+use crate::error::{AddErrInfo, Error, ErrorKind, SetErrElem};
 
 /* Trait and impl for decoding/encoding between binary format (as per spec) and our own formats (see ast module) */
 
@@ -62,7 +62,7 @@ impl WasmBinary for usize {
 
 impl WasmBinary for i32 {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let (value, bytes_read) = reader.read_leb128().add_err_info::<u32>(*offset)?;
+        let (value, bytes_read) = reader.read_leb128().add_err_info::<i32>(*offset)?;
         *offset += bytes_read;
         Ok(value)
     }
