@@ -3,7 +3,7 @@ use std::fmt;
 
 use super::{*, ValType::*};
 
-use self::{GlobalOp::*, LoadOp::*, LocalOp::*, StoreOp::*};
+use self::{LoadOp::*, StoreOp::*};
 
 /* High-level AST:
     - types are inlined instead of referenced by type idx (i.e., no manual handling of Type "pool")
@@ -128,12 +128,10 @@ pub enum Instr {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-// TODO Remove Local prefix from variants, just use LocalOp::Get to disambiguate against GlobalOp.
-pub enum LocalOp { LocalGet, LocalSet, LocalTee }
+pub enum LocalOp { Get, Set, Tee }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-// TODO Remove Global prefix from variants, just use GlobalOp::Get to disambiguate against LocalOp.
-pub enum GlobalOp { GlobalGet, GlobalSet }
+pub enum GlobalOp { Get, Set }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum LoadOp {
@@ -474,11 +472,11 @@ impl Instr {
             CallIndirect(_, _) => "call_indirect",
             Drop => "drop",
             Select => "select",
-            Local(LocalGet, _) => "local.get",
-            Local(LocalSet, _) => "local.set",
-            Local(LocalTee, _) => "local.tee",
-            Global(GlobalGet, _) => "global.get",
-            Global(GlobalSet, _) => "global.set",
+            Local(LocalOp::Get, _) => "local.get",
+            Local(LocalOp::Set, _) => "local.set",
+            Local(LocalOp::Tee, _) => "local.tee",
+            Global(GlobalOp::Get, _) => "global.get",
+            Global(GlobalOp::Set, _) => "global.set",
             MemorySize(_) => "memory.size",
             MemoryGrow(_) => "memory.grow",
             Const(Val::I32(_)) => "i32.const",

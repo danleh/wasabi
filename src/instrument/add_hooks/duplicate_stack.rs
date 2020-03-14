@@ -12,15 +12,15 @@ pub fn save_stack_to_locals(locals: &[Idx<ast::Local>]) -> Vec<Instr> {
     let mut instrs = Vec::new();
     // copy stack values into locals
     for &local in locals.iter().skip(1).rev() {
-        instrs.push(Local(LocalSet, local));
+        instrs.push(Local(Set, local));
     }
     // optimization: for first local on the stack / last one saved use local.tee instead of local.set + local.get
     for &local in locals.iter().next() {
-        instrs.push(Local(LocalTee, local));
+        instrs.push(Local(Tee, local));
     }
     // and restore (saving has removed them from the stack)
     for &local in locals.iter().skip(1) {
-        instrs.push(Local(LocalGet, local));
+        instrs.push(Local(Get, local));
     }
     return instrs;
 }
@@ -34,7 +34,7 @@ pub fn restore_locals_with_i64_handling(
     let mut instrs = Vec::new();
     for &local in locals {
         instrs.append(&mut super::convert_i64::convert_i64_instr(
-            Local(LocalGet, local),
+            Local(Get, local),
             function.local_type(local),
         ));
     }

@@ -186,11 +186,11 @@ fn from_lowlevel_instr(instr: ll::Instr, types: &[FunctionType]) -> hl::Instr {
         ll::Instr::Drop => hl::Instr::Drop,
         ll::Instr::Select => hl::Instr::Select,
 
-        ll::Instr::LocalGet(local_idx) => hl::Instr::Local(hl::LocalOp::LocalGet, local_idx.into_inner().into()),
-        ll::Instr::LocalSet(local_idx) => hl::Instr::Local(hl::LocalOp::LocalSet, local_idx.into_inner().into()),
-        ll::Instr::LocalTee(local_idx) => hl::Instr::Local(hl::LocalOp::LocalTee, local_idx.into_inner().into()),
-        ll::Instr::GlobalGet(global_idx) => hl::Instr::Global(hl::GlobalOp::GlobalGet, global_idx.into_inner().into()),
-        ll::Instr::GlobalSet(global_idx) => hl::Instr::Global(hl::GlobalOp::GlobalSet, global_idx.into_inner().into()),
+        ll::Instr::LocalGet(local_idx) => hl::Instr::Local(hl::LocalOp::Get, local_idx.into_inner().into()),
+        ll::Instr::LocalSet(local_idx) => hl::Instr::Local(hl::LocalOp::Set, local_idx.into_inner().into()),
+        ll::Instr::LocalTee(local_idx) => hl::Instr::Local(hl::LocalOp::Tee, local_idx.into_inner().into()),
+        ll::Instr::GlobalGet(global_idx) => hl::Instr::Global(hl::GlobalOp::Get, global_idx.into_inner().into()),
+        ll::Instr::GlobalSet(global_idx) => hl::Instr::Global(hl::GlobalOp::Set, global_idx.into_inner().into()),
 
         ll::Instr::I32Load(memarg) => hl::Instr::Load(hl::LoadOp::I32Load, memarg),
         ll::Instr::I64Load(memarg) => hl::Instr::Load(hl::LoadOp::I64Load, memarg),
@@ -643,11 +643,11 @@ fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
         hl::Instr::Drop => ll::Instr::Drop,
         hl::Instr::Select => ll::Instr::Select,
 
-        hl::Instr::Local(hl::LocalOp::LocalGet, local_idx) => ll::Instr::LocalGet(local_idx.into_inner().into()),
-        hl::Instr::Local(hl::LocalOp::LocalSet, local_idx) => ll::Instr::LocalSet(local_idx.into_inner().into()),
-        hl::Instr::Local(hl::LocalOp::LocalTee, local_idx) => ll::Instr::LocalTee(local_idx.into_inner().into()),
-        hl::Instr::Global(hl::GlobalOp::GlobalGet, global_idx) => ll::Instr::GlobalGet(state.map_global_idx(global_idx.into_inner())),
-        hl::Instr::Global(hl::GlobalOp::GlobalSet, global_idx) => ll::Instr::GlobalSet(state.map_global_idx(global_idx.into_inner())),
+        hl::Instr::Local(hl::LocalOp::Get, local_idx) => ll::Instr::LocalGet(local_idx.into_inner().into()),
+        hl::Instr::Local(hl::LocalOp::Set, local_idx) => ll::Instr::LocalSet(local_idx.into_inner().into()),
+        hl::Instr::Local(hl::LocalOp::Tee, local_idx) => ll::Instr::LocalTee(local_idx.into_inner().into()),
+        hl::Instr::Global(hl::GlobalOp::Get, global_idx) => ll::Instr::GlobalGet(state.map_global_idx(global_idx.into_inner())),
+        hl::Instr::Global(hl::GlobalOp::Set, global_idx) => ll::Instr::GlobalSet(state.map_global_idx(global_idx.into_inner())),
 
         hl::Instr::Load(hl::LoadOp::I32Load, memarg) => ll::Instr::I32Load(memarg),
         hl::Instr::Load(hl::LoadOp::I64Load, memarg) => ll::Instr::I64Load(memarg),
