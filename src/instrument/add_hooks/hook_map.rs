@@ -84,7 +84,7 @@ impl Hook {
 
             Function {
                 // hooks do not return anything
-                type_: FunctionType::new(lowlevel_args, vec![]),
+                type_: FunctionType::new(&lowlevel_args, &[]),
                 import: Some(("__wasabi_hooks".to_string(), lowlevel_name)),
                 code: None,
                 export: Vec::new(),
@@ -159,7 +159,7 @@ impl HookMap {
                 Hook::new(name, args, "load", js_args)
             }
             Store(op, _) => {
-                let ty = op.to_type().inputs[1];
+                let ty = op.to_type().params[1];
                 let args = args!(offset: I32, align: I32, addr: I32, value: ty);
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {{addr, offset, align}}, {}", instr_name, &args[3].to_lowlevel_long_expr());
@@ -174,12 +174,12 @@ impl HookMap {
             }
             Numeric(op) => {
                 let ty = op.to_type();
-                let highlevel_name = match ty.inputs.len() {
+                let highlevel_name = match ty.params.len() {
                     1 => "unary",
                     2 => "binary",
                     _ => unreachable!()
                 };
-                let inputs = ty.inputs.iter().enumerate().map(|(i, &ty)| Arg { name: format!("input{}", i), ty });
+                let inputs = ty.params.iter().enumerate().map(|(i, &ty)| Arg { name: format!("input{}", i), ty });
                 let results = ty.results.iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{}", i), ty });
                 let args = inputs.chain(results).collect::<Vec<_>>();
                 let instr_name = instr.to_name();

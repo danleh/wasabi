@@ -75,11 +75,11 @@ where
     S: Serializer,
 {
     let mut type_str = String::new();
-    for ty in &ty.params {
+    for ty in ty.params.iter() {
         type_str.push(ty.to_char());
     }
     type_str.push('|');
-    for ty in &ty.results {
+    for ty in ty.results.iter() {
         type_str.push(ty.to_char());
     }
     s.serialize_str(&type_str)

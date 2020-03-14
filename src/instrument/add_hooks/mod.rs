@@ -1,8 +1,8 @@
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use serde_json;
-use wasm::ast::highlevel::{Function, GlobalOp::*, Instr, Instr::*, LocalOp::*, Module};
-use wasm::ast::{BlockType, Idx, InstrType, Mutability, Val, ValType::*};
+use wasm::ast::highlevel::{Function, GlobalOp, Instr, Instr::*, LocalOp::*, Module};
+use wasm::ast::{BlockType, Idx, Mutability, Val, ValType::*, FunctionType};
 
 use crate::options::{Hook, HookSet};
 
@@ -230,7 +230,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String>
                 }
                 If(block_ty) => {
                     block_stack.begin_if(iidx);
-                    type_stack.instr(&InstrType::new(&[I32], &[]));
+                    type_stack.instr(&FunctionType::new(&[I32], &[]));
                     type_stack.begin(block_ty);
 
                     // if_ hook for the condition (always executed on either branch)
@@ -352,7 +352,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String>
                     unreachable_depth = 1;
                 }
                 BrIf(target_label) => {
-                    type_stack.instr(&InstrType::new(&[I32], &[]));
+                    type_stack.instr(&FunctionType::new(&[I32], &[]));
 
                     let br_target = block_stack.br_target(target_label);
 
@@ -396,7 +396,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String>
                     instrumented_body.push(instr)
                 }
                 BrTable(ref target_table, default_target) => {
-                    type_stack.instr(&InstrType::new(&[I32], &[]));
+                    type_stack.instr(&FunctionType::new(&[I32], &[]));
 
                     if enabled_hooks.contains(Hook::BrTable)
                         // because end hooks are called at runtime, we need to instrument even if br_table is not enabled
@@ -430,7 +430,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String>
                 /* Control Instructions: Calls & Returns */
 
                 Return => {
-                    type_stack.instr(&InstrType::new(&[], &function.type_.results));
+                    type_stack.instr(&FunctionType::new(&[], &function.type_.results));
 
                     // return hook
                     if enabled_hooks.contains(Hook::Return) {
@@ -460,7 +460,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String>
                 }
                 Call(target_func_idx) => {
                     let ref func_ty = module_info.read().functions[target_func_idx.into_inner()].type_;
-                    type_stack.instr(&func_ty.into());
+                    type_stack.instr(func_ty);
 
                     if enabled_hooks.contains(Hook::Call) {
                         /* pre call hook */
@@ -666,7 +666,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String>
                     type_stack.instr(&ty);
 
                     if enabled_hooks.contains(Hook::Load) {
-                        let addr_tmp = function.add_fresh_local(ty.inputs[0]);
+                        let addr_tmp = function.add_fresh_local(ty.params[0]);
                         let value_tmp = function.add_fresh_local(ty.results[0]);
 
                         instrumented_body.extend_from_slice(&[
@@ -689,8 +689,8 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String>
                     type_stack.instr(&ty);
 
                     if enabled_hooks.contains(Hook::Store) {
-                        let addr_tmp = function.add_fresh_local(ty.inputs[0]);
-                        let value_tmp = function.add_fresh_local(ty.inputs[1]);
+                        let addr_tmp = function.add_fresh_local(ty.params[0]);
+                        let value_tmp = function.add_fresh_local(ty.params[1]);
 
                         instrumented_body.append(&mut save_stack_to_locals(&[addr_tmp, value_tmp]));
                         instrumented_body.extend_from_slice(&[
@@ -729,9 +729,9 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String>
                     let ty = op.to_type();
                     type_stack.instr(&ty);
 
-                    if (enabled_hooks.contains(Hook::Unary) && ty.inputs.len() == 1)
-                        || (enabled_hooks.contains(Hook::Binary) && ty.inputs.len() == 2) {
-                        let input_tmps = function.add_fresh_locals(&ty.inputs);
+                    if (enabled_hooks.contains(Hook::Unary) && ty.params.len() == 1)
+                        || (enabled_hooks.contains(Hook::Binary) && ty.params.len() == 2) {
+                        let input_tmps = function.add_fresh_locals(&ty.params);
                         let result_tmps = function.add_fresh_locals(&ty.results);
 
                         instrumented_body.append(&mut save_stack_to_locals(&input_tmps));
