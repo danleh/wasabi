@@ -114,15 +114,16 @@ impl<T: WasmBinary> WasmBinary for WithSize<T> {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
         // The expected size is only necessary to speed up parallel decoding.
         // In this (serial) case, we just use it for error checking.
+        let offset_size = *offset;
         let expected_size_bytes = u32::decode(reader, offset).set_err_elem::<Self>()?;
 
-        let offset_before = *offset;
+        let offset_before_content = *offset;
         let t = T::decode(reader, offset)?;
-        let actual_size_bytes = *offset - offset_before;
+        let actual_size_bytes = *offset - offset_before_content;
 
         if actual_size_bytes != expected_size_bytes as usize {
             return Err(Error::new::<T>(
-                offset_before,
+                offset_size,
                 ErrorKind::Size {
                     expected: expected_size_bytes,
                     actual: actual_size_bytes,
