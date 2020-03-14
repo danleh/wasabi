@@ -44,18 +44,21 @@ impl WasmBinary for u32 {
     }
 }
 
-//// FIXME remove this impl: if the wasm spec only allows u32s anyway, why have usize in memory?
+// The WebAssembly wasm32 spec only has 32-bit integer indices, so this usize implementation is
+// only for convenience when serializing Rust usize values (e.g., Rust array or vector indices).
+// You should always parse values with the u32 implementation since that ensures correct range.
 impl WasmBinary for usize {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let (value, bytes_read) = reader.read_leb128().add_err_info::<usize>(*offset)?;
-        *offset += bytes_read;
-        Ok(value)
+    fn decode<R: io::Read>(_: &mut R, _: &mut usize) -> Result<Self, Error> {
+        unimplemented!("use u32 impl for parsing wasm32 indices")
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        // FIXME
-//        if *self > u32::max_value() as usize {
-//            Self::error("WASM spec does not allow unsigned larger than u32")?;
-//        }
+        if *self > u32::max_value() as usize {
+            // TODO Proper design would be an error type of its own for serialization, but that
+            // would clutter the interface of all encode() method implementations. So for now
+            // a custom io::Error is sufficient (since it is the only one).
+            return Err(io::Error::new(io::ErrorKind::InvalidData,
+                                      "wasm32 does not allow unsigned int (e.g., indices) larger than 32 bits"))
+        }
         writer.write_leb128(*self)
     }
 }

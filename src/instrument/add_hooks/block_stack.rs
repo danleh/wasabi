@@ -160,7 +160,7 @@ impl BlockStack {
             .block_stack
             .iter()
             .rev()
-            .take(label.0 + 1)
+            .take(label.into_inner() + 1)
             .cloned()
             .collect();
 
@@ -168,7 +168,7 @@ impl BlockStack {
         // backward branch when targeting loops, forward for all other blocks
         let absolute_instr = {
             // the last block of the ended ones is the actual target
-            let target_block = ended_blocks.get(label.0).expect(&format!(
+            let target_block = ended_blocks.get(label.into_inner()).expect(&format!(
                 "invalid label: cannot find target block for {:?}",
                 label
             ));

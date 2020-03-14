@@ -11,6 +11,7 @@ use derive_new::new;
 
 use crate::binary::WasmBinary;
 use binary_derive::WasmBinary;
+use std::convert::TryInto;
 
 /* AST nodes common to high- and low-level representations. */
 
@@ -152,16 +153,20 @@ pub enum Mutability {
 /* Indices */
 
 #[derive(WasmBinary)]
-// TODO Idx<T> and Idx<U> cannot be distinguished at runtime, which is potentially bad.
-// Could we include a "generic tag" somewhere in the Idx?
-// TODO remove pub from usize, force everybody to use into to usize conversion
-// TODO use u32 instead of usize, since that is what is allowed by wasm anyway.
-pub struct Idx<T>(pub usize, PhantomData<T>);
+// T is only used for static distinction between different index spaces, but has no representation
+// at runtime. Since we don't own T, we don't want a "drop check" and must use fn() -> T, as is
+// recommended in the rustonomicon: https://doc.rust-lang.org/beta/nomicon/phantom-data.html
+pub struct Idx<T>(u32, PhantomData<fn() -> T>);
+
+impl<T> Idx<T> {
+    pub fn into_inner(self) -> usize { self.0 as usize }
+}
 
 impl<T> From<usize> for Idx<T> {
     #[inline]
-    // TODO panic if usize > u32::MAX
-    fn from(u: usize) -> Self { Idx(u, PhantomData) }
+    fn from(u: usize) -> Self {
+        Idx(u.try_into().expect("wasm32 only allows u32 indices"), PhantomData)
+    }
 }
 
 // custom Debug: print index type T, don't print PhantomData
@@ -180,7 +185,7 @@ impl<T: TypeName> fmt::Debug for Idx<T> {
 // which we do not want (T is only a marker and not actually contained).
 impl<T> Clone for Idx<T> {
     #[inline]
-    fn clone(&self) -> Self { self.0.into() }
+    fn clone(&self) -> Self { self.into_inner().into() }
 }
 
 impl<T> Copy for Idx<T> {}
