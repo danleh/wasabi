@@ -39,7 +39,7 @@ struct Repr {
     // for the generic T.
     grammar_element: String,
 
-    source: Option<Box<dyn error::Error + 'static>>,
+    source: Option<Box<dyn error::Error + 'static + Send + Sync>>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -87,7 +87,7 @@ impl fmt::Display for Error {
 
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        self.0.source.as_ref().map(|e| e.as_ref())
+        self.0.source.as_ref().map(|e| e.as_ref() as &_)
     }
 }
 
@@ -146,7 +146,7 @@ impl Error {
         }))
     }
 
-    pub fn with_source<GrammarElement, E: error::Error + 'static>(offset: usize, kind: ErrorKind, source: E) -> Self {
+    pub fn with_source<GrammarElement, E: error::Error + 'static + Send + Sync>(offset: usize, kind: ErrorKind, source: E) -> Self {
         let mut err = Error::new::<GrammarElement>(offset, kind);
         err.0.source = Some(Box::new(source));
         err
