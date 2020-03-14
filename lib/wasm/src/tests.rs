@@ -13,6 +13,7 @@ const LARGE_WASM_FILE: &'static str = "../../tests/inputs/real-world/bananabread
 #[test]
 fn decode_encode_is_valid_wasm() {
     for path in wasm_files(TEST_INPUTS).unwrap() {
+        println!("{}", path.display());
         let module = highlevel::Module::from_file(&path)
             .expect(&format!("could not decode valid wasm file '{}'", path.display()));
 
@@ -38,8 +39,10 @@ fn decode_lowlevel_speed(bencher: &mut Bencher) {
     let mut buf = Vec::new();
     File::open(LARGE_WASM_FILE).unwrap().read_to_end(&mut buf).unwrap();
 
-    bencher.iter(||
-        lowlevel::Module::decode(&mut io::Cursor::new(&buf)).unwrap())
+    bencher.iter(|| {
+        let mut offset = 0;
+        lowlevel::Module::decode(&mut buf.as_slice(), &mut offset).unwrap()
+    })
 }
 
 fn encode_lowlevel_speed(bencher: &mut Bencher) {
