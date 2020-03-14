@@ -1,8 +1,6 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use typename::TypeName;
-
 use super::{*, ValType::*};
 
 use self::{GlobalOp::*, LoadOp::*, LocalOp::*, StoreOp::*};
@@ -36,7 +34,7 @@ pub enum ImportOr<T> {
     NotImported(T)
 }
 
-#[derive(Debug, Clone, TypeName)]
+#[derive(Debug, Clone)]
 pub struct Function {
     // type is inlined here compared to low-level/binary/spec representation
     pub type_: FunctionType,
@@ -48,7 +46,7 @@ pub struct Function {
     pub export: Vec<String>,
 }
 
-#[derive(Debug, Clone, TypeName)]
+#[derive(Debug, Clone)]
 pub struct Global {
     pub type_: GlobalType,
     // import and init are mutually exclusive, i.e., exactly one of both must be Some(...)
@@ -58,7 +56,7 @@ pub struct Global {
     pub export: Vec<String>,
 }
 
-#[derive(Debug, Clone, TypeName)]
+#[derive(Debug, Clone)]
 pub struct Table {
     pub type_: TableType,
     pub import: Option<(String, String)>,
@@ -66,7 +64,7 @@ pub struct Table {
     pub export: Vec<String>,
 }
 
-#[derive(Debug, Clone, TypeName)]
+#[derive(Debug, Clone)]
 pub struct Memory {
     pub type_: MemoryType,
     pub import: Option<(String, String)>,
@@ -94,7 +92,7 @@ pub struct Data {
 
 pub type Expr = Vec<Instr>;
 
-#[derive(Debug, Clone, PartialEq, TypeName)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Instr {
     Unreachable,
     Nop,

@@ -1,6 +1,5 @@
 use crate::binary::WasmBinary;
 use binary_derive::WasmBinary;
-use typename::TypeName;
 
 use super::*;
 
@@ -37,7 +36,7 @@ pub enum Section {
     #[tag = 11] Data(WithSize<Vec<Data>>),
 }
 
-#[derive(WasmBinary, Debug, Clone, TypeName)]
+#[derive(WasmBinary, Debug, Clone)]
 pub struct Global {
     pub type_: GlobalType,
     pub init: Expr,
@@ -91,13 +90,13 @@ pub enum ExportType {
 // Markers for Idx<T>, since in low-level format Function, Table, and Memory have not one type,
 // but are split over multiple sections.
 
-#[derive(Debug, TypeName)]
+#[derive(Debug)]
 pub struct Function;
 
-#[derive(Debug, TypeName)]
+#[derive(Debug)]
 pub struct Table;
 
-#[derive(Debug, TypeName)]
+#[derive(Debug)]
 pub struct Memory;
 
 

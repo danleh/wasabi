@@ -5,10 +5,6 @@ use std::marker::PhantomData;
 
 use serde::{Serialize, Serializer};
 
-use typename::TypeName;
-
-use derive_new::new;
-
 use crate::binary::WasmBinary;
 use binary_derive::WasmBinary;
 use std::convert::TryInto;
@@ -224,10 +220,10 @@ impl<T> Ord for Idx<T> {
 // Unit structs as markers for indices that do not have their own "content" type
 // I.e., Local is just ValType, Label is not represented at all.
 
-#[derive(Debug, TypeName)]
+#[derive(Debug)]
 pub struct Local;
 
-#[derive(Debug, TypeName)]
+#[derive(Debug)]
 pub struct Label;
 
 

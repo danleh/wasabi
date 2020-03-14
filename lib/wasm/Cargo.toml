@@ -12,8 +12,6 @@ rayon = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 # TODO remove
 derive-new = "0.5"
-# TODO remove
-typename = "0.1"
 
 [dev-dependencies]
 test_utilities = { path = "../test_utilities" }
