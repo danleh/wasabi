@@ -52,13 +52,13 @@ pub enum ErrorKind {
     Size { expected: u32, actual: usize },
     /// Unknown tag (variant) for a particular grammar element, e.g., unknown opcode.
     Tag { actual: u8 },
-    /// Input ended too early, but we expected more bytes to be available.
+    /// Input ended too early, but we expected more bytes for the current grammar element.
     Eof,
     /// A number was not valid LEB128 or could not be parsed to the target number type.
     Leb128,
     /// A string was not valid UTF-8.
     Utf8,
-    /// An I/O error that is not specific to WebAssembly parsing.
+    /// An I/O error that is not specific to WebAssembly.
     Io,
 }
 
