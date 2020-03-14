@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::fs::File;
 use std::io::{self, Read};
 
@@ -25,6 +26,93 @@ fn decode_encode_is_valid_wasm() {
             .expect(&format!("could not validate wasm output file '{}'", output_path.display()));
     }
 }
+
+#[test]
+fn error_offsets_correct() {
+    fn assert_error_offset(binary: Vec<u8>, expected_offset: usize) {
+        let mut offset = 0;
+        let result = lowlevel::Module::decode(&mut binary.as_slice(), &mut offset);
+        assert!(result.is_err(), "binary {:?} was not invalid, but should have been", binary);
+        let err = result.err().unwrap();
+        assert_eq!(err.offset(), expected_offset, "\nfull error: {}\n(source: {:?})", err, err.source());
+    }
+
+    let wrong_magic_number = b"Xasm\x01\x00\x00\x00".to_vec();
+    assert_error_offset(wrong_magic_number, 0);
+
+    let wrong_version = b"\x00asm\x02\x00\x00\x00".to_vec();
+    assert_error_offset(wrong_version, 4);
+
+    let wrong_section_id = b"\x00asm\x01\x00\x00\x00\xff".to_vec();
+    assert_error_offset(wrong_section_id, 8);
+
+    let valid_wasm_header = b"\x00asm\x01\x00\x00\x00".as_ref();
+    let valid_code_element = &[
+        // Size in bytes
+        2,
+        // Local count
+        0,
+        // Body: only end instruction
+        0xb
+    ].as_ref();
+
+    let section_size_too_short = [valid_wasm_header, &[
+        // Section id: code
+        10,
+        // WRONG Section size in bytes: should be 4 bit is 2
+        2,
+        // Code elements
+        1,
+    ], valid_code_element].concat();
+    assert_error_offset(section_size_too_short, 9);
+
+    let section_size_too_long = [valid_wasm_header, &[10, 6 /* instead of 4 */, 1], valid_code_element].concat();
+    assert_error_offset(section_size_too_long, 9);
+
+    let code_element_size_too_short = [valid_wasm_header, &[
+        // Code section, size in bytes, element count
+        10, 5, 1,
+        // Code element 1
+        // WRONG Size in bytes: should be 3
+        2,
+        // Local count
+        0,
+        // Body: nop, end
+        0x1, 0xb
+    ]].concat();
+    // NOTE Different from the section size, the size in the "skip list"-like vector in the code
+    // section causes the error to be attributed to the position where the Eof appears, not the
+    // section size.
+    assert_error_offset(code_element_size_too_short, 14);
+
+    let code_element_size_too_long = [valid_wasm_header, &[
+        // Code section, size in bytes, element count
+        10, 6, 1,
+        // Code element 1
+        // WRONG Size in bytes: should be 3
+        4,
+        // Local count
+        0,
+        // Body: nop, end
+        0x1, 0xb,
+        // fill the file with more crap so that the read() call succeeds at least
+        0xff
+    ]].concat();
+    // When the element size was too long, the error will be attributed to the size.
+    assert_error_offset(code_element_size_too_long, 11);
+
+    let invalid_instruction = [valid_wasm_header, &[
+        // Code section, size in bytes, element count
+        10, 5, 1,
+        // Code element size, local count
+        3, 0,
+        // Body: WRONG
+        0xff, 0xb
+    ]].concat();
+    assert_error_offset(invalid_instruction, 13);
+}
+
+
 
 /*
  * Speed benchmarks (for parallelization of decoding/encoding) on a "large" wasm file (~2MB for now)
