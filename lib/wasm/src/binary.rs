@@ -3,8 +3,7 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-// FIXME
-//use rayon::prelude::*;
+use rayon::prelude::*;
 use wasabi_leb128::*;
 
 use crate::ast::*;
@@ -173,7 +172,7 @@ impl<T: WasmBinary> WasmBinary for Vec<T> {
         let mut vec = Vec::with_capacity(limit_prealloc_capacity::<T>(element_count));
         for _ in 0..element_count {
             vec.push(T::decode(reader, offset)?);
-        };
+        }
 
         Ok(vec)
     }
@@ -187,63 +186,81 @@ impl<T: WasmBinary> WasmBinary for Vec<T> {
     }
 }
 
+/// Provide parallel decoding/encoding when explicitly requested by Parallel<...> marker struct.
 impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        Ok(Parallel(Vec::<WithSize<T>>::decode(reader, offset)?))
+        // Treat the individual WithSize<T> parts as Vec<u8> (i.e., don't parse the content T just yet,
+        // instead read each element first into a plain byte buffer (non-parallel, but hopefully fast).
+        // Then decode the byte buffers in parallel to the actual T's.
+        // NOTE This means error reporting is subtly different compared to when we use the serial
+        // WithSize implementation: WithSize parses T first and then compares the actual size to
+        // the expected size, whereas here we assume the size is correct and the error is generated
+        // later during parallel parsing of the contents T (which could, e.g., yield an Eof).
+
+        let element_count = u32::decode(reader, offset).set_err_elem::<Self>()?;
+
+        // Contains the offset of the size (for error reporting), the expected size, the offset of
+        // of content T, and the (unparsed) bytes of contents.
+        let mut elements: Vec<(usize, u32, usize, Vec<u8>)> = Vec::with_capacity(
+            limit_prealloc_capacity::<(usize, u32, usize, Vec<u8>)>(element_count));
+        // Read each element into a buffer first (+ the information mentioned before).
+        for _ in 0..element_count {
+            let size_offset = *offset;
+            let content_size_bytes = u32::decode(reader, offset).set_err_elem::<WithSize<T>>()?;
+
+            let content_offset = *offset;
+            let mut buf = vec![0u8; content_size_bytes as usize];
+            reader.read_exact(buf.as_mut_slice()).add_err_info::<T>(content_offset)?;
+            *offset += content_size_bytes as usize;
+
+            elements.push((size_offset, content_size_bytes, content_offset, buf));
+        }
+
+        // Then, parallel decoding of each buffer to actual elements T.
+        let decoded: Result<Vec<WithSize<T>>, Error> = elements.into_par_iter()
+            .map(|(size_offset, expected_size_bytes, mut offset, buf)| -> Result<WithSize<T>, Error> {
+                // While a too short size will result in an Eof error, we still need to check that
+                // the size was not too long (i.e., that the whole buffer has been consumed).
+                let offset_before_content = offset;
+                let t = T::decode(&mut &buf[..], &mut offset)?;
+                let actual_size_bytes = offset - offset_before_content;
+
+                if actual_size_bytes != expected_size_bytes as usize {
+                    return Err(Error::new::<T>(
+                        size_offset,
+                        ErrorKind::Size {
+                            expected: expected_size_bytes,
+                            actual: actual_size_bytes,
+                        }));
+                }
+
+                Ok(WithSize(t))
+            })
+            .collect();
+
+        Ok(Parallel(decoded?))
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        self.0.encode(writer)
+        let mut bytes_written = self.0.len().encode(writer)?;
+
+        // Encode elements to buffers in parallel.
+        let encoded: io::Result<Vec<Vec<u8>>> = self.0.par_iter()
+            .map(|element: &WithSize<T>| {
+                let mut buf = Vec::new();
+                element.0.encode(&mut buf)?;
+                Ok(buf)
+            })
+            .collect();
+
+        // Write sizes and buffer contents to actual writer (non-parallel, but hopefully fast).
+        for buf in encoded? {
+            bytes_written += buf.encode(writer)?;
+        }
+
+        Ok(bytes_written)
     }
 }
-
-/// provide parallel decoding/encoding when explicitly requested by Parallel<...> marker struct
-//impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
-//    fn decode<R: io::Read + io::Seek>(reader: &mut R) -> Result<Self, Error> {
-//        let element_count = usize::decode(reader)?;
-//
-//        // read all elements into buffers of the given size (non-parallel, but hopefully fast)
-//        let mut bufs = Vec::with_capacity(limit_prealloc_capacity::<Vec<u8>>(element_count));
-//        for _ in 0..element_count {
-//            let num_bytes = usize::decode(reader)?;
-//            let mut buf = vec![0u8; num_bytes];
-//            reader.read_exact(&mut buf)?;
-//            bufs.push(buf);
-//        }
-//
-//        // parallel decode of each buffer
-//        let decoded: Result<Vec<WithSize<T>>, Error> = bufs.into_par_iter()
-//            .map(|buf| -> Result<WithSize<T>, Error> {
-//                // FIXME wrap buf in Cursor
-//                // FIXME but then the reported error offsets are wrong, add the base offsets of the buffers before reporting
-//                Ok(WithSize(T::decode(&mut &buf[..])?))
-//            })
-//            .collect();
-//
-//        Ok(Parallel(decoded?))
-//    }
-//
-//    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-//        let new_size = self.0.len();
-//        let mut bytes_written = new_size.encode(writer)?;
-//
-//        // encode elements to buffers in parallel
-//        let encoded: io::Result<Vec<Vec<u8>>> = self.0.par_iter()
-//            .map(|element: &WithSize<T>| {
-//                let mut buf = Vec::new();
-//                element.0.encode(&mut buf)?;
-//                Ok(buf)
-//            })
-//            .collect();
-//
-//        // write sizes and buffer contents to actual writer (non-parallel, but hopefully fast)
-//        for buf in encoded? {
-//            bytes_written += buf.encode(writer)?;
-//        }
-//
-//        Ok(bytes_written)
-//    }
-//}
 
 /// UTF-8 strings.
 impl WasmBinary for String {
