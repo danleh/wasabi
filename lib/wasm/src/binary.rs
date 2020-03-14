@@ -265,6 +265,23 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
     }
 }
 
+impl<T: WasmBinary> WasmBinary for Box<[T]> {
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        // Reuse Vec implementation, and just drop capacity field to get Box<[T]>.
+        Ok(Vec::<T>::decode(reader, offset)?.into_boxed_slice())
+    }
+
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        // Essentially the same implementation as for Vec<T>, but we cannot reuse it, since we can't
+        // convert a Box<[T]> to a Vec<T> without owning the box (or allocating).
+        let mut bytes_written = self.len().encode(writer)?;
+        for element in self.iter() {
+            bytes_written += element.encode(writer)?;
+        }
+        Ok(bytes_written)
+    }
+}
+
 /// UTF-8 strings.
 impl WasmBinary for String {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
@@ -277,7 +294,7 @@ impl WasmBinary for String {
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         // Cannot reuse implementation of Vec<u8> for writing, because we only have the string
-        // borrowed, but conversion via into_bytes requires owning it.
+        // borrowed, but conversion via into_bytes (which produces a Vec) would require owning it.
         let mut bytes_written = self.len().encode(writer)?;
         writer.write_all(self.as_bytes())?;
         bytes_written += self.len();
