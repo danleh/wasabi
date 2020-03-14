@@ -171,10 +171,9 @@ impl<T> From<usize> for Idx<T> {
 
 // custom Debug: print index type T, don't print PhantomData
 // e.g. Idx<Function>(3, PhantomData) as "Function 3"
-impl<T: TypeName> fmt::Debug for Idx<T> {
+impl<T> fmt::Debug for Idx<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let type_name = T::type_name();
-        let type_name = type_name.split("::").last().unwrap();
+        let type_name = std::any::type_name::<T>().split("::").last().unwrap();
         f.write_str(type_name)?;
         f.write_char(' ')?;
         self.0.fmt(f)
