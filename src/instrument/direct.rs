@@ -33,7 +33,7 @@ pub fn count_calls(module: &mut Module) -> Option<String> {
     for (i, function) in module.functions() {
         // ignore the functions we added
         if i != getter && i != increment {
-            function.modify_instr(|instr| match instr {
+            function.modify_instrs(|instr| match instr {
                 Call(..) | CallIndirect(..) => vec![Call(increment), instr],
                 instr => vec![instr],
             })

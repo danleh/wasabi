@@ -51,14 +51,14 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String>
     module.functions.par_iter_mut().enumerate().for_each(&|(fidx, function): (usize, &mut Function)| {
         let fidx = fidx.into();
         // only instrument non-imported functions
-        if function.code.is_none() {
+        if function.code().is_none() {
             return;
         }
 
         // move body out of function, so that function is not borrowed during iteration over the original body
         let original_body = {
             let dummy_body = Vec::new();
-            ::std::mem::replace(&mut function.code.as_mut().expect("internal error: function code should exist, see check above").body, dummy_body)
+            ::std::mem::replace(&mut function.code_mut().expect("internal error: function code should exist, see check above").body, dummy_body)
         };
 
         // allocate new instrumented body (i.e., do not modify in-place), since there are too many insertions anyway
@@ -753,7 +753,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String>
         }
 
         // finally, switch dummy body out against instrumented body
-        ::std::mem::replace(&mut function.code.as_mut().unwrap().body, instrumented_body);
+        ::std::mem::replace(&mut function.code_mut().unwrap().body, instrumented_body);
     });
 
     // actually add the hooks to module and check that inserted Idx is the one on the Hook struct

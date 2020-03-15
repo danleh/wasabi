@@ -27,38 +27,33 @@ pub struct Module {
     pub custom_sections: Vec<Vec<u8>>,
 }
 
-// TODO finish this refactoring:
-// replace import/code in highlevel Function and import/init in highlevel Global with this.
-pub enum ImportOr<T> {
-    Imported(String, String),
-    NotImported(T)
+#[derive(Debug, Clone)]
+pub enum ImportOrPresent<T> {
+    Import(String, String),
+    Present(T)
 }
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    // type is inlined here compared to low-level/binary/spec representation
+    // Type is inlined here compared to low-level/binary/spec representation.
     pub type_: FunctionType,
-    // import and code are mutually exclusive, i.e., exactly one of both must be Some(...)
-    // TODO introduce enum that makes only either of import or code possible
-    pub import: Option<(String, String)>,
-    pub code: Option<Code>,
-    // functions (and other elements) can be exported multiple times under different names
+    pub code: ImportOrPresent<Code>,
+    // Functions/globals/memories/tables can be exported multiple times under different names.
+    // But the export names must be unique (not ensure in this representation!).
     pub export: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Global {
     pub type_: GlobalType,
-    // import and init are mutually exclusive, i.e., exactly one of both must be Some(...)
-    // see TODO above
-    pub import: Option<(String, String)>,
-    pub init: Option<Expr>,
+    pub init: ImportOrPresent<Expr>,
     pub export: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Table {
     pub type_: TableType,
+    // Unlike functions and globals, an imported table can still be initialized with elements.
     pub import: Option<(String, String)>,
     pub elements: Vec<Element>,
     pub export: Vec<String>,
@@ -67,6 +62,7 @@ pub struct Table {
 #[derive(Debug, Clone)]
 pub struct Memory {
     pub type_: MemoryType,
+    // Unlike functions and globals, an imported memory can still be initialized with data elements.
     pub import: Option<(String, String)>,
     pub data: Vec<Data>,
     pub export: Vec<String>,
@@ -681,8 +677,7 @@ impl Module {
     pub fn add_function(&mut self, type_: FunctionType, locals: Vec<ValType>, body: Vec<Instr>) -> Idx<Function> {
         self.functions.push(Function {
             type_,
-            import: None,
-            code: Some(Code {
+            code: ImportOrPresent::Present(Code {
                 locals,
                 body,
             }),
@@ -694,8 +689,7 @@ impl Module {
     pub fn add_function_import(&mut self, type_: FunctionType, module: String, name: String) -> Idx<Function> {
         self.functions.push(Function {
             type_,
-            import: Some((module, name)),
-            code: None,
+            code: ImportOrPresent::Import(module, name),
             export: Vec::new(),
         });
         (self.functions.len() - 1).into()
@@ -704,8 +698,7 @@ impl Module {
     pub fn add_global(&mut self, type_: ValType, mut_: Mutability, init: Vec<Instr>) -> Idx<Global> {
         self.globals.push(Global {
             type_: GlobalType(type_, mut_),
-            import: None,
-            init: Some(init),
+            init: ImportOrPresent::Present(init),
             export: Vec::new(),
         });
         (self.globals.len() - 1).into()
@@ -726,12 +719,48 @@ impl Module {
 }
 
 impl Function {
-    pub fn instructions(&mut self) -> impl Iterator<Item=(Idx<Instr>, &mut Instr)> {
-        self.code.iter_mut().flat_map(|code| code.body.iter_mut().enumerate().map(|(i, f)| (i.into(), f)))
+    pub fn import(&self) -> Option<(&str, &str)> {
+        if let ImportOrPresent::Import(module, name) = &self.code {
+            Some((module.as_str(), name.as_str()))
+        } else {
+            None
+        }
     }
 
-    pub fn modify_instr(&mut self, f: impl Fn(Instr) -> Vec<Instr>) {
-        if let Some(Code { ref mut body, .. }) = self.code {
+    pub fn code(&self) -> Option<&Code> {
+        if let ImportOrPresent::Present(t) = &self.code {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    pub fn code_mut(&mut self) -> Option<&mut Code> {
+        if let ImportOrPresent::Present(t) = &mut self.code {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    pub fn into_code(self) -> Option<Code> {
+        if let ImportOrPresent::Present(t) = self.code {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    pub fn instrs(&self) -> &[Instr] {
+        self.code().map(|code| code.body.as_slice()).unwrap_or(&[])
+    }
+
+    pub fn instrs_mut(&mut self) -> Option<&mut Vec<Instr>> {
+        self.code_mut().map(|code| &mut code.body)
+    }
+
+    pub fn modify_instrs(&mut self, f: impl Fn(Instr) -> Vec<Instr>) {
+        if let Some(body) = self.instrs_mut() {
             let new_body = Vec::with_capacity(body.len());
             let old_body = ::std::mem::replace(body, new_body);
             for instr in old_body.into_iter() {
@@ -742,10 +771,11 @@ impl Function {
 
     /// add a new local with type ty and return its index
     pub fn add_fresh_local(&mut self, ty: ValType) -> Idx<Local> {
-        let locals = &mut self.code.as_mut()
+        let args_count = self.type_.params.len();
+        let locals = &mut self.code_mut()
             .expect("cannot add local to imported function")
             .locals;
-        let idx = locals.len() + self.type_.params.len();
+        let idx = locals.len() + args_count;
         locals.push(ty);
         idx.into()
     }
@@ -762,7 +792,7 @@ impl Function {
         if idx.into_inner() < param_count {
             self.type_.params[idx.into_inner()]
         } else {
-            let locals = &self.code.as_ref()
+            let locals = &self.code()
                 .expect("cannot get type of a local in an imported function")
                 .locals;
             *locals.get(idx.into_inner() - param_count)
@@ -771,6 +801,36 @@ impl Function {
     }
 
     pub fn instr_count(&self) -> usize {
-        self.code.as_ref().map(|code| code.body.len()).unwrap_or(0)
+        self.code().map(|code| code.body.len()).unwrap_or(0)
+    }
+}
+
+impl Global {
+    pub fn import(&self) -> Option<(&str, &str)> {
+        if let ImportOrPresent::Import(module, name) = &self.init {
+            Some((module.as_str(), name.as_str()))
+        } else {
+            None
+        }
+    }
+
+    pub fn init(&self) -> Option<&Expr> {
+        if let ImportOrPresent::Present(t) = &self.init {
+            Some(t)
+        } else {
+            None
+        }
+    }
+}
+
+impl Table {
+    pub fn import(&self) -> Option<(&str, &str)> {
+        self.import.as_ref().map(|(module, name)| (module.as_str(), name.as_str()))
+    }
+}
+
+impl Memory {
+    pub fn import(&self) -> Option<(&str, &str)> {
+        self.import.as_ref().map(|(module, name)| (module.as_str(), name.as_str()))
     }
 }

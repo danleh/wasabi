@@ -2,7 +2,7 @@ use super::block_stack::BlockStackElement;
 use super::convert_i64::convert_i64_type;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use std::collections::HashMap;
-use wasm::ast::highlevel::{Function, Instr, Instr::*, Module};
+use wasm::ast::highlevel::{Function, Instr, Instr::*, Module, ImportOrPresent};
 use wasm::ast::{FunctionType, Idx, ValType, ValType::*};
 
 /*
@@ -85,8 +85,7 @@ impl Hook {
             Function {
                 // hooks do not return anything
                 type_: FunctionType::new(&lowlevel_args, &[]),
-                import: Some(("__wasabi_hooks".to_string(), lowlevel_name)),
-                code: None,
+                code: ImportOrPresent::Import("__wasabi_hooks".to_string(), lowlevel_name),
                 export: Vec::new(),
             }
         };
@@ -100,7 +99,7 @@ impl Hook {
     }
 
     pub fn lowlevel_name(&self) -> String {
-        self.wasm.import.as_ref().unwrap().1.clone()
+        self.wasm.import().unwrap().1.to_string()
     }
 }
 
