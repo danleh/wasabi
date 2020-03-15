@@ -174,7 +174,7 @@ fn from_lowlevel_instr(instr: ll::Instr, types: &[FunctionType]) -> hl::Instr {
 
         ll::Instr::Br(label_idx) => hl::Instr::Br(label_idx),
         ll::Instr::BrIf(label_idx) => hl::Instr::BrIf(label_idx),
-        ll::Instr::BrTable(label_idx_table, default) => hl::Instr::BrTable(label_idx_table, default),
+        ll::Instr::BrTable { table, default } => hl::Instr::BrTable { table, default },
 
         ll::Instr::Return => hl::Instr::Return,
         ll::Instr::Call(function_idx) => hl::Instr::Call(function_idx.into_inner().into()),
@@ -631,7 +631,7 @@ fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
 
         hl::Instr::Br(label_idx) => ll::Instr::Br(label_idx),
         hl::Instr::BrIf(label_idx) => ll::Instr::BrIf(label_idx),
-        hl::Instr::BrTable(ref label_idx_table, default) => ll::Instr::BrTable(label_idx_table.clone(), default),
+        hl::Instr::BrTable { ref table, default } => ll::Instr::BrTable { table: table.clone(), default },
 
         hl::Instr::Return => ll::Instr::Return,
         hl::Instr::Call(function_idx) => ll::Instr::Call(state.map_function_idx(function_idx.into_inner())),

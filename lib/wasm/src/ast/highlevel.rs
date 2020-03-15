@@ -30,7 +30,7 @@ pub struct Module {
 #[derive(Debug, Clone)]
 pub enum ImportOrPresent<T> {
     Import(String, String),
-    Present(T)
+    Present(T),
 }
 
 #[derive(Debug, Clone)]
@@ -101,7 +101,7 @@ pub enum Instr {
 
     Br(Idx<Label>),
     BrIf(Idx<Label>),
-    BrTable(Vec<Idx<Label>>, Idx<Label>),
+    BrTable { table: Vec<Idx<Label>>, default: Idx<Label> },
 
     Return,
     Call(Idx<Function>),
@@ -438,7 +438,7 @@ impl Instr {
             // nesting...
             Block(_) | Loop(_) | If(_) | Else | End => None,
             // depends on branch target?
-            Br(_) | BrIf(_) | BrTable(_, _) => None,
+            Br(_) | BrIf(_) | BrTable { .. } => None,
             // need to inspect function type
             Return | Call(_) => None,
             // need abstract type stack "evaluation"
@@ -462,7 +462,7 @@ impl Instr {
             End => "end",
             Br(_) => "br",
             BrIf(_) => "br_if",
-            BrTable(_, _) => "br_table",
+            BrTable { .. } => "br_table",
             Return => "return",
             Call(_) => "call",
             CallIndirect(_, _) => "call_indirect",
@@ -644,11 +644,11 @@ impl fmt::Display for Instr {
 
             Br(label) => write!(f, " {}", label.into_inner()),
             BrIf(label) => write!(f, " {}", label.into_inner()),
-            BrTable(table, default_label) => {
+            BrTable { table, default } => {
                 for label in table {
                     write!(f, " {}", label.into_inner())?;
                 }
-                write!(f, " {}", default_label.into_inner())
+                write!(f, " {}", default.into_inner())
             }
 
             Call(func_idx) => write!(f, " {}", func_idx.into_inner()),
