@@ -1,0 +1,3 @@
+Can functions, globals, memory, and table be both defined in the current module _and_ imported at the same time?
+For functions and globals: no, they must be either imported or (exclusive) having code (functions) or init (globals).
+For memory and tables: yes, they can be imported _and_ initialized at the same time with data (memory) or elem (table).
