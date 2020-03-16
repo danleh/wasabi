@@ -1,47 +1,32 @@
-use std::error::Error;
 use std::io;
 use std::marker::PhantomData;
 use std::mem::size_of;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use leb128::*;
 use rayon::prelude::*;
+use wasabi_leb128::*;
 
 use crate::ast::*;
 use crate::ast::lowlevel::*;
+use crate::error::{AddErrInfo, Error, ErrorKind, SetErrElem};
 
 /* Trait and impl for decoding/encoding between binary format (as per spec) and our own formats (see ast module) */
 
-
 pub trait WasmBinary: Sized {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self>;
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error>;
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize>;
-
-    /// convenience method
-    fn error<E>(reason: E) -> io::Result<Self>
-        where E: Into<Box<dyn Error + Send + Sync>>
-    {
-        Err(io::Error::new(io::ErrorKind::InvalidData, reason))
-    }
 }
-
-// TODO define typeful Wasm parsing errors
-//pub enum WasmParseError {
-//    /// expected type as string, actual tag
-//    InvalidTag(&'static str, u32),
-//    InvalidString(Utf8Error),
-//    // leb error
-//    // magic byte, version
-//    // add offset to all errors?
-//}
 
 
 /* Primitive types */
 
 impl WasmBinary for u8 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        reader.read_u8()
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        let byte = reader.read_u8().add_err_info::<u8>(*offset)?;
+        *offset += 1;
+        Ok(byte)
     }
+
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_u8(*self)?;
         Ok(1)
@@ -49,29 +34,40 @@ impl WasmBinary for u8 {
 }
 
 impl WasmBinary for u32 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        reader.read_leb128()
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        let (value, bytes_read) = reader.read_leb128().add_err_info::<u32>(*offset)?;
+        *offset += bytes_read;
+        Ok(value)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_leb128(*self)
     }
 }
 
+// The WebAssembly wasm32 spec only has 32-bit integer indices, so this usize implementation is
+// only for convenience when serializing Rust usize values (e.g., Rust array or vector indices).
+// You should always parse values with the u32 implementation since that ensures correct range.
 impl WasmBinary for usize {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        reader.read_leb128()
+    fn decode<R: io::Read>(_: &mut R, _: &mut usize) -> Result<Self, Error> {
+        unimplemented!("use u32 impl for parsing wasm32 indices")
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         if *self > u32::max_value() as usize {
-            Self::error("WASM spec does not allow unsigned larger than u32")?;
+            // TODO Proper design would be an error type of its own for serialization, but that
+            // would clutter the interface of all encode() method implementations. So for now
+            // a custom io::Error is sufficient (since it is the only one).
+            return Err(io::Error::new(io::ErrorKind::InvalidData,
+                                      "wasm32 does not allow unsigned int (e.g., indices) larger than 32 bits"))
         }
         writer.write_leb128(*self)
     }
 }
 
 impl WasmBinary for i32 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        reader.read_leb128()
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        let (value, bytes_read) = reader.read_leb128().add_err_info::<i32>(*offset)?;
+        *offset += bytes_read;
+        Ok(value)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_leb128(*self)
@@ -79,8 +75,10 @@ impl WasmBinary for i32 {
 }
 
 impl WasmBinary for i64 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        reader.read_leb128()
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        let (value, bytes_read) = reader.read_leb128().add_err_info::<i64>(*offset)?;
+        *offset += bytes_read;
+        Ok(value)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_leb128(*self)
@@ -88,8 +86,10 @@ impl WasmBinary for i64 {
 }
 
 impl WasmBinary for f32 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        reader.read_f32::<LittleEndian>()
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        let value = reader.read_f32::<LittleEndian>().add_err_info::<f32>(*offset)?;
+        *offset += 4;
+        Ok(value)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_f32::<LittleEndian>(*self)?;
@@ -98,8 +98,10 @@ impl WasmBinary for f32 {
 }
 
 impl WasmBinary for f64 {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        reader.read_f64::<LittleEndian>()
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        let value = reader.read_f64::<LittleEndian>().add_err_info::<f64>(*offset)?;
+        *offset += 8;
+        Ok(value)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_f64::<LittleEndian>(*self)?;
@@ -111,19 +113,37 @@ impl WasmBinary for f64 {
 /* Generic "AST combinators" */
 
 impl<T: WasmBinary> WasmBinary for WithSize<T> {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let _forget_original_size = u32::decode(reader)?;
-        Ok(WithSize(T::decode(reader)?))
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        // The expected size is only necessary to speed up parallel decoding.
+        // In this (serial) case, we just use it for error checking.
+        let offset_size = *offset;
+        let expected_size_bytes = u32::decode(reader, offset).set_err_elem::<Self>()?;
+
+        let offset_before_content = *offset;
+        let t = T::decode(reader, offset)?;
+        let actual_size_bytes = *offset - offset_before_content;
+
+        if actual_size_bytes != expected_size_bytes as usize {
+            return Err(Error::new::<T>(
+                offset_size,
+                ErrorKind::Size {
+                    expected: expected_size_bytes,
+                    actual: actual_size_bytes,
+                }));
+        }
+
+        Ok(WithSize(t))
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        // Write to an intermediate buffer first because we need to know the encoding size.
         let mut buf = Vec::new();
-        let new_size = self.0.encode(&mut buf)?;
+        let encoded_size_bytes = self.0.encode(&mut buf)?;
 
-        // write new size, then contents from buffer to actual writer
-        let mut bytes_written = new_size.encode(writer)?;
+        // Then write the size as LEB128 and copy all bytes from the intermediate buffer over.
+        let mut bytes_written = encoded_size_bytes.encode(writer)?;
         writer.write_all(&buf)?;
-        bytes_written += new_size;
+        bytes_written += encoded_size_bytes;
 
         Ok(bytes_written)
     }
@@ -135,7 +155,7 @@ impl<T: WasmBinary> WasmBinary for WithSize<T> {
 /// having a large vec-size in the binary.
 /// (We got struck by plenty such out of memory errors when testing our Wasm parser with AFL.
 /// See tests/invalid/oom-large-vector-size/oom.wasm)
-fn limit_prealloc_capacity<T>(element_count: usize) -> usize {
+fn limit_prealloc_capacity<T>(element_count: u32) -> usize {
     // Limit to 1 MB, which should be hit almost never for real (benign) Wasm binaries:
     // The Wasm vectors with the largest number of elements are most likely bodies of functions
     // (i.e., vectors of instructions), and a single function is likely not having that many
@@ -143,67 +163,81 @@ fn limit_prealloc_capacity<T>(element_count: usize) -> usize {
     const PREALLOC_LIMIT_BYTES: usize = 1 << 20;
     // Vec::with_capacity() takes number of elements, not bytes; so divide bytes by element size.
     let element_limit = PREALLOC_LIMIT_BYTES / size_of::<T>();
-    std::cmp::min(element_count, element_limit)
+    std::cmp::min(element_count as usize, element_limit)
 }
 
-// see https://webassembly.github.io/spec/core/binary/conventions.html#vectors
+/// Generic vectors of T.
+/// see https://webassembly.github.io/spec/core/binary/conventions.html#vectors
 impl<T: WasmBinary> WasmBinary for Vec<T> {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let element_count = usize::decode(reader)?;
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        let element_count = u32::decode(reader, offset).set_err_elem::<Self>()?;
 
-        let mut vec: Vec<T> = Vec::with_capacity(limit_prealloc_capacity::<T>(element_count));
+        let mut vec = Vec::with_capacity(limit_prealloc_capacity::<T>(element_count));
         for _ in 0..element_count {
-            vec.push(T::decode(reader)?);
-        };
+            vec.push(T::decode(reader, offset)?);
+        }
 
         Ok(vec)
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         let mut bytes_written = self.len().encode(writer)?;
-        for element in self.iter() {
+        for element in self {
             bytes_written += element.encode(writer)?;
         }
         Ok(bytes_written)
     }
 }
 
-impl WasmBinary for String {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        // reuse Vec<u8> implementation, then consume buf so no re-allocation is necessary
-        let buf: Vec<u8> = Vec::decode(reader)?;
-        String::from_utf8(buf).map_err(|e| io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("utf-8 conversion error: {}", e.to_string())))
-    }
-
-    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        let mut bytes_written = self.len().encode(writer)?;
-        for byte in self.bytes() {
-            bytes_written += byte.encode(writer)?;
-        }
-        Ok(bytes_written)
-    }
-}
-
-/// provide parallel decoding/encoding when explicitly requested by Parallel<...> marker struct
+/// Provide parallel decoding/encoding when explicitly requested by Parallel<...> marker struct.
 impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let element_count = usize::decode(reader)?;
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        // Treat the individual WithSize<T> parts as Vec<u8> (i.e., don't parse the content T just yet,
+        // instead read each element first into a plain byte buffer (non-parallel, but hopefully fast).
+        // Then decode the byte buffers in parallel to the actual T's.
+        // NOTE This means error reporting is subtly different compared to when we use the serial
+        // WithSize implementation: WithSize parses T first and then compares the actual size to
+        // the expected size, whereas here we assume the size is correct and the error is generated
+        // later during parallel parsing of the contents T (which could, e.g., yield an Eof).
 
-        // read all elements into buffers of the given size (non-parallel, but hopefully fast)
-        let mut bufs = Vec::with_capacity(limit_prealloc_capacity::<Vec<u8>>(element_count));
+        let element_count = u32::decode(reader, offset).set_err_elem::<Self>()?;
+
+        // Contains the offset of the size (for error reporting), the expected size, the offset of
+        // of content T, and the (unparsed) bytes of contents.
+        let mut elements: Vec<(usize, u32, usize, Vec<u8>)> = Vec::with_capacity(
+            limit_prealloc_capacity::<(usize, u32, usize, Vec<u8>)>(element_count));
+        // Read each element into a buffer first (+ the information mentioned before).
         for _ in 0..element_count {
-            let num_bytes = usize::decode(reader)?;
-            let mut buf = vec![0u8; num_bytes];
-            reader.read_exact(&mut buf)?;
-            bufs.push(buf);
+            let size_offset = *offset;
+            let content_size_bytes = u32::decode(reader, offset).set_err_elem::<WithSize<T>>()?;
+
+            let content_offset = *offset;
+            let mut buf = vec![0u8; content_size_bytes as usize];
+            reader.read_exact(buf.as_mut_slice()).add_err_info::<T>(content_offset)?;
+            *offset += content_size_bytes as usize;
+
+            elements.push((size_offset, content_size_bytes, content_offset, buf));
         }
 
-        // parallel decode of each buffer
-        let decoded: io::Result<Vec<WithSize<T>>> = bufs.into_par_iter()
-            .map(|buf| -> io::Result<WithSize<T>> {
-                Ok(WithSize(T::decode(&mut &buf[..])?))
+        // Then, parallel decoding of each buffer to actual elements T.
+        let decoded: Result<Vec<WithSize<T>>, Error> = elements.into_par_iter()
+            .map(|(size_offset, expected_size_bytes, mut offset, buf)| -> Result<WithSize<T>, Error> {
+                // While a too short size will result in an Eof error, we still need to check that
+                // the size was not too long (i.e., that the whole buffer has been consumed).
+                let offset_before_content = offset;
+                let t = T::decode(&mut &buf[..], &mut offset)?;
+                let actual_size_bytes = offset - offset_before_content;
+
+                if actual_size_bytes != expected_size_bytes as usize {
+                    return Err(Error::new::<T>(
+                        size_offset,
+                        ErrorKind::Size {
+                            expected: expected_size_bytes,
+                            actual: actual_size_bytes,
+                        }));
+                }
+
+                Ok(WithSize(t))
             })
             .collect();
 
@@ -211,10 +245,9 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        let new_size = self.0.len();
-        let mut bytes_written = new_size.encode(writer)?;
+        let mut bytes_written = self.0.len().encode(writer)?;
 
-        // encode elements to buffers in parallel
+        // Encode elements to buffers in parallel.
         let encoded: io::Result<Vec<Vec<u8>>> = self.0.par_iter()
             .map(|element: &WithSize<T>| {
                 let mut buf = Vec::new();
@@ -223,7 +256,7 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
             })
             .collect();
 
-        // write sizes and buffer contents to actual writer (non-parallel, but hopefully fast)
+        // Write sizes and buffer contents to actual writer (non-parallel, but hopefully fast).
         for buf in encoded? {
             bytes_written += buf.encode(writer)?;
         }
@@ -232,43 +265,63 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
     }
 }
 
+/// UTF-8 strings.
+impl WasmBinary for String {
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        // Reuse Vec<u8> implementation, then convert to UTF-8, consuming the buffer so no
+        // re-allocation is necessary.
+        let offset_before = *offset;
+        let buf: Vec<u8> = Vec::decode(reader, offset).set_err_elem::<String>()?;
+        Ok(String::from_utf8(buf).add_err_info::<String>(offset_before)?)
+    }
+
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        // Cannot reuse implementation of Vec<u8> for writing, because we only have the string
+        // borrowed, but conversion via into_bytes requires owning it.
+        let mut bytes_written = self.len().encode(writer)?;
+        writer.write_all(self.as_bytes())?;
+        bytes_written += self.len();
+        Ok(bytes_written)
+    }
+}
+
 
 /* Special cases that cannot be derived and need a manual impl */
 
 impl WasmBinary for Module {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        // Check magic number.
         let mut magic_number = [0u8; 4];
-        reader.read_exact(&mut magic_number)?;
+        reader.read_exact(&mut magic_number).add_err_info::<Module>(0)?;
         if &magic_number != b"\0asm" {
-            return Self::error("magic bytes do not match");
+            return Err(Error::new::<Module>(0, ErrorKind::MagicNumber { actual: magic_number }));
         }
+        *offset += 4;
 
-        let version = reader.read_u32::<LittleEndian>()?;
+        // Check version.
+        let version = reader.read_u32::<LittleEndian>().add_err_info::<Module>(4)?;
         if version != 1 {
-            return Self::error("not version 1");
+            return Err(Error::new::<Module>(4, ErrorKind::Version { actual: version }));
         }
+        *offset += 4;
 
+        // Parse sections until EOF.
         let mut sections = Vec::new();
         loop {
-            match Section::decode(reader) {
+            let offset_before = *offset;
+            match Section::decode(reader, offset) {
                 Ok(section) => sections.push(section),
-                // FIXME this will silently end parsing on EOF (without a domain-specific Wasm error!)
-                // but sometimes, we _do_ expect more data, so not every io::Error::UnexpectedEof
-                // is a valid reason to break!
-                // In particular, I encountered this error during fuzzing: when a binary gets a very
-                // large LEB128, e.g., the size of a Vec (as per the Wasm spec grammar), and we try
-                // to parse that many entries of the Vec, and then there are less entries than
-                // expected, the resulting UnexpectedEof will silently be caught here.
-                // See tests/invalid/oom-large-vector-size.
-                // TODO instead of breaking on an error after/during parsing of a section, we should
-                // check if there is more data, _before_ parsing the next section.
-                Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+                // If we cannot even read one more byte (the ID of the next section), we are done.
+                Err(e) if e.kind() == &ErrorKind::Eof && e.offset() == offset_before => break,
+                // All other errors (including Eof in the _middle_ of a section, i.e.,
+                // where we read at least some bytes), are an error and should be reported.
                 Err(e) => return Err(e)
             };
         }
 
         Ok(Module { sections })
     }
+
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         writer.write_all(b"\0asm")?;
         writer.write_all(&[1, 0, 0, 0])?;
@@ -282,12 +335,12 @@ impl WasmBinary for Module {
 
 /// needs manual impl because of block handling: End op-code terminates body, but only if block stack is empty
 impl WasmBinary for Expr {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
         let mut instructions = Vec::new();
 
         let mut block_depth = 0;
         while block_depth >= 0 {
-            let instr = Instr::decode(reader)?;
+            let instr = Instr::decode(reader, offset)?;
 
             block_depth += match instr {
                 Instr::Block(..) | Instr::Loop(..) | Instr::If(..) => 1,
@@ -302,6 +355,7 @@ impl WasmBinary for Expr {
 
         Ok(Expr(instructions))
     }
+
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         let mut bytes_written = 0;
         for instruction in &self.0 {
@@ -311,18 +365,22 @@ impl WasmBinary for Expr {
     }
 }
 
-/// needs manual impl because of compressed format: even though BlockType is "logically" an enum,
-/// it has no tag, because they know that 0x40 (empty block) and ValType are disjoint.
+/// Needs manual impl because of compressed format: even though BlockType is "logically" an enum,
+/// it has no tag, because they know that 0x40 (empty block) and ValType bytes are disjoint.
 impl WasmBinary for BlockType {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Ok(BlockType(match u8::decode(reader)? {
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        let tag = u8::decode(reader, offset).set_err_elem::<Self>()?;
+        Ok(BlockType(match tag {
             0x40 => None,
             byte => {
+                // Retry, now interpreting as ValType.
                 let buf = [byte; 1];
-                Some(ValType::decode(&mut &buf[..])?)
+                *offset -= 1;
+                Some(ValType::decode(&mut &buf[..], offset)?)
             }
         }))
     }
+
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         match self {
             &BlockType(None) => 0x40u8.encode(writer),
@@ -331,20 +389,21 @@ impl WasmBinary for BlockType {
     }
 }
 
-/// needs manual impl because the tag if max is present comes at the beginning of the struct, not
+/// Needs manual impl because the tag if max is present comes at the beginning of the struct, not
 /// before the max field.
 impl WasmBinary for Limits {
-    fn decode<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Ok(match u8::decode(reader)? {
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        let tag = u8::decode(reader, offset).set_err_elem::<Self>()?;
+        Ok(match tag {
             0x00 => Limits {
-                initial_size: u32::decode(reader)?,
+                initial_size: u32::decode(reader, offset)?,
                 max_size: None,
             },
             0x01 => Limits {
-                initial_size: u32::decode(reader)?,
-                max_size: Some(u32::decode(reader)?),
+                initial_size: u32::decode(reader, offset)?,
+                max_size: Some(u32::decode(reader, offset)?),
             },
-            byte => Self::error(format!("expected tag for Limits, got 0x{:02x}", byte))?
+            byte => Err(Error::invalid_tag::<Limits>(*offset, byte))?
         })
     }
 
@@ -366,6 +425,6 @@ impl WasmBinary for Limits {
 }
 
 impl<T> WasmBinary for PhantomData<T> {
-    fn decode<R: io::Read>(_: &mut R) -> io::Result<Self> { Ok(PhantomData) }
+    fn decode<R: io::Read>(_: &mut R, _: &mut usize) -> Result<Self, Error> { Ok(PhantomData) }
     fn encode<W: io::Write>(&self, _: &mut W) -> io::Result<usize> { Ok(0) }
 }

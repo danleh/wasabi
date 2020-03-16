@@ -459,7 +459,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String>
                     unreachable_depth = 1;
                 }
                 Call(target_func_idx) => {
-                    let ref func_ty = module_info.read().functions[target_func_idx.0].type_;
+                    let ref func_ty = module_info.read().functions[target_func_idx.into_inner()].type_;
                     type_stack.instr(&func_ty.into());
 
                     if enabled_hooks.contains(Hook::Call) {
@@ -601,7 +601,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String>
                     }
                 }
                 Global(op, global_idx) => {
-                    let global_ty = module_info.read().globals[global_idx.0];
+                    let global_ty = module_info.read().globals[global_idx.into_inner()];
 
                     type_stack.instr(&op.to_type(global_ty));
 
@@ -784,7 +784,7 @@ trait ToConst {
 
 impl<T> ToConst for Idx<T> {
     fn to_const(self) -> Instr {
-        Const(Val::I32(self.0 as i32))
+        Const(Val::I32(self.into_inner() as i32))
     }
 }
 

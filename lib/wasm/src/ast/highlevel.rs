@@ -650,20 +650,20 @@ impl fmt::Display for Instr {
             | MemorySize(_) | MemoryGrow(_)
             | Numeric(_) => Ok(()),
 
-            Br(label) => write!(f, " {}", label.0),
-            BrIf(label) => write!(f, " {}", label.0),
+            Br(label) => write!(f, " {}", label.into_inner()),
+            BrIf(label) => write!(f, " {}", label.into_inner()),
             BrTable(table, default_label) => {
                 for label in table {
-                    write!(f, " {}", label.0)?;
+                    write!(f, " {}", label.into_inner())?;
                 }
-                write!(f, " {}", default_label.0)
+                write!(f, " {}", default_label.into_inner())
             }
 
-            Call(func_idx) => write!(f, " {}", func_idx.0),
-            CallIndirect(_, table_idx) => write!(f, " {}", table_idx.0),
+            Call(func_idx) => write!(f, " {}", func_idx.into_inner()),
+            CallIndirect(_, table_idx) => write!(f, " {}", table_idx.into_inner()),
 
-            Local(_, local_idx) => write!(f, " {}", local_idx.0),
-            Global(_, global_idx) => write!(f, " {}", global_idx.0),
+            Local(_, local_idx) => write!(f, " {}", local_idx.into_inner()),
+            Global(_, global_idx) => write!(f, " {}", global_idx.into_inner()),
             Load(_, memarg) | Store(_, memarg) => {
                 if memarg.offset != 0 {
                     write!(f, " offset={}", memarg.offset)?;
@@ -715,7 +715,7 @@ impl Module {
         (self.globals.len() - 1).into()
     }
 
-    pub fn function(&mut self, idx: Idx<Function>) -> &mut Function { &mut self.functions[idx.0] }
+    pub fn function(&mut self, idx: Idx<Function>) -> &mut Function { &mut self.functions[idx.into_inner()] }
     pub fn functions(&mut self) -> impl Iterator<Item=(Idx<Function>, &mut Function)> {
         self.functions.iter_mut().enumerate().map(|(i, f)| (i.into(), f))
     }
@@ -763,14 +763,14 @@ impl Function {
     /// get type of the local with index idx
     pub fn local_type(&self, idx: Idx<Local>) -> ValType {
         let param_count = self.type_.params.len();
-        if (idx.0) < param_count {
-            self.type_.params[idx.0]
+        if idx.into_inner() < param_count {
+            self.type_.params[idx.into_inner()]
         } else {
             let locals = &self.code.as_ref()
                 .expect("cannot get type of a local in an imported function")
                 .locals;
-            *locals.get(idx.0 - param_count)
-                .expect(&format!("invalid local index {}, function has {} parameters and {} locals", idx.0, param_count, locals.len()))
+            *locals.get(idx.into_inner() - param_count)
+                .expect(&format!("invalid local index {}, function has {} parameters and {} locals", idx.into_inner(), param_count, locals.len()))
         }
     }
 

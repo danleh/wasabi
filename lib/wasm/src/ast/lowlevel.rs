@@ -13,7 +13,7 @@ pub struct Module {
 #[derive(Debug, Clone)]
 pub struct WithSize<T>(pub T);
 
-/// Just a marker to indicate that parallel decoding/encoding is possible
+/// Just a marker to indicate that parallel decoding/encoding is possible.
 #[derive(Debug, Clone)]
 pub struct Parallel<T>(pub T);
 
@@ -132,6 +132,7 @@ pub enum Instr {
 
     #[tag = 0x0c] Br(Idx<Label>),
     #[tag = 0x0d] BrIf(Idx<Label>),
+    // TODO use named fields here
     #[tag = 0x0e] BrTable(Vec<Idx<Label>>, Idx<Label>),
 
     #[tag = 0x0f] Return,

@@ -20,27 +20,34 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
 
     let decode_expr = match &input.data {
         &Data::Struct(DataStruct { ref fields, .. }) => {
-            let tag: Option<u8> = attributes_to_tag(&input.attrs);
+            // Structs can also be annotated with a tag attribute, which means that the struct
+            // _must_ be preceded by the given byte.
+            let tag_constant: Option<u8> = attributes_to_tag(&input.attrs);
 
-            let decode_tag = tag.map(|tag| quote! {
-                let byte = u8::decode(reader)?;
-                if byte != #tag {
-                    return Self::error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte));
+            let check_tag = tag_constant.map(|tag_constant| quote! {
+                let offset_before = *offset;
+                let tag = u8::decode(reader, offset).set_err_elem::<Self>()?;
+                if tag != #tag_constant {
+                    return Err(crate::error::Error::invalid_tag::<#data_name>(offset_before, tag));
                 }
             });
             let decode_fields = decode_fields(&parse_quote!(#data_name), &fields);
 
             quote!({
-                #( #decode_tag )*
+                #( #check_tag )*
                 #decode_fields
             })
         }
         &Data::Enum(DataEnum { ref variants, .. }) => {
             let decode_variants = variants.iter().map(|variant| decode_variant(data_name, variant));
 
-            quote!(match u8::decode(reader)? {
-                #( #decode_variants )*
-                byte => Self::error(format!("expected tag for {}, got 0x{:02x}", stringify!(#data_name), byte))?
+            quote!({
+                let offset_before = *offset;
+                let tag = u8::decode(reader, offset).set_err_elem::<Self>()?;
+                match tag {
+                    #( #decode_variants )*
+                    byte => Err(crate::error::Error::invalid_tag::<#data_name>(offset_before, byte))?
+                }
             })
         }
         _ => unimplemented!("can only derive(WasmBinary) for structs and enums")
@@ -61,7 +68,8 @@ pub fn derive_wasm(input: TokenStream) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     quote!(
         impl #impl_generics WasmBinary for #data_name #ty_generics #where_clause {
-            fn decode<R: ::std::io::Read>(reader: &mut R) -> ::std::io::Result<Self> {
+            fn decode<R: ::std::io::Read>(reader: &mut R, offset: &mut usize) -> ::std::result::Result<Self, crate::error::Error> {
+                use crate::error::SetErrElem;
                 Ok(#decode_expr)
             }
             fn encode<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<usize> {
@@ -110,7 +118,7 @@ fn decode_fields(name: &TypePath, fields: &Fields) -> Tokens {
 fn decode_field(field: &Field) -> Tokens {
     let field_name = field.ident;
     let field_ty = remove_type_arguments(&field.ty);
-    quote!( #( #field_name: )* #field_ty::decode(reader)? )
+    quote!( #( #field_name: )* #field_ty::decode(reader, offset)? )
 }
 
 /// Transform, e.g., Vec<T> into just Vec. Useful when calling trait methods on a generic type, i.e.,
