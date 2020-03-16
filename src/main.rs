@@ -11,7 +11,6 @@ use wasm::ast::highlevel::Module;
 // - OptionsError: invalid option...
 // - ParseError: error parsing wasm file at offset 0x0000: unknown upcode 0xf7f7 (test with SIMD file)
 // - TypeError: cannot type check...
-// TODO use upstream (crates.io) leb128 crate, remove this version one from lib/
 
 fn main() -> Result<(), MainError> {
     let opt = Options::from_args();

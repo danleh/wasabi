@@ -1,5 +1,5 @@
 use self::TypeStackElement::*;
-use wasm::ast::{BlockType, InstrType, ValType};
+use wasm::ast::{BlockType, ValType, FunctionType};
 
 /*
  * Data structure for representing the abstract "value stack", i.e., for every value at runtime this
@@ -43,8 +43,8 @@ impl TypeStack {
     }
 
     /// convenience, pops and validates input_tys, then pushes the result_tys
-    pub fn instr(&mut self, ty: &InstrType) {
-        for &input_ty in ty.inputs.iter().rev() {
+    pub fn instr(&mut self, ty: &FunctionType) {
+        for &input_ty in ty.params.iter().rev() {
             assert_eq!(
                 input_ty,
                 self.pop_val(),

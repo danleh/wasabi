@@ -58,10 +58,10 @@ impl<'a> From<&'a Function> for FunctionInfo {
     fn from(function: &Function) -> FunctionInfo {
         FunctionInfo {
             type_: function.type_.clone(),
-            import: function.import.clone(),
+            import: function.import().map(|(module, name)| (module.to_string(), name.to_string())),
             export: function.export.clone(),
             locals: function
-                .code
+                .code()
                 .iter()
                 .flat_map(|code| code.locals.clone())
                 .collect(),
@@ -75,11 +75,11 @@ where
     S: Serializer,
 {
     let mut type_str = String::new();
-    for ty in &ty.params {
+    for ty in ty.params.iter() {
         type_str.push(ty.to_char());
     }
     type_str.push('|');
-    for ty in &ty.results {
+    for ty in ty.results.iter() {
         type_str.push(ty.to_char());
     }
     s.serialize_str(&type_str)

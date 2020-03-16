@@ -1,11 +1,9 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use typename::TypeName;
-
 use super::{*, ValType::*};
 
-use self::{GlobalOp::*, LoadOp::*, LocalOp::*, StoreOp::*};
+use self::{LoadOp::*, StoreOp::*};
 
 /* High-level AST:
     - types are inlined instead of referenced by type idx (i.e., no manual handling of Type "pool")
@@ -29,46 +27,42 @@ pub struct Module {
     pub custom_sections: Vec<Vec<u8>>,
 }
 
-// TODO finish this refactoring:
-// replace import/code in highlevel Function and import/init in highlevel Global with this.
-pub enum ImportOr<T> {
-    Imported(String, String),
-    NotImported(T)
+#[derive(Debug, Clone)]
+pub enum ImportOrPresent<T> {
+    Import(String, String),
+    Present(T),
 }
 
-#[derive(Debug, Clone, TypeName)]
+#[derive(Debug, Clone)]
 pub struct Function {
-    // type is inlined here compared to low-level/binary/spec representation
+    // Type is inlined here compared to low-level/binary/spec representation.
     pub type_: FunctionType,
-    // import and code are mutually exclusive, i.e., exactly one of both must be Some(...)
-    // TODO introduce enum that makes only either of import or code possible
-    pub import: Option<(String, String)>,
-    pub code: Option<Code>,
-    // functions (and other elements) can be exported multiple times under different names
+    pub code: ImportOrPresent<Code>,
+    // Functions/globals/memories/tables can be exported multiple times under different names.
+    // But the export names must be unique (not ensure in this representation!).
     pub export: Vec<String>,
 }
 
-#[derive(Debug, Clone, TypeName)]
+#[derive(Debug, Clone)]
 pub struct Global {
     pub type_: GlobalType,
-    // import and init are mutually exclusive, i.e., exactly one of both must be Some(...)
-    // see TODO above
-    pub import: Option<(String, String)>,
-    pub init: Option<Expr>,
+    pub init: ImportOrPresent<Expr>,
     pub export: Vec<String>,
 }
 
-#[derive(Debug, Clone, TypeName)]
+#[derive(Debug, Clone)]
 pub struct Table {
     pub type_: TableType,
+    // Unlike functions and globals, an imported table can still be initialized with elements.
     pub import: Option<(String, String)>,
     pub elements: Vec<Element>,
     pub export: Vec<String>,
 }
 
-#[derive(Debug, Clone, TypeName)]
+#[derive(Debug, Clone)]
 pub struct Memory {
     pub type_: MemoryType,
+    // Unlike functions and globals, an imported memory can still be initialized with data elements.
     pub import: Option<(String, String)>,
     pub data: Vec<Data>,
     pub export: Vec<String>,
@@ -94,7 +88,7 @@ pub struct Data {
 
 pub type Expr = Vec<Instr>;
 
-#[derive(Debug, Clone, PartialEq, TypeName)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Instr {
     Unreachable,
     Nop,
@@ -107,7 +101,7 @@ pub enum Instr {
 
     Br(Idx<Label>),
     BrIf(Idx<Label>),
-    BrTable(Vec<Idx<Label>>, Idx<Label>),
+    BrTable { table: Vec<Idx<Label>>, default: Idx<Label> },
 
     Return,
     Call(Idx<Function>),
@@ -130,12 +124,10 @@ pub enum Instr {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-// TODO Remove Local prefix from variants, just use LocalOp::Get to disambiguate against GlobalOp.
-pub enum LocalOp { LocalGet, LocalSet, LocalTee }
+pub enum LocalOp { Get, Set, Tee }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-// TODO Remove Global prefix from variants, just use GlobalOp::Get to disambiguate against LocalOp.
-pub enum GlobalOp { GlobalGet, GlobalSet }
+pub enum GlobalOp { Get, Set }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum LoadOp {
@@ -322,108 +314,108 @@ pub enum NumericOp {
 /* Type information for each instruction */
 
 impl LocalOp {
-    pub fn to_type(&self, local_ty: ValType) -> InstrType {
+    pub fn to_type(&self, local_ty: ValType) -> FunctionType {
         match *self {
-            LocalOp::LocalGet => InstrType::new(&[], &[local_ty]),
-            LocalOp::LocalSet => InstrType::new(&[local_ty], &[]),
-            LocalOp::LocalTee => InstrType::new(&[local_ty], &[local_ty]),
+            LocalOp::Get => FunctionType::new(&[], &[local_ty]),
+            LocalOp::Set => FunctionType::new(&[local_ty], &[]),
+            LocalOp::Tee => FunctionType::new(&[local_ty], &[local_ty]),
         }
     }
 }
 
 impl GlobalOp {
-    pub fn to_type(&self, global_ty: ValType) -> InstrType {
+    pub fn to_type(&self, global_ty: ValType) -> FunctionType {
         match *self {
-            GlobalOp::GlobalGet => InstrType::new(&[], &[global_ty]),
-            GlobalOp::GlobalSet => InstrType::new(&[global_ty], &[]),
+            GlobalOp::Get => FunctionType::new(&[], &[global_ty]),
+            GlobalOp::Set => FunctionType::new(&[global_ty], &[]),
         }
     }
 }
 
 impl NumericOp {
-    pub fn to_type(&self) -> InstrType {
+    pub fn to_type(&self) -> FunctionType {
         use self::NumericOp::*;
         match *self {
             /* Unary */
 
-            I32Eqz => InstrType::new(&[I32], &[I32]),
-            I64Eqz => InstrType::new(&[I64], &[I32]),
+            I32Eqz => FunctionType::new(&[I32], &[I32]),
+            I64Eqz => FunctionType::new(&[I64], &[I32]),
 
-            I32Clz | I32Ctz | I32Popcnt => InstrType::new(&[I32], &[I32]),
-            I64Clz | I64Ctz | I64Popcnt => InstrType::new(&[I64], &[I64]),
+            I32Clz | I32Ctz | I32Popcnt => FunctionType::new(&[I32], &[I32]),
+            I64Clz | I64Ctz | I64Popcnt => FunctionType::new(&[I64], &[I64]),
 
-            F32Abs | F32Neg | F32Ceil | F32Floor | F32Trunc | F32Nearest | F32Sqrt => InstrType::new(&[F32], &[F32]),
-            F64Abs | F64Neg | F64Ceil | F64Floor | F64Trunc | F64Nearest | F64Sqrt => InstrType::new(&[F64], &[F64]),
+            F32Abs | F32Neg | F32Ceil | F32Floor | F32Trunc | F32Nearest | F32Sqrt => FunctionType::new(&[F32], &[F32]),
+            F64Abs | F64Neg | F64Ceil | F64Floor | F64Trunc | F64Nearest | F64Sqrt => FunctionType::new(&[F64], &[F64]),
 
             // conversions
-            I32WrapI64 => InstrType::new(&[I64], &[I32]),
-            I32TruncF32S | I32TruncF32U => InstrType::new(&[F32], &[I32]),
-            I32TruncF64S | I32TruncF64U => InstrType::new(&[F64], &[I32]),
-            I64ExtendI32S | I64ExtendI32U => InstrType::new(&[I32], &[I64]),
-            I64TruncF32S | I64TruncF32U => InstrType::new(&[F32], &[I64]),
-            I64TruncF64S | I64TruncF64U => InstrType::new(&[F64], &[I64]),
-            F32ConvertI32S | F32ConvertI32U => InstrType::new(&[I32], &[F32]),
-            F32ConvertI64S | F32ConvertI64U => InstrType::new(&[I64], &[F32]),
-            F32DemoteF64 => InstrType::new(&[F64], &[F32]),
-            F64ConvertI32S | F64ConvertI32U => InstrType::new(&[I32], &[F64]),
-            F64ConvertI64S | F64ConvertI64U => InstrType::new(&[I64], &[F64]),
-            F64PromoteF32 => InstrType::new(&[F32], &[F64]),
-            I32ReinterpretF32 => InstrType::new(&[F32], &[I32]),
-            I64ReinterpretF64 => InstrType::new(&[F64], &[I64]),
-            F32ReinterpretI32 => InstrType::new(&[I32], &[F32]),
-            F64ReinterpretI64 => InstrType::new(&[I64], &[F64]),
+            I32WrapI64 => FunctionType::new(&[I64], &[I32]),
+            I32TruncF32S | I32TruncF32U => FunctionType::new(&[F32], &[I32]),
+            I32TruncF64S | I32TruncF64U => FunctionType::new(&[F64], &[I32]),
+            I64ExtendI32S | I64ExtendI32U => FunctionType::new(&[I32], &[I64]),
+            I64TruncF32S | I64TruncF32U => FunctionType::new(&[F32], &[I64]),
+            I64TruncF64S | I64TruncF64U => FunctionType::new(&[F64], &[I64]),
+            F32ConvertI32S | F32ConvertI32U => FunctionType::new(&[I32], &[F32]),
+            F32ConvertI64S | F32ConvertI64U => FunctionType::new(&[I64], &[F32]),
+            F32DemoteF64 => FunctionType::new(&[F64], &[F32]),
+            F64ConvertI32S | F64ConvertI32U => FunctionType::new(&[I32], &[F64]),
+            F64ConvertI64S | F64ConvertI64U => FunctionType::new(&[I64], &[F64]),
+            F64PromoteF32 => FunctionType::new(&[F32], &[F64]),
+            I32ReinterpretF32 => FunctionType::new(&[F32], &[I32]),
+            I64ReinterpretF64 => FunctionType::new(&[F64], &[I64]),
+            F32ReinterpretI32 => FunctionType::new(&[I32], &[F32]),
+            F64ReinterpretI64 => FunctionType::new(&[I64], &[F64]),
 
             /* Binary */
 
-            I32Eq | I32Ne | I32LtS | I32LtU | I32GtS | I32GtU | I32LeS | I32LeU | I32GeS | I32GeU => InstrType::new(&[I32, I32], &[I32]),
-            I64Eq | I64Ne | I64LtS | I64LtU | I64GtS | I64GtU | I64LeS | I64LeU | I64GeS | I64GeU => InstrType::new(&[I64, I64], &[I32]),
+            I32Eq | I32Ne | I32LtS | I32LtU | I32GtS | I32GtU | I32LeS | I32LeU | I32GeS | I32GeU => FunctionType::new(&[I32, I32], &[I32]),
+            I64Eq | I64Ne | I64LtS | I64LtU | I64GtS | I64GtU | I64LeS | I64LeU | I64GeS | I64GeU => FunctionType::new(&[I64, I64], &[I32]),
 
-            F32Eq | F32Ne | F32Lt | F32Gt | F32Le | F32Ge => InstrType::new(&[F32, F32], &[I32]),
-            F64Eq | F64Ne | F64Lt | F64Gt | F64Le | F64Ge => InstrType::new(&[F64, F64], &[I32]),
+            F32Eq | F32Ne | F32Lt | F32Gt | F32Le | F32Ge => FunctionType::new(&[F32, F32], &[I32]),
+            F64Eq | F64Ne | F64Lt | F64Gt | F64Le | F64Ge => FunctionType::new(&[F64, F64], &[I32]),
 
-            I32Add | I32Sub | I32Mul | I32DivS | I32DivU | I32RemS | I32RemU | I32And | I32Or | I32Xor | I32Shl | I32ShrS | I32ShrU | I32Rotl | I32Rotr => InstrType::new(&[I32, I32], &[I32]),
-            I64Add | I64Sub | I64Mul | I64DivS | I64DivU | I64RemS | I64RemU | I64And | I64Or | I64Xor | I64Shl | I64ShrS | I64ShrU | I64Rotl | I64Rotr => InstrType::new(&[I64, I64], &[I64]),
-            F32Add | F32Sub | F32Mul | F32Div | F32Min | F32Max | F32Copysign => InstrType::new(&[F32, F32], &[F32]),
-            F64Add | F64Sub | F64Mul | F64Div | F64Min | F64Max | F64Copysign => InstrType::new(&[F64, F64], &[F64]),
+            I32Add | I32Sub | I32Mul | I32DivS | I32DivU | I32RemS | I32RemU | I32And | I32Or | I32Xor | I32Shl | I32ShrS | I32ShrU | I32Rotl | I32Rotr => FunctionType::new(&[I32, I32], &[I32]),
+            I64Add | I64Sub | I64Mul | I64DivS | I64DivU | I64RemS | I64RemU | I64And | I64Or | I64Xor | I64Shl | I64ShrS | I64ShrU | I64Rotl | I64Rotr => FunctionType::new(&[I64, I64], &[I64]),
+            F32Add | F32Sub | F32Mul | F32Div | F32Min | F32Max | F32Copysign => FunctionType::new(&[F32, F32], &[F32]),
+            F64Add | F64Sub | F64Mul | F64Div | F64Min | F64Max | F64Copysign => FunctionType::new(&[F64, F64], &[F64]),
         }
     }
 }
 
 impl LoadOp {
-    pub fn to_type(&self) -> InstrType {
+    pub fn to_type(&self) -> FunctionType {
         match *self {
-            I32Load => InstrType::new(&[I32], &[I32]),
-            I64Load => InstrType::new(&[I32], &[I64]),
-            F32Load => InstrType::new(&[I32], &[F32]),
-            F64Load => InstrType::new(&[I32], &[F64]),
+            I32Load => FunctionType::new(&[I32], &[I32]),
+            I64Load => FunctionType::new(&[I32], &[I64]),
+            F32Load => FunctionType::new(&[I32], &[F32]),
+            F64Load => FunctionType::new(&[I32], &[F64]),
 
-            I32Load8S => InstrType::new(&[I32], &[I32]),
-            I32Load8U => InstrType::new(&[I32], &[I32]),
-            I32Load16S => InstrType::new(&[I32], &[I32]),
-            I32Load16U => InstrType::new(&[I32], &[I32]),
-            I64Load8S => InstrType::new(&[I32], &[I64]),
-            I64Load8U => InstrType::new(&[I32], &[I64]),
-            I64Load16S => InstrType::new(&[I32], &[I64]),
-            I64Load16U => InstrType::new(&[I32], &[I64]),
-            I64Load32S => InstrType::new(&[I32], &[I64]),
-            I64Load32U => InstrType::new(&[I32], &[I64]),
+            I32Load8S => FunctionType::new(&[I32], &[I32]),
+            I32Load8U => FunctionType::new(&[I32], &[I32]),
+            I32Load16S => FunctionType::new(&[I32], &[I32]),
+            I32Load16U => FunctionType::new(&[I32], &[I32]),
+            I64Load8S => FunctionType::new(&[I32], &[I64]),
+            I64Load8U => FunctionType::new(&[I32], &[I64]),
+            I64Load16S => FunctionType::new(&[I32], &[I64]),
+            I64Load16U => FunctionType::new(&[I32], &[I64]),
+            I64Load32S => FunctionType::new(&[I32], &[I64]),
+            I64Load32U => FunctionType::new(&[I32], &[I64]),
         }
     }
 }
 
 impl StoreOp {
-    pub fn to_type(&self) -> InstrType {
+    pub fn to_type(&self) -> FunctionType {
         match *self {
-            I32Store => InstrType::new(&[I32, I32], &[]),
-            I64Store => InstrType::new(&[I32, I64], &[]),
-            F32Store => InstrType::new(&[I32, F32], &[]),
-            F64Store => InstrType::new(&[I32, F64], &[]),
+            I32Store => FunctionType::new(&[I32, I32], &[]),
+            I64Store => FunctionType::new(&[I32, I64], &[]),
+            F32Store => FunctionType::new(&[I32, F32], &[]),
+            F64Store => FunctionType::new(&[I32, F64], &[]),
 
-            I32Store8 => InstrType::new(&[I32, I32], &[]),
-            I32Store16 => InstrType::new(&[I32, I32], &[]),
-            I64Store8 => InstrType::new(&[I32, I64], &[]),
-            I64Store16 => InstrType::new(&[I32, I64], &[]),
-            I64Store32 => InstrType::new(&[I32, I64], &[]),
+            I32Store8 => FunctionType::new(&[I32, I32], &[]),
+            I32Store16 => FunctionType::new(&[I32, I32], &[]),
+            I64Store8 => FunctionType::new(&[I32, I64], &[]),
+            I64Store16 => FunctionType::new(&[I32, I64], &[]),
+            I64Store32 => FunctionType::new(&[I32, I64], &[]),
         }
     }
 }
@@ -431,22 +423,22 @@ impl StoreOp {
 impl Instr {
     /// for all where the type can be determined by just looking at the instruction, not additional
     /// information like the function or module etc.
-    pub fn to_type(&self) -> Option<InstrType> {
+    pub fn to_type(&self) -> Option<FunctionType> {
         use self::Instr::*;
         match *self {
-            Unreachable | Nop => Some(InstrType::default()),
+            Unreachable | Nop => Some(FunctionType::new(&[], &[])),
             Load(ref op, _) => Some(op.to_type()),
             Store(ref op, _) => Some(op.to_type()),
-            MemorySize(_) => Some(InstrType::new(&[], &[I32])),
-            MemoryGrow(_) => Some(InstrType::new(&[I32], &[I32])),
-            Const(ref val) => Some(InstrType::new(&[], &[val.to_type()])),
+            MemorySize(_) => Some(FunctionType::new(&[], &[I32])),
+            MemoryGrow(_) => Some(FunctionType::new(&[I32], &[I32])),
+            Const(ref val) => Some(FunctionType::new(&[], &[val.to_type()])),
             Numeric(ref op) => Some(op.to_type()),
-            CallIndirect(ref func_ty, _) => Some(InstrType::new(&[&func_ty.params[..], &[I32]].concat(), &func_ty.results)),
+            CallIndirect(ref func_ty, _) => Some(FunctionType::new(&[&func_ty.params[..], &[I32]].concat(), &func_ty.results)),
 
             // nesting...
             Block(_) | Loop(_) | If(_) | Else | End => None,
             // depends on branch target?
-            Br(_) | BrIf(_) | BrTable(_, _) => None,
+            Br(_) | BrIf(_) | BrTable { .. } => None,
             // need to inspect function type
             Return | Call(_) => None,
             // need abstract type stack "evaluation"
@@ -470,17 +462,17 @@ impl Instr {
             End => "end",
             Br(_) => "br",
             BrIf(_) => "br_if",
-            BrTable(_, _) => "br_table",
+            BrTable { .. } => "br_table",
             Return => "return",
             Call(_) => "call",
             CallIndirect(_, _) => "call_indirect",
             Drop => "drop",
             Select => "select",
-            Local(LocalGet, _) => "local.get",
-            Local(LocalSet, _) => "local.set",
-            Local(LocalTee, _) => "local.tee",
-            Global(GlobalGet, _) => "global.get",
-            Global(GlobalSet, _) => "global.set",
+            Local(LocalOp::Get, _) => "local.get",
+            Local(LocalOp::Set, _) => "local.set",
+            Local(LocalOp::Tee, _) => "local.tee",
+            Global(GlobalOp::Get, _) => "global.get",
+            Global(GlobalOp::Set, _) => "global.set",
             MemorySize(_) => "memory.size",
             MemoryGrow(_) => "memory.grow",
             Const(Val::I32(_)) => "i32.const",
@@ -652,11 +644,11 @@ impl fmt::Display for Instr {
 
             Br(label) => write!(f, " {}", label.into_inner()),
             BrIf(label) => write!(f, " {}", label.into_inner()),
-            BrTable(table, default_label) => {
+            BrTable { table, default } => {
                 for label in table {
                     write!(f, " {}", label.into_inner())?;
                 }
-                write!(f, " {}", default_label.into_inner())
+                write!(f, " {}", default.into_inner())
             }
 
             Call(func_idx) => write!(f, " {}", func_idx.into_inner()),
@@ -685,8 +677,7 @@ impl Module {
     pub fn add_function(&mut self, type_: FunctionType, locals: Vec<ValType>, body: Vec<Instr>) -> Idx<Function> {
         self.functions.push(Function {
             type_,
-            import: None,
-            code: Some(Code {
+            code: ImportOrPresent::Present(Code {
                 locals,
                 body,
             }),
@@ -698,8 +689,7 @@ impl Module {
     pub fn add_function_import(&mut self, type_: FunctionType, module: String, name: String) -> Idx<Function> {
         self.functions.push(Function {
             type_,
-            import: Some((module, name)),
-            code: None,
+            code: ImportOrPresent::Import(module, name),
             export: Vec::new(),
         });
         (self.functions.len() - 1).into()
@@ -708,8 +698,7 @@ impl Module {
     pub fn add_global(&mut self, type_: ValType, mut_: Mutability, init: Vec<Instr>) -> Idx<Global> {
         self.globals.push(Global {
             type_: GlobalType(type_, mut_),
-            import: None,
-            init: Some(init),
+            init: ImportOrPresent::Present(init),
             export: Vec::new(),
         });
         (self.globals.len() - 1).into()
@@ -730,12 +719,48 @@ impl Module {
 }
 
 impl Function {
-    pub fn instructions(&mut self) -> impl Iterator<Item=(Idx<Instr>, &mut Instr)> {
-        self.code.iter_mut().flat_map(|code| code.body.iter_mut().enumerate().map(|(i, f)| (i.into(), f)))
+    pub fn import(&self) -> Option<(&str, &str)> {
+        if let ImportOrPresent::Import(module, name) = &self.code {
+            Some((module.as_str(), name.as_str()))
+        } else {
+            None
+        }
     }
 
-    pub fn modify_instr(&mut self, f: impl Fn(Instr) -> Vec<Instr>) {
-        if let Some(Code { ref mut body, .. }) = self.code {
+    pub fn code(&self) -> Option<&Code> {
+        if let ImportOrPresent::Present(t) = &self.code {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    pub fn code_mut(&mut self) -> Option<&mut Code> {
+        if let ImportOrPresent::Present(t) = &mut self.code {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    pub fn into_code(self) -> Option<Code> {
+        if let ImportOrPresent::Present(t) = self.code {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    pub fn instrs(&self) -> &[Instr] {
+        self.code().map(|code| code.body.as_slice()).unwrap_or(&[])
+    }
+
+    pub fn instrs_mut(&mut self) -> Option<&mut Vec<Instr>> {
+        self.code_mut().map(|code| &mut code.body)
+    }
+
+    pub fn modify_instrs(&mut self, f: impl Fn(Instr) -> Vec<Instr>) {
+        if let Some(body) = self.instrs_mut() {
             let new_body = Vec::with_capacity(body.len());
             let old_body = ::std::mem::replace(body, new_body);
             for instr in old_body.into_iter() {
@@ -746,10 +771,11 @@ impl Function {
 
     /// add a new local with type ty and return its index
     pub fn add_fresh_local(&mut self, ty: ValType) -> Idx<Local> {
-        let locals = &mut self.code.as_mut()
+        let args_count = self.type_.params.len();
+        let locals = &mut self.code_mut()
             .expect("cannot add local to imported function")
             .locals;
-        let idx = locals.len() + self.type_.params.len();
+        let idx = locals.len() + args_count;
         locals.push(ty);
         idx.into()
     }
@@ -766,7 +792,7 @@ impl Function {
         if idx.into_inner() < param_count {
             self.type_.params[idx.into_inner()]
         } else {
-            let locals = &self.code.as_ref()
+            let locals = &self.code()
                 .expect("cannot get type of a local in an imported function")
                 .locals;
             *locals.get(idx.into_inner() - param_count)
@@ -775,6 +801,36 @@ impl Function {
     }
 
     pub fn instr_count(&self) -> usize {
-        self.code.as_ref().map(|code| code.body.len()).unwrap_or(0)
+        self.code().map(|code| code.body.len()).unwrap_or(0)
+    }
+}
+
+impl Global {
+    pub fn import(&self) -> Option<(&str, &str)> {
+        if let ImportOrPresent::Import(module, name) = &self.init {
+            Some((module.as_str(), name.as_str()))
+        } else {
+            None
+        }
+    }
+
+    pub fn init(&self) -> Option<&Expr> {
+        if let ImportOrPresent::Present(t) = &self.init {
+            Some(t)
+        } else {
+            None
+        }
+    }
+}
+
+impl Table {
+    pub fn import(&self) -> Option<(&str, &str)> {
+        self.import.as_ref().map(|(module, name)| (module.as_str(), name.as_str()))
+    }
+}
+
+impl Memory {
+    pub fn import(&self) -> Option<(&str, &str)> {
+        self.import.as_ref().map(|(module, name)| (module.as_str(), name.as_str()))
     }
 }

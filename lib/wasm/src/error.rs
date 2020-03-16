@@ -178,5 +178,5 @@ impl Error {
 /// Utitlity function. Makes the type_name a bit more user-friendly by removing at least some common
 /// type path prefixes.
 fn grammar_element<T>() -> String{
-    any::type_name::<T>().replace("alloc::vec::", "")
+    any::type_name::<T>().replace("alloc::vec::", "").replace("alloc::string::", "")
 }

@@ -3,6 +3,7 @@ use super::*;
 use super::highlevel as hl;
 use super::lowlevel as ll;
 use rayon::prelude::*;
+use crate::ast::highlevel::{ImportOrPresent, Code};
 
 /* Conversions between high-level and low-level AST. */
 
@@ -23,31 +24,28 @@ impl From<ll::Module> for hl::Module {
 
                 ll::Section::Import(vec) => {
                     for import_ in vec.0 {
-                        let import = Some((import_.module, import_.name));
                         let export = Vec::new();
                         match import_.type_ {
                             ll::ImportType::Function(type_idx) => module.functions.push(hl::Function {
                                 type_: types[type_idx.into_inner()].clone(),
-                                import,
-                                code: None,
+                                code: ImportOrPresent::Import(import_.module, import_.name),
+                                export,
+                            }),
+                            ll::ImportType::Global(type_) => module.globals.push(hl::Global {
+                                type_,
+                                init: ImportOrPresent::Import(import_.module, import_.name),
                                 export,
                             }),
                             ll::ImportType::Table(type_) => module.tables.push(hl::Table {
                                 type_,
-                                import,
+                                import: Some((import_.module, import_.name)),
                                 elements: Vec::new(),
                                 export,
                             }),
                             ll::ImportType::Memory(type_) => module.memories.push(hl::Memory {
                                 type_,
-                                import,
+                                import: Some((import_.module, import_.name)),
                                 data: Vec::new(),
-                                export,
-                            }),
-                            ll::ImportType::Global(type_) => module.globals.push(hl::Global {
-                                type_,
-                                import,
-                                init: None,
                                 export,
                             }),
                         }
@@ -60,8 +58,17 @@ impl From<ll::Module> for hl::Module {
                     for type_idx in function_signatures {
                         module.functions.push(hl::Function {
                             type_: types[type_idx.into_inner()].clone(),
-                            import: None,
-                            code: None,
+                            // Use an empty body/locals for now, code is only converted later.
+                            code: ImportOrPresent::Present(Code { locals: vec![], body: vec![] }),
+                            export: Vec::new(),
+                        });
+                    }
+                }
+                ll::Section::Global(ll::WithSize(globals)) => {
+                    for ll::Global { type_, init } in globals {
+                        module.globals.push(hl::Global {
+                            type_,
+                            init: ImportOrPresent::Present(from_lowlevel_expr(init, &types)),
                             export: Vec::new(),
                         });
                     }
@@ -82,16 +89,6 @@ impl From<ll::Module> for hl::Module {
                             type_,
                             import: None,
                             data: Vec::new(),
-                            export: Vec::new(),
-                        });
-                    }
-                }
-                ll::Section::Global(ll::WithSize(globals)) => {
-                    for ll::Global { type_, init } in globals {
-                        module.globals.push(hl::Global {
-                            type_,
-                            import: None,
-                            init: Some(from_lowlevel_expr(init, &types)),
                             export: Vec::new(),
                         });
                     }
@@ -123,13 +120,13 @@ impl From<ll::Module> for hl::Module {
                 }
                 ll::Section::Code(ll::WithSize(code)) => {
                     let imported_function_count = module.functions.iter()
-                        .filter(|f| f.import.is_some())
+                        .filter(|f| f.import().is_some())
                         .count();
                     let code_hl: Vec<_> = code.0.into_par_iter().map(|ll::WithSize(code)| {
                         from_lowlevel_code(code, &types)
                     }).collect();
                     for (i, code) in code_hl.into_iter().enumerate() {
-                        module.functions[imported_function_count + i].code = Some(code);
+                        module.functions[imported_function_count + i].code = ImportOrPresent::Present(code);
                     }
                 }
                 ll::Section::Data(ll::WithSize(data)) => {
@@ -177,7 +174,7 @@ fn from_lowlevel_instr(instr: ll::Instr, types: &[FunctionType]) -> hl::Instr {
 
         ll::Instr::Br(label_idx) => hl::Instr::Br(label_idx),
         ll::Instr::BrIf(label_idx) => hl::Instr::BrIf(label_idx),
-        ll::Instr::BrTable(label_idx_table, default) => hl::Instr::BrTable(label_idx_table, default),
+        ll::Instr::BrTable { table, default } => hl::Instr::BrTable { table, default },
 
         ll::Instr::Return => hl::Instr::Return,
         ll::Instr::Call(function_idx) => hl::Instr::Call(function_idx.into_inner().into()),
@@ -186,11 +183,11 @@ fn from_lowlevel_instr(instr: ll::Instr, types: &[FunctionType]) -> hl::Instr {
         ll::Instr::Drop => hl::Instr::Drop,
         ll::Instr::Select => hl::Instr::Select,
 
-        ll::Instr::LocalGet(local_idx) => hl::Instr::Local(hl::LocalOp::LocalGet, local_idx.into_inner().into()),
-        ll::Instr::LocalSet(local_idx) => hl::Instr::Local(hl::LocalOp::LocalSet, local_idx.into_inner().into()),
-        ll::Instr::LocalTee(local_idx) => hl::Instr::Local(hl::LocalOp::LocalTee, local_idx.into_inner().into()),
-        ll::Instr::GlobalGet(global_idx) => hl::Instr::Global(hl::GlobalOp::GlobalGet, global_idx.into_inner().into()),
-        ll::Instr::GlobalSet(global_idx) => hl::Instr::Global(hl::GlobalOp::GlobalSet, global_idx.into_inner().into()),
+        ll::Instr::LocalGet(local_idx) => hl::Instr::Local(hl::LocalOp::Get, local_idx.into_inner().into()),
+        ll::Instr::LocalSet(local_idx) => hl::Instr::Local(hl::LocalOp::Set, local_idx.into_inner().into()),
+        ll::Instr::LocalTee(local_idx) => hl::Instr::Local(hl::LocalOp::Tee, local_idx.into_inner().into()),
+        ll::Instr::GlobalGet(global_idx) => hl::Instr::Global(hl::GlobalOp::Get, global_idx.into_inner().into()),
+        ll::Instr::GlobalSet(global_idx) => hl::Instr::Global(hl::GlobalOp::Set, global_idx.into_inner().into()),
 
         ll::Instr::I32Load(memarg) => hl::Instr::Load(hl::LoadOp::I32Load, memarg),
         ll::Instr::I64Load(memarg) => hl::Instr::Load(hl::LoadOp::I64Load, memarg),
@@ -410,7 +407,7 @@ impl From<hl::Module> for ll::Module {
         // with a signature that not function mentions (which would be unpractical, because it could
         // never be valid at runtime, but is done in the spec tests)
         for function in &module.functions {
-            for instr in function.code.iter().flat_map(|c| c.body.iter()) {
+            for instr in function.instrs() {
                 if let hl::Instr::CallIndirect(ty, _) = instr {
                     state.get_or_insert_type(ty.clone());
                 }
@@ -483,7 +480,7 @@ impl From<hl::Module> for ll::Module {
         // Code
         let code: Vec<ll::WithSize<ll::Code>> = module.functions.into_par_iter()
             .filter_map(|function|
-                function.code.map(|code| ll::WithSize(to_lowlevel_code(code, &state))))
+                function.into_code().map(|code| ll::WithSize(to_lowlevel_code(code, &state))))
             .collect();
         if !code.is_empty() {
             sections.push(ll::Section::Code(ll::WithSize(ll::Parallel(code))));
@@ -524,11 +521,11 @@ fn to_lowlevel_imports(module: &hl::Module, state: &mut EncodeState) -> Vec<ll::
             imports.extend(module.$elems.iter()
                 .enumerate()
                 .filter_map(|(i, element)|
-                    element.import.as_ref().map(|&(ref module, ref name)| {
+                    element.import().map(|(module, name)| {
                         state.$insert_idx_fn(i);
                         ll::Import {
-                            module: module.clone(),
-                            name: name.clone(),
+                            module: module.to_string(),
+                            name: name.to_string(),
                             type_: ll::ImportType::$import_ty_variant($ty_transform(element.type_.clone())),
                         }
                     })));
@@ -546,7 +543,7 @@ macro_rules! to_lowlevel_elements {
     ($elems: expr, $state: ident, $insert_idx_fn: ident, $elem_transform: expr) => {
         $elems.iter()
             .enumerate()
-            .filter(|&(_, element)| element.import.is_none())
+            .filter(|&(_, element)| element.import().is_none())
             .map(|(i, element)| {
                 $state.$insert_idx_fn(i);
                 $elem_transform(&element)
@@ -570,7 +567,7 @@ fn to_lowlevel_memories(memories: &[hl::Memory], state: &mut EncodeState) -> Vec
 fn to_lowlevel_globals(globals: &[hl::Global], state: &mut EncodeState) -> Vec<ll::Global> {
     to_lowlevel_elements!(globals, state, insert_global_idx, |global: &hl::Global| ll::Global {
         type_: global.type_,
-        init: to_lowlevel_expr(&global.init.as_ref().unwrap(), state),
+        init: to_lowlevel_expr(&global.init().unwrap(), state),
     })
 }
 
@@ -634,7 +631,7 @@ fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
 
         hl::Instr::Br(label_idx) => ll::Instr::Br(label_idx),
         hl::Instr::BrIf(label_idx) => ll::Instr::BrIf(label_idx),
-        hl::Instr::BrTable(ref label_idx_table, default) => ll::Instr::BrTable(label_idx_table.clone(), default),
+        hl::Instr::BrTable { ref table, default } => ll::Instr::BrTable { table: table.clone(), default },
 
         hl::Instr::Return => ll::Instr::Return,
         hl::Instr::Call(function_idx) => ll::Instr::Call(state.map_function_idx(function_idx.into_inner())),
@@ -643,11 +640,11 @@ fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
         hl::Instr::Drop => ll::Instr::Drop,
         hl::Instr::Select => ll::Instr::Select,
 
-        hl::Instr::Local(hl::LocalOp::LocalGet, local_idx) => ll::Instr::LocalGet(local_idx.into_inner().into()),
-        hl::Instr::Local(hl::LocalOp::LocalSet, local_idx) => ll::Instr::LocalSet(local_idx.into_inner().into()),
-        hl::Instr::Local(hl::LocalOp::LocalTee, local_idx) => ll::Instr::LocalTee(local_idx.into_inner().into()),
-        hl::Instr::Global(hl::GlobalOp::GlobalGet, global_idx) => ll::Instr::GlobalGet(state.map_global_idx(global_idx.into_inner())),
-        hl::Instr::Global(hl::GlobalOp::GlobalSet, global_idx) => ll::Instr::GlobalSet(state.map_global_idx(global_idx.into_inner())),
+        hl::Instr::Local(hl::LocalOp::Get, local_idx) => ll::Instr::LocalGet(local_idx.into_inner().into()),
+        hl::Instr::Local(hl::LocalOp::Set, local_idx) => ll::Instr::LocalSet(local_idx.into_inner().into()),
+        hl::Instr::Local(hl::LocalOp::Tee, local_idx) => ll::Instr::LocalTee(local_idx.into_inner().into()),
+        hl::Instr::Global(hl::GlobalOp::Get, global_idx) => ll::Instr::GlobalGet(state.map_global_idx(global_idx.into_inner())),
+        hl::Instr::Global(hl::GlobalOp::Set, global_idx) => ll::Instr::GlobalSet(state.map_global_idx(global_idx.into_inner())),
 
         hl::Instr::Load(hl::LoadOp::I32Load, memarg) => ll::Instr::I32Load(memarg),
         hl::Instr::Load(hl::LoadOp::I64Load, memarg) => ll::Instr::I64Load(memarg),

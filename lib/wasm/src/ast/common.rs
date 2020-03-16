@@ -1,17 +1,13 @@
 use std::cmp::Ordering;
+use std::convert::TryInto;
 use std::fmt::{self, Write};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 
+use binary_derive::WasmBinary;
 use serde::{Serialize, Serializer};
 
-use typename::TypeName;
-
-use derive_new::new;
-
 use crate::binary::WasmBinary;
-use binary_derive::WasmBinary;
-use std::convert::TryInto;
 
 /* AST nodes common to high- and low-level representations. */
 
@@ -74,42 +70,19 @@ impl ValType {
     }
 }
 
-/// not in the spec, but useful for static analysis etc.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
-pub struct InstrType {
-    // use Box not Vec (saves the capacity field, i.e., smaller memory size) since InstrType is
-    // almost always immutable anyway (i.e., no dynamic adding/removing of input/result types)
-    pub inputs: Box<[ValType]>,
+#[derive(WasmBinary, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize)]
+#[tag = 0x60]
+pub struct FunctionType {
+    // Use Box instead of Vec to save the capacity field (smaller size of the struct), since
+    // funtion types are immutable anyway (i.e., no dynamic adding/removing of input/result types).
+    pub params: Box<[ValType]>,
     pub results: Box<[ValType]>,
 }
 
-impl InstrType {
-    pub fn new(inputs: &[ValType], results: &[ValType]) -> Self {
-        InstrType {
-            inputs: inputs.into(),
-            results: results.into(),
-        }
+impl FunctionType {
+    pub fn new(params: &[ValType], results: &[ValType]) -> Self {
+        FunctionType { params: params.into(), results: results.into() }
     }
-}
-
-// convert between function and instruction types
-impl<'a> From<&'a FunctionType> for InstrType {
-    fn from(func: &FunctionType) -> Self {
-        InstrType::new(&func.params, &func.results)
-    }
-}
-
-impl<'a> From<&'a InstrType> for FunctionType {
-    fn from(instr: &InstrType) -> Self {
-        FunctionType::new(instr.inputs.to_vec(), instr.results.to_vec())
-    }
-}
-
-#[derive(WasmBinary, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, new, TypeName)]
-#[tag = 0x60]
-pub struct FunctionType {
-    pub params: Vec<ValType>,
-    pub results: Vec<ValType>,
 }
 
 impl fmt::Display for FunctionType {
@@ -171,10 +144,9 @@ impl<T> From<usize> for Idx<T> {
 
 // custom Debug: print index type T, don't print PhantomData
 // e.g. Idx<Function>(3, PhantomData) as "Function 3"
-impl<T: TypeName> fmt::Debug for Idx<T> {
+impl<T> fmt::Debug for Idx<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let type_name = T::type_name();
-        let type_name = type_name.split("::").last().unwrap();
+        let type_name = std::any::type_name::<T>().split("::").last().unwrap();
         f.write_str(type_name)?;
         f.write_char(' ')?;
         self.0.fmt(f)
@@ -225,10 +197,10 @@ impl<T> Ord for Idx<T> {
 // Unit structs as markers for indices that do not have their own "content" type
 // I.e., Local is just ValType, Label is not represented at all.
 
-#[derive(Debug, TypeName)]
+#[derive(Debug)]
 pub struct Local;
 
-#[derive(Debug, TypeName)]
+#[derive(Debug)]
 pub struct Label;
 
 

@@ -2,7 +2,7 @@ use super::block_stack::BlockStackElement;
 use super::convert_i64::convert_i64_type;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use std::collections::HashMap;
-use wasm::ast::highlevel::{Function, Instr, Instr::*, Module};
+use wasm::ast::highlevel::{Function, Instr, Instr::*, Module, ImportOrPresent};
 use wasm::ast::{FunctionType, Idx, ValType, ValType::*};
 
 /*
@@ -84,9 +84,8 @@ impl Hook {
 
             Function {
                 // hooks do not return anything
-                type_: FunctionType::new(lowlevel_args, vec![]),
-                import: Some(("__wasabi_hooks".to_string(), lowlevel_name)),
-                code: None,
+                type_: FunctionType::new(&lowlevel_args, &[]),
+                code: ImportOrPresent::Import("__wasabi_hooks".to_string(), lowlevel_name),
                 export: Vec::new(),
             }
         };
@@ -100,7 +99,7 @@ impl Hook {
     }
 
     pub fn lowlevel_name(&self) -> String {
-        self.wasm.import.as_ref().unwrap().1.clone()
+        self.wasm.import().unwrap().1.to_string()
     }
 }
 
@@ -146,7 +145,7 @@ impl HookMap {
             Br(_) => Hook::new(name, args!(targetLabel: I32, targetInstr: I32), name, "{label: targetLabel, location: {func, instr: targetInstr}}"),
             BrIf(_) => Hook::new(name, args!(condition: I32, targetLabel: I32, targetInstr: I32), name, "{label: targetLabel, location: {func, instr: targetInstr}}, condition === 1"),
             // NOTE js_args is very hacky! We rely on the Hook constructor to close the parenthesis and insert the call statement to endBrTableBlock() here
-            BrTable(_, _) => Hook::new(name, args!(tableIdx: I32, brTablesInfoIdx: I32), name, "Wasabi.module.info.brTables[brTablesInfoIdx].table, Wasabi.module.info.brTables[brTablesInfoIdx].default, tableIdx); Wasabi.endBrTableBlocks(brTablesInfoIdx, tableIdx, func"),
+            BrTable { .. } => Hook::new(name, args!(tableIdx: I32, brTablesInfoIdx: I32), name, "Wasabi.module.info.brTables[brTablesInfoIdx].table, Wasabi.module.info.brTables[brTablesInfoIdx].default, tableIdx); Wasabi.endBrTableBlocks(brTablesInfoIdx, tableIdx, func"),
 
             MemorySize(_) => Hook::new(name, args!(currentSizePages: I32), name, "currentSizePages"),
             MemoryGrow(_) => Hook::new(name, args!(deltaPages: I32, previousSizePages: I32), name, "deltaPages, previousSizePages"),
@@ -159,7 +158,7 @@ impl HookMap {
                 Hook::new(name, args, "load", js_args)
             }
             Store(op, _) => {
-                let ty = op.to_type().inputs[1];
+                let ty = op.to_type().params[1];
                 let args = args!(offset: I32, align: I32, addr: I32, value: ty);
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {{addr, offset, align}}, {}", instr_name, &args[3].to_lowlevel_long_expr());
@@ -174,12 +173,12 @@ impl HookMap {
             }
             Numeric(op) => {
                 let ty = op.to_type();
-                let highlevel_name = match ty.inputs.len() {
+                let highlevel_name = match ty.params.len() {
                     1 => "unary",
                     2 => "binary",
                     _ => unreachable!()
                 };
-                let inputs = ty.inputs.iter().enumerate().map(|(i, &ty)| Arg { name: format!("input{}", i), ty });
+                let inputs = ty.params.iter().enumerate().map(|(i, &ty)| Arg { name: format!("input{}", i), ty });
                 let results = ty.results.iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{}", i), ty });
                 let args = inputs.chain(results).collect::<Vec<_>>();
                 let instr_name = instr.to_name();
