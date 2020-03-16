@@ -17,6 +17,9 @@ use self::{LoadOp::*, StoreOp::*};
 
 #[derive(Debug, Clone, Default)]
 pub struct Module {
+    // From the name section, if present, e.g., compiler-generated debug info.
+    pub name: Option<String>,
+
     pub functions: Vec<Function>,
     pub globals: Vec<Global>,
     pub tables: Vec<Table>,
@@ -24,7 +27,7 @@ pub struct Module {
 
     pub start: Option<Idx<Function>>,
 
-    pub custom_sections: Vec<Vec<u8>>,
+    pub custom_sections: Vec<RawCustomSection>,
 }
 
 #[derive(Debug, Clone)]
@@ -39,8 +42,10 @@ pub struct Function {
     pub type_: FunctionType,
     pub code: ImportOrPresent<Code>,
     // Functions/globals/memories/tables can be exported multiple times under different names.
-    // But the export names must be unique (not ensure in this representation!).
+    // But the export names must be unique (not ensured in this representation!).
     pub export: Vec<String>,
+    // From the name section, if present, e.g., compiler-generated debug info.
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -689,6 +694,7 @@ impl Module {
                 body,
             }),
             export: Vec::new(),
+            name: None
         });
         (self.functions.len() - 1).into()
     }
@@ -698,6 +704,7 @@ impl Module {
             type_,
             code: ImportOrPresent::Import(module, name),
             export: Vec::new(),
+            name: None
         });
         (self.functions.len() - 1).into()
     }

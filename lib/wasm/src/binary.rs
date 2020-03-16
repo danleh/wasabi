@@ -57,7 +57,7 @@ impl WasmBinary for usize {
             // would clutter the interface of all encode() method implementations. So for now
             // a custom io::Error is sufficient (since it is the only one).
             return Err(io::Error::new(io::ErrorKind::InvalidData,
-                                      "wasm32 does not allow unsigned int (e.g., indices) larger than 32 bits"))
+                                      "wasm32 does not allow unsigned int (e.g., indices) larger than 32 bits"));
         }
         writer.write_leb128(*self)
     }
@@ -324,14 +324,24 @@ impl WasmBinary for Module {
 
         // Parse sections until EOF.
         let mut sections = Vec::new();
+        let mut last_section_type = None;
         loop {
-            let offset_before = *offset;
+            let offset_section_begin = *offset;
             match Section::decode(reader, offset) {
-                Ok(section) => sections.push(section),
+                Ok(mut section) => {
+                    // To insert custom sections at the correct place when serializing again, we
+                    // need to remember after which other non-custom section they originally came.
+                    if let Section::Custom(CustomSection::Raw(r)) = &mut section {
+                        r.after = last_section_type;
+                    } else {
+                        last_section_type = Some(std::mem::discriminant(&section));
+                    }
+                    sections.push(section);
+                }
                 // If we cannot even read one more byte (the ID of the next section), we are done.
-                Err(e) if e.kind() == &ErrorKind::Eof && e.offset() == offset_before => break,
+                Err(e) if e.kind() == &ErrorKind::Eof && e.offset() == offset_section_begin => break,
                 // All other errors (including Eof in the _middle_ of a section, i.e.,
-                // where we read at least some bytes), are an error and should be reported.
+                // where we read at least some bytes), are an error and will be reported.
                 Err(e) => return Err(e)
             };
         }
@@ -444,4 +454,106 @@ impl WasmBinary for Limits {
 impl<T> WasmBinary for PhantomData<T> {
     fn decode<R: io::Read>(_: &mut R, _: &mut usize) -> Result<Self, Error> { Ok(PhantomData) }
     fn encode<W: io::Write>(&self, _: &mut W) -> io::Result<usize> { Ok(0) }
+}
+
+impl WasmBinary for CustomSection {
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        let size_offset = *offset;
+        let section_size_bytes = u32::decode(reader, offset).set_err_elem::<Self>()?;
+
+        // Each custom section must have a name, see https://webassembly.github.io/spec/core/binary/modules.html#binary-customsec
+        let name_offset = *offset;
+        let name = String::decode(reader, offset).set_err_elem::<Self>()?;
+        let name_size_bytes = *offset - name_offset;
+
+        // The size of the section includes also the bytes of the name, so we have to subtract
+        // the size of the name to get the size of the content only.
+        let content_size_bytes = (section_size_bytes as usize).checked_sub(name_size_bytes)
+            // Check that the name alone is not already longer than the overall size of the section.
+            .ok_or_else(|| Error::new::<Self>(
+                size_offset,
+                ErrorKind::Size {
+                    expected: section_size_bytes,
+                    actual: *offset - size_offset,
+                }))?;
+
+        // Read to a buffer first, so that we can always fall back to returning a raw custom section.
+        let mut content_offset = *offset;
+        let mut content = vec![0u8; content_size_bytes as usize];
+        reader.read_exact(content.as_mut_slice()).add_err_info::<Self>(*offset)?;
+        *offset += content_size_bytes;
+
+        let section = match name.as_str() {
+            "name" => {
+                // Unfortunately, some name sections are invalid (e.g., from the UE4 engine, an
+                // early Wasm binary). But we don't want to fail completely, so downgrade to warning.
+                match NameSection::decode(&mut content.as_slice(), &mut content_offset) {
+                    Ok(name_section) => CustomSection::Name(name_section),
+                    Err(err) => {
+                        eprintln!("Warning: Wasm binary at offset 0x{:x} ({}): could not parse name section", size_offset, size_offset);
+                        eprintln!("Caused by: {}", err);
+                        // Keep the section as a raw section at least
+                        CustomSection::Raw(RawCustomSection { name, content, after: None })
+                    }
+                }
+            }
+            // Unknown custom section: parse the rest (excluding the name, which we already did.)
+            // After is set later correctly by Module::decode().
+            _ => CustomSection::Raw(RawCustomSection { name, content, after: None }),
+        };
+
+        Ok(section)
+    }
+
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        // Write to an intermediate buffer first because we need to know the custom section size.
+        let mut buf = Vec::new();
+
+        match self {
+            CustomSection::Name(name_sec) => {
+                "name".to_string().encode(&mut buf)?;
+                name_sec.encode(&mut buf)?;
+            }
+            CustomSection::Raw(sec) => {
+                sec.name.encode(&mut buf)?;
+                buf.extend_from_slice(&sec.content);
+            }
+        }
+
+        // Then write the size as LEB128 and copy all bytes from the intermediate buffer over.
+        let encoded_size_bytes = buf.len();
+        let mut bytes_written = encoded_size_bytes.encode(writer)?;
+        writer.write_all(&buf)?;
+        bytes_written += encoded_size_bytes;
+
+        Ok(bytes_written)
+    }
+}
+
+impl WasmBinary for NameSection {
+    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+        // Parse subsections until EOF, cf. Module sections parsing.
+        let mut subsections = Vec::new();
+        loop {
+            let offset_section_begin = *offset;
+            match NameSubSection::decode(reader, offset) {
+                Ok(section) => subsections.push(section),
+                // If we cannot even read one more byte (the ID of the next section), we are done.
+                Err(e) if e.kind() == &ErrorKind::Eof && e.offset() == offset_section_begin => break,
+                // All other errors (including Eof in the _middle_ of a section, i.e.,
+                // where we read at least some bytes), are an error and will be reported.
+                Err(e) => return Err(e)
+            };
+        }
+
+        Ok(NameSection { subsections })
+    }
+
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        let mut bytes_written = 0;
+        for section in &self.subsections {
+            bytes_written += section.encode(writer)?;
+        }
+        Ok(bytes_written)
+    }
 }

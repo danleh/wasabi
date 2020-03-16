@@ -211,3 +211,14 @@ pub struct Memarg {
     pub alignment: u32,
     pub offset: u32,
 }
+
+#[derive(Debug, Clone)]
+pub struct RawCustomSection {
+    pub name: String,
+    pub content: Vec<u8>,
+    /// Used again during serialization to place the custom section at the right order/position.
+    /// The last non-custom section _before_ this custom section. If there are multiple custom
+    /// sections after each other, this will not include it, but their relative order will
+    /// be respected in the high-level custom section list.
+    pub after: Option<std::mem::Discriminant<super::lowlevel::Section>>,
+}
