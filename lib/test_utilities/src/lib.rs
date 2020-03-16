@@ -9,6 +9,7 @@ pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), String> {
 
     let path = path.as_ref();
     let validate_output = Command::new("wasm-validate")
+        .arg("--ignore-custom-section-errors")
         .arg(path)
         .output()
         .map_err(|err| err.to_string())?;
