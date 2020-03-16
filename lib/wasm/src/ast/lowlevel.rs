@@ -90,14 +90,17 @@ pub enum ExportType {
 // Markers for Idx<T>, since in low-level format Function, Table, and Memory have not one type,
 // but are split over multiple sections.
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Table;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Memory;
+
+#[derive(Debug, Clone)]
+pub struct Local;
 
 
 /* Code */
@@ -129,9 +132,9 @@ pub enum Instr {
     #[tag = 0x05] Else,
     #[tag = 0x0b] End,
 
-    #[tag = 0x0c] Br(Idx<Label>),
-    #[tag = 0x0d] BrIf(Idx<Label>),
-    #[tag = 0x0e] BrTable { table: Vec<Idx<Label>>, default: Idx<Label> },
+    #[tag = 0x0c] Br(Label),
+    #[tag = 0x0d] BrIf(Label),
+    #[tag = 0x0e] BrTable { table: Vec<Label>, default: Label },
 
     #[tag = 0x0f] Return,
     #[tag = 0x10] Call(Idx<Function>),

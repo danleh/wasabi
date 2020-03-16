@@ -145,12 +145,8 @@ impl From<ll::Module> for hl::Module {
 }
 
 fn from_lowlevel_code(code: ll::Code, types: &[FunctionType]) -> hl::Code {
-    let mut locals = Vec::new();
-    for local in code.locals {
-        for _ in 0..local.count {
-            locals.push(local.type_);
-        }
-    }
+    let locals = code.locals.iter().flat_map(
+        |l| std::iter::repeat(hl::Local::new(l.type_)).take(l.count as usize)).collect();
     hl::Code {
         locals,
         body: from_lowlevel_expr(code.body, types),
@@ -359,13 +355,13 @@ struct EncodeState {
 }
 
 macro_rules! element_idx_fns {
-    ($insert_fn: ident, $map_fn: ident, $field: ident, $ll_ty: ty) => {
+    ($insert_fn: ident, $map_fn: ident, $field: ident, $hl_ty: ty, $ll_ty: ty) => {
         fn $insert_fn(&mut self, old_idx: usize) {
             let new_idx = self.$field.len();
             self.$field.insert(old_idx, new_idx);
         }
-        fn $map_fn(&self, old_idx: usize) -> Idx<$ll_ty> {
-            self.$field[&old_idx].into()
+        fn $map_fn(&self, old_idx: Idx<$hl_ty>) -> Idx<$ll_ty> {
+            self.$field[&old_idx.into_inner()].into()
         }
     };
 }
@@ -379,10 +375,10 @@ impl EncodeState {
         (*self.types.get(type_).expect("call_indirect with unknown type")).into()
     }
 
-    element_idx_fns!(insert_function_idx, map_function_idx, function_idx, ll::Function);
-    element_idx_fns!(insert_table_idx, map_table_idx, table_idx, ll::Table);
-    element_idx_fns!(insert_memory_idx, map_memory_idx, memory_idx, ll::Memory);
-    element_idx_fns!(insert_global_idx, map_global_idx, global_idx, ll::Global);
+    element_idx_fns!(insert_function_idx, map_function_idx, function_idx, hl::Function, ll::Function);
+    element_idx_fns!(insert_table_idx, map_table_idx, table_idx, hl::Table, ll::Table);
+    element_idx_fns!(insert_memory_idx, map_memory_idx, memory_idx, hl::Memory, ll::Memory);
+    element_idx_fns!(insert_global_idx, map_global_idx, global_idx, hl::Global, ll::Global);
 }
 
 impl From<hl::Module> for ll::Module {
@@ -467,9 +463,9 @@ impl From<hl::Module> for ll::Module {
             .enumerate()
             .flat_map(|(i, table)| table.elements.into_iter()
                 .map(|element| ll::Element {
-                    table_idx: state.map_table_idx(i),
+                    table_idx: state.map_table_idx(i.into()),
                     offset: to_lowlevel_expr(&element.offset, &state),
-                    init: element.functions.iter().map(|fn_idx| state.map_function_idx(fn_idx.into_inner())).collect(),
+                    init: element.functions.into_iter().map(|fn_idx| state.map_function_idx(fn_idx)).collect(),
                 })
                 .collect::<Vec<_>>())
             .collect();
@@ -580,7 +576,7 @@ fn to_lowlevel_exports(module: &hl::Module, state: &EncodeState) -> Vec<ll::Expo
                 for name in &element.export {
                     exports.push(ll::Export {
                         name: name.clone(),
-                        type_: ll::ExportType::$export_ty_variant(state.$map_idx_fn(idx)),
+                        type_: ll::ExportType::$export_ty_variant(state.$map_idx_fn(idx.into())),
                     });
                 }
             }
@@ -634,8 +630,8 @@ fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
         hl::Instr::BrTable { ref table, default } => ll::Instr::BrTable { table: table.clone(), default },
 
         hl::Instr::Return => ll::Instr::Return,
-        hl::Instr::Call(function_idx) => ll::Instr::Call(state.map_function_idx(function_idx.into_inner())),
-        hl::Instr::CallIndirect(ref type_, table_idx) => ll::Instr::CallIndirect(state.get_type_idx(&type_), state.map_table_idx(table_idx.into_inner())),
+        hl::Instr::Call(function_idx) => ll::Instr::Call(state.map_function_idx(function_idx)),
+        hl::Instr::CallIndirect(ref type_, table_idx) => ll::Instr::CallIndirect(state.get_type_idx(&type_), state.map_table_idx(table_idx)),
 
         hl::Instr::Drop => ll::Instr::Drop,
         hl::Instr::Select => ll::Instr::Select,
@@ -643,8 +639,8 @@ fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
         hl::Instr::Local(hl::LocalOp::Get, local_idx) => ll::Instr::LocalGet(local_idx.into_inner().into()),
         hl::Instr::Local(hl::LocalOp::Set, local_idx) => ll::Instr::LocalSet(local_idx.into_inner().into()),
         hl::Instr::Local(hl::LocalOp::Tee, local_idx) => ll::Instr::LocalTee(local_idx.into_inner().into()),
-        hl::Instr::Global(hl::GlobalOp::Get, global_idx) => ll::Instr::GlobalGet(state.map_global_idx(global_idx.into_inner())),
-        hl::Instr::Global(hl::GlobalOp::Set, global_idx) => ll::Instr::GlobalSet(state.map_global_idx(global_idx.into_inner())),
+        hl::Instr::Global(hl::GlobalOp::Get, global_idx) => ll::Instr::GlobalGet(state.map_global_idx(global_idx)),
+        hl::Instr::Global(hl::GlobalOp::Set, global_idx) => ll::Instr::GlobalSet(state.map_global_idx(global_idx)),
 
         hl::Instr::Load(hl::LoadOp::I32Load, memarg) => ll::Instr::I32Load(memarg),
         hl::Instr::Load(hl::LoadOp::I64Load, memarg) => ll::Instr::I64Load(memarg),
@@ -670,8 +666,8 @@ fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
         hl::Instr::Store(hl::StoreOp::I64Store16, memarg) => ll::Instr::I64Store16(memarg),
         hl::Instr::Store(hl::StoreOp::I64Store32, memarg) => ll::Instr::I64Store32(memarg),
 
-        hl::Instr::MemorySize(memory_idx) => ll::Instr::MemorySize(state.map_memory_idx(memory_idx.into_inner())),
-        hl::Instr::MemoryGrow(memory_idx) => ll::Instr::MemoryGrow(state.map_memory_idx(memory_idx.into_inner())),
+        hl::Instr::MemorySize(memory_idx) => ll::Instr::MemorySize(state.map_memory_idx(memory_idx)),
+        hl::Instr::MemoryGrow(memory_idx) => ll::Instr::MemoryGrow(state.map_memory_idx(memory_idx)),
 
         hl::Instr::Const(Val::I32(immediate)) => ll::Instr::I32Const(immediate),
         hl::Instr::Const(Val::I64(immediate)) => ll::Instr::I64Const(immediate),

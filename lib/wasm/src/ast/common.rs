@@ -194,15 +194,15 @@ impl<T> Ord for Idx<T> {
     }
 }
 
-// Unit structs as markers for indices that do not have their own "content" type
-// I.e., Local is just ValType, Label is not represented at all.
+// Similar to indices, labels are just a typed wrapper around numbers in the binary format.
+#[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct Label(pub u32);
 
-#[derive(Debug)]
-pub struct Local;
-
-#[derive(Debug)]
-pub struct Label;
-
+impl Serialize for Label {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
 
 /* Code */
 
