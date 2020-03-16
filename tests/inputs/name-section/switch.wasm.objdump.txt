@@ -1,0 +1,42 @@
+
+switch.wasm:	file format wasm 0x1
+
+Sections:
+
+   Custom start=0x0000000a end=0x00000016 (size=0x0000000c) "dylink"
+     Type start=0x00000018 end=0x00000034 (size=0x0000001c) count: 6
+   Import start=0x00000037 end=0x000000f8 (size=0x000000c1) count: 11
+ Function start=0x000000fa end=0x00000103 (size=0x00000009) count: 8
+   Global start=0x00000105 end=0x00000172 (size=0x0000006d) count: 19
+   Export start=0x00000174 end=0x000001a0 (size=0x0000002c) count: 3
+     Elem start=0x000001a2 end=0x000001a3 (size=0x00000001) count: 0
+     Code start=0x000001a6 end=0x000002e6 (size=0x00000140) count: 8
+     Data start=0x000002e8 end=0x0000030c (size=0x00000024) count: 1
+   Custom start=0x0000030f end=0x000003a1 (size=0x00000092) "name"
+
+Section Details:
+
+Custom:
+ - name: "name"
+ - func[0] <abortStackOverflow>
+ - func[1] <_printf>
+ - func[2] <stackAlloc>
+ - func[3] <stackSave>
+ - func[4] <stackRestore>
+ - func[5] <establishStackSpace>
+ - func[6] <setThrew>
+ - func[7] <_main>
+ - func[8] <runPostSets>
+ - func[9] <__post_instantiate>
+
+Contents of section Custom:
+000030f: 046e 616d 6501 8a01 0a00 1261 626f 7274  .name......abort
+000031f: 5374 6163 6b4f 7665 7266 6c6f 7701 075f  StackOverflow.._
+000032f: 7072 696e 7466 020a 7374 6163 6b41 6c6c  printf..stackAll
+000033f: 6f63 0309 7374 6163 6b53 6176 6504 0c73  oc..stackSave..s
+000034f: 7461 636b 5265 7374 6f72 6505 1365 7374  tackRestore..est
+000035f: 6162 6c69 7368 5374 6163 6b53 7061 6365  ablishStackSpace
+000036f: 0608 7365 7454 6872 6577 0705 5f6d 6169  ..setThrew.._mai
+000037f: 6e08 0b72 756e 506f 7374 5365 7473 0912  n..runPostSets..
+000038f: 5f5f 706f 7374 5f69 6e73 7461 6e74 6961  __post_instantia
+000039f: 7465                                     te

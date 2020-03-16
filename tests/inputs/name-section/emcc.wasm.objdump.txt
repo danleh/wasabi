@@ -1,0 +1,46 @@
+
+emcc.wasm:	file format wasm 0x1
+
+Sections:
+
+   Custom start=0x0000000a end=0x00000018 (size=0x0000000e) "dylink"
+     Type start=0x0000001a end=0x0000003a (size=0x00000020) count: 7
+   Import start=0x0000003d end=0x00000102 (size=0x000000c5) count: 11
+ Function start=0x00000104 end=0x0000010f (size=0x0000000b) count: 10
+   Global start=0x00000111 end=0x00000179 (size=0x00000068) count: 18
+   Export start=0x0000017b end=0x000001b6 (size=0x0000003b) count: 4
+     Elem start=0x000001b8 end=0x000001c2 (size=0x0000000a) count: 1
+     Code start=0x000001c5 end=0x00000310 (size=0x0000014b) count: 10
+     Data start=0x00000312 end=0x0000033a (size=0x00000028) count: 1
+   Custom start=0x0000033d end=0x000003ed (size=0x000000b0) "name"
+
+Section Details:
+
+Custom:
+ - name: "name"
+ - func[0] <abortStackOverflow>
+ - func[1] <nullFunc_X>
+ - func[2] <_printf>
+ - func[3] <stackAlloc>
+ - func[4] <stackSave>
+ - func[5] <stackRestore>
+ - func[6] <establishStackSpace>
+ - func[7] <setThrew>
+ - func[8] <_doubleValue>
+ - func[9] <_main>
+ - func[10] <runPostSets>
+ - func[11] <__post_instantiate>
+ - func[12] <b0>
+
+Contents of section Custom:
+000033d: 046e 616d 6501 a801 0d00 1261 626f 7274  .name......abort
+000034d: 5374 6163 6b4f 7665 7266 6c6f 7701 0a6e  StackOverflow..n
+000035d: 756c 6c46 756e 635f 5802 075f 7072 696e  ullFunc_X.._prin
+000036d: 7466 030a 7374 6163 6b41 6c6c 6f63 0409  tf..stackAlloc..
+000037d: 7374 6163 6b53 6176 6505 0c73 7461 636b  stackSave..stack
+000038d: 5265 7374 6f72 6506 1365 7374 6162 6c69  Restore..establi
+000039d: 7368 5374 6163 6b53 7061 6365 0708 7365  shStackSpace..se
+00003ad: 7454 6872 6577 080c 5f64 6f75 626c 6556  tThrew.._doubleV
+00003bd: 616c 7565 0905 5f6d 6169 6e0a 0b72 756e  alue.._main..run
+00003cd: 506f 7374 5365 7473 0b12 5f5f 706f 7374  PostSets..__post
+00003dd: 5f69 6e73 7461 6e74 6961 7465 0c02 6230  _instantiate..b0
