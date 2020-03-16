@@ -20,7 +20,7 @@ pub struct Parallel<T>(pub T);
 
 #[derive(WasmBinary, Debug, Clone)]
 pub enum Section {
-    #[tag = 0] Custom(Vec<u8>),
+    #[tag = 0] Custom(CustomSection),
     #[tag = 1] Type(WithSize<Vec<FunctionType>>),
     #[tag = 2] Import(WithSize<Vec<Import>>),
     #[tag = 3] Function(WithSize<Vec<Idx<FunctionType>>>),
@@ -90,14 +90,17 @@ pub enum ExportType {
 // Markers for Idx<T>, since in low-level format Function, Table, and Memory have not one type,
 // but are split over multiple sections.
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Table;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Memory;
+
+#[derive(Debug, Clone)]
+pub struct Local;
 
 
 /* Code */
@@ -129,9 +132,9 @@ pub enum Instr {
     #[tag = 0x05] Else,
     #[tag = 0x0b] End,
 
-    #[tag = 0x0c] Br(Idx<Label>),
-    #[tag = 0x0d] BrIf(Idx<Label>),
-    #[tag = 0x0e] BrTable { table: Vec<Idx<Label>>, default: Idx<Label> },
+    #[tag = 0x0c] Br(Label),
+    #[tag = 0x0d] BrIf(Label),
+    #[tag = 0x0e] BrTable { table: Vec<Label>, default: Label },
 
     #[tag = 0x0f] Return,
     #[tag = 0x10] Call(Idx<Function>),
@@ -301,4 +304,45 @@ pub enum Instr {
     #[tag = 0xbd] I64ReinterpretF64,
     #[tag = 0xbe] F32ReinterpretI32,
     #[tag = 0xbf] F64ReinterpretI64,
+}
+
+/* Important/widely supported custom sections */
+
+#[derive(Debug, Clone)]
+pub enum CustomSection {
+    /// If custom section name was "name".
+    Name(NameSection),
+    /// Fallback, if we cannot parse this type of custom section.
+    Raw(RawCustomSection),
+}
+
+// See https://webassembly.github.io/spec/core/appendix/custom.html#name-section
+#[derive(Debug, Clone)]
+pub struct NameSection {
+    // NOTE This does not inlucde the custom section name (in this case: "name"), since we know it
+    // from the type NameSection alone.
+    pub subsections: Vec<NameSubSection>
+}
+
+#[derive(WasmBinary, Debug, Clone)]
+pub enum NameSubSection {
+    #[tag = 0x00] Module(WithSize<String>),
+    #[tag = 0x01] Function(WithSize<NameMap<Function>>),
+    #[tag = 0x02] Local(WithSize<IndirectNameMap<Function, Local>>)
+}
+
+pub type NameMap<T> = Vec<NameAssoc<T>>;
+
+#[derive(WasmBinary, Debug, Clone)]
+pub struct NameAssoc<T> {
+    pub idx: Idx<T>,
+    pub name: String,
+}
+
+pub type IndirectNameMap<T, U> = Vec<IndirectNameAssoc<T, U>>;
+
+#[derive(WasmBinary, Debug, Clone)]
+pub struct IndirectNameAssoc<T, U> {
+    pub idx: Idx<T>,
+    pub name_map: NameMap<U>,
 }

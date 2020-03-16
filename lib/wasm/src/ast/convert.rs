@@ -1,12 +1,15 @@
 use std::collections::HashMap;
+
+use rayon::prelude::*;
+
 use super::*;
 use super::highlevel as hl;
 use super::lowlevel as ll;
-use rayon::prelude::*;
-use crate::ast::highlevel::{ImportOrPresent, Code};
 
 /* Conversions between high-level and low-level AST. */
 
+// TODO Convert all the panics in the conversion functions into errors, i.e., return Result<_, wasm::Error>.
+// NOTE A lot of the panics are implicit, e.g., in indexing operations of Vecs etc.
 
 /* From low-level to high-level. */
 
@@ -17,7 +20,61 @@ impl From<ll::Module> for hl::Module {
 
         for section in sections {
             match section {
-                ll::Section::Custom(bytes) => module.custom_sections.push(bytes),
+                ll::Section::Custom(ll::CustomSection::Name(ll::NameSection { subsections })) => {
+                    // Each name subsection should appear at most once and in the correct order.
+                    let mut function_names = Vec::new();
+                    let mut local_names = Vec::new();
+                    for sec in subsections {
+                        match sec {
+                            ll::NameSubSection::Module(ll::WithSize(name)) => {
+                                if module.name.is_some() {
+                                    panic!("name section: more than one module name subsection");
+                                }
+                                if !function_names.is_empty() || !local_names.is_empty() {
+                                    panic!("name section: out-of-order module name subsection");
+                                }
+                                module.name = Some(name);
+                            }
+                            ll::NameSubSection::Function(ll::WithSize(names)) => {
+                                if !function_names.is_empty() {
+                                    panic!("name section: more than one function names subsection");
+                                }
+                                if !local_names.is_empty() {
+                                    panic!("name section: out-of-order function names subsection");
+                                }
+                                function_names = names;
+                            }
+                            ll::NameSubSection::Local(ll::WithSize(names)) => {
+                                if !local_names.is_empty() {
+                                    panic!("name section: more than one local names subsection");
+                                }
+                                local_names = names;
+                            }
+                        }
+                    }
+
+                    // Inline the name information for functions and locals into our high-level AST.
+                    for ll::NameAssoc { idx, name } in function_names {
+                        module.functions.get_mut(idx.into_inner())
+                            .expect("invalid function index")
+                            .name = Some(name);
+                    }
+                    for ll::IndirectNameAssoc { idx: func_idx, name_map } in local_names {
+                        let code = module.functions.get_mut(func_idx.into_inner())
+                            .expect("invalid function index")
+                            .code_mut()
+                            .expect("function is imported, hence no locals to name");
+                        for ll::NameAssoc { idx, name } in name_map {
+                            code.locals.get_mut(idx.into_inner())
+                                .expect("invalid local index")
+                                .name = Some(name)
+                        }
+                    }
+                }
+
+                // Pass through unknown custom sections unmodified.
+                ll::Section::Custom(ll::CustomSection::Raw(sec)) => module.custom_sections.push(sec),
+
                 ll::Section::Type(ll::WithSize(types_)) => types = types_,
 
                 /* Imported functions, tables, memories, and globals are first added to the respective index spaces... */
@@ -28,12 +85,13 @@ impl From<ll::Module> for hl::Module {
                         match import_.type_ {
                             ll::ImportType::Function(type_idx) => module.functions.push(hl::Function {
                                 type_: types[type_idx.into_inner()].clone(),
-                                code: ImportOrPresent::Import(import_.module, import_.name),
+                                code: hl::ImportOrPresent::Import(import_.module, import_.name),
                                 export,
+                                name: None,
                             }),
                             ll::ImportType::Global(type_) => module.globals.push(hl::Global {
                                 type_,
-                                init: ImportOrPresent::Import(import_.module, import_.name),
+                                init: hl::ImportOrPresent::Import(import_.module, import_.name),
                                 export,
                             }),
                             ll::ImportType::Table(type_) => module.tables.push(hl::Table {
@@ -59,8 +117,9 @@ impl From<ll::Module> for hl::Module {
                         module.functions.push(hl::Function {
                             type_: types[type_idx.into_inner()].clone(),
                             // Use an empty body/locals for now, code is only converted later.
-                            code: ImportOrPresent::Present(Code { locals: vec![], body: vec![] }),
+                            code: hl::ImportOrPresent::Present(hl::Code { locals: vec![], body: vec![] }),
                             export: Vec::new(),
+                            name: None,
                         });
                     }
                 }
@@ -68,7 +127,7 @@ impl From<ll::Module> for hl::Module {
                     for ll::Global { type_, init } in globals {
                         module.globals.push(hl::Global {
                             type_,
-                            init: ImportOrPresent::Present(from_lowlevel_expr(init, &types)),
+                            init: hl::ImportOrPresent::Present(from_lowlevel_expr(init, &types)),
                             export: Vec::new(),
                         });
                     }
@@ -126,7 +185,7 @@ impl From<ll::Module> for hl::Module {
                         from_lowlevel_code(code, &types)
                     }).collect();
                     for (i, code) in code_hl.into_iter().enumerate() {
-                        module.functions[imported_function_count + i].code = ImportOrPresent::Present(code);
+                        module.functions[imported_function_count + i].code = hl::ImportOrPresent::Present(code);
                     }
                 }
                 ll::Section::Data(ll::WithSize(data)) => {
@@ -145,12 +204,8 @@ impl From<ll::Module> for hl::Module {
 }
 
 fn from_lowlevel_code(code: ll::Code, types: &[FunctionType]) -> hl::Code {
-    let mut locals = Vec::new();
-    for local in code.locals {
-        for _ in 0..local.count {
-            locals.push(local.type_);
-        }
-    }
+    let locals = code.locals.iter().flat_map(
+        |l| std::iter::repeat(hl::Local::new(l.type_)).take(l.count as usize)).collect();
     hl::Code {
         locals,
         body: from_lowlevel_expr(code.body, types),
@@ -352,20 +407,25 @@ fn from_lowlevel_instr(instr: ll::Instr, types: &[FunctionType]) -> hl::Instr {
 
 struct EncodeState {
     types: HashMap<FunctionType, usize>,
+    // Mapping of indices from the high-level AST to the low-level AST.
+    // Necessary, because in the low-level AST, imported functions/globals etc. must come before
+    // "local" ones.
     function_idx: HashMap<usize, usize>,
     table_idx: HashMap<usize, usize>,
     memory_idx: HashMap<usize, usize>,
     global_idx: HashMap<usize, usize>,
+    function_names: ll::NameMap<ll::Function>,
+    local_names: ll::IndirectNameMap<ll::Function, ll::Local>,
 }
 
 macro_rules! element_idx_fns {
-    ($insert_fn: ident, $map_fn: ident, $field: ident, $ll_ty: ty) => {
+    ($insert_fn: ident, $map_fn: ident, $field: ident, $hl_ty: ty, $ll_ty: ty) => {
         fn $insert_fn(&mut self, old_idx: usize) {
             let new_idx = self.$field.len();
             self.$field.insert(old_idx, new_idx);
         }
-        fn $map_fn(&self, old_idx: usize) -> Idx<$ll_ty> {
-            self.$field[&old_idx].into()
+        fn $map_fn(&self, old_idx: Idx<$hl_ty>) -> Idx<$ll_ty> {
+            self.$field[&old_idx.into_inner()].into()
         }
     };
 }
@@ -379,10 +439,10 @@ impl EncodeState {
         (*self.types.get(type_).expect("call_indirect with unknown type")).into()
     }
 
-    element_idx_fns!(insert_function_idx, map_function_idx, function_idx, ll::Function);
-    element_idx_fns!(insert_table_idx, map_table_idx, table_idx, ll::Table);
-    element_idx_fns!(insert_memory_idx, map_memory_idx, memory_idx, ll::Memory);
-    element_idx_fns!(insert_global_idx, map_global_idx, global_idx, ll::Global);
+    element_idx_fns!(insert_function_idx, map_function_idx, function_idx, hl::Function, ll::Function);
+    element_idx_fns!(insert_table_idx, map_table_idx, table_idx, hl::Table, ll::Table);
+    element_idx_fns!(insert_memory_idx, map_memory_idx, memory_idx, hl::Memory, ll::Memory);
+    element_idx_fns!(insert_global_idx, map_global_idx, global_idx, hl::Global, ll::Global);
 }
 
 impl From<hl::Module> for ll::Module {
@@ -395,6 +455,8 @@ impl From<hl::Module> for ll::Module {
             table_idx: HashMap::new(),
             memory_idx: HashMap::new(),
             global_idx: HashMap::new(),
+            function_names: Vec::new(),
+            local_names: Vec::new(),
         };
 
         let imports = to_lowlevel_imports(&module, &mut state);
@@ -458,8 +520,8 @@ impl From<hl::Module> for ll::Module {
         }
 
         // Start
-        for start in module.start {
-            sections.push(ll::Section::Start(ll::WithSize(state.map_function_idx(start.into_inner()))));
+        for start_func_idx in module.start {
+            sections.push(ll::Section::Start(ll::WithSize(state.map_function_idx(start_func_idx))));
         }
 
         // Element
@@ -467,9 +529,9 @@ impl From<hl::Module> for ll::Module {
             .enumerate()
             .flat_map(|(i, table)| table.elements.into_iter()
                 .map(|element| ll::Element {
-                    table_idx: state.map_table_idx(i),
+                    table_idx: state.map_table_idx(i.into()),
                     offset: to_lowlevel_expr(&element.offset, &state),
-                    init: element.functions.iter().map(|fn_idx| state.map_function_idx(fn_idx.into_inner())).collect(),
+                    init: element.functions.into_iter().map(|fn_idx| state.map_function_idx(fn_idx)).collect(),
                 })
                 .collect::<Vec<_>>())
             .collect();
@@ -477,13 +539,35 @@ impl From<hl::Module> for ll::Module {
             sections.push(ll::Section::Element(ll::WithSize(elements)));
         }
 
+        // Function names (must come before Code, because that consumes the high-level functions).
+        for (idx, func) in module.functions.iter().enumerate() {
+            if let Some(name) = func.name.clone() {
+                state.function_names.push(ll::NameAssoc { idx: state.map_function_idx(idx.into()), name });
+            }
+        }
+
         // Code
-        let code: Vec<ll::WithSize<ll::Code>> = module.functions.into_par_iter()
-            .filter_map(|function|
-                function.into_code().map(|code| ll::WithSize(to_lowlevel_code(code, &state))))
-            .collect();
+        let (code, local_names): (Vec<ll::WithSize<ll::Code>>, Vec<Option<ll::IndirectNameAssoc<ll::Function, ll::Local>>>) =
+            module.functions.into_par_iter()
+                .enumerate()
+                // Only non-imported functions.
+                .filter_map(|(func_idx, function)| function.into_code().map(|code| (func_idx, code)))
+                .map(|(idx, code)| {
+                    let (code, name_map) = to_lowlevel_code(code, &state);
+                    let code = ll::WithSize(code);
+                    let name_map = if name_map.is_empty() { None } else {
+                        Some(ll::IndirectNameAssoc { idx: state.map_function_idx(idx.into()), name_map })
+                    };
+                    (code, name_map)
+                })
+                .unzip();
+        // Remove empty local name maps.
+        let local_names: Vec<_> = local_names.into_iter().flatten().collect();
         if !code.is_empty() {
+            // Add low-level code section.
             sections.push(ll::Section::Code(ll::WithSize(ll::Parallel(code))));
+            // Add names of locals (if any) to encoding state.
+            state.local_names.extend(local_names);
         }
 
         // Data
@@ -491,7 +575,7 @@ impl From<hl::Module> for ll::Module {
             .enumerate()
             .flat_map(|(i, memory)| memory.data.into_iter()
                 .map(|data| ll::Data {
-                    memory_idx: state.map_memory_idx(i),
+                    memory_idx: state.map_memory_idx(i.into()),
                     offset: to_lowlevel_expr(&data.offset, &state),
                     init: data.bytes,
                 })
@@ -501,12 +585,50 @@ impl From<hl::Module> for ll::Module {
             sections.push(ll::Section::Data(ll::WithSize(data)));
         }
 
-        // Custom
-        // TODO put the pass-through custom sections in the same order as they were originally
-        // necessary, e.g., because custom section "name" must come in some specific order
-        // requires saving the order earlier when converting from ll -> hl
-        for custom in module.custom_sections {
-            sections.push(ll::Section::Custom(custom));
+        // Name section, always after Data section.
+        let mut name_subsections = Vec::new();
+        if let Some(name) = module.name {
+            name_subsections.push(ll::NameSubSection::Module(ll::WithSize(name)));
+        }
+        if !state.function_names.is_empty() {
+            name_subsections.push(ll::NameSubSection::Function(ll::WithSize(state.function_names)));
+        }
+        if !state.local_names.is_empty() {
+            name_subsections.push(ll::NameSubSection::Local(ll::WithSize(state.local_names)));
+        }
+        if !name_subsections.is_empty() {
+            sections.push(ll::Section::Custom(ll::CustomSection::Name(ll::NameSection { subsections: name_subsections })));
+        }
+
+        // Other custom sections, that we do not have inlined into the high-level AST.
+        // They are inserted after the correct non-custom section. They relative order of custom
+        // sections is the same in this array as when they were parsed originally, so no need
+        // to handle that specifically.
+        for section in module.custom_sections {
+            let after = section.after.clone();
+            let section = ll::Section::Custom(ll::CustomSection::Raw(section));
+
+            // Find the reference section after which this custom section came in the original binary.
+            let after_position = if let Some(after) = after {
+                sections.iter()
+                    .position(|sec| std::mem::discriminant(sec) == after)
+                    .expect("cannot find the reference section for inserting custom section anymore")
+                + 1
+            } else {
+                // In the original binary the custom section came at the beginning, so insert at beginning.
+                0
+            };
+
+            // Additionally skip all custom sections, as to not change the relative order between custom sections.
+            let custom_section_discriminant = std::mem::discriminant(&section);
+            let custom_skipped = sections.iter()
+                .skip(after_position)
+                .position(|sec| std::mem::discriminant(sec) != custom_section_discriminant)
+                // If all remaining sections are custom, skip all of them.
+                .unwrap_or(sections.len() - after_position);
+
+            let position = after_position + custom_skipped;
+            sections.insert(position, section);
         }
 
         ll::Module { sections }
@@ -580,7 +702,7 @@ fn to_lowlevel_exports(module: &hl::Module, state: &EncodeState) -> Vec<ll::Expo
                 for name in &element.export {
                     exports.push(ll::Export {
                         name: name.clone(),
-                        type_: ll::ExportType::$export_ty_variant(state.$map_idx_fn(idx)),
+                        type_: ll::ExportType::$export_ty_variant(state.$map_idx_fn(idx.into())),
                     });
                 }
             }
@@ -594,9 +716,11 @@ fn to_lowlevel_exports(module: &hl::Module, state: &EncodeState) -> Vec<ll::Expo
     exports
 }
 
-fn to_lowlevel_code(code: hl::Code, state: &EncodeState) -> ll::Code {
+fn to_lowlevel_code(code: hl::Code, state: &EncodeState) -> (ll::Code, ll::NameMap<ll::Local>) {
     let mut locals = Vec::new();
-    for type_ in code.locals {
+    let mut local_names = Vec::new();
+    for (idx, hl::Local { type_, name }) in code.locals.into_iter().enumerate() {
+        // Convert the type to this run-length encoded format.
         if locals.last().map(|locals: &ll::Locals| locals.type_ == type_).unwrap_or(false) {
             let last = locals.len() - 1;
             locals[last].count += 1;
@@ -606,12 +730,17 @@ fn to_lowlevel_code(code: hl::Code, state: &EncodeState) -> ll::Code {
                 type_,
             })
         }
+        // Collect all names of locals.
+        if let Some(name) = name {
+            local_names.push(ll::NameAssoc { idx: idx.into(), name });
+        }
     }
 
-    ll::Code {
+    (ll::Code {
         locals,
         body: to_lowlevel_expr(&code.body, state),
-    }
+    },
+     local_names)
 }
 
 fn to_lowlevel_expr(expr: &[hl::Instr], state: &EncodeState) -> ll::Expr {
@@ -634,8 +763,8 @@ fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
         hl::Instr::BrTable { ref table, default } => ll::Instr::BrTable { table: table.clone(), default },
 
         hl::Instr::Return => ll::Instr::Return,
-        hl::Instr::Call(function_idx) => ll::Instr::Call(state.map_function_idx(function_idx.into_inner())),
-        hl::Instr::CallIndirect(ref type_, table_idx) => ll::Instr::CallIndirect(state.get_type_idx(&type_), state.map_table_idx(table_idx.into_inner())),
+        hl::Instr::Call(function_idx) => ll::Instr::Call(state.map_function_idx(function_idx)),
+        hl::Instr::CallIndirect(ref type_, table_idx) => ll::Instr::CallIndirect(state.get_type_idx(&type_), state.map_table_idx(table_idx)),
 
         hl::Instr::Drop => ll::Instr::Drop,
         hl::Instr::Select => ll::Instr::Select,
@@ -643,8 +772,8 @@ fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
         hl::Instr::Local(hl::LocalOp::Get, local_idx) => ll::Instr::LocalGet(local_idx.into_inner().into()),
         hl::Instr::Local(hl::LocalOp::Set, local_idx) => ll::Instr::LocalSet(local_idx.into_inner().into()),
         hl::Instr::Local(hl::LocalOp::Tee, local_idx) => ll::Instr::LocalTee(local_idx.into_inner().into()),
-        hl::Instr::Global(hl::GlobalOp::Get, global_idx) => ll::Instr::GlobalGet(state.map_global_idx(global_idx.into_inner())),
-        hl::Instr::Global(hl::GlobalOp::Set, global_idx) => ll::Instr::GlobalSet(state.map_global_idx(global_idx.into_inner())),
+        hl::Instr::Global(hl::GlobalOp::Get, global_idx) => ll::Instr::GlobalGet(state.map_global_idx(global_idx)),
+        hl::Instr::Global(hl::GlobalOp::Set, global_idx) => ll::Instr::GlobalSet(state.map_global_idx(global_idx)),
 
         hl::Instr::Load(hl::LoadOp::I32Load, memarg) => ll::Instr::I32Load(memarg),
         hl::Instr::Load(hl::LoadOp::I64Load, memarg) => ll::Instr::I64Load(memarg),
@@ -670,8 +799,8 @@ fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
         hl::Instr::Store(hl::StoreOp::I64Store16, memarg) => ll::Instr::I64Store16(memarg),
         hl::Instr::Store(hl::StoreOp::I64Store32, memarg) => ll::Instr::I64Store32(memarg),
 
-        hl::Instr::MemorySize(memory_idx) => ll::Instr::MemorySize(state.map_memory_idx(memory_idx.into_inner())),
-        hl::Instr::MemoryGrow(memory_idx) => ll::Instr::MemoryGrow(state.map_memory_idx(memory_idx.into_inner())),
+        hl::Instr::MemorySize(memory_idx) => ll::Instr::MemorySize(state.map_memory_idx(memory_idx)),
+        hl::Instr::MemoryGrow(memory_idx) => ll::Instr::MemoryGrow(state.map_memory_idx(memory_idx)),
 
         hl::Instr::Const(Val::I32(immediate)) => ll::Instr::I32Const(immediate),
         hl::Instr::Const(Val::I64(immediate)) => ll::Instr::I64Const(immediate),

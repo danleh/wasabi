@@ -2,7 +2,7 @@ use parking_lot::RwLock;
 use rayon::prelude::*;
 use serde_json;
 use wasm::ast::highlevel::{Function, GlobalOp, Instr, Instr::*, LocalOp::*, Module};
-use wasm::ast::{BlockType, Idx, Mutability, Val, ValType::*, FunctionType};
+use wasm::ast::{BlockType, Idx, Mutability, Val, ValType::*, FunctionType, Label};
 
 use crate::options::{Hook, HookSet};
 
@@ -785,6 +785,12 @@ trait ToConst {
 impl<T> ToConst for Idx<T> {
     fn to_const(self) -> Instr {
         Const(Val::I32(self.into_inner() as i32))
+    }
+}
+
+impl ToConst for Label {
+    fn to_const(self) -> Instr {
+        Const(Val::I32(self.0 as i32))
     }
 }
 

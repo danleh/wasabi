@@ -17,6 +17,9 @@ use self::{LoadOp::*, StoreOp::*};
 
 #[derive(Debug, Clone, Default)]
 pub struct Module {
+    // From the name section, if present, e.g., compiler-generated debug info.
+    pub name: Option<String>,
+
     pub functions: Vec<Function>,
     pub globals: Vec<Global>,
     pub tables: Vec<Table>,
@@ -24,7 +27,7 @@ pub struct Module {
 
     pub start: Option<Idx<Function>>,
 
-    pub custom_sections: Vec<Vec<u8>>,
+    pub custom_sections: Vec<RawCustomSection>,
 }
 
 #[derive(Debug, Clone)]
@@ -39,8 +42,10 @@ pub struct Function {
     pub type_: FunctionType,
     pub code: ImportOrPresent<Code>,
     // Functions/globals/memories/tables can be exported multiple times under different names.
-    // But the export names must be unique (not ensure in this representation!).
+    // But the export names must be unique (not ensured in this representation!).
     pub export: Vec<String>,
+    // From the name section, if present, e.g., compiler-generated debug info.
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -70,8 +75,15 @@ pub struct Memory {
 
 #[derive(Debug, Clone)]
 pub struct Code {
-    pub locals: Vec<ValType>,
+    pub locals: Vec<Local>,
     pub body: Expr,
+}
+
+#[derive(Debug, Clone)]
+pub struct Local {
+    pub type_: ValType,
+    // From the name section, if present, e.g., compiler-generated debug info.
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -99,9 +111,9 @@ pub enum Instr {
     Else,
     End,
 
-    Br(Idx<Label>),
-    BrIf(Idx<Label>),
-    BrTable { table: Vec<Idx<Label>>, default: Idx<Label> },
+    Br(Label),
+    BrIf(Label),
+    BrTable { table: Vec<Label>, default: Label },
 
     Return,
     Call(Idx<Function>),
@@ -642,13 +654,13 @@ impl fmt::Display for Instr {
             | MemorySize(_) | MemoryGrow(_)
             | Numeric(_) => Ok(()),
 
-            Br(label) => write!(f, " {}", label.into_inner()),
-            BrIf(label) => write!(f, " {}", label.into_inner()),
+            Br(label) => write!(f, " {}", label.0),
+            BrIf(label) => write!(f, " {}", label.0),
             BrTable { table, default } => {
                 for label in table {
-                    write!(f, " {}", label.into_inner())?;
+                    write!(f, " {}", label.0)?;
                 }
-                write!(f, " {}", default.into_inner())
+                write!(f, " {}", default.0)
             }
 
             Call(func_idx) => write!(f, " {}", func_idx.into_inner()),
@@ -678,10 +690,11 @@ impl Module {
         self.functions.push(Function {
             type_,
             code: ImportOrPresent::Present(Code {
-                locals,
+                locals: locals.into_iter().map(Local::new).collect(),
                 body,
             }),
             export: Vec::new(),
+            name: None
         });
         (self.functions.len() - 1).into()
     }
@@ -691,6 +704,7 @@ impl Module {
             type_,
             code: ImportOrPresent::Import(module, name),
             export: Vec::new(),
+            name: None
         });
         (self.functions.len() - 1).into()
     }
@@ -776,7 +790,7 @@ impl Function {
             .expect("cannot add local to imported function")
             .locals;
         let idx = locals.len() + args_count;
-        locals.push(ty);
+        locals.push(Local::new(ty));
         idx.into()
     }
 
@@ -795,13 +809,20 @@ impl Function {
             let locals = &self.code()
                 .expect("cannot get type of a local in an imported function")
                 .locals;
-            *locals.get(idx.into_inner() - param_count)
+            locals.get(idx.into_inner() - param_count)
                 .expect(&format!("invalid local index {}, function has {} parameters and {} locals", idx.into_inner(), param_count, locals.len()))
+                .type_
         }
     }
 
     pub fn instr_count(&self) -> usize {
         self.code().map(|code| code.body.len()).unwrap_or(0)
+    }
+}
+
+impl Local {
+    pub fn new(type_: ValType) -> Self {
+        Local { type_, name: None }
     }
 }
 

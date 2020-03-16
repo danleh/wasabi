@@ -154,13 +154,13 @@ impl BlockStack {
 
     /// resolves a relative label at the current instruction to an absolute instruction index
     /// this requires forward scanning for non-loop block ends (implemented as a precomputed HashMap lookup, so O(1))
-    pub fn br_target(&self, label: Idx<Label>) -> BranchTarget {
+    pub fn br_target(&self, label: Label) -> BranchTarget {
         // resolve label to all blocks between the current and the target block
         let ended_blocks: Vec<BlockStackElement> = self
             .block_stack
             .iter()
             .rev()
-            .take(label.into_inner() + 1)
+            .take(label.0 as usize + 1)
             .cloned()
             .collect();
 
@@ -168,7 +168,7 @@ impl BlockStack {
         // backward branch when targeting loops, forward for all other blocks
         let absolute_instr = {
             // the last block of the ended ones is the actual target
-            let target_block = ended_blocks.get(label.into_inner()).expect(&format!(
+            let target_block = ended_blocks.get(label.0 as usize).expect(&format!(
                 "invalid label: cannot find target block for {:?}",
                 label
             ));

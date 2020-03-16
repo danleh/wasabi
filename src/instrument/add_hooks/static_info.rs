@@ -52,6 +52,8 @@ pub struct FunctionInfo {
     #[serde(serialize_with = "serialize_types")]
     pub locals: Vec<ValType>,
     pub instr_count: usize,
+    // TODO we could add name (from debug info) here, but it would be added for all functions,
+    // in the JSON as `"name": null`, which is a lot of overhead...
 }
 
 impl<'a> From<&'a Function> for FunctionInfo {
@@ -63,7 +65,8 @@ impl<'a> From<&'a Function> for FunctionInfo {
             locals: function
                 .code()
                 .iter()
-                .flat_map(|code| code.locals.clone())
+                .flat_map(|code| &code.locals)
+                .map(|local| local.type_)
                 .collect(),
             instr_count: function.instr_count(),
         }
@@ -106,12 +109,12 @@ pub struct BrTableInfo {
 impl BrTableInfo {
     /// needs block_stack for resolving the labels to actual locations
     pub fn from_br_table(
-        table: &[Idx<Label>],
-        default: Idx<Label>,
+        table: &[Label],
+        default: Label,
         block_stack: &BlockStack,
         func: Idx<Function>,
     ) -> Self {
-        let resolve = |label: Idx<Label>| {
+        let resolve = |label: Label| {
             let target = block_stack.br_target(label);
             ResolvedLabel {
                 label,
@@ -130,7 +133,7 @@ impl BrTableInfo {
 /// carries the relative label (as it appears in the instructions) and the actual instruction index
 /// to which this label resolves to (statically computed with block_stack)
 pub struct ResolvedLabel {
-    pub label: Idx<Label>,
+    pub label: Label,
     pub location: Location,
     // for calling end() hooks of all intermediate blocks at runtime
     #[serde(rename = "ends")]
