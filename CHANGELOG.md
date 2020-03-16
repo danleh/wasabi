@@ -1,4 +1,5 @@
-This document shall list the largest breaking changes between versions.
+This document shall list the largest breaking changes for the Wasabi binary.
+In particular, breaking changes for the Wasm parsing and AST library are not captured here, since it is regarded as internal to Wasabi.
 
 # v0.3.0 (2020-03-05)
 
