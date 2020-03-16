@@ -83,10 +83,12 @@ impl Hook {
             );
 
             Function {
-                // hooks do not return anything
+                // Hooks do not return anything
                 type_: FunctionType::new(&lowlevel_args, &[]),
                 code: ImportOrPresent::Import("__wasabi_hooks".to_string(), lowlevel_name),
                 export: Vec::new(),
+                // No debug info, hook name is descriptive enough.
+                name: None,
             }
         };
 

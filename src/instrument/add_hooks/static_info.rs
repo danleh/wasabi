@@ -52,6 +52,8 @@ pub struct FunctionInfo {
     #[serde(serialize_with = "serialize_types")]
     pub locals: Vec<ValType>,
     pub instr_count: usize,
+    // TODO we could add name (from debug info) here, but it would be added for all functions,
+    // in the JSON as `"name": null`, which is a lot of overhead...
 }
 
 impl<'a> From<&'a Function> for FunctionInfo {
