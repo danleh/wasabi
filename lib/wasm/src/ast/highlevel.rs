@@ -6,13 +6,15 @@ use super::{*, ValType::*};
 use self::{LoadOp::*, StoreOp::*};
 
 /* High-level AST:
-    - types are inlined instead of referenced by type idx (i.e., no manual handling of Type "pool")
+    - Types are inlined instead of referenced by type idx (i.e., no manual handling of Type "pool")
     - Function + Code sections are merged into one list of functions,
       same for tables: Table + Element sections and memories: Memory + Data sections.
-    - imports and exports are part of the respective item, not stored externally and referring to
+    - Imports and exports are part of the respective item, not stored externally and referring to
       their item by index.
-    - similar instructions are grouped together, for easier uniform handling, e.g., T.const
+    - Similar instructions are grouped together, for easier uniform handling, e.g., T.const
       instructions, loads, stores, and numeric instructions.
+    - Debug names (from the name custom section) are attached to their respective items (module,
+      functions, and locals).
 */
 
 #[derive(Debug, Clone, Default)]
