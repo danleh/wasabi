@@ -2,11 +2,12 @@ This document shall list the largest breaking changes for Wasabi's wasm library.
 
 # v0.4.0 (2020-03-17)
 
+- AST types are directly under the crate, not prefixed with `ast::` anymore.
 - Typed error handling for parsing low-level AST (i.e., no longer based on `io::Result`).
-- High-level functions and globals are now exclusively either imported or not.
-- Merged InstrType and FuncType.
+- High-level functions and global types now model that they can be exclusively either imported or not.
+- Merged (redundant) InstrType and FunctionType.
 - Remove Global/Local prefix from LocalGet/LocalSet/LocalTee/GlobalSet/GlobalGet.
-- Use `typename` from stdlib instead of external dependcy. Requires up to date Rust version. 
+- Use `typename` from stdlib instead of external dependency. Requires up to date Rust version. 
 - Handling of custom section order while parsing/serializing.
 - Semantic representation of name custom section (debug info) in the low-level AST, and inlined names in the high-level AST.
 
