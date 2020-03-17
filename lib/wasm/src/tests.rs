@@ -2,6 +2,7 @@ use std::error::Error;
 use std::fs::File;
 use std::io::{self, Read};
 
+// FIXME Replace this with unstable feature test.
 use bencher::{Bencher, benchmark_group, benchmark_main};
 use test_utilities::*;
 
@@ -9,7 +10,6 @@ use crate::{highlevel, lowlevel};
 use crate::WasmBinary;
 
 const TEST_INPUTS: &'static str = "../../tests/inputs";
-const LARGE_WASM_FILE: &'static str = "../../tests/inputs/real-world/bananabread/bb.wasm";
 
 #[test]
 fn decode_encode_is_valid_wasm() {
@@ -117,6 +117,8 @@ fn error_offsets_correct() {
 /*
  * Speed benchmarks (for parallelization of decoding/encoding) on a "large" wasm file (~2MB for now)
  */
+
+const LARGE_WASM_FILE: &'static str = "../../tests/inputs/real-world/bananabread/bb.wasm";
 
 benchmark_group!(benches, decode_lowlevel_speed, encode_lowlevel_speed,
                           convert_lowlevel_to_highlevel_speed, convert_highlevel_to_lowlevel_speed,
