@@ -17,7 +17,7 @@ use self::{LoadOp::*, StoreOp::*};
       functions, and locals).
 */
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash)]
 pub struct Module {
     // From the name section, if present, e.g., compiler-generated debug info.
     pub name: Option<String>,
@@ -32,13 +32,13 @@ pub struct Module {
     pub custom_sections: Vec<RawCustomSection>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ImportOrPresent<T> {
     Import(String, String),
     Present(T),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Function {
     // Type is inlined here compared to low-level/binary/spec representation.
     pub type_: FunctionType,
@@ -50,14 +50,14 @@ pub struct Function {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Global {
     pub type_: GlobalType,
     pub init: ImportOrPresent<Expr>,
     pub export: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Table {
     pub type_: TableType,
     // Unlike functions and globals, an imported table can still be initialized with elements.
@@ -66,7 +66,7 @@ pub struct Table {
     pub export: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Memory {
     pub type_: MemoryType,
     // Unlike functions and globals, an imported memory can still be initialized with data elements.
@@ -75,26 +75,26 @@ pub struct Memory {
     pub export: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Code {
     pub locals: Vec<Local>,
     pub body: Expr,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Local {
     pub type_: ValType,
     // From the name section, if present, e.g., compiler-generated debug info.
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Element {
     pub offset: Expr,
     pub functions: Vec<Idx<Function>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Data {
     pub offset: Expr,
     pub bytes: Vec<u8>,
@@ -102,7 +102,7 @@ pub struct Data {
 
 pub type Expr = Vec<Instr>;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Instr {
     Unreachable,
     Nop,

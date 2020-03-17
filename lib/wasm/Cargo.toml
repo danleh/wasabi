@@ -6,10 +6,11 @@ edition = "2018"
 
 [dependencies]
 binary_derive = { path = "binary_derive" }
-wasabi_leb128 = "0.4.0"
+wasabi_leb128 = "0.4"
 byteorder = "1"
-rayon = "1.0"
-serde = { version = "1.0", features = ["derive"] }
+rayon = "1"
+serde = { version = "1", features = ["derive"] }
+ordered-float = "1"
 
 [dev-dependencies]
 test_utilities = { path = "../test_utilities" }

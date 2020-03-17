@@ -1,24 +1,27 @@
+// WasmBinary trait.
 use crate::binary::WasmBinary;
+// #[derive(WasmBinary)] procedural macro.
 use binary_derive::WasmBinary;
+use ordered_float::OrderedFloat;
 
 use super::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Module {
     pub sections: Vec<Section>,
 }
 
 /// Just a marker; does not save the size itself since that changes during transformations anyway.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct WithSize<T>(pub T);
 
 /// Just a marker to indicate that parallel decoding/encoding is possible.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Parallel<T>(pub T);
 
 /* Sections */
 
-#[derive(WasmBinary, Debug, Clone)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Section {
     #[tag = 0] Custom(CustomSection),
     #[tag = 1] Type(WithSize<Vec<FunctionType>>),
@@ -36,13 +39,13 @@ pub enum Section {
     #[tag = 11] Data(WithSize<Vec<Data>>),
 }
 
-#[derive(WasmBinary, Debug, Clone)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Global {
     pub type_: GlobalType,
     pub init: Expr,
 }
 
-#[derive(WasmBinary, Debug, Clone)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Element {
     // always 0x00 in WASM version 1
     pub table_idx: Idx<Table>,
@@ -50,7 +53,7 @@ pub struct Element {
     pub init: Vec<Idx<Function>>,
 }
 
-#[derive(WasmBinary, Debug, Clone)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Data {
     // always 0x00 in WASM version 1
     pub memory_idx: Idx<Memory>,
@@ -58,20 +61,20 @@ pub struct Data {
     pub init: Vec<u8>,
 }
 
-#[derive(WasmBinary, Debug, Clone)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Import {
     pub module: String,
     pub name: String,
     pub type_: ImportType,
 }
 
-#[derive(WasmBinary, Debug, Clone)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Export {
     pub name: String,
     pub type_: ExportType,
 }
 
-#[derive(WasmBinary, Debug, Clone)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ImportType {
     #[tag = 0x0] Function(Idx<FunctionType>),
     #[tag = 0x1] Table(TableType),
@@ -79,7 +82,7 @@ pub enum ImportType {
     #[tag = 0x3] Global(GlobalType),
 }
 
-#[derive(WasmBinary, Debug, Clone)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ExportType {
     #[tag = 0x0] Function(Idx<Function>),
     #[tag = 0x1] Table(Idx<Table>),
@@ -90,37 +93,37 @@ pub enum ExportType {
 // Markers for Idx<T>, since in low-level format Function, Table, and Memory have not one type,
 // but are split over multiple sections.
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Function;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Table;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Memory;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Local;
 
 
 /* Code */
 
-#[derive(WasmBinary, Debug, Clone)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Code {
     pub locals: Vec<Locals>,
     pub body: Expr,
 }
 
-#[derive(WasmBinary, Debug, Copy, Clone)]
+#[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Locals {
     pub count: u32,
     pub type_: ValType,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Expr(pub Vec<Instr>);
 
-#[derive(WasmBinary, Debug, Clone)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Instr {
     #[tag = 0x00] Unreachable,
     #[tag = 0x01] Nop,
@@ -178,8 +181,10 @@ pub enum Instr {
 
     #[tag = 0x41] I32Const(i32),
     #[tag = 0x42] I64Const(i64),
-    #[tag = 0x43] F32Const(f32),
-    #[tag = 0x44] F64Const(f64),
+    // Wrap floats, such that they can be ordered and compared (unlike IEEE754 floats),
+    // to make it possible, e.g., to put instructions in HashSets etc.
+    #[tag = 0x43] F32Const(OrderedFloat<f32>),
+    #[tag = 0x44] F64Const(OrderedFloat<f64>),
 
     #[tag = 0x45] I32Eqz,
     #[tag = 0x46] I32Eq,
@@ -308,7 +313,7 @@ pub enum Instr {
 
 /* Important/widely supported custom sections */
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum CustomSection {
     /// If custom section name was "name".
     Name(NameSection),
@@ -317,14 +322,14 @@ pub enum CustomSection {
 }
 
 // See https://webassembly.github.io/spec/core/appendix/custom.html#name-section
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct NameSection {
     // NOTE This does not inlucde the custom section name (in this case: "name"), since we know it
     // from the type NameSection alone.
     pub subsections: Vec<NameSubSection>
 }
 
-#[derive(WasmBinary, Debug, Clone)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum NameSubSection {
     #[tag = 0x00] Module(WithSize<String>),
     #[tag = 0x01] Function(WithSize<NameMap<Function>>),
@@ -333,7 +338,7 @@ pub enum NameSubSection {
 
 pub type NameMap<T> = Vec<NameAssoc<T>>;
 
-#[derive(WasmBinary, Debug, Clone)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct NameAssoc<T> {
     pub idx: Idx<T>,
     pub name: String,
@@ -341,7 +346,7 @@ pub struct NameAssoc<T> {
 
 pub type IndirectNameMap<T, U> = Vec<IndirectNameAssoc<T, U>>;
 
-#[derive(WasmBinary, Debug, Clone)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct IndirectNameAssoc<T, U> {
     pub idx: Idx<T>,
     pub name_map: NameMap<U>,

@@ -5,6 +5,7 @@ use std::mem::size_of;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use rayon::prelude::*;
 use wasabi_leb128::*;
+use ordered_float::OrderedFloat;
 
 use crate::ast::*;
 use crate::ast::lowlevel::*;
@@ -85,26 +86,26 @@ impl WasmBinary for i64 {
     }
 }
 
-impl WasmBinary for f32 {
+impl WasmBinary for OrderedFloat<f32> {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
         let value = reader.read_f32::<LittleEndian>().add_err_info::<f32>(*offset)?;
         *offset += 4;
-        Ok(value)
+        Ok(value.into())
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        writer.write_f32::<LittleEndian>(*self)?;
+        writer.write_f32::<LittleEndian>(self.into_inner())?;
         Ok(4)
     }
 }
 
-impl WasmBinary for f64 {
+impl WasmBinary for OrderedFloat<f64> {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
         let value = reader.read_f64::<LittleEndian>().add_err_info::<f64>(*offset)?;
         *offset += 8;
-        Ok(value)
+        Ok(value.into())
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        writer.write_f64::<LittleEndian>(*self)?;
+        writer.write_f64::<LittleEndian>(self.into_inner())?;
         Ok(8)
     }
 }
@@ -455,6 +456,8 @@ impl<T> WasmBinary for PhantomData<T> {
     fn decode<R: io::Read>(_: &mut R, _: &mut usize) -> Result<Self, Error> { Ok(PhantomData) }
     fn encode<W: io::Write>(&self, _: &mut W) -> io::Result<usize> { Ok(0) }
 }
+
+/* Custom sections and name subsection parsing. */
 
 impl WasmBinary for CustomSection {
     fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {

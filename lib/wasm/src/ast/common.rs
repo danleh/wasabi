@@ -6,17 +6,21 @@ use std::marker::PhantomData;
 
 use binary_derive::WasmBinary;
 use serde::{Serialize, Serializer};
+use ordered_float::OrderedFloat;
 
 use crate::binary::WasmBinary;
 
 /* AST nodes common to high- and low-level representations. */
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+/// WebAssembly primitive values.
 pub enum Val {
     I32(i32),
     I64(i64),
-    F32(f32),
-    F64(f64),
+    // Wrap floats, such that they can be ordered and compared (unlike IEEE754 floats),
+    // to make it possible, e.g., to put instructions in HashSets etc.
+    F32(OrderedFloat<f32>),
+    F64(OrderedFloat<f64>),
 }
 
 impl Val {
@@ -35,8 +39,8 @@ impl fmt::Display for Val {
         match self {
             Val::I32(v) => write!(f, "{}", v),
             Val::I64(v) => write!(f, "{}", v),
-            Val::F32(v) => write!(f, "{}", v),
-            Val::F64(v) => write!(f, "{}", v),
+            Val::F32(v) => write!(f, "{}", v.into_inner()),
+            Val::F64(v) => write!(f, "{}", v.into_inner()),
         }
     }
 }
@@ -44,7 +48,7 @@ impl fmt::Display for Val {
 
 /* Types */
 
-#[derive(WasmBinary, Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize)]
+#[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ValType {
     #[tag = 0x7f] I32,
@@ -70,7 +74,7 @@ impl ValType {
     }
 }
 
-#[derive(WasmBinary, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]
 #[tag = 0x60]
 pub struct FunctionType {
     // Use Box instead of Vec to save the capacity field (smaller size of the struct), since
@@ -91,32 +95,32 @@ impl fmt::Display for FunctionType {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct BlockType(pub Option<ValType>);
 
-#[derive(WasmBinary, Debug, Clone)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct TableType(pub ElemType, pub Limits);
 
-#[derive(WasmBinary, Debug, Copy, Clone)]
+#[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ElemType {
     // only value in WASM version 1
     #[tag = 0x70]
     Anyfunc,
 }
 
-#[derive(WasmBinary, Debug, Clone)]
+#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MemoryType(pub Limits);
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Limits {
     pub initial_size: u32,
     pub max_size: Option<u32>,
 }
 
-#[derive(WasmBinary, Debug, Copy, Clone)]
+#[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct GlobalType(pub ValType, pub Mutability);
 
-#[derive(WasmBinary, Debug, Copy, Clone)]
+#[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Mutability {
     #[tag = 0x00] Const,
     #[tag = 0x01] Mut,
@@ -206,13 +210,13 @@ impl Serialize for Label {
 
 /* Code */
 
-#[derive(WasmBinary, Debug, Copy, Clone, Default, Eq, PartialEq, Hash)]
+#[derive(WasmBinary, Debug, Copy, Clone, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Memarg {
     pub alignment: u32,
     pub offset: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct RawCustomSection {
     pub name: String,
     pub content: Vec<u8>,
