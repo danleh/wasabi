@@ -18,7 +18,6 @@
     * implement own Error type
     * replace panics with ```Result<_, wasabi::Error>```
     * implement ```From``` and ```Error``` traits
-- Extract leb128 crates and wasm crates in own repositories
 - Update syn/quote of wasm_binary crate to 1.0 (to stay up to date + remove crate duplication in wasabi crate)
 - Compile wasabi to WebAssembly for Node.JS and in-browser usage (with wasm-bindgen?)
 - Reduce memory allocations (see eval/perf/ heaptrack data) in hook_map::instr() and Hook::new()
