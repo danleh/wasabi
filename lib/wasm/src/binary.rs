@@ -1,15 +1,14 @@
 use std::io;
 use std::marker::PhantomData;
-use std::mem::size_of;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use rayon::prelude::*;
-use wasabi_leb128::*;
 use ordered_float::OrderedFloat;
+use rayon::prelude::*;
+use wasabi_leb128::{ReadLeb128, WriteLeb128};
 
-use crate::ast::*;
-use crate::ast::lowlevel::*;
+use crate::{BlockType, Limits, RawCustomSection, ValType};
 use crate::error::{AddErrInfo, Error, ErrorKind, SetErrElem};
+use crate::lowlevel::{CustomSection, Expr, Instr, Module, Parallel, Section, WithSize, NameSection, NameSubSection};
 
 /* Trait and impl for decoding/encoding between binary format (as per spec) and our own formats (see ast module) */
 
@@ -163,7 +162,7 @@ fn limit_prealloc_capacity<T>(element_count: u32) -> usize {
     // instructions.
     const PREALLOC_LIMIT_BYTES: usize = 1 << 20;
     // Vec::with_capacity() takes number of elements, not bytes; so divide bytes by element size.
-    let element_limit = PREALLOC_LIMIT_BYTES / size_of::<T>();
+    let element_limit = PREALLOC_LIMIT_BYTES / std::mem::size_of::<T>();
     std::cmp::min(element_count as usize, element_limit)
 }
 

@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use rayon::prelude::*;
 
-use super::*;
-use super::highlevel as hl;
-use super::lowlevel as ll;
+use crate::{FunctionType, Val, Idx, TableType, MemoryType};
+use crate::highlevel as hl;
+use crate::lowlevel as ll;
 
 /* Conversions between high-level and low-level AST. */
 

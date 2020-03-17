@@ -1,14 +1,12 @@
-use std::cmp::Ordering;
+use std::{fmt, hash};
 use std::convert::TryInto;
-use std::fmt::{self, Write};
-use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 
 use binary_derive::WasmBinary;
-use serde::{Serialize, Serializer};
 use ordered_float::OrderedFloat;
+use serde::{Serialize, Serializer};
 
-use crate::binary::WasmBinary;
+use crate::WasmBinary;
 
 /* AST nodes common to high- and low-level representations. */
 
@@ -151,9 +149,7 @@ impl<T> From<usize> for Idx<T> {
 impl<T> fmt::Debug for Idx<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let type_name = std::any::type_name::<T>().split("::").last().unwrap();
-        f.write_str(type_name)?;
-        f.write_char(' ')?;
-        self.0.fmt(f)
+        write!(f, "{} {}", type_name, self.0)
     }
 }
 
@@ -174,8 +170,8 @@ impl<T> PartialEq for Idx<T> {
 
 impl<T> Eq for Idx<T> {}
 
-impl<T> Hash for Idx<T> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
+impl<T> hash::Hash for Idx<T> {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
         self.0.hash(state)
     }
 }
@@ -187,13 +183,13 @@ impl<T> Serialize for Idx<T> {
 }
 
 impl<T> PartialOrd for Idx<T> {
-    fn partial_cmp(&self, other: &Idx<T>) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Idx<T>) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<T> Ord for Idx<T> {
-    fn cmp(&self, other: &Self) -> Ordering {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.0.cmp(&other.0)
     }
 }

@@ -1,9 +1,7 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use super::{*, ValType::*};
-
-use self::{LoadOp::*, StoreOp::*};
+use crate::{BlockType, FunctionType, GlobalType, Idx, Label, Memarg, MemoryType, Mutability, RawCustomSection, TableType, Val, ValType};
 
 /* High-level AST:
     - Types are inlined instead of referenced by type idx (i.e., no manual handling of Type "pool")
@@ -348,7 +346,8 @@ impl GlobalOp {
 
 impl NumericOp {
     pub fn to_type(&self) -> FunctionType {
-        use self::NumericOp::*;
+        use NumericOp::*;
+        use ValType::*;
         match *self {
             /* Unary */
 
@@ -397,6 +396,8 @@ impl NumericOp {
 
 impl LoadOp {
     pub fn to_type(&self) -> FunctionType {
+        use LoadOp::*;
+        use ValType::*;
         match *self {
             I32Load => FunctionType::new(&[I32], &[I32]),
             I64Load => FunctionType::new(&[I32], &[I64]),
@@ -419,6 +420,8 @@ impl LoadOp {
 
 impl StoreOp {
     pub fn to_type(&self) -> FunctionType {
+        use StoreOp::*;
+        use ValType::*;
         match *self {
             I32Store => FunctionType::new(&[I32, I32], &[]),
             I64Store => FunctionType::new(&[I32, I64], &[]),
@@ -438,7 +441,8 @@ impl Instr {
     /// for all where the type can be determined by just looking at the instruction, not additional
     /// information like the function or module etc.
     pub fn to_type(&self) -> Option<FunctionType> {
-        use self::Instr::*;
+        use Instr::*;
+        use ValType::*;
         match *self {
             Unreachable | Nop => Some(FunctionType::new(&[], &[])),
             Load(ref op, _) => Some(op.to_type()),
@@ -464,8 +468,10 @@ impl Instr {
 
     /// returns instruction name as in Wasm spec
     pub fn to_name(&self) -> &'static str {
-        use self::Instr::*;
-        use self::NumericOp::*;
+        use Instr::*;
+        use NumericOp::*;
+        use LoadOp::*;
+        use StoreOp::*;
         match *self {
             Unreachable => "unreachable",
             Nop => "nop",
@@ -696,7 +702,7 @@ impl Module {
                 body,
             }),
             export: Vec::new(),
-            name: None
+            name: None,
         });
         (self.functions.len() - 1).into()
     }
@@ -706,7 +712,7 @@ impl Module {
             type_,
             code: ImportOrPresent::Import(module, name),
             export: Vec::new(),
-            name: None
+            name: None,
         });
         (self.functions.len() - 1).into()
     }

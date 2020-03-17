@@ -1,10 +1,7 @@
-// WasmBinary trait.
-use crate::binary::WasmBinary;
-// #[derive(WasmBinary)] procedural macro.
 use binary_derive::WasmBinary;
 use ordered_float::OrderedFloat;
 
-use super::*;
+use crate::{BlockType, FunctionType, GlobalType, Idx, Label, Memarg, MemoryType, RawCustomSection, TableType, ValType, WasmBinary};
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Module {
@@ -333,7 +330,7 @@ pub struct NameSection {
 pub enum NameSubSection {
     #[tag = 0x00] Module(WithSize<String>),
     #[tag = 0x01] Function(WithSize<NameMap<Function>>),
-    #[tag = 0x02] Local(WithSize<IndirectNameMap<Function, Local>>)
+    #[tag = 0x02] Local(WithSize<IndirectNameMap<Function, Local>>),
 }
 
 pub type NameMap<T> = Vec<NameAssoc<T>>;

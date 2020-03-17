@@ -5,8 +5,8 @@ use std::io::{self, Read};
 use bencher::{Bencher, benchmark_group, benchmark_main};
 use test_utilities::*;
 
-use crate::ast::{highlevel, lowlevel};
-use crate::binary::WasmBinary;
+use crate::{highlevel, lowlevel};
+use crate::WasmBinary;
 
 const TEST_INPUTS: &'static str = "../../tests/inputs";
 const LARGE_WASM_FILE: &'static str = "../../tests/inputs/real-world/bananabread/bb.wasm";

@@ -1,7 +1,4 @@
-use std::any;
-use std::error;
-use std::fmt;
-use std::io;
+use std::{io, fmt, error};
 use std::string::FromUtf8Error;
 
 use wasabi_leb128::ParseLeb128Error;
@@ -177,6 +174,6 @@ impl Error {
 
 /// Utitlity function. Makes the type_name a bit more user-friendly by removing at least some common
 /// type path prefixes.
-fn grammar_element<T>() -> String{
-    any::type_name::<T>().replace("alloc::vec::", "").replace("alloc::string::", "")
+fn grammar_element<T>() -> String {
+    std::any::type_name::<T>().replace("alloc::vec::", "").replace("alloc::string::", "")
 }

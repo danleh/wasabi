@@ -1,11 +1,13 @@
-pub mod ast;
-mod binary;
-mod error;
+// Export AST types directly under crate, without ast prefix.
+mod ast;
+pub use crate::ast::*;
 
-// Re-export WasmBinary trait.
+// Export WasmBinary trait directly under the crate.
+mod binary;
 pub use crate::binary::WasmBinary;
 
-// Re-export Error and ErrorKind.
+// Export Error and ErrorKind directly under the crate.
+mod error;
 pub use crate::error::{Error, ErrorKind};
 
 #[cfg(test)]
@@ -15,7 +17,6 @@ mod tests;
  * Convenience for working files (which is the most common io::Read/Write anyway).
  */
 
-use crate::ast::{highlevel, lowlevel};
 use crate::error::AddErrInfo;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
