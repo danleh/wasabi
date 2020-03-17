@@ -11,10 +11,10 @@ name = "leb128"
 path = "src/main.rs"
 
 [dependencies]
-wasabi_leb128 = "0.3.0"
+wasabi_leb128 = "0.4.0"
 main_error = "0.1.0"
-structopt = "0.3.2"
-hex = "0.4.0"
+structopt = "0.3.11"
+hex = "0.4.2"
 
 [profile.release]
 lto = true

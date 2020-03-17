@@ -44,10 +44,10 @@ fn main() -> Result<(), MainError> {
         let input_num_bytes = buf.len();
         let mut cursor = io::Cursor::new(buf);
         let result = if opt.signed {
-            let int: i64 = cursor.read_leb128()?;
+            let (int, _): (i64, _) = cursor.read_leb128()?;
             int.to_string()
         } else {
-            let int: u64 = cursor.read_leb128()?;
+            let (int, _): (u64, _) = cursor.read_leb128()?;
             int.to_string()
         };
         if cursor.position() < input_num_bytes as u64 {
