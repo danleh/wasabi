@@ -1,6 +1,6 @@
 use serde::{Serialize, Serializer};
-use wasm::ast::highlevel::{Function, Instr, Module};
-use wasm::ast::{FunctionType, Idx, Label, ValType};
+use wasm::{FunctionType, Idx, Label, ValType};
+use wasm::highlevel::{Function, Instr, Module};
 
 use super::block_stack::{BlockStack, BlockStackElement};
 
@@ -74,8 +74,8 @@ impl<'a> From<&'a Function> for FunctionInfo {
 }
 
 fn serialize_function_type<S>(ty: &FunctionType, s: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
+    where
+        S: Serializer,
 {
     let mut type_str = String::new();
     for ty in ty.params.iter() {
@@ -89,8 +89,8 @@ where
 }
 
 fn serialize_types<S>(tys: &[ValType], s: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
+    where
+        S: Serializer,
 {
     let mut type_str = String::new();
     for ty in tys {
@@ -146,8 +146,8 @@ pub struct Location(pub Idx<Function>, pub Idx<Instr>);
 // space optimization when serializing: save block stack elements as tuples, not objects with properties
 impl Serialize for BlockStackElement {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
+        where
+            S: Serializer,
     {
         use self::BlockStackElement::*;
         match self {

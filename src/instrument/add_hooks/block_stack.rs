@@ -1,6 +1,8 @@
-use self::BlockStackElement::*;
 use std::collections::HashMap;
-use wasm::ast::{highlevel::Instr, Idx, Label};
+
+use wasm::{highlevel::Instr, Idx, Label};
+
+use self::BlockStackElement::*;
 
 /*
  * Data structure for representing the "control stack", i.e., the implicit nested block structure

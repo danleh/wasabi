@@ -1,7 +1,7 @@
-use wasm::ast::highlevel::{GlobalOp::*, Instr::*, Module, NumericOp::*};
-use wasm::ast::{FunctionType, Mutability, Val, ValType::*};
+use wasm::{FunctionType, Mutability, Val, ValType::*};
+use wasm::highlevel::{GlobalOp::*, Instr::*, Module, NumericOp::*};
 
-/* direct or "low-level" instrumentations, i.e., where the byte code is manually modified */
+/* Direct or "low-level" instrumentations, i.e., where the byte code is manually modified. */
 
 pub fn add_empty_function(module: &mut Module) -> Option<String> {
     module.add_function(FunctionType::new(&[], &[]), vec![], vec![End]);

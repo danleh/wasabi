@@ -1,18 +1,19 @@
-use crate::instrument::{add_hooks, direct::*};
-use crate::options::HookSet;
 use test_utilities::*;
-use wasm::ast::highlevel::Module;
+use wasm::highlevel::Module;
+
+use crate::instrument::{add_hooks, direct};
+use crate::options::HookSet;
 
 const TEST_INPUTS: &'static str = "tests/inputs";
 
 #[test]
 fn add_empty_function_produces_valid_wasm() {
-    test_instrument(add_empty_function, "add-empty-function");
+    test_instrument(direct::add_empty_function, "add-empty-function");
 }
 
 #[test]
 fn count_calls_instrumentation_produces_valid_wasm() {
-    test_instrument(count_calls, "count-calls");
+    test_instrument(direct::count_calls, "count-calls");
 }
 
 #[test]

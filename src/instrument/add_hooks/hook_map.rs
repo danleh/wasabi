@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use wasm::{FunctionType, Idx, ValType, ValType::*};
+use wasm::highlevel::{Function, ImportOrPresent, Instr, Instr::*, Module};
+
 use super::block_stack::BlockStackElement;
 use super::convert_i64::convert_i64_type;
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
-use std::collections::HashMap;
-use wasm::ast::highlevel::{Function, Instr, Instr::*, Module, ImportOrPresent};
-use wasm::ast::{FunctionType, Idx, ValType, ValType::*};
 
 /*
  * This does 3 things:

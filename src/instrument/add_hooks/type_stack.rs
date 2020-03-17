@@ -1,5 +1,6 @@
+use wasm::{BlockType, FunctionType, ValType};
+
 use self::TypeStackElement::*;
-use wasm::ast::{BlockType, ValType, FunctionType};
 
 /*
  * Data structure for representing the abstract "value stack", i.e., for every value at runtime this
