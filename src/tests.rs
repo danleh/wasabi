@@ -19,7 +19,7 @@ fn count_calls_instrumentation_produces_valid_wasm() {
 #[test]
 fn add_hooks_instrumentation_produces_valid_wasm() {
     fn add_all_hooks(module: &mut Module) -> Option<String> {
-        add_hooks(module, &HookSet::all())
+        add_hooks(module, HookSet::all())
     }
     test_instrument(add_all_hooks, "add-hooks");
 }
@@ -36,7 +36,7 @@ fn test_instrument(
         let javascript = instrument(&mut module);
 
         let output_path = output_file(&path, instrument_name).unwrap();
-        module.to_file(&output_path).unwrap();
+        module.into_file(&output_path).unwrap();
 
         wasm_validate(&output_path).expect(&format!(
             "could not instrument wasm file '{}' with {}",

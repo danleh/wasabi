@@ -343,7 +343,7 @@ impl HookMap {
     /// A) was freshly generated, since it was not requested with these types before,
     /// B) came from the internal hook map.
     fn get_or_insert(&self, hook: Hook) -> Instr {
-        let hook_name = hook.lowlevel_name().to_string();
+        let hook_name = hook.lowlevel_name();
         // This is quite tricky and currently not possible with the std::sync::RwLock:
         // We want to allow parallel reads to the HashMap, but if a hook is not present, we need
         // to insert it, thus requiring a full mutable lock (no parallelism). Always doing exclusive

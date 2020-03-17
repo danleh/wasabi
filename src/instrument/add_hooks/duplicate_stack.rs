@@ -15,14 +15,14 @@ pub fn save_stack_to_locals(locals: &[Idx<Local>]) -> Vec<Instr> {
         instrs.push(Instr::Local(Set, local));
     }
     // optimization: for first local on the stack / last one saved use local.tee instead of local.set + local.get
-    for &local in locals.iter().next() {
+    if let Some(&local) = locals.first() {
         instrs.push(Instr::Local(Tee, local));
     }
     // and restore (saving has removed them from the stack)
     for &local in locals.iter().skip(1) {
         instrs.push(Instr::Local(Get, local));
     }
-    return instrs;
+    instrs
 }
 
 /// restores locals back onto stack and inserts code that converts i64 -> (i32, i32)
@@ -38,5 +38,5 @@ pub fn restore_locals_with_i64_handling(
             function.local_type(local),
         ));
     }
-    return instrs;
+    instrs
 }

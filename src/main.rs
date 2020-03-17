@@ -31,17 +31,17 @@ fn main() -> Result<(), MainError> {
         enabled_hooks.remove(hook);
     }
 
-    let input_filename = opt.input_file.file_name().ok_or(io_err("invalid input file, has no filename"))?;
+    let input_filename = opt.input_file.file_name().ok_or_else(|| io_err("invalid input file, has no filename"))?;
     let output_file_wasm = opt.output_dir.join(input_filename);
     let output_file_wasabi_js = output_file_wasm.with_extension("wasabi.js");
 
     // instrument Wasm and generate JavaScript
     let mut module = Module::from_file(opt.input_file)?;
-    let js = add_hooks(&mut module, &enabled_hooks).unwrap();
+    let js = add_hooks(&mut module, enabled_hooks).unwrap();
 
     // write output files
     fs::create_dir_all(opt.output_dir)?;
-    module.to_file(output_file_wasm)?;
+    module.into_file(output_file_wasm)?;
     fs::write(output_file_wasabi_js, js)?;
 
     Ok(())

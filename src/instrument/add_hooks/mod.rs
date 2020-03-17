@@ -20,9 +20,10 @@ mod hook_map;
 mod static_info;
 mod type_stack;
 
-/// instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, and
+/// Instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, and
 /// other relevant information.
-pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String> {
+#[allow(clippy::cognitive_complexity)]
+pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet) -> Option<String> {
     // make sure table is exported, needed for Wasabi runtime to resolve table indices to function indices.
     for table in &mut module.tables {
         if table.export.is_empty() {
@@ -459,7 +460,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: &HookSet) -> Option<String>
                     unreachable_depth = 1;
                 }
                 Call(target_func_idx) => {
-                    let ref func_ty = module_info.read().functions[target_func_idx.into_inner()].type_;
+                    let func_ty = &module_info.read().functions[target_func_idx.into_inner()].type_;
                     type_stack.instr(func_ty);
 
                     if enabled_hooks.contains(Hook::Call) {
@@ -863,7 +864,7 @@ Wasabi.module.lowlevelHooks = {{
         serde_json::to_string(&module_info).unwrap(),
         hooks
             .iter()
-            .flat_map(|s| s.split("\n"))
+            .flat_map(|s| s.split('\n'))
             .collect::<Vec<&str>>()
             .join("\n    ")
     )

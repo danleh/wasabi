@@ -1,3 +1,5 @@
+#![allow(clippy::expect_fun_call)]
+
 use std::collections::HashMap;
 
 use wasm::{highlevel::Instr, Idx, Label};
@@ -15,7 +17,7 @@ use self::BlockStackElement::*;
 #[derive(Debug)]
 pub struct BlockStack {
     block_stack: Vec<BlockStackElement>,
-    /// pre-computed on new()
+    /// Maps the beginning of a block to its end (or else, for if) instruction. Pre-computed on new().
     begin_end_map: HashMap<Idx<Instr>, Idx<Instr>>,
 }
 
