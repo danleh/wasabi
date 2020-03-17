@@ -62,7 +62,7 @@ impl fmt::Display for ValType {
 }
 
 impl ValType {
-    pub fn to_char(&self) -> char {
+    pub fn to_char(self) -> char {
         match self {
             ValType::I32 => 'i',
             ValType::I64 => 'I',

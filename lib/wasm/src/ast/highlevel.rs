@@ -326,8 +326,8 @@ pub enum NumericOp {
 /* Type information for each instruction */
 
 impl LocalOp {
-    pub fn to_type(&self, local_ty: ValType) -> FunctionType {
-        match *self {
+    pub fn to_type(self, local_ty: ValType) -> FunctionType {
+        match self {
             LocalOp::Get => FunctionType::new(&[], &[local_ty]),
             LocalOp::Set => FunctionType::new(&[local_ty], &[]),
             LocalOp::Tee => FunctionType::new(&[local_ty], &[local_ty]),
@@ -336,8 +336,8 @@ impl LocalOp {
 }
 
 impl GlobalOp {
-    pub fn to_type(&self, global_ty: ValType) -> FunctionType {
-        match *self {
+    pub fn to_type(self, global_ty: ValType) -> FunctionType {
+        match self {
             GlobalOp::Get => FunctionType::new(&[], &[global_ty]),
             GlobalOp::Set => FunctionType::new(&[global_ty], &[]),
         }
@@ -345,10 +345,10 @@ impl GlobalOp {
 }
 
 impl NumericOp {
-    pub fn to_type(&self) -> FunctionType {
+    pub fn to_type(self) -> FunctionType {
         use NumericOp::*;
         use ValType::*;
-        match *self {
+        match self {
             /* Unary */
 
             I32Eqz => FunctionType::new(&[I32], &[I32]),
@@ -395,10 +395,10 @@ impl NumericOp {
 }
 
 impl LoadOp {
-    pub fn to_type(&self) -> FunctionType {
+    pub fn to_type(self) -> FunctionType {
         use LoadOp::*;
         use ValType::*;
-        match *self {
+        match self {
             I32Load => FunctionType::new(&[I32], &[I32]),
             I64Load => FunctionType::new(&[I32], &[I64]),
             F32Load => FunctionType::new(&[I32], &[F32]),
@@ -419,10 +419,10 @@ impl LoadOp {
 }
 
 impl StoreOp {
-    pub fn to_type(&self) -> FunctionType {
+    pub fn to_type(self) -> FunctionType {
         use StoreOp::*;
         use ValType::*;
-        match *self {
+        match self {
             I32Store => FunctionType::new(&[I32, I32], &[]),
             I64Store => FunctionType::new(&[I32, I64], &[]),
             F32Store => FunctionType::new(&[I32, F32], &[]),
@@ -817,6 +817,7 @@ impl Function {
             let locals = &self.code()
                 .expect("cannot get type of a local in an imported function")
                 .locals;
+            #[allow(clippy::expect_fun_call)]
             locals.get(idx.into_inner() - param_count)
                 .expect(&format!("invalid local index {}, function has {} parameters and {} locals", idx.into_inner(), param_count, locals.len()))
                 .type_

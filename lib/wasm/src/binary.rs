@@ -410,8 +410,8 @@ impl WasmBinary for BlockType {
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
         match self {
-            &BlockType(None) => 0x40u8.encode(writer),
-            &BlockType(Some(ref val_type)) => val_type.encode(writer)
+            BlockType(None) => 0x40u8.encode(writer),
+            BlockType(Some(ref val_type)) => val_type.encode(writer)
         }
     }
 }
@@ -430,7 +430,7 @@ impl WasmBinary for Limits {
                 initial_size: u32::decode(reader, offset)?,
                 max_size: Some(u32::decode(reader, offset)?),
             },
-            byte => Err(Error::invalid_tag::<Limits>(*offset, byte))?
+            byte => return Err(Error::invalid_tag::<Limits>(*offset, byte))
         })
     }
 

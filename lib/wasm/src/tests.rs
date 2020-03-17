@@ -19,7 +19,7 @@ fn decode_encode_is_valid_wasm() {
             .expect(&format!("could not decode valid wasm file '{}'", path.display()));
 
         let output_path = &output_file(path, "encode").unwrap();
-        module.to_file(output_path)
+        module.into_file(output_path)
             .expect(&format!("could not encode wasm to file '{}'", output_path.display()));
 
         wasm_validate(output_path)

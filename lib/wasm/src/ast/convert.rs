@@ -520,7 +520,7 @@ impl From<hl::Module> for ll::Module {
         }
 
         // Start
-        for start_func_idx in module.start {
+        if let Some(start_func_idx) = module.start {
             sections.push(ll::Section::Start(ll::WithSize(state.map_function_idx(start_func_idx))));
         }
 
@@ -547,6 +547,7 @@ impl From<hl::Module> for ll::Module {
         }
 
         // Code
+        #[allow(clippy::type_complexity)]
         let (code, local_names): (Vec<ll::WithSize<ll::Code>>, Vec<Option<ll::IndirectNameAssoc<ll::Function, ll::Local>>>) =
             module.functions.into_par_iter()
                 .enumerate()
@@ -605,7 +606,7 @@ impl From<hl::Module> for ll::Module {
         // sections is the same in this array as when they were parsed originally, so no need
         // to handle that specifically.
         for section in module.custom_sections {
-            let after = section.after.clone();
+            let after = section.after;
             let section = ll::Section::Custom(ll::CustomSection::Raw(section));
 
             // Find the reference section after which this custom section came in the original binary.

@@ -37,7 +37,7 @@ impl highlevel::Module {
         Ok(lowlevel::Module::from_file(path)?.into())
     }
 
-    pub fn to_file<P: AsRef<Path>>(self, path: P) -> io::Result<usize> {
+    pub fn into_file<P: AsRef<Path>>(self, path: P) -> io::Result<usize> {
         let module: lowlevel::Module = self.into();
         module.to_file(path)
     }
