@@ -96,6 +96,15 @@ impl fmt::Display for FunctionType {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct BlockType(pub Option<ValType>);
 
+impl fmt::Display for BlockType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.0 {
+            Some(ty) => write!(f, "[{}]", ty),
+            None => write!(f, "[]"),
+        }
+    }
+}
+
 #[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct TableType(pub ElemType, pub Limits);
 
@@ -117,6 +126,15 @@ pub struct Limits {
 
 #[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct GlobalType(pub ValType, pub Mutability);
+
+impl fmt::Display for GlobalType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.1 {
+            Mutability::Const => write!(f, "{}", self.0),
+            Mutability::Mut => write!(f, "mut {}", self.0),
+        }
+    }
+}
 
 #[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Mutability {
