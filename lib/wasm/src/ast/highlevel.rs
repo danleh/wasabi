@@ -697,6 +697,44 @@ impl fmt::Display for Instr {
 /* Impls/functions for typical use cases on WASM modules. */
 
 impl Module {
+
+    // Convenient iterators over functions, globals, tables, and memories that include the (typed,
+    // high-level) index as well.
+    // TODO Add _mut variants for globals, tables, and memories, if needed.
+
+    pub fn functions(&self) -> impl Iterator<Item=(Idx<Function>, &Function)> {
+        self.functions.iter().enumerate().map(|(i, f)| (i.into(), f))
+    }
+
+    pub fn functions_mut(&mut self) -> impl Iterator<Item=(Idx<Function>, &mut Function)> {
+        self.functions.iter_mut().enumerate().map(|(i, f)| (i.into(), f))
+    }
+
+    pub fn globals(&self) -> impl Iterator<Item=(Idx<Global>, &Global)> {
+        self.globals.iter().enumerate().map(|(i, g)| (i.into(), g))
+    }
+
+    pub fn tables(&self) -> impl Iterator<Item=(Idx<Table>, &Table)> {
+        self.tables.iter().enumerate().map(|(i, t)| (i.into(), t))
+    }
+
+    pub fn memories(&self) -> impl Iterator<Item=(Idx<Memory>, &Memory)> {
+        self.memories.iter().enumerate().map(|(i, m)| (i.into(), m))
+    }
+
+
+    // Convenient accessors of functions for the typed, high-level index.
+    // TODO Add the same for globals, tables, and memories, if needed.
+
+    pub fn function(&self, idx: Idx<Function>) -> &Function {
+        &self.functions[idx.into_inner()]
+    }
+
+    pub fn function_mut(&mut self, idx: Idx<Function>) -> &mut Function {
+        &mut self.functions[idx.into_inner()]
+    }
+
+
     pub fn add_function(&mut self, type_: FunctionType, locals: Vec<ValType>, body: Vec<Instr>) -> Idx<Function> {
         self.functions.push(Function {
             type_,
@@ -730,23 +768,6 @@ impl Module {
         });
         (self.globals.len() - 1).into()
     }
-
-    pub fn function(&self, idx: Idx<Function>) -> &Function {
-        &self.functions[idx.into_inner()]
-    }
-    pub fn function_mut(&mut self, idx: Idx<Function>) -> &mut Function {
-        &mut self.functions[idx.into_inner()]
-    }
-
-    pub fn functions(&self) -> impl Iterator<Item=(Idx<Function>, &Function)> {
-        self.functions.iter().enumerate().map(|(i, f)| (i.into(), f))
-    }
-    pub fn functions_mut(&mut self) -> impl Iterator<Item=(Idx<Function>, &mut Function)> {
-        self.functions.iter_mut().enumerate().map(|(i, f)| (i.into(), f))
-    }
-
-    // TODO add tables(), memories() etc. iterators, that all add the correct idx already
-    // TODO grep for enumerate() to eradicate all cases, where I hand computed the idx
 
     pub fn types(&self) -> HashSet<&FunctionType> {
         let mut types = HashSet::new();
@@ -953,7 +974,6 @@ impl Function {
                         ((param_count + idx).into(), local))
             )
     }
-
 }
 
 // TODO steps for simplifying all the above functions on locals and params:
@@ -964,16 +984,18 @@ impl Function {
 // TODO we could unify params and locals by having
 enum ParamOrLocalMut<'a> {
     Param { type_: &'a mut ValType, name: &'a mut Option<String> },
-    Local(&'a mut Local)
+    Local(&'a mut Local),
 }
+
 enum ParamOrLocal<'a> {
     Param { type_: ValType, name: Option<&'a str> },
-    Local(&'a Local)
+    Local(&'a Local),
 }
+
 // or maybe?
 struct ParamRef<'a> {
     type_: ValType,
-    name: Option<&'a str>
+    name: Option<&'a str>,
 }
 
 impl Local {

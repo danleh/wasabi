@@ -521,11 +521,10 @@ impl From<&hl::Module> for ll::Module {
         }
 
         // Element
-        let elements: Vec<ll::Element> = module.tables.iter()
-            .enumerate()
+        let elements: Vec<ll::Element> = module.tables()
             .flat_map(|(idx, table)| table.elements.iter()
                 .map(|element| ll::Element {
-                    table_idx: state.map_table_idx(idx.into()),
+                    table_idx: state.map_table_idx(idx),
                     offset: to_lowlevel_expr(&element.offset, &state),
                     init: element.functions.iter().map(|&fn_idx| state.map_function_idx(fn_idx)).collect(),
                 })
@@ -546,11 +545,10 @@ impl From<&hl::Module> for ll::Module {
         }
 
         // Data
-        let data: Vec<ll::Data> = module.memories.iter()
-            .enumerate()
+        let data: Vec<ll::Data> = module.memories()
             .flat_map(|(idx, memory)| memory.data.iter()
                 .map(|data| ll::Data {
-                    memory_idx: state.map_memory_idx(idx.into()),
+                    memory_idx: state.map_memory_idx(idx),
                     offset: to_lowlevel_expr(&data.offset, &state),
                     init: data.bytes.clone(),
                 })
@@ -675,11 +673,11 @@ fn to_lowlevel_exports(module: &hl::Module, state: &EncodeState) -> Vec<ll::Expo
 
     macro_rules! add_exports {
         ($elems: ident, $map_idx_fn: ident, $export_ty_variant: ident) => {
-            for (idx, element) in module.$elems.iter().enumerate() {
+            for (idx, element) in module.$elems() {
                 for name in &element.export {
                     exports.push(ll::Export {
                         name: name.clone(),
-                        type_: ll::ExportType::$export_ty_variant(state.$map_idx_fn(idx.into())),
+                        type_: ll::ExportType::$export_ty_variant(state.$map_idx_fn(idx)),
                     });
                 }
             }
