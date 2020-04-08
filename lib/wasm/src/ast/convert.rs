@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use rayon::prelude::*;
 
-use crate::{FunctionType, Val, Idx, TableType, MemoryType};
+use crate::{FunctionType, Idx, MemoryType, TableType, Val};
 use crate::highlevel as hl;
 use crate::lowlevel as ll;
 
@@ -55,19 +55,17 @@ impl From<ll::Module> for hl::Module {
 
                     // Inline the name information for functions and locals into our high-level AST.
                     for ll::NameAssoc { idx, name } in function_names {
-                        module.functions.get_mut(idx.into_inner())
+                        module.functions
+                            .get_mut(idx.into_inner())
                             .expect("invalid function index")
                             .name = Some(name);
                     }
                     for ll::IndirectNameAssoc { idx: func_idx, name_map } in local_names {
-                        let code = module.functions.get_mut(func_idx.into_inner())
-                            .expect("invalid function index")
-                            .code_mut()
-                            .expect("function is imported, hence no locals to name");
+                        let function = module.functions
+                            .get_mut(func_idx.into_inner())
+                            .expect("invalid function index");
                         for ll::NameAssoc { idx, name } in name_map {
-                            code.locals.get_mut(idx.into_inner())
-                                .expect("invalid local index")
-                                .name = Some(name)
+                            *function.local_name_mut(idx.into_inner().into()) = Some(name);
                         }
                     }
                 }
@@ -88,6 +86,7 @@ impl From<ll::Module> for hl::Module {
                                 code: hl::ImportOrPresent::Import(import_.module, import_.name),
                                 export,
                                 name: None,
+                                param_names: Vec::new(),
                             }),
                             ll::ImportType::Global(type_) => module.globals.push(hl::Global {
                                 type_,
@@ -120,6 +119,7 @@ impl From<ll::Module> for hl::Module {
                             code: hl::ImportOrPresent::Present(hl::Code { locals: vec![], body: vec![] }),
                             export: Vec::new(),
                             name: None,
+                            param_names: Vec::new(),
                         });
                     }
                 }
@@ -547,12 +547,14 @@ impl From<hl::Module> for ll::Module {
         }
 
         // Code
+        // FIXME BROKEN!!! for named function parameters
         #[allow(clippy::type_complexity)]
-        let (code, local_names): (Vec<ll::WithSize<ll::Code>>, Vec<Option<ll::IndirectNameAssoc<ll::Function, ll::Local>>>) =
+            let (code, local_names): (Vec<ll::WithSize<ll::Code>>, Vec<Option<ll::IndirectNameAssoc<ll::Function, ll::Local>>>) =
             module.functions.into_par_iter()
                 .enumerate()
                 // Only non-imported functions.
                 .filter_map(|(func_idx, function)| function.into_code().map(|code| (func_idx, code)))
+                // FIXME this forgets named function parameters of imported functions!
                 .map(|(idx, code)| {
                     let (code, name_map) = to_lowlevel_code(code, &state);
                     let code = ll::WithSize(code);
@@ -614,7 +616,7 @@ impl From<hl::Module> for ll::Module {
                 sections.iter()
                     .position(|sec| std::mem::discriminant(sec) == after)
                     .expect("cannot find the reference section for inserting custom section anymore")
-                + 1
+                    + 1
             } else {
                 // In the original binary the custom section came at the beginning, so insert at beginning.
                 0
@@ -717,10 +719,21 @@ fn to_lowlevel_exports(module: &hl::Module, state: &EncodeState) -> Vec<ll::Expo
     exports
 }
 
-fn to_lowlevel_code(code: hl::Code, state: &EncodeState) -> (ll::Code, ll::NameMap<ll::Local>) {
+// Need the whole function instead of just the code, because we need the parameter count for
+// the correct local indices.
+fn to_lowlevel_code(func: hl::Function, state: &EncodeState) -> (ll::Code, ll::NameMap<ll::Local>) {
     let mut locals = Vec::new();
     let mut local_names = Vec::new();
-    for (idx, hl::Local { type_, name }) in code.locals.into_iter().enumerate() {
+    // TODO refactor extracting of param/non-param local names and generation of name map into
+    // own function! it should have nothing to do with to_lowlevel_code!
+
+    // copy out names into name map of function parameters
+    for (idx, hl::Local { name, .. }) in func.params() {
+        if let Some(name) = name {
+            local_names.push(ll::NameAssoc { idx: idx.into_inner().into(), name });
+        }
+    }
+    for (idx, hl::Local { type_, name }) in func.locals.into_iter().enumerate() {
         // Convert the type to this run-length encoded format.
         if locals.last().map(|locals: &ll::Locals| locals.type_ == type_).unwrap_or(false) {
             let last = locals.len() - 1;
@@ -731,15 +744,19 @@ fn to_lowlevel_code(code: hl::Code, state: &EncodeState) -> (ll::Code, ll::NameM
                 type_,
             })
         }
+
+        // TODO together with function name map code, move out into own function
         // Collect all names of locals.
         if let Some(name) = name {
+            let idx = func.param_count() + idx;
             local_names.push(ll::NameAssoc { idx: idx.into(), name });
         }
     }
 
     (ll::Code {
         locals,
-        body: to_lowlevel_expr(&code.body, state),
+        // FIXME can we avoid this unwrap by giving only the hl::code again?
+        body: to_lowlevel_expr(&func.code().unwrap().body, state),
     },
      local_names)
 }

@@ -91,6 +91,7 @@ impl Hook {
                 export: Vec::new(),
                 // No debug info, hook name is descriptive enough.
                 name: None,
+                param_names: Vec::new(),
             }
         };
 

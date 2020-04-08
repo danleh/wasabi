@@ -46,6 +46,9 @@ pub struct Function {
     pub export: Vec<String>,
     // From the name section, if present, e.g., compiler-generated debug info.
     pub name: Option<String>,
+    // Invariant: param_names.len() <= type_.params.len() (not necessarily equal length!).
+    // E.g., if param_names is empty, no parameter has a debug name.
+    pub param_names: Vec<Option<String>>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -703,6 +706,7 @@ impl Module {
             }),
             export: Vec::new(),
             name: None,
+            param_names: Vec::new(),
         });
         (self.functions.len() - 1).into()
     }
@@ -713,6 +717,7 @@ impl Module {
             code: ImportOrPresent::Import(module, name),
             export: Vec::new(),
             name: None,
+            param_names: Vec::new(),
         });
         (self.functions.len() - 1).into()
     }
@@ -802,13 +807,13 @@ impl Function {
 
     /// add a new local with type ty and return its index
     pub fn add_fresh_local(&mut self, ty: ValType) -> Idx<Local> {
-        let args_count = self.type_.params.len();
+        let param_count = self.param_count();
         let locals = &mut self.code_mut()
             .expect("cannot add local to imported function")
             .locals;
-        let idx = locals.len() + args_count;
+        let new_idx = param_count + locals.len();
         locals.push(Local::new(ty));
-        idx.into()
+        new_idx.into()
     }
 
     pub fn add_fresh_locals(&mut self, tys: &[ValType]) -> Vec<Idx<Local>> {
@@ -817,25 +822,155 @@ impl Function {
             .collect()
     }
 
-    /// get type of the local with index idx
+    // TODO The following three functions are very similar. See idea below...
+
+    /// Return the type of the function parameter or non-parameter local with index idx.
     pub fn local_type(&self, idx: Idx<Local>) -> ValType {
-        let param_count = self.type_.params.len();
+        let param_count = self.param_count();
         if idx.into_inner() < param_count {
             self.type_.params[idx.into_inner()]
         } else {
             let locals = &self.code()
-                .expect("cannot get type of a local in an imported function")
+                .expect("cannot get type of non-parameter local in imported function")
                 .locals;
-            #[allow(clippy::expect_fun_call)]
             locals.get(idx.into_inner() - param_count)
-                .expect(&format!("invalid local index {}, function has {} parameters and {} locals", idx.into_inner(), param_count, locals.len()))
+                .expect(&format!(
+                    "cannot get type of local with index {}, function has only {} parameters and {} locals",
+                    idx.into_inner(),
+                    param_count,
+                    locals.len()))
                 .type_
+        }
+    }
+
+    /// Return the (optional) debug name of the function parameter or non-parameter local with
+    /// index idx.
+    pub fn local_name(&self, idx: Idx<Local>) -> Option<&str> {
+        let param_count = self.param_count();
+        if idx.into_inner() < param_count {
+            self.param_name(idx)
+        } else {
+            let locals = &self.code()
+                .expect("cannot get name of non-parameter local in imported function")
+                .locals;
+            locals.get(idx.into_inner() - param_count)
+                .expect(&format!(
+                    "cannot get name of local with index {}, function has only {} parameters and {} locals",
+                    idx.into_inner(),
+                    param_count,
+                    locals.len()))
+                .name
+                .as_ref()
+                .map(|name| name.as_str())
+        }
+    }
+
+    /// Return a mutable reference to the (optional) debug name of the function parameter or
+    /// non-parameter local with index idx.
+    ///
+    /// Internally, this pre-allocates a None name for every parameter, to make sure that we can
+    /// return a mutable reference to Option<String>.
+    pub fn local_name_mut(&mut self, idx: Idx<Local>) -> &mut Option<String> {
+        let param_count = self.param_count();
+        if idx.into_inner() < param_count {
+            // Enlarge the param_name vector to have exactly one option for each parameter.
+            // This way, we can hand out in-place mutable references to the names.
+            self.param_names.resize(param_count, None);
+            &mut self.param_names[idx.into_inner()]
+        } else {
+            let locals = &mut self.code_mut()
+                .expect("cannot get name of non-parameter local in imported function")
+                .locals;
+            let locals_len = locals.len();
+            &mut locals.get_mut(idx.into_inner() - param_count)
+                .expect(&format!(
+                    "cannot get name of local with index {}, function has only {} parameters and {} locals",
+                    idx.into_inner(),
+                    param_count,
+                    locals_len))
+                .name
         }
     }
 
     pub fn instr_count(&self) -> usize {
         self.code().map(|code| code.body.len()).unwrap_or(0)
     }
+
+    pub fn param_count(&self) -> usize {
+        self.type_.params.len()
+    }
+
+    pub fn param_name(&self, idx: Idx<Local>) -> Option<&str> {
+        match self.param_names.get(idx.into_inner()) {
+            // If idx > param_names.len().
+            None => None,
+            // If idx was found, but no name was stored for this param.
+            Some(None) => None,
+            // If idx was found AND a name was stored at this position.
+            Some(Some(name)) => Some(name.as_str())
+        }
+    }
+
+    /// Returns the parameters of this function as their index, type, and debug name (if any).
+    ///
+    /// Note that function parameters are also part of the local index space, i.e., the N function
+    /// parameters have indices 0..N-1, and the first non-parameter local has index N.
+    ///
+    /// Also note that in our Function data structure, the type of a parameter and its debug name
+    /// are not stored in the same location, so we cannot return a &Local, but have to return a
+    /// freshly allocated, owned Local struct (which contains type and name).
+    /// TODO this re-allocates the name String, can we return &str instead?
+    pub fn params(&self) -> impl Iterator<Item=(Idx<Local>, Local)> + '_ {
+        self.type_.params.iter()
+            .enumerate()
+            .map(move |(idx, type_)| {
+                let idx = idx.into();
+                let name = self.param_name(idx).map(String::from);
+                (idx, Local { type_: *type_, name })
+            })
+    }
+
+    // TODO replace other hand-grown uses of local+index enumeration with this correct one.
+    /// Returns the non-parameter locals of this function.
+    /// Since function parameters and locals share the same index space, the returned indices will
+    /// start at N, if N is the number of function parameters.
+    pub fn locals(&self) -> impl Iterator<Item=(Idx<Local>, &Local)> {
+        // This value needs to be moved (not borrowed) into the innermost closure, hence the two
+        // nested move annotations on the closures below.
+        let param_count = self.param_count();
+        self.code()
+            .into_iter()
+            // Return an empty iterator for imported functions (which don't have non-param locals).
+            .flat_map(move |code|
+                code.locals
+                    .iter()
+                    .enumerate()
+                    .map(move |(idx, local)|
+                        // The index of the non-parameter locals starts after the parameters.
+                        ((param_count + idx).into(), local))
+            )
+    }
+
+}
+
+// TODO steps for simplifying all the above functions on locals and params:
+// 1. write new params_and_locals() and params_and_locals_mut() iterator, using enums below.
+// 2. express locals() and params() iterators in terms of (1)
+// 3. express local_type(), local_name(), and local_name_mut() in terms of (1).
+
+// TODO we could unify params and locals by having
+enum ParamOrLocalMut<'a> {
+    Param { type_: &'a mut ValType, name: &'a mut Option<String> },
+    Local(&'a mut Local)
+}
+enum ParamOrLocal<'a> {
+    Param { type_: ValType, name: Option<&'a str> },
+    Local(&'a Local)
+}
+
+struct ParamRef {
+    type_: ValType,
+    name: Option<&'str>
 }
 
 impl Local {
