@@ -19,7 +19,7 @@ fn decode_encode_is_valid_wasm() {
             .expect(&format!("could not decode valid wasm file '{}'", path.display()));
 
         let output_path = &output_file(path, "encode").unwrap();
-        module.into_file(output_path)
+        module.to_file(output_path)
             .expect(&format!("could not encode wasm to file '{}'", output_path.display()));
 
         wasm_validate(output_path)
@@ -154,7 +154,7 @@ fn convert_highlevel_to_lowlevel_speed(bencher: &mut Bencher) {
     let module = highlevel::Module::from_file(LARGE_WASM_FILE).unwrap();
 
     bencher.iter(|| {
-        let _: lowlevel::Module = module.clone().into();
+        let _: lowlevel::Module = (&module).into();
     })
 }
 
