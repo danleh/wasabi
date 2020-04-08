@@ -16,7 +16,7 @@ pub fn count_calls(module: &mut Module) -> Option<String> {
         vec![],
         vec![Global(Get, counter), End],
     );
-    module.function(getter).export = vec!["get_counter".into()];
+    module.function_mut(getter).export = vec!["get_counter".into()];
 
     let increment = module.add_function(
         FunctionType::new(&[], &[]),
@@ -30,7 +30,7 @@ pub fn count_calls(module: &mut Module) -> Option<String> {
         ],
     );
 
-    for (i, function) in module.functions() {
+    for (i, function) in module.functions_mut() {
         // ignore the functions we added
         if i != getter && i != increment {
             function.modify_instrs(|instr| match instr {

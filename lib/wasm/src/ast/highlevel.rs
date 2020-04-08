@@ -726,8 +726,17 @@ impl Module {
         (self.globals.len() - 1).into()
     }
 
-    pub fn function(&mut self, idx: Idx<Function>) -> &mut Function { &mut self.functions[idx.into_inner()] }
-    pub fn functions(&mut self) -> impl Iterator<Item=(Idx<Function>, &mut Function)> {
+    pub fn function(&self, idx: Idx<Function>) -> &Function {
+        &self.functions[idx.into_inner()]
+    }
+    pub fn function_mut(&mut self, idx: Idx<Function>) -> &mut Function {
+        &mut self.functions[idx.into_inner()]
+    }
+
+    pub fn functions(&self) -> impl Iterator<Item=(Idx<Function>, &Function)> {
+        self.functions.iter().enumerate().map(|(i, f)| (i.into(), f))
+    }
+    pub fn functions_mut(&mut self) -> impl Iterator<Item=(Idx<Function>, &mut Function)> {
         self.functions.iter_mut().enumerate().map(|(i, f)| (i.into(), f))
     }
 
