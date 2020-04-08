@@ -745,6 +745,9 @@ impl Module {
         self.functions.iter_mut().enumerate().map(|(i, f)| (i.into(), f))
     }
 
+    // TODO add tables(), memories() etc. iterators, that all add the correct idx already
+    // TODO grep for enumerate() to eradicate all cases, where I hand computed the idx
+
     pub fn types(&self) -> HashSet<&FunctionType> {
         let mut types = HashSet::new();
         for function in &self.functions {
@@ -967,10 +970,10 @@ enum ParamOrLocal<'a> {
     Param { type_: ValType, name: Option<&'a str> },
     Local(&'a Local)
 }
-
-struct ParamRef {
+// or maybe?
+struct ParamRef<'a> {
     type_: ValType,
-    name: Option<&'str>
+    name: Option<&'a str>
 }
 
 impl Local {
