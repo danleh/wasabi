@@ -204,8 +204,12 @@ impl From<ll::Module> for hl::Module {
 }
 
 fn from_lowlevel_code(code: ll::Code, types: &[FunctionType]) -> hl::Code {
-    let locals = code.locals.iter().flat_map(
-        |l| std::iter::repeat(hl::Local::new(l.type_)).take(l.count as usize)).collect();
+    let mut locals = Vec::new();
+    for ll::Locals { type_, count } in code.locals {
+        for _ in 0..count {
+            locals.push(hl::Local::new(type_));
+        }
+    }
     hl::Code {
         locals,
         body: from_lowlevel_expr(code.body, types),
