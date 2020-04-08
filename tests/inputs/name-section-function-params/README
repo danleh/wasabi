@@ -1,0 +1,2 @@
+Adapted from a WABT test at https://github.com/WebAssembly/wabt/blob/master/test/binary/names.txt.
+Unfortunately, the WABT tests never test for a local names subsection, where the named local is actually a function parameter. (They only test non-parameter local names.)

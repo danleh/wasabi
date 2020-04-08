@@ -1,0 +1,36 @@
+;;; Generate wasm file with:
+;;; /usr/bin/python wabt/test/gen-wasm.py function-param-names.txt -o function-param-names.wasm
+;;; Double check that it is a valid wasm file with:
+;;; wasm-validate function-param-names.wasm
+
+magic
+version
+section(TYPE) { count[1] function params[2] i32 i32 results[0] }
+section(FUNCTION) { count[1] type[0] }
+section(CODE) {
+  count[1]
+  func {
+    locals[decl_count[1] i32_count[2] i32]
+  }
+}
+section("name") {
+  section(NAME_FUNCTION) {
+    func_count[1]
+    index[0]
+    str("F0")
+  }
+
+  section(NAME_LOCALS) {
+    func_count[1]
+    index[0]
+    local_count[4]
+    index[0]
+    str("P0")
+    index[1]
+    str("P1")
+    index[2]
+    str("L0")
+    index[3]
+    str("L1")
+  }
+}
