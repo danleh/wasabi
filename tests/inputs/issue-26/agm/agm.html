@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8"/>
+	<title>AGM</title>
+</head>
+<body>
+	<script type="text/javascript" src="./agm.js"></script>
+	<script type="text/javascript" src="./agm.wasabi.js"></script>
+	<script type="text/javascript" src="./agm_analysis.js"></script>	
+    <script>
+      Module.onRuntimeInitialized = _ => {
+        //let input = window.prompt("What is the password?");
+        let result = Module.cwrap('agm', 'number', ["number","number"]);
+        var r = result(1.0,2.0);
+	console.log(r);
+      };
+    </script>
+</body>
+</html>
