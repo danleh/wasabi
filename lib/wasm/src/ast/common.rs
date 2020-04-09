@@ -226,8 +226,30 @@ impl Serialize for Label {
 
 #[derive(WasmBinary, Debug, Copy, Clone, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Memarg {
-    pub alignment: u32,
+    /// The alignment of load/stores is just a hint for the VM that says "the effective address of
+    /// this load/store should be aligned to <alignment>".
+    /// However, if that hint is wrong and the actual address is not aligned, the load/store still
+    /// produces the same behavior, potentially just much slower.
+    /// (Since the underlying architecture might issue a trap/signal/exception that must be handled.)
+    ///
+    /// In the binary, the alignment is stored as the exponent of a power of 2.
+    /// That is, the actual alignment value will be 2^alignment_exp.
+    ///
+    /// The actual alignment must be a power of 2 and smaller or equal to the "natural alignment"
+    /// of the load/store instruction.
+    /// The default alignment (e.g., if none is given in the text format) is the natural alignment
+    /// (not zero!).
+    ///
+    /// See https://webassembly.github.io/spec/core/syntax/instructions.html#memory-instructions
+    /// and https://webassembly.github.io/spec/core/text/instructions.html#memory-instructions.
+    pub alignment_exp: u8,
     pub offset: u32,
+}
+
+impl Memarg {
+    pub fn alignment(self) -> u32 {
+        2u32.pow(self.alignment_exp as u32)
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]

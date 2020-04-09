@@ -2,7 +2,7 @@ use parking_lot::RwLock;
 use rayon::prelude::*;
 use serde_json;
 use wasm::{BlockType, Idx, Mutability, Val, ValType::*, FunctionType, Label};
-use wasm::highlevel::{Function, GlobalOp, Instr, Instr::*, LocalOp::*, Module};
+use wasm::highlevel::{Function, GlobalOp, Instr, Instr::*, LocalOp::*, Module, MemoryOp};
 
 use crate::options::{Hook, HookSet};
 
@@ -13,12 +13,12 @@ use self::hook_map::HookMap;
 use self::static_info::*;
 use self::type_stack::TypeStack;
 
-mod block_stack;
+pub mod block_stack;
 mod convert_i64;
 mod duplicate_stack;
 mod hook_map;
 mod static_info;
-mod type_stack;
+pub mod type_stack;
 
 /// Instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, and
 /// other relevant information.
@@ -677,7 +677,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet) -> Option<String> 
                             location.0,
                             location.1,
                             Const(Val::I32(memarg.offset as i32)),
-                            Const(Val::I32(memarg.alignment as i32)),
+                            Const(Val::I32(memarg.alignment_exp as i32)),
                         ]);
                         instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &function));
                         instrumented_body.push(hooks.instr(&instr, &[]));
@@ -699,7 +699,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet) -> Option<String> 
                             location.0,
                             location.1,
                             Const(Val::I32(memarg.offset as i32)),
-                            Const(Val::I32(memarg.alignment as i32)),
+                            Const(Val::I32(memarg.alignment_exp as i32)),
                         ]);
                         instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &function));
                         instrumented_body.push(hooks.instr(&instr, &[]));

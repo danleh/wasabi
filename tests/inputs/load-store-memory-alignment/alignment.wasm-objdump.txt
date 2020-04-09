@@ -1,0 +1,40 @@
+
+alignment.wasm:	file format wasm 0x1
+
+Code Disassembly:
+
+00001b func[0]:
+ 00001c: 41 00                      | i32.const 0
+ 00001e: 41 00                      | i32.const 0
+ 000020: 36 02 00                   | i32.store 2 0
+ 000023: 41 00                      | i32.const 0
+ 000025: 41 00                      | i32.const 0
+ 000027: 36 00 00                   | i32.store 0 0
+ 00002a: 41 00                      | i32.const 0
+ 00002c: 41 00                      | i32.const 0
+ 00002e: 36 01 00                   | i32.store 1 0
+ 000031: 41 00                      | i32.const 0
+ 000033: 41 00                      | i32.const 0
+ 000035: 36 02 00                   | i32.store 2 0
+ 000038: 41 00                      | i32.const 0
+ 00003a: 42 00                      | i64.const 0
+ 00003c: 37 03 00                   | i64.store 3 0
+ 00003f: 41 00                      | i32.const 0
+ 000041: 42 00                      | i64.const 0
+ 000043: 37 03 00                   | i64.store 3 0
+ 000046: 41 00                      | i32.const 0
+ 000048: 28 02 00                   | i32.load 2 0
+ 00004b: 1a                         | drop
+ 00004c: 41 00                      | i32.const 0
+ 00004e: 2c 00 00                   | i32.load8_s 0 0
+ 000051: 1a                         | drop
+ 000052: 41 00                      | i32.const 0
+ 000054: 2d 00 00                   | i32.load8_u 0 0
+ 000057: 1a                         | drop
+ 000058: 41 00                      | i32.const 0
+ 00005a: 2e 01 00                   | i32.load16_s 1 0
+ 00005d: 1a                         | drop
+ 00005e: 41 00                      | i32.const 0
+ 000060: 2f 01 00                   | i32.load16_u 1 0
+ 000063: 1a                         | drop
+ 000064: 0b                         | end

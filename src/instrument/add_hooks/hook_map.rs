@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use wasm::{FunctionType, Idx, ValType, ValType::*};
-use wasm::highlevel::{Function, Instr, Instr::*, Module};
+use wasm::highlevel::{Function, Instr, Instr::*, Module, MemoryOp};
 
 use super::block_stack::BlockStackElement;
 use super::convert_i64::convert_i64_type;
