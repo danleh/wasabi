@@ -13,12 +13,12 @@ use self::hook_map::HookMap;
 use self::static_info::*;
 use self::type_stack::TypeStack;
 
-mod block_stack;
+pub mod block_stack;
 mod convert_i64;
 mod duplicate_stack;
 mod hook_map;
 mod static_info;
-mod type_stack;
+pub mod type_stack;
 
 /// Instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, and
 /// other relevant information.

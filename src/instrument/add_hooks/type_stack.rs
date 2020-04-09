@@ -1,3 +1,6 @@
+// TODO move this into wasm crate, maybe utils submodule
+// TODO block_stack as well?
+
 use wasm::{BlockType, FunctionType, ValType};
 
 use self::TypeStackElement::*;
@@ -27,6 +30,16 @@ enum TypeStackElement {
 impl TypeStack {
     pub fn new() -> Self {
         TypeStack(vec![FunctionBegin])
+    }
+
+    /// Returns the number of values on the type stack until the next "block stack"
+    /// begins, i.e., either BlockBegin or FunctionBegin.
+    pub fn block_depth(&self) -> usize {
+        self.0.iter().rev().take_while(|el|
+            match el {
+                Val(_) => true,
+                _ => false,
+            }).count()
     }
 
     pub fn push_val(&mut self, ty: ValType) {
