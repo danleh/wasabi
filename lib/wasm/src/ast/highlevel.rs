@@ -432,8 +432,18 @@ impl NumericOp {
     }
 }
 
-impl LoadOp {
-    pub fn to_type(self) -> FunctionType {
+pub trait MemoryOp : Sized {
+    fn to_type(self) -> FunctionType;
+
+    // See comments on Memarg type for more information on the alignment hint and natural alignment.
+    fn natural_alignment_exp(self) -> u8;
+    fn natural_alignment(self) -> u32 {
+        2u32.pow(self.natural_alignment_exp() as u32)
+    }
+}
+
+impl MemoryOp for LoadOp {
+    fn to_type(self) -> FunctionType {
         use LoadOp::*;
         use ValType::*;
         match self {
@@ -454,10 +464,31 @@ impl LoadOp {
             I64Load32U => FunctionType::new(&[I32], &[I64]),
         }
     }
+
+    fn natural_alignment_exp(self) -> u8 {
+        use LoadOp::*;
+        match self {
+            I32Load => 2,
+            I64Load => 3,
+            F32Load => 2,
+            F64Load => 3,
+
+            I32Load8S => 0,
+            I32Load8U => 0,
+            I32Load16S => 1,
+            I32Load16U => 1,
+            I64Load8S => 0,
+            I64Load8U => 0,
+            I64Load16S => 1,
+            I64Load16U => 1,
+            I64Load32S => 2,
+            I64Load32U => 2,
+        }
+    }
 }
 
-impl StoreOp {
-    pub fn to_type(self) -> FunctionType {
+impl MemoryOp for StoreOp {
+    fn to_type(self) -> FunctionType {
         use StoreOp::*;
         use ValType::*;
         match self {
@@ -471,6 +502,22 @@ impl StoreOp {
             I64Store8 => FunctionType::new(&[I32, I64], &[]),
             I64Store16 => FunctionType::new(&[I32, I64], &[]),
             I64Store32 => FunctionType::new(&[I32, I64], &[]),
+        }
+    }
+
+    fn natural_alignment_exp(self) -> u8 {
+        use StoreOp::*;
+        match self {
+            I32Store => 2,
+            I64Store => 3,
+            F32Store => 2,
+            F64Store => 3,
+
+            I32Store8 => 0,
+            I32Store16 => 1,
+            I64Store8 => 0,
+            I64Store16 => 1,
+            I64Store32 => 2,
         }
     }
 }
@@ -718,9 +765,16 @@ impl fmt::Display for Instr {
                 if memarg.offset != 0 {
                     write!(f, " offset={}", memarg.offset)?;
                 }
-                if memarg.alignment != 0 {
-                    write!(f, " align={}", memarg.alignment)?;
+
+                let natural_alignment_exp = match self {
+                    Load(load_op, _) => load_op.natural_alignment_exp(),
+                    Store(store_op, _) => store_op.natural_alignment_exp(),
+                    _ => unreachable!()
+                };
+                if memarg.alignment_exp != natural_alignment_exp {
+                    write!(f, " align={}", memarg.alignment())?;
                 }
+
                 Ok(())
             }
 
