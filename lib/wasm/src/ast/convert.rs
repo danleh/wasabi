@@ -65,7 +65,7 @@ impl From<ll::Module> for hl::Module {
                             .get_mut(func_idx.into_inner())
                             .expect("invalid function index");
                         for ll::NameAssoc { idx, name } in name_map {
-                            *function.local_name_mut(idx.into_inner().into()) = Some(name);
+                            *function.param_or_local_name_mut(idx.into_inner().into()) = Some(name);
                         }
                     }
                 }
@@ -81,13 +81,12 @@ impl From<ll::Module> for hl::Module {
                     for import_ in vec.0 {
                         let export = Vec::new();
                         match import_.type_ {
-                            ll::ImportType::Function(type_idx) => module.functions.push(hl::Function {
-                                type_: types[type_idx.into_inner()].clone(),
-                                code: hl::ImportOrPresent::Import(import_.module, import_.name),
-                                export,
-                                name: None,
-                                param_names: Vec::new(),
-                            }),
+                            ll::ImportType::Function(type_idx) => module.functions.push(
+                                hl::Function::new_imported(
+                                    types[type_idx.into_inner()].clone(),
+                                    import_.module, import_.name,
+                                    export)
+                            ),
                             ll::ImportType::Global(type_) => module.globals.push(hl::Global {
                                 type_,
                                 init: hl::ImportOrPresent::Import(import_.module, import_.name),
@@ -113,14 +112,14 @@ impl From<ll::Module> for hl::Module {
 
                 ll::Section::Function(ll::WithSize(function_signatures)) => {
                     for type_idx in function_signatures {
-                        module.functions.push(hl::Function {
-                            type_: types[type_idx.into_inner()].clone(),
-                            // Use an empty body/locals for now, code is only converted later.
-                            code: hl::ImportOrPresent::Present(hl::Code { locals: vec![], body: vec![] }),
-                            export: Vec::new(),
-                            name: None,
-                            param_names: Vec::new(),
-                        });
+                        module.functions.push(
+                            hl::Function::new(
+                                types[type_idx.into_inner()].clone(),
+                                // Use an empty body/locals for now, code is only converted later.
+                                hl::Code { locals: vec![], body: vec![] },
+                                Vec::new()
+                            )
+                        );
                     }
                 }
                 ll::Section::Global(ll::WithSize(globals)) => {
@@ -711,19 +710,11 @@ fn to_lowlevel_function_names(module: &hl::Module, state: &EncodeState) -> ll::N
 fn to_lowlevel_local_names(module: &hl::Module, state: &EncodeState) -> ll::IndirectNameMap<ll::Function, ll::Local> {
     let mut names = Vec::new();
     for (func_idx, func) in module.functions() {
-        // TODO merge those two loops after refactoring of params() and locals()
         let mut name_map = Vec::new();
 
-        // Names of function parameters.
-        for (idx, hl::Local { name, .. }) in func.params() {
-            if let Some(name) = name {
-                name_map.push(ll::NameAssoc { idx: idx.into_inner().into(), name });
-            }
-        }
-        // Names of non-parameter locals.
-        for (idx, hl::Local { name, .. }) in func.locals() {
-            if let Some(name) = name {
-                name_map.push(ll::NameAssoc { idx: idx.into_inner().into(), name: name.clone() });
+        for (idx, param_or_local) in func.param_or_locals() {
+            if let Some(name) = param_or_local.name() {
+                name_map.push(ll::NameAssoc { idx: idx.into_inner().into(), name: name.to_string() });
             }
         }
 
@@ -748,7 +739,7 @@ fn to_lowlevel_code(code: &hl::Code, state: &EncodeState) -> ll::WithSize<ll::Co
             // new Locals entry.
             Some(_) | None => locals.push(ll::Locals {
                 count: 1,
-                type_
+                type_,
             })
         }
     }

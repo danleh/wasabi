@@ -584,7 +584,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet) -> Option<String> 
                 /* Variable Instructions */
 
                 Local(op, local_idx) => {
-                    let local_ty = function.local_type(local_idx);
+                    let local_ty = function.param_or_local_type(local_idx);
 
                     type_stack.instr(&op.to_type(local_ty));
 
