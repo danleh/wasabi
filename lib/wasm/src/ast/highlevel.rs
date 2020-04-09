@@ -775,27 +775,23 @@ impl Module {
 
 
     pub fn add_function(&mut self, type_: FunctionType, locals: Vec<ValType>, body: Vec<Instr>) -> Idx<Function> {
-        self.functions.push(Function {
+        self.functions.push(Function::new(
             type_,
-            code: ImportOrPresent::Present(Code {
+            Code {
                 locals: locals.into_iter().map(Local::new).collect(),
                 body,
-            }),
-            export: Vec::new(),
-            name: None,
-            param_names: Vec::new(),
-        });
+            },
+            Vec::new(),
+        ));
         (self.functions.len() - 1).into()
     }
 
     pub fn add_function_import(&mut self, type_: FunctionType, module: String, name: String) -> Idx<Function> {
-        self.functions.push(Function {
+        self.functions.push(Function::new_imported(
             type_,
-            code: ImportOrPresent::Import(module, name),
-            export: Vec::new(),
-            name: None,
-            param_names: Vec::new(),
-        });
+            module, name,
+            Vec::new(),
+        ));
         (self.functions.len() - 1).into()
     }
 
@@ -931,8 +927,6 @@ impl Function {
     // Accessors and iterators for parameters and locals uniformly.
 
     pub fn param_or_local(&self, idx: Idx<Local>) -> ParamOrLocalRef {
-        // FIXME access param/locals directly instead of through the iterator?
-        // check generated code: is it somehow smart and directly does a idx < param_count check?
         self.param_or_locals()
             .nth(idx.into_inner())
             .expect("invalid local index")
@@ -940,7 +934,6 @@ impl Function {
     }
 
     pub fn param_or_local_mut(&mut self, idx: Idx<Local>) -> ParamOrLocalMut {
-        // FIXME same as for param_or_local()
         self.param_or_locals_mut()
             .nth(idx.into_inner())
             .expect("invalid local index")
@@ -954,23 +947,29 @@ impl Function {
     }
 
     pub fn param_or_locals_mut(&mut self) -> impl Iterator<Item=(Idx<Local>, ParamOrLocalMut)> {
-        // FIXME copied code from params_mut()/locals_mut()/code_mut() since we cannot borrrow twice mutably -.-
+        // Unfortunately, we cannot borrow self mutably twice, so we cannot adapt the code from
+        // param_or_locals() here. (We would have to call self.params_mut() and self.locals_mut()).
+        // Dirty hack: copy code from params_mut()/locals_mut()/code_mut().
+        // TODO If there is a smarter way of re-using params_mut() and locals_mut(), I'd be happy to.
+
         self.assert_param_name_len_valid();
 
         let params = self.type_.params.iter_mut()
             .zip(self.param_names.iter_mut())
             .map(|(type_, name)| ParamMut { type_, name })
             .map(ParamOrLocalMut::Param);
+
         let code = if let ImportOrPresent::Present(t) = &mut self.code {
             Some(t)
         } else {
             None
         };
+
         let locals = code.into_iter()
             .flat_map(|code| code.locals.iter_mut())
             .map(ParamOrLocalMut::Local);
-        params
-            .chain(locals)
+
+        params.chain(locals)
             .enumerate()
             .map(|(idx, element)| (idx.into(), element))
     }
