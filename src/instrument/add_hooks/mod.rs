@@ -677,7 +677,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet) -> Option<String> 
                             location.0,
                             location.1,
                             Const(Val::I32(memarg.offset as i32)),
-                            Const(Val::I32(memarg.alignment as i32)),
+                            Const(Val::I32(memarg.alignment_exp as i32)),
                         ]);
                         instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &function));
                         instrumented_body.push(hooks.instr(&instr, &[]));
@@ -699,7 +699,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet) -> Option<String> 
                             location.0,
                             location.1,
                             Const(Val::I32(memarg.offset as i32)),
-                            Const(Val::I32(memarg.alignment as i32)),
+                            Const(Val::I32(memarg.alignment_exp as i32)),
                         ]);
                         instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &function));
                         instrumented_body.push(hooks.instr(&instr, &[]));
