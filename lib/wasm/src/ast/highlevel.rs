@@ -46,6 +46,12 @@ pub struct Function {
     pub export: Vec<String>,
     // From the name section, if present, e.g., compiler-generated debug info.
     pub name: Option<String>,
+    // Invariant: param_names.len() == type_.params.len(), i.e., one optional name per type.
+    // TODO Since you cannot access param_names mutably without checking the invariant before,
+    // it is currently impossible to change the number of function parameters without breaking the
+    // invariant.
+    // However, so far it was never necessary to change the type signature of an existing function.
+    param_names: Vec<Option<String>>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -84,6 +90,38 @@ pub struct Local {
     pub type_: ValType,
     // From the name section, if present, e.g., compiler-generated debug info.
     pub name: Option<String>,
+}
+
+// For function parameters, the name and type are spread over the Function.type_ and
+// Function.param_names fields, so we cannot hand out a single reference like for &Local.
+// Instead we have two reference types (one mutable, one not) for the (non-explicit) Param that
+// encapsulate the two separate references to type_ and name.
+// As a common "supertype" to both Param and Local (mutable) references, we also have
+// ParamOrLocalRef/ParamOrLocalMut with type and name accessor functions.
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct ParamRef<'a> {
+    // ValType is a Copy-type and smaller than a pointer, so store as value instead of reference.
+    type_: ValType,
+    name: Option<&'a str>,
+}
+
+#[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct ParamMut<'a> {
+    type_: &'a mut ValType,
+    name: &'a mut Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum ParamOrLocalRef<'a> {
+    Param(ParamRef<'a>),
+    Local(&'a Local),
+}
+
+#[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum ParamOrLocalMut<'a> {
+    Param(ParamMut<'a>),
+    Local(&'a mut Local),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -694,26 +732,66 @@ impl fmt::Display for Instr {
 /* Impls/functions for typical use cases on WASM modules. */
 
 impl Module {
+
+    // Convenient iterators over functions, globals, tables, and memories that include the (typed,
+    // high-level) index as well.
+    // TODO Add _mut variants for globals, tables, and memories, if needed.
+
+    pub fn functions(&self) -> impl Iterator<Item=(Idx<Function>, &Function)> {
+        self.functions.iter().enumerate().map(|(i, f)| (i.into(), f))
+    }
+
+    pub fn functions_mut(&mut self) -> impl Iterator<Item=(Idx<Function>, &mut Function)> {
+        self.functions.iter_mut().enumerate().map(|(i, f)| (i.into(), f))
+    }
+
+    pub fn globals(&self) -> impl Iterator<Item=(Idx<Global>, &Global)> {
+        self.globals.iter().enumerate().map(|(i, g)| (i.into(), g))
+    }
+
+    pub fn tables(&self) -> impl Iterator<Item=(Idx<Table>, &Table)> {
+        self.tables.iter().enumerate().map(|(i, t)| (i.into(), t))
+    }
+
+    pub fn memories(&self) -> impl Iterator<Item=(Idx<Memory>, &Memory)> {
+        self.memories.iter().enumerate().map(|(i, m)| (i.into(), m))
+    }
+
+
+    // Convenient accessors of functions for the typed, high-level index.
+    // TODO Add the same for globals, tables, and memories, if needed.
+
+    pub fn function(&self, idx: Idx<Function>) -> &Function {
+        &self.functions[idx.into_inner()]
+    }
+
+    pub fn function_mut(&mut self, idx: Idx<Function>) -> &mut Function {
+        &mut self.functions[idx.into_inner()]
+    }
+
+    pub fn global(&self, idx: Idx<Global>) -> &Global {
+        &self.globals[idx.into_inner()]
+    }
+
+
     pub fn add_function(&mut self, type_: FunctionType, locals: Vec<ValType>, body: Vec<Instr>) -> Idx<Function> {
-        self.functions.push(Function {
+        self.functions.push(Function::new(
             type_,
-            code: ImportOrPresent::Present(Code {
+            Code {
                 locals: locals.into_iter().map(Local::new).collect(),
                 body,
-            }),
-            export: Vec::new(),
-            name: None,
-        });
+            },
+            Vec::new(),
+        ));
         (self.functions.len() - 1).into()
     }
 
     pub fn add_function_import(&mut self, type_: FunctionType, module: String, name: String) -> Idx<Function> {
-        self.functions.push(Function {
+        self.functions.push(Function::new_imported(
             type_,
-            code: ImportOrPresent::Import(module, name),
-            export: Vec::new(),
-            name: None,
-        });
+            module, name,
+            Vec::new(),
+        ));
         (self.functions.len() - 1).into()
     }
 
@@ -726,20 +804,6 @@ impl Module {
         (self.globals.len() - 1).into()
     }
 
-    pub fn function(&self, idx: Idx<Function>) -> &Function {
-        &self.functions[idx.into_inner()]
-    }
-    pub fn function_mut(&mut self, idx: Idx<Function>) -> &mut Function {
-        &mut self.functions[idx.into_inner()]
-    }
-
-    pub fn functions(&self) -> impl Iterator<Item=(Idx<Function>, &Function)> {
-        self.functions.iter().enumerate().map(|(i, f)| (i.into(), f))
-    }
-    pub fn functions_mut(&mut self) -> impl Iterator<Item=(Idx<Function>, &mut Function)> {
-        self.functions.iter_mut().enumerate().map(|(i, f)| (i.into(), f))
-    }
-
     pub fn types(&self) -> HashSet<&FunctionType> {
         let mut types = HashSet::new();
         for function in &self.functions {
@@ -750,6 +814,28 @@ impl Module {
 }
 
 impl Function {
+    pub fn new(type_: FunctionType, code: Code, export: Vec<String>) -> Self {
+        let param_names = vec![None; type_.params.len()];
+        Function {
+            type_,
+            code: ImportOrPresent::Present(code),
+            export,
+            name: None,
+            param_names,
+        }
+    }
+
+    pub fn new_imported(type_: FunctionType, import_module: String, import_name: String, export: Vec<String>) -> Self {
+        let param_names = vec![None; type_.params.len()];
+        Function {
+            type_,
+            code: ImportOrPresent::Import(import_module, import_name),
+            export,
+            name: None,
+            param_names,
+        }
+    }
+
     pub fn import(&self) -> Option<(&str, &str)> {
         if let ImportOrPresent::Import(module, name) = &self.code {
             Some((module.as_str(), name.as_str()))
@@ -790,6 +876,10 @@ impl Function {
         self.code_mut().map(|code| &mut code.body)
     }
 
+    pub fn instr_count(&self) -> usize {
+        self.code().map(|code| code.body.len()).unwrap_or(0)
+    }
+
     pub fn modify_instrs(&mut self, f: impl Fn(Instr) -> Vec<Instr>) {
         if let Some(body) = self.instrs_mut() {
             let new_body = Vec::with_capacity(body.len());
@@ -802,13 +892,13 @@ impl Function {
 
     /// add a new local with type ty and return its index
     pub fn add_fresh_local(&mut self, ty: ValType) -> Idx<Local> {
-        let args_count = self.type_.params.len();
+        let param_count = self.param_count();
         let locals = &mut self.code_mut()
             .expect("cannot add local to imported function")
             .locals;
-        let idx = locals.len() + args_count;
+        let new_idx = param_count + locals.len();
         locals.push(Local::new(ty));
-        idx.into()
+        new_idx.into()
     }
 
     pub fn add_fresh_locals(&mut self, tys: &[ValType]) -> Vec<Idx<Local>> {
@@ -817,30 +907,183 @@ impl Function {
             .collect()
     }
 
-    /// get type of the local with index idx
-    pub fn local_type(&self, idx: Idx<Local>) -> ValType {
-        let param_count = self.type_.params.len();
-        if idx.into_inner() < param_count {
-            self.type_.params[idx.into_inner()]
-        } else {
-            let locals = &self.code()
-                .expect("cannot get type of a local in an imported function")
-                .locals;
-            #[allow(clippy::expect_fun_call)]
-            locals.get(idx.into_inner() - param_count)
-                .expect(&format!("invalid local index {}, function has {} parameters and {} locals", idx.into_inner(), param_count, locals.len()))
-                .type_
-        }
+
+    // Functions for the number of parameters and non-parameter locals.
+
+    fn assert_param_name_len_valid(&self) {
+        assert!(self.param_names.len() == self.type_.params.len());
     }
 
-    pub fn instr_count(&self) -> usize {
-        self.code().map(|code| code.body.len()).unwrap_or(0)
+    pub fn param_count(&self) -> usize {
+        self.assert_param_name_len_valid();
+        self.type_.params.len()
+    }
+
+    pub fn local_count(&self) -> usize {
+        self.code().map(|code| code.locals.len()).unwrap_or(0)
+    }
+
+
+    // Accessors and iterators for parameters and locals uniformly.
+
+    pub fn param_or_local(&self, idx: Idx<Local>) -> ParamOrLocalRef {
+        self.param_or_locals()
+            .nth(idx.into_inner())
+            .expect("invalid local index")
+            .1
+    }
+
+    pub fn param_or_local_mut(&mut self, idx: Idx<Local>) -> ParamOrLocalMut {
+        self.param_or_locals_mut()
+            .nth(idx.into_inner())
+            .expect("invalid local index")
+            .1
+    }
+
+    pub fn param_or_locals(&self) -> impl Iterator<Item=(Idx<Local>, ParamOrLocalRef)> {
+        let params = self.params().map(|(i, p)| (i, ParamOrLocalRef::Param(p)));
+        let locals = self.locals().map(|(i, l)| (i, ParamOrLocalRef::Local(l)));
+        params.chain(locals)
+    }
+
+    pub fn param_or_locals_mut(&mut self) -> impl Iterator<Item=(Idx<Local>, ParamOrLocalMut)> {
+        // Unfortunately, we cannot borrow self mutably twice, so we cannot adapt the code from
+        // param_or_locals() here. (We would have to call self.params_mut() and self.locals_mut()).
+        // Dirty hack: copy code from params_mut()/locals_mut()/code_mut().
+        // TODO If there is a smarter way of re-using params_mut() and locals_mut(), I'd be happy to.
+
+        self.assert_param_name_len_valid();
+
+        let params = self.type_.params.iter_mut()
+            .zip(self.param_names.iter_mut())
+            .map(|(type_, name)| ParamMut { type_, name })
+            .map(ParamOrLocalMut::Param);
+
+        let code = if let ImportOrPresent::Present(t) = &mut self.code {
+            Some(t)
+        } else {
+            None
+        };
+
+        let locals = code.into_iter()
+            .flat_map(|code| code.locals.iter_mut())
+            .map(ParamOrLocalMut::Local);
+
+        params.chain(locals)
+            .enumerate()
+            .map(|(idx, element)| (idx.into(), element))
+    }
+
+    /// Returns the parameters (type and debug name, if any) together with their index.
+    pub fn params(&self) -> impl Iterator<Item=(Idx<Local>, ParamRef)> {
+        self.assert_param_name_len_valid();
+
+        self.type_.params.iter().cloned()
+            .zip(self.param_names.iter().map(|s| s.as_ref().map(String::as_str)))
+            .enumerate()
+            .map(|(idx, (type_, name))|
+                (idx.into(), ParamRef { type_, name })
+            )
+    }
+
+    pub fn params_mut(&mut self) -> impl Iterator<Item=(Idx<Local>, ParamMut)> {
+        self.assert_param_name_len_valid();
+
+        self.type_.params.iter_mut()
+            .zip(self.param_names.iter_mut())
+            .enumerate()
+            .map(|(idx, (type_, name))|
+                (idx.into(), ParamMut { type_, name })
+            )
+    }
+
+    /// Returns the non-parameter locals together with their index.
+    /// Returns an empty iterator for imported functions (which don't have non-param locals).
+    ///
+    /// Since function parameters and locals share the same index space, the returned indices will
+    /// start at N, if N is the number of function parameters.
+    pub fn locals(&self) -> impl Iterator<Item=(Idx<Local>, &Local)> {
+        // The index of the non-parameter locals starts after the parameters.
+        // This value needs to be moved (not borrowed) into the innermost closure, hence the two
+        // nested move annotations on the closures below.
+        let param_count = self.param_count();
+        self.code().into_iter()
+            .flat_map(move |code|
+                code.locals.iter()
+                    .enumerate()
+                    .map(move |(idx, local)|
+                        ((param_count + idx).into(), local))
+            )
+    }
+
+    pub fn locals_mut(&mut self) -> impl Iterator<Item=(Idx<Local>, &mut Local)> {
+        // Only changed mutability compared with self.locals(), see comments there.
+        let param_count = self.param_count();
+        self.code_mut().into_iter()
+            .flat_map(move |code|
+                code.locals.iter_mut()
+                    .enumerate()
+                    .map(move |(idx, local)|
+                        ((param_count + idx).into(), local))
+            )
+    }
+
+
+    // Accessors for a specific parameter/local type/name.
+
+    /// Return the type of the function parameter or non-parameter local with index idx.
+    pub fn param_or_local_type(&self, idx: Idx<Local>) -> ValType {
+        self.param_or_local(idx).type_()
+    }
+
+    /// Return the (optional) debug name of the function parameter or non-parameter local with
+    /// index idx.
+    pub fn param_or_local_name(&self, idx: Idx<Local>) -> Option<&str> {
+        self.param_or_local(idx).name()
+    }
+
+    /// Return a mutable reference to the (optional) debug name of the function parameter or
+    /// non-parameter local with index idx.
+    pub fn param_or_local_name_mut(&mut self, idx: Idx<Local>) -> &mut Option<String> {
+        self.param_or_local_mut(idx).name()
     }
 }
 
 impl Local {
     pub fn new(type_: ValType) -> Self {
         Local { type_, name: None }
+    }
+}
+
+// See description on enum type above.
+impl<'a> ParamOrLocalRef<'a> {
+    pub fn type_(self) -> ValType {
+        match self {
+            ParamOrLocalRef::Param(param) => param.type_,
+            ParamOrLocalRef::Local(local) => local.type_,
+        }
+    }
+    pub fn name(self) -> Option<&'a str> {
+        match self {
+            ParamOrLocalRef::Param(param) => param.name,
+            ParamOrLocalRef::Local(local) => local.name.as_ref().map(String::as_str),
+        }
+    }
+}
+
+// See description on enum type above.
+impl<'a> ParamOrLocalMut<'a> {
+    pub fn type_(self) -> &'a mut ValType {
+        match self {
+            ParamOrLocalMut::Param(param) => param.type_,
+            ParamOrLocalMut::Local(local) => &mut local.type_,
+        }
+    }
+    pub fn name(self) -> &'a mut Option<String> {
+        match self {
+            ParamOrLocalMut::Param(param) => param.name,
+            ParamOrLocalMut::Local(local) => &mut local.name,
+        }
     }
 }
 

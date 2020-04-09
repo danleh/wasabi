@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use rayon::prelude::*;
 
-use crate::{FunctionType, Val, Idx, TableType, MemoryType};
+use crate::{FunctionType, Idx, MemoryType, TableType, Val};
 use crate::highlevel as hl;
 use crate::lowlevel as ll;
 
@@ -55,19 +55,17 @@ impl From<ll::Module> for hl::Module {
 
                     // Inline the name information for functions and locals into our high-level AST.
                     for ll::NameAssoc { idx, name } in function_names {
-                        module.functions.get_mut(idx.into_inner())
+                        module.functions
+                            .get_mut(idx.into_inner())
                             .expect("invalid function index")
                             .name = Some(name);
                     }
                     for ll::IndirectNameAssoc { idx: func_idx, name_map } in local_names {
-                        let code = module.functions.get_mut(func_idx.into_inner())
-                            .expect("invalid function index")
-                            .code_mut()
-                            .expect("function is imported, hence no locals to name");
+                        let function = module.functions
+                            .get_mut(func_idx.into_inner())
+                            .expect("invalid function index");
                         for ll::NameAssoc { idx, name } in name_map {
-                            code.locals.get_mut(idx.into_inner())
-                                .expect("invalid local index")
-                                .name = Some(name)
+                            *function.param_or_local_name_mut(idx.into_inner().into()) = Some(name);
                         }
                     }
                 }
@@ -83,12 +81,12 @@ impl From<ll::Module> for hl::Module {
                     for import_ in vec.0 {
                         let export = Vec::new();
                         match import_.type_ {
-                            ll::ImportType::Function(type_idx) => module.functions.push(hl::Function {
-                                type_: types[type_idx.into_inner()].clone(),
-                                code: hl::ImportOrPresent::Import(import_.module, import_.name),
-                                export,
-                                name: None,
-                            }),
+                            ll::ImportType::Function(type_idx) => module.functions.push(
+                                hl::Function::new_imported(
+                                    types[type_idx.into_inner()].clone(),
+                                    import_.module, import_.name,
+                                    export)
+                            ),
                             ll::ImportType::Global(type_) => module.globals.push(hl::Global {
                                 type_,
                                 init: hl::ImportOrPresent::Import(import_.module, import_.name),
@@ -114,13 +112,14 @@ impl From<ll::Module> for hl::Module {
 
                 ll::Section::Function(ll::WithSize(function_signatures)) => {
                     for type_idx in function_signatures {
-                        module.functions.push(hl::Function {
-                            type_: types[type_idx.into_inner()].clone(),
-                            // Use an empty body/locals for now, code is only converted later.
-                            code: hl::ImportOrPresent::Present(hl::Code { locals: vec![], body: vec![] }),
-                            export: Vec::new(),
-                            name: None,
-                        });
+                        module.functions.push(
+                            hl::Function::new(
+                                types[type_idx.into_inner()].clone(),
+                                // Use an empty body/locals for now, code is only converted later.
+                                hl::Code { locals: vec![], body: vec![] },
+                                Vec::new()
+                            )
+                        );
                     }
                 }
                 ll::Section::Global(ll::WithSize(globals)) => {
@@ -204,8 +203,12 @@ impl From<ll::Module> for hl::Module {
 }
 
 fn from_lowlevel_code(code: ll::Code, types: &[FunctionType]) -> hl::Code {
-    let locals = code.locals.iter().flat_map(
-        |l| std::iter::repeat(hl::Local::new(l.type_)).take(l.count as usize)).collect();
+    let mut locals = Vec::new();
+    for ll::Locals { type_, count } in code.locals {
+        for _ in 0..count {
+            locals.push(hl::Local::new(type_));
+        }
+    }
     hl::Code {
         locals,
         body: from_lowlevel_expr(code.body, types),
@@ -414,8 +417,6 @@ struct EncodeState {
     table_idx: HashMap<usize, usize>,
     memory_idx: HashMap<usize, usize>,
     global_idx: HashMap<usize, usize>,
-    function_names: ll::NameMap<ll::Function>,
-    local_names: ll::IndirectNameMap<ll::Function, ll::Local>,
 }
 
 macro_rules! element_idx_fns {
@@ -445,8 +446,8 @@ impl EncodeState {
     element_idx_fns!(insert_global_idx, map_global_idx, global_idx, hl::Global, ll::Global);
 }
 
-impl From<hl::Module> for ll::Module {
-    fn from(module: hl::Module) -> Self {
+impl From<&hl::Module> for ll::Module {
+    fn from(module: &hl::Module) -> Self {
         let mut sections = Vec::new();
 
         let mut state = EncodeState {
@@ -455,8 +456,6 @@ impl From<hl::Module> for ll::Module {
             table_idx: HashMap::new(),
             memory_idx: HashMap::new(),
             global_idx: HashMap::new(),
-            function_names: Vec::new(),
-            local_names: Vec::new(),
         };
 
         let imports = to_lowlevel_imports(&module, &mut state);
@@ -525,13 +524,12 @@ impl From<hl::Module> for ll::Module {
         }
 
         // Element
-        let elements: Vec<ll::Element> = module.tables.into_iter()
-            .enumerate()
-            .flat_map(|(i, table)| table.elements.into_iter()
+        let elements: Vec<ll::Element> = module.tables()
+            .flat_map(|(idx, table)| table.elements.iter()
                 .map(|element| ll::Element {
-                    table_idx: state.map_table_idx(i.into()),
+                    table_idx: state.map_table_idx(idx),
                     offset: to_lowlevel_expr(&element.offset, &state),
-                    init: element.functions.into_iter().map(|fn_idx| state.map_function_idx(fn_idx)).collect(),
+                    init: element.functions.iter().map(|&fn_idx| state.map_function_idx(fn_idx)).collect(),
                 })
                 .collect::<Vec<_>>())
             .collect();
@@ -539,46 +537,23 @@ impl From<hl::Module> for ll::Module {
             sections.push(ll::Section::Element(ll::WithSize(elements)));
         }
 
-        // Function names (must come before Code, because that consumes the high-level functions).
-        for (idx, func) in module.functions.iter().enumerate() {
-            if let Some(name) = func.name.clone() {
-                state.function_names.push(ll::NameAssoc { idx: state.map_function_idx(idx.into()), name });
-            }
-        }
-
         // Code
-        #[allow(clippy::type_complexity)]
-        let (code, local_names): (Vec<ll::WithSize<ll::Code>>, Vec<Option<ll::IndirectNameAssoc<ll::Function, ll::Local>>>) =
-            module.functions.into_par_iter()
-                .enumerate()
-                // Only non-imported functions.
-                .filter_map(|(func_idx, function)| function.into_code().map(|code| (func_idx, code)))
-                .map(|(idx, code)| {
-                    let (code, name_map) = to_lowlevel_code(code, &state);
-                    let code = ll::WithSize(code);
-                    let name_map = if name_map.is_empty() { None } else {
-                        Some(ll::IndirectNameAssoc { idx: state.map_function_idx(idx.into()), name_map })
-                    };
-                    (code, name_map)
-                })
-                .unzip();
-        // Remove empty local name maps.
-        let local_names: Vec<_> = local_names.into_iter().flatten().collect();
+        let code: Vec<ll::WithSize<ll::Code>> = module.functions.par_iter()
+            // Only non-imported functions.
+            .filter_map(|func| func.code())
+            .map(|code| to_lowlevel_code(code, &state))
+            .collect();
         if !code.is_empty() {
-            // Add low-level code section.
             sections.push(ll::Section::Code(ll::WithSize(ll::Parallel(code))));
-            // Add names of locals (if any) to encoding state.
-            state.local_names.extend(local_names);
         }
 
         // Data
-        let data: Vec<ll::Data> = module.memories.into_iter()
-            .enumerate()
-            .flat_map(|(i, memory)| memory.data.into_iter()
+        let data: Vec<ll::Data> = module.memories()
+            .flat_map(|(idx, memory)| memory.data.iter()
                 .map(|data| ll::Data {
-                    memory_idx: state.map_memory_idx(i.into()),
+                    memory_idx: state.map_memory_idx(idx),
                     offset: to_lowlevel_expr(&data.offset, &state),
-                    init: data.bytes,
+                    init: data.bytes.clone(),
                 })
                 .collect::<Vec<_>>())
             .collect();
@@ -588,14 +563,16 @@ impl From<hl::Module> for ll::Module {
 
         // Name section, always after Data section.
         let mut name_subsections = Vec::new();
-        if let Some(name) = module.name {
-            name_subsections.push(ll::NameSubSection::Module(ll::WithSize(name)));
+        if let Some(name) = &module.name {
+            name_subsections.push(ll::NameSubSection::Module(ll::WithSize(name.clone())));
         }
-        if !state.function_names.is_empty() {
-            name_subsections.push(ll::NameSubSection::Function(ll::WithSize(state.function_names)));
+        let function_names = to_lowlevel_function_names(&module, &state);
+        if !function_names.is_empty() {
+            name_subsections.push(ll::NameSubSection::Function(ll::WithSize(function_names)));
         }
-        if !state.local_names.is_empty() {
-            name_subsections.push(ll::NameSubSection::Local(ll::WithSize(state.local_names)));
+        let local_names = to_lowlevel_local_names(&module, &state);
+        if !local_names.is_empty() {
+            name_subsections.push(ll::NameSubSection::Local(ll::WithSize(local_names)));
         }
         if !name_subsections.is_empty() {
             sections.push(ll::Section::Custom(ll::CustomSection::Name(ll::NameSection { subsections: name_subsections })));
@@ -605,16 +582,16 @@ impl From<hl::Module> for ll::Module {
         // They are inserted after the correct non-custom section. They relative order of custom
         // sections is the same in this array as when they were parsed originally, so no need
         // to handle that specifically.
-        for section in module.custom_sections {
+        for section in &module.custom_sections {
             let after = section.after;
-            let section = ll::Section::Custom(ll::CustomSection::Raw(section));
+            let section = ll::Section::Custom(ll::CustomSection::Raw(section.clone()));
 
             // Find the reference section after which this custom section came in the original binary.
             let after_position = if let Some(after) = after {
                 sections.iter()
                     .position(|sec| std::mem::discriminant(sec) == after)
                     .expect("cannot find the reference section for inserting custom section anymore")
-                + 1
+                    + 1
             } else {
                 // In the original binary the custom section came at the beginning, so insert at beginning.
                 0
@@ -699,11 +676,11 @@ fn to_lowlevel_exports(module: &hl::Module, state: &EncodeState) -> Vec<ll::Expo
 
     macro_rules! add_exports {
         ($elems: ident, $map_idx_fn: ident, $export_ty_variant: ident) => {
-            for (idx, element) in module.$elems.iter().enumerate() {
+            for (idx, element) in module.$elems() {
                 for name in &element.export {
                     exports.push(ll::Export {
                         name: name.clone(),
-                        type_: ll::ExportType::$export_ty_variant(state.$map_idx_fn(idx.into())),
+                        type_: ll::ExportType::$export_ty_variant(state.$map_idx_fn(idx)),
                     });
                 }
             }
@@ -717,31 +694,59 @@ fn to_lowlevel_exports(module: &hl::Module, state: &EncodeState) -> Vec<ll::Expo
     exports
 }
 
-fn to_lowlevel_code(code: hl::Code, state: &EncodeState) -> (ll::Code, ll::NameMap<ll::Local>) {
-    let mut locals = Vec::new();
-    let mut local_names = Vec::new();
-    for (idx, hl::Local { type_, name }) in code.locals.into_iter().enumerate() {
-        // Convert the type to this run-length encoded format.
-        if locals.last().map(|locals: &ll::Locals| locals.type_ == type_).unwrap_or(false) {
-            let last = locals.len() - 1;
-            locals[last].count += 1;
-        } else {
-            locals.push(ll::Locals {
+fn to_lowlevel_function_names(module: &hl::Module, state: &EncodeState) -> ll::NameMap<ll::Function> {
+    let mut names = Vec::new();
+    for (idx, func) in module.functions() {
+        if let Some(name) = &func.name {
+            names.push(ll::NameAssoc {
+                idx: state.map_function_idx(idx),
+                name: name.clone(),
+            });
+        }
+    }
+    names
+}
+
+fn to_lowlevel_local_names(module: &hl::Module, state: &EncodeState) -> ll::IndirectNameMap<ll::Function, ll::Local> {
+    let mut names = Vec::new();
+    for (func_idx, func) in module.functions() {
+        let mut name_map = Vec::new();
+
+        for (idx, param_or_local) in func.param_or_locals() {
+            if let Some(name) = param_or_local.name() {
+                name_map.push(ll::NameAssoc { idx: idx.into_inner().into(), name: name.to_string() });
+            }
+        }
+
+        if !name_map.is_empty() {
+            names.push(ll::IndirectNameAssoc {
+                idx: state.map_function_idx(func_idx),
+                name_map,
+            })
+        }
+    }
+    names
+}
+
+fn to_lowlevel_code(code: &hl::Code, state: &EncodeState) -> ll::WithSize<ll::Code> {
+    let mut locals: Vec<ll::Locals> = Vec::new();
+    for &hl::Local { type_, .. } in code.locals.iter() {
+        // Convert the type to the low-level "run-length encoded" format.
+        match locals.last_mut() {
+            // Increase the count of the last local, if it has the same type as the next one.
+            Some(last_local) if last_local.type_ == type_ => last_local.count += 1,
+            // If there either was no previous local at all, or none with a matching type, create a
+            // new Locals entry.
+            Some(_) | None => locals.push(ll::Locals {
                 count: 1,
                 type_,
             })
         }
-        // Collect all names of locals.
-        if let Some(name) = name {
-            local_names.push(ll::NameAssoc { idx: idx.into(), name });
-        }
     }
 
-    (ll::Code {
-        locals,
-        body: to_lowlevel_expr(&code.body, state),
-    },
-     local_names)
+    let body = to_lowlevel_expr(&code.body, state);
+
+    ll::WithSize(ll::Code { locals, body })
 }
 
 fn to_lowlevel_expr(expr: &[hl::Instr], state: &EncodeState) -> ll::Expr {

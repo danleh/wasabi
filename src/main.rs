@@ -41,7 +41,7 @@ fn main() -> Result<(), MainError> {
 
     // write output files
     fs::create_dir_all(opt.output_dir)?;
-    module.into_file(output_file_wasm)?;
+    module.to_file(output_file_wasm)?;
     fs::write(output_file_wasabi_js, js)?;
 
     Ok(())

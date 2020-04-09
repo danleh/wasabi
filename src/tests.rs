@@ -36,7 +36,7 @@ fn test_instrument(
         let javascript = instrument(&mut module);
 
         let output_path = output_file(&path, instrument_name).unwrap();
-        module.into_file(&output_path).unwrap();
+        module.to_file(&output_path).unwrap();
 
         wasm_validate(&output_path).expect(&format!(
             "could not instrument wasm file '{}' with {}",

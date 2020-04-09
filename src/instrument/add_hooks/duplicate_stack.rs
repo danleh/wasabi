@@ -35,7 +35,7 @@ pub fn restore_locals_with_i64_handling(
     for &local in locals {
         instrs.append(&mut super::convert_i64::convert_i64_instr(
             Instr::Local(Get, local),
-            function.local_type(local),
+            function.param_or_local_type(local),
         ));
     }
     instrs
