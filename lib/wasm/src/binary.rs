@@ -18,11 +18,6 @@ pub trait WasmBinary: Sized {
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize>;
 }
 
-// TODO replace offset: &mut usize with
-// 1. offset: &mut DecodeState everywhere (also in the derive).
-// 2. rename offset to decode_state
-// 3. fix type errors, because you try to increment a struct, i.e., decode_state += 1 -> decode_state.current_offset += 1
-
 /// "Global" state kept during decoding. Useful for error reporting (At which byte offset did
 /// parsing fail?) and mapping from our AST back to the binary (function index <-> code section offset).
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -254,6 +249,9 @@ impl<T: WasmBinary> WasmBinary for Vec<T> {
     }
 }
 
+// TODO This is no longer a generic wrapper for a Vec<WithSize<T>> construction
+//   that can be parsed in parallel. It is now specific to Code section parsing.
+//   So give it its own type, like ParallelCode
 /// Provide parallel decoding/encoding when explicitly requested by Parallel<...> marker struct.
 impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
     fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
@@ -276,14 +274,16 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
             let size_offset = state.current_offset;
             let content_size_bytes = u32::decode(reader, state).set_err_elem::<WithSize<T>>()?;
 
-            let content_offset = state.current_offset;
+            let offset_before_content = state.current_offset;
             let mut buf = vec![0u8; content_size_bytes as usize];
-            reader.read_exact(buf.as_mut_slice()).add_err_info::<T>(content_offset)?;
+            reader.read_exact(buf.as_mut_slice()).add_err_info::<T>(offset_before_content)?;
             state.current_offset += content_size_bytes as usize;
 
-            elements.push((size_offset, content_size_bytes, content_offset, buf));
+            // Remember where each code offset started.
+            // FIXME is this the right offset, or am I forgetting some size offset delta?
+            state.code_offsets.push(offset_before_content);
 
-            // TODO push content_offset into code idx <-> offset decode_state.
+            elements.push((size_offset, content_size_bytes, offset_before_content, buf));
         }
 
         // Then, parallel decoding of each buffer to actual elements T.
@@ -406,9 +406,11 @@ impl WasmBinary for Module {
                     } else {
                         last_section_type = Some(std::mem::discriminant(&section));
                     }
-                    sections.push(section);
 
-                    // TODO push mapping of section discriminant <-> offset_section_begin to section_offsets
+                    // Remember at which byte offset this section started.
+                    state.section_offsets.push((std::mem::discriminant(&section), offset_section_begin));
+
+                    sections.push(section);
                 }
                 // If we cannot even read one more byte (the ID of the next section), we are done.
                 Err(e) if e.kind() == &ErrorKind::Eof && e.offset() == offset_section_begin => break,

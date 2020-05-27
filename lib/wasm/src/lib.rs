@@ -18,15 +18,21 @@ mod tests;
  */
 
 use crate::error::AddErrInfo;
-use crate::binary::DecodeState;
+use crate::binary::{DecodeState, Offsets};
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use std::path::Path;
 
 impl lowlevel::Module {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
+        Ok(Self::from_file_with_offsets(path)?.0)
+    }
+
+    pub fn from_file_with_offsets<P: AsRef<Path>>(path: P) -> Result<(Self, Offsets), Error> {
         let mut state = DecodeState::new();
-        Self::decode(&mut BufReader::new(File::open(path).add_err_info::<File>(0)?), &mut state)
+        let module = Self::decode(&mut BufReader::new(File::open(path).add_err_info::<File>(0)?), &mut state)?;
+        let offsets = state.into_offsets(&module);
+        Ok((module, offsets))
     }
 
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> io::Result<usize> {
@@ -37,6 +43,11 @@ impl lowlevel::Module {
 impl highlevel::Module {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
         Ok(lowlevel::Module::from_file(path)?.into())
+    }
+
+    pub fn from_file_with_offsets<P: AsRef<Path>>(path: P) -> Result<(Self, Offsets), Error> {
+        let (module, offsets) = lowlevel::Module::from_file_with_offsets(path)?;
+        Ok((module.into(), offsets))
     }
 
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> io::Result<usize> {
