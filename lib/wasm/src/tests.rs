@@ -6,15 +6,17 @@ use std::io::{self, Read};
 use bencher::{Bencher, benchmark_group, benchmark_main};
 use test_utilities::*;
 
-use crate::{highlevel, lowlevel};
-use crate::WasmBinary;
+use crate::{highlevel, lowlevel, Idx};
 use crate::binary::DecodeState;
+use crate::WasmBinary;
 
-const TEST_INPUTS: &'static str = "../../tests/inputs";
+const WASM_TEST_INPUTS_DIR: &'static str = "../../tests/inputs";
+const WASM_TEST_INPUT_LARGE: &'static str = "../../tests/inputs/real-world/bananabread/bb.wasm";
+const WASM_TEST_INPUT_NAMES_SECTION: &'static str = "../../tests/inputs/name-section/wabt-tests/names.wasm";
 
 #[test]
 fn decode_encode_is_valid_wasm() {
-    for path in wasm_files(TEST_INPUTS).unwrap() {
+    for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
         println!("{}", path.display());
         let module = highlevel::Module::from_file(&path)
             .expect(&format!("could not decode valid wasm file '{}'", path.display()));
@@ -113,13 +115,44 @@ fn error_offsets_correct() {
     assert_error_offset(invalid_instruction, 13);
 }
 
+#[test]
+fn section_offsets_like_objdump() {
+    // Use a wasm file with a custom section for testing section offsets.
+    let (_module, offsets) = highlevel::Module::from_file_with_offsets(WASM_TEST_INPUT_NAMES_SECTION).unwrap();
 
+    // Expected values are taken from wasm-objdump output.
+    assert_eq!(offsets.sections(&lowlevel::Section::Type(Default::default())), vec![0xa]);
+    assert_eq!(offsets.sections(&lowlevel::Section::Function(Default::default())), vec![0x11]);
+    assert_eq!(offsets.sections(&lowlevel::Section::Code(Default::default())), vec![0x15]);
+    assert_eq!(offsets.sections(&lowlevel::Section::Custom(
+        lowlevel::CustomSection::Name(
+            lowlevel::NameSection { subsections: Vec::new() }
+        ))), vec![0x1f]);
+    // Also try the (only) function code offset, for completion.
+    assert_eq!(offsets.function_idx_to_code(Idx::from(0)), Some(0x17));
+    assert_eq!(offsets.function_code_to_idx(0x17), Some(Idx::from(0)));
+}
+
+#[test]
+fn code_offsets_like_objdump() {
+    let (_module, offsets) = highlevel::Module::from_file_with_offsets(WASM_TEST_INPUT_LARGE).unwrap();
+
+    // Test first two and last two functions.
+    // Expected values are taken from wasm-objdump output.
+    assert_eq!(offsets.function_idx_to_code(Idx::from(383)), Some(0x5522));
+    assert_eq!(offsets.function_code_to_idx(0x5522), Some(Idx::from(383)));
+    assert_eq!(offsets.function_idx_to_code(Idx::from(384)), Some(0x5545));
+    assert_eq!(offsets.function_code_to_idx(0x5545), Some(Idx::from(384)));
+
+    assert_eq!(offsets.function_idx_to_code(Idx::from(3641)), Some(0x1e38b7));
+    assert_eq!(offsets.function_code_to_idx(0x1e38b7), Some(Idx::from(3641)));
+    assert_eq!(offsets.function_idx_to_code(Idx::from(3642)), Some(0x1e38d2));
+    assert_eq!(offsets.function_code_to_idx(0x1e38d2), Some(Idx::from(3642)));
+}
 
 /*
  * Speed benchmarks (for parallelization of decoding/encoding) on a "large" wasm file (~2MB for now)
  */
-
-const LARGE_WASM_FILE: &'static str = "../../tests/inputs/real-world/bananabread/bb.wasm";
 
 benchmark_group!(benches, decode_lowlevel_speed, encode_lowlevel_speed,
                           convert_lowlevel_to_highlevel_speed, convert_highlevel_to_lowlevel_speed,
@@ -128,7 +161,7 @@ benchmark_main!(benches);
 
 fn decode_lowlevel_speed(bencher: &mut Bencher) {
     let mut buf = Vec::new();
-    File::open(LARGE_WASM_FILE).unwrap().read_to_end(&mut buf).unwrap();
+    File::open(WASM_TEST_INPUT_LARGE).unwrap().read_to_end(&mut buf).unwrap();
 
     bencher.iter(|| {
         let mut state = DecodeState::new();
@@ -137,14 +170,14 @@ fn decode_lowlevel_speed(bencher: &mut Bencher) {
 }
 
 fn encode_lowlevel_speed(bencher: &mut Bencher) {
-    let module = lowlevel::Module::from_file(LARGE_WASM_FILE).unwrap();
+    let module = lowlevel::Module::from_file(WASM_TEST_INPUT_LARGE).unwrap();
 
     bencher.iter(||
         module.encode(&mut io::sink()).unwrap())
 }
 
 fn convert_lowlevel_to_highlevel_speed(bencher: &mut Bencher) {
-    let module = lowlevel::Module::from_file(LARGE_WASM_FILE).unwrap();
+    let module = lowlevel::Module::from_file(WASM_TEST_INPUT_LARGE).unwrap();
 
     bencher.iter(|| {
         let _: highlevel::Module = module.clone().into();
@@ -152,7 +185,7 @@ fn convert_lowlevel_to_highlevel_speed(bencher: &mut Bencher) {
 }
 
 fn convert_highlevel_to_lowlevel_speed(bencher: &mut Bencher) {
-    let module = highlevel::Module::from_file(LARGE_WASM_FILE).unwrap();
+    let module = highlevel::Module::from_file(WASM_TEST_INPUT_LARGE).unwrap();
 
     bencher.iter(|| {
         let _: lowlevel::Module = (&module).into();
@@ -161,11 +194,11 @@ fn convert_highlevel_to_lowlevel_speed(bencher: &mut Bencher) {
 
 // as baseline for conversions high-level <-> low-level (where we need to clone -.-)
 fn clone_lowlevel_module_speed(bencher: &mut Bencher) {
-    let module = lowlevel::Module::from_file(LARGE_WASM_FILE).unwrap();
+    let module = lowlevel::Module::from_file(WASM_TEST_INPUT_LARGE).unwrap();
     bencher.iter(|| module.clone())
 }
 
 fn clone_highlevel_module_speed(bencher: &mut Bencher) {
-    let module = highlevel::Module::from_file(LARGE_WASM_FILE).unwrap();
+    let module = highlevel::Module::from_file(WASM_TEST_INPUT_LARGE).unwrap();
     bencher.iter(|| module.clone())
 }

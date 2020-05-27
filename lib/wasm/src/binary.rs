@@ -9,7 +9,7 @@ use wasabi_leb128::{ReadLeb128, WriteLeb128};
 
 use crate::{BlockType, Idx, Limits, RawCustomSection, ValType};
 use crate::error::{AddErrInfo, Error, ErrorKind, SetErrElem};
-use crate::lowlevel::{CustomSection, Expr, Function, Instr, Module, NameSection, NameSubSection, Parallel, Section, WithSize, ImportType};
+use crate::lowlevel::{CustomSection, Expr, Function, Instr, Module, NameSection, NameSubSection, Parallel, Section, WithSize, ImportType, SectionOffset};
 
 /* Trait and impl for decoding/encoding between binary format (as per spec) and our own formats (see ast module) */
 
@@ -18,29 +18,22 @@ pub trait WasmBinary: Sized {
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize>;
 }
 
-// TODO replace offset: &mut usize with
-// 1. offset: &mut DecodeState everywhere (also in the derive).
-// 2. rename offset to decode_state
-// 3. fix type errors, because you try to increment a struct, i.e., decode_state += 1 -> decode_state.current_offset += 1
-
 /// "Global" state kept during decoding. Useful for error reporting (At which byte offset did
 /// parsing fail?) and mapping from our AST back to the binary (function index <-> code section offset).
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct DecodeState {
     pub current_offset: usize,
-    section_offsets: Vec<(Discriminant<Section>, usize)>,
+    /// The vec of offsets is aligned with the vec of low-level sections, i.e., the index of this
+    /// vec corresponds to the enumeration index of raw sections in the binary.
+    section_offsets: Vec<usize>,
     /// The index of the vec corresponds to the index of the code element, which is the function
-    /// index - number of important functions (which don't have a code/body).
+    /// index minus the number of important functions (which don't have a code/body).
     code_offsets: Vec<usize>,
 }
 
 impl DecodeState {
     pub fn new() -> DecodeState {
-        DecodeState {
-            current_offset: 0,
-            section_offsets: Vec::new(),
-            code_offsets: Vec::new(),
-        }
+        DecodeState::with_offset(0)
     }
 
     pub fn with_offset(current_offset: usize) -> DecodeState {
@@ -53,9 +46,15 @@ impl DecodeState {
 
     /// Convert code offsets into an easier to understand mapping of function indices.
     pub fn into_offsets(self, module: &Module) -> Offsets {
+        assert_eq!(self.section_offsets.len(), module.sections.len());
+        let sections = module.sections.iter()
+            .map(std::mem::discriminant)
+            .zip(self.section_offsets.into_iter())
+            .collect();
+
         let imported_function_count = module.sections.iter()
             .filter_map(|section|
-                if let Section::Import(WithSize(imports)) = section {
+                if let Section::Import(WithSize(SectionOffset(imports))) = section {
                     Some(imports)
                 } else {
                     None
@@ -64,14 +63,15 @@ impl DecodeState {
                 .filter(|import|
                     if let ImportType::Function(_) = import.type_ { true } else { false }))
             .count();
-        let function_bodies = self.code_offsets.into_iter()
+        let functions_code = self.code_offsets.into_iter()
             .enumerate()
             .map(|(code_idx, byte_offset)|
                 (Idx::from(imported_function_count + code_idx), byte_offset))
             .collect();
+
         Offsets {
-            sections: self.section_offsets,
-            function_bodies,
+            sections,
+            functions_code,
         }
     }
 }
@@ -79,8 +79,44 @@ impl DecodeState {
 /// Metainformation how low-level sections and function bodies map to byte offsets in the binary.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Offsets {
+    /// Section offsets point to the beginning of the content of a section, i.e., after the size.
     pub sections: Vec<(Discriminant<Section>, usize)>,
-    pub function_bodies: Vec<(Idx<Function>, usize)>,
+    /// Code offsets are only present for non-imported function, and also point to after the size
+    /// if the code element (similar to section offsets).
+    pub functions_code: Vec<(Idx<Function>, usize)>,
+}
+
+impl Offsets {
+    /// Returns the offsets of all (low-level) sections with a tag matching the given section.
+    /// Use with, e.g., lowlevel::Section::Type(Default::default()).
+    // TODO Using Discriminant<Section> as a marker is not optimal, since multiple sections
+    //   can match, i.e., we have to return Vec<> here...
+    //   Identifying sections by their reference would be nicer (not ambiguous), but
+    //   requires self-referential Offset struct (?), so more complicated API with Pin<Module>?
+    pub fn sections(&self, section: &Section) -> Vec<usize> {
+        let tag = std::mem::discriminant(section);
+        self.sections.iter()
+            .cloned()
+            .filter_map(|(section, offset)|
+                if section == tag { Some(offset) } else { None })
+            .collect()
+    }
+
+    /// Returns the (low-level) function index with the  given offset of its code (if any).
+    pub fn function_code_to_idx(&self, code_offset: usize) -> Option<Idx<Function>> {
+        self.functions_code.iter()
+            .cloned()
+            .find_map(|(func, offset)|
+                if offset == code_offset { Some(func) } else { None })
+    }
+
+    /// Returns the code offset of the (low-level) function with the given index (if any).
+    pub fn function_idx_to_code(&self, idx: Idx<Function>) -> Option<usize> {
+        self.functions_code.iter()
+            .cloned()
+            .find_map(|(func, offset)|
+                if func == idx { Some(offset) } else { None })
+    }
 }
 
 /* Primitive types */
@@ -214,6 +250,18 @@ impl<T: WasmBinary> WasmBinary for WithSize<T> {
     }
 }
 
+impl<T: WasmBinary> WasmBinary for SectionOffset<T> {
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
+        // Remember at which offset this section contents (T) started.
+        state.section_offsets.push(state.current_offset);
+        T::decode(reader, state).map(SectionOffset)
+    }
+
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        self.0.encode(writer)
+    }
+}
+
 /// Do not blindly trust the decoded element_count for pre-allocating a vector, but instead limit
 /// the pre-allocation to some sensible size (e.g., 1 MB).
 /// Otherwise a (e.g., malicious) Wasm file could request very large amounts of memory just by
@@ -254,6 +302,9 @@ impl<T: WasmBinary> WasmBinary for Vec<T> {
     }
 }
 
+// TODO This is no longer a generic wrapper for a Vec<WithSize<T>> construction
+//   that can be parsed in parallel. It is now specific to Code section parsing.
+//   So give it its own type, like ParallelCode
 /// Provide parallel decoding/encoding when explicitly requested by Parallel<...> marker struct.
 impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
     fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
@@ -276,14 +327,15 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
             let size_offset = state.current_offset;
             let content_size_bytes = u32::decode(reader, state).set_err_elem::<WithSize<T>>()?;
 
-            let content_offset = state.current_offset;
+            let offset_before_content = state.current_offset;
             let mut buf = vec![0u8; content_size_bytes as usize];
-            reader.read_exact(buf.as_mut_slice()).add_err_info::<T>(content_offset)?;
+            reader.read_exact(buf.as_mut_slice()).add_err_info::<T>(offset_before_content)?;
             state.current_offset += content_size_bytes as usize;
 
-            elements.push((size_offset, content_size_bytes, content_offset, buf));
+            // Remember where each code offset started.
+            state.code_offsets.push(offset_before_content);
 
-            // TODO push content_offset into code idx <-> offset decode_state.
+            elements.push((size_offset, content_size_bytes, offset_before_content, buf));
         }
 
         // Then, parallel decoding of each buffer to actual elements T.
@@ -406,9 +458,8 @@ impl WasmBinary for Module {
                     } else {
                         last_section_type = Some(std::mem::discriminant(&section));
                     }
-                    sections.push(section);
 
-                    // TODO push mapping of section discriminant <-> offset_section_begin to section_offsets
+                    sections.push(section);
                 }
                 // If we cannot even read one more byte (the ID of the next section), we are done.
                 Err(e) if e.kind() == &ErrorKind::Eof && e.offset() == offset_section_begin => break,
@@ -539,6 +590,9 @@ impl WasmBinary for CustomSection {
         let name_offset = state.current_offset;
         let name = String::decode(reader, state).set_err_elem::<Self>()?;
         let name_size_bytes = state.current_offset - name_offset;
+
+        // Remember the offset of this custom section in the binary.
+        state.section_offsets.push(name_offset);
 
         // The size of the section includes also the bytes of the name, so we have to subtract
         // the size of the name to get the size of the content only.

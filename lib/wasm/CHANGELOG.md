@@ -1,5 +1,9 @@
 This document shall list the largest breaking changes for Wasabi's wasm library.
 
+# v0.5.0 (2020-05-27)
+
+- Save and return a mapping of sections <-> byte offsets and function bodies ("code") to byte offsets during decoding. Changes the signature of the `WasmBinary::decode` trait method.
+
 # v0.4.0 (2020-03-17)
 
 - AST types are directly under the crate, not prefixed with `ast::` anymore.
