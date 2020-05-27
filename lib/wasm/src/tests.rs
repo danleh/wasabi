@@ -8,6 +8,7 @@ use test_utilities::*;
 
 use crate::{highlevel, lowlevel};
 use crate::WasmBinary;
+use crate::binary::DecodeState;
 
 const TEST_INPUTS: &'static str = "../../tests/inputs";
 
@@ -30,8 +31,8 @@ fn decode_encode_is_valid_wasm() {
 #[test]
 fn error_offsets_correct() {
     fn assert_error_offset(binary: Vec<u8>, expected_offset: usize) {
-        let mut offset = 0;
-        let result = lowlevel::Module::decode(&mut binary.as_slice(), &mut offset);
+        let mut state = DecodeState::new();
+        let result = lowlevel::Module::decode(&mut binary.as_slice(), &mut state);
         assert!(result.is_err(), "binary {:?} was not invalid, but should have been", binary);
         let err = result.err().unwrap();
         assert_eq!(err.offset(), expected_offset, "\nfull error: {}\n(source: {:?})", err, err.source());
@@ -130,8 +131,8 @@ fn decode_lowlevel_speed(bencher: &mut Bencher) {
     File::open(LARGE_WASM_FILE).unwrap().read_to_end(&mut buf).unwrap();
 
     bencher.iter(|| {
-        let mut offset = 0;
-        lowlevel::Module::decode(&mut buf.as_slice(), &mut offset).unwrap()
+        let mut state = DecodeState::new();
+        lowlevel::Module::decode(&mut buf.as_slice(), &mut state).unwrap()
     })
 }
 

@@ -18,13 +18,15 @@ mod tests;
  */
 
 use crate::error::AddErrInfo;
+use crate::binary::DecodeState;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use std::path::Path;
 
 impl lowlevel::Module {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
-        Self::decode(&mut BufReader::new(File::open(path).add_err_info::<File>(0)?), &mut 0)
+        let mut state = DecodeState::new();
+        Self::decode(&mut BufReader::new(File::open(path).add_err_info::<File>(0)?), &mut state)
     }
 
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> io::Result<usize> {

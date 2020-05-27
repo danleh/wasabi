@@ -1,29 +1,94 @@
 use std::io;
 use std::marker::PhantomData;
+use std::mem::Discriminant;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use ordered_float::OrderedFloat;
 use rayon::prelude::*;
 use wasabi_leb128::{ReadLeb128, WriteLeb128};
 
-use crate::{BlockType, Limits, RawCustomSection, ValType};
+use crate::{BlockType, Idx, Limits, RawCustomSection, ValType};
 use crate::error::{AddErrInfo, Error, ErrorKind, SetErrElem};
-use crate::lowlevel::{CustomSection, Expr, Instr, Module, Parallel, Section, WithSize, NameSection, NameSubSection};
+use crate::lowlevel::{CustomSection, Expr, Function, Instr, Module, NameSection, NameSubSection, Parallel, Section, WithSize, ImportType};
 
 /* Trait and impl for decoding/encoding between binary format (as per spec) and our own formats (see ast module) */
 
 pub trait WasmBinary: Sized {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error>;
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error>;
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize>;
 }
 
+// TODO replace offset: &mut usize with
+// 1. offset: &mut DecodeState everywhere (also in the derive).
+// 2. rename offset to decode_state
+// 3. fix type errors, because you try to increment a struct, i.e., decode_state += 1 -> decode_state.current_offset += 1
+
+/// "Global" state kept during decoding. Useful for error reporting (At which byte offset did
+/// parsing fail?) and mapping from our AST back to the binary (function index <-> code section offset).
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct DecodeState {
+    pub current_offset: usize,
+    section_offsets: Vec<(Discriminant<Section>, usize)>,
+    /// The index of the vec corresponds to the index of the code element, which is the function
+    /// index - number of important functions (which don't have a code/body).
+    code_offsets: Vec<usize>,
+}
+
+impl DecodeState {
+    pub fn new() -> DecodeState {
+        DecodeState {
+            current_offset: 0,
+            section_offsets: Vec::new(),
+            code_offsets: Vec::new(),
+        }
+    }
+
+    pub fn with_offset(current_offset: usize) -> DecodeState {
+        DecodeState {
+            current_offset,
+            section_offsets: Vec::new(),
+            code_offsets: Vec::new(),
+        }
+    }
+
+    /// Convert code offsets into an easier to understand mapping of function indices.
+    pub fn into_offsets(self, module: &Module) -> Offsets {
+        let imported_function_count = module.sections.iter()
+            .filter_map(|section|
+                if let Section::Import(WithSize(imports)) = section {
+                    Some(imports)
+                } else {
+                    None
+                })
+            .flat_map(|imports| imports.iter()
+                .filter(|import|
+                    if let ImportType::Function(_) = import.type_ { true } else { false }))
+            .count();
+        let function_bodies = self.code_offsets.into_iter()
+            .enumerate()
+            .map(|(code_idx, byte_offset)|
+                (Idx::from(imported_function_count + code_idx), byte_offset))
+            .collect();
+        Offsets {
+            sections: self.section_offsets,
+            function_bodies,
+        }
+    }
+}
+
+/// Metainformation how low-level sections and function bodies map to byte offsets in the binary.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct Offsets {
+    pub sections: Vec<(Discriminant<Section>, usize)>,
+    pub function_bodies: Vec<(Idx<Function>, usize)>,
+}
 
 /* Primitive types */
 
 impl WasmBinary for u8 {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let byte = reader.read_u8().add_err_info::<u8>(*offset)?;
-        *offset += 1;
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
+        let byte = reader.read_u8().add_err_info::<u8>(state.current_offset)?;
+        state.current_offset += 1;
         Ok(byte)
     }
 
@@ -34,9 +99,9 @@ impl WasmBinary for u8 {
 }
 
 impl WasmBinary for u32 {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let (value, bytes_read) = reader.read_leb128().add_err_info::<u32>(*offset)?;
-        *offset += bytes_read;
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
+        let (value, bytes_read) = reader.read_leb128().add_err_info::<u32>(state.current_offset)?;
+        state.current_offset += bytes_read;
         Ok(value)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
@@ -48,7 +113,7 @@ impl WasmBinary for u32 {
 // only for convenience when serializing Rust usize values (e.g., Rust array or vector indices).
 // You should always parse values with the u32 implementation since that ensures correct range.
 impl WasmBinary for usize {
-    fn decode<R: io::Read>(_: &mut R, _: &mut usize) -> Result<Self, Error> {
+    fn decode<R: io::Read>(_: &mut R, _: &mut DecodeState) -> Result<Self, Error> {
         unimplemented!("use u32 impl for parsing wasm32 indices")
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
@@ -64,9 +129,9 @@ impl WasmBinary for usize {
 }
 
 impl WasmBinary for i32 {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let (value, bytes_read) = reader.read_leb128().add_err_info::<i32>(*offset)?;
-        *offset += bytes_read;
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
+        let (value, bytes_read) = reader.read_leb128().add_err_info::<i32>(state.current_offset)?;
+        state.current_offset += bytes_read;
         Ok(value)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
@@ -75,9 +140,9 @@ impl WasmBinary for i32 {
 }
 
 impl WasmBinary for i64 {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let (value, bytes_read) = reader.read_leb128().add_err_info::<i64>(*offset)?;
-        *offset += bytes_read;
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
+        let (value, bytes_read) = reader.read_leb128().add_err_info::<i64>(state.current_offset)?;
+        state.current_offset += bytes_read;
         Ok(value)
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
@@ -86,9 +151,9 @@ impl WasmBinary for i64 {
 }
 
 impl WasmBinary for OrderedFloat<f32> {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let value = reader.read_f32::<LittleEndian>().add_err_info::<f32>(*offset)?;
-        *offset += 4;
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
+        let value = reader.read_f32::<LittleEndian>().add_err_info::<f32>(state.current_offset)?;
+        state.current_offset += 4;
         Ok(value.into())
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
@@ -98,9 +163,9 @@ impl WasmBinary for OrderedFloat<f32> {
 }
 
 impl WasmBinary for OrderedFloat<f64> {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let value = reader.read_f64::<LittleEndian>().add_err_info::<f64>(*offset)?;
-        *offset += 8;
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
+        let value = reader.read_f64::<LittleEndian>().add_err_info::<f64>(state.current_offset)?;
+        state.current_offset += 8;
         Ok(value.into())
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
@@ -113,19 +178,19 @@ impl WasmBinary for OrderedFloat<f64> {
 /* Generic "AST combinators" */
 
 impl<T: WasmBinary> WasmBinary for WithSize<T> {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
         // The expected size is only necessary to speed up parallel decoding.
         // In this (serial) case, we just use it for error checking.
-        let offset_size = *offset;
-        let expected_size_bytes = u32::decode(reader, offset).set_err_elem::<Self>()?;
+        let offset_before_size = state.current_offset;
+        let expected_size_bytes = u32::decode(reader, state).set_err_elem::<Self>()?;
 
-        let offset_before_content = *offset;
-        let t = T::decode(reader, offset)?;
-        let actual_size_bytes = *offset - offset_before_content;
+        let offset_before_content = state.current_offset;
+        let t = T::decode(reader, state)?;
+        let actual_size_bytes = state.current_offset - offset_before_content;
 
         if actual_size_bytes != expected_size_bytes as usize {
             return Err(Error::new::<T>(
-                offset_size,
+                offset_before_size,
                 ErrorKind::Size {
                     expected: expected_size_bytes,
                     actual: actual_size_bytes,
@@ -169,12 +234,12 @@ fn limit_prealloc_capacity<T>(element_count: u32) -> usize {
 /// Generic vectors of T.
 /// see https://webassembly.github.io/spec/core/binary/conventions.html#vectors
 impl<T: WasmBinary> WasmBinary for Vec<T> {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let element_count = u32::decode(reader, offset).set_err_elem::<Self>()?;
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
+        let element_count = u32::decode(reader, state).set_err_elem::<Self>()?;
 
         let mut vec = Vec::with_capacity(limit_prealloc_capacity::<T>(element_count));
         for _ in 0..element_count {
-            vec.push(T::decode(reader, offset)?);
+            vec.push(T::decode(reader, state)?);
         }
 
         Ok(vec)
@@ -191,7 +256,7 @@ impl<T: WasmBinary> WasmBinary for Vec<T> {
 
 /// Provide parallel decoding/encoding when explicitly requested by Parallel<...> marker struct.
 impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
         // Treat the individual WithSize<T> parts as Vec<u8> (i.e., don't parse the content T just yet,
         // instead read each element first into a plain byte buffer (non-parallel, but hopefully fast).
         // Then decode the byte buffers in parallel to the actual T's.
@@ -200,7 +265,7 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
         // the expected size, whereas here we assume the size is correct and the error is generated
         // later during parallel parsing of the contents T (which could, e.g., yield an Eof).
 
-        let element_count = u32::decode(reader, offset).set_err_elem::<Self>()?;
+        let element_count = u32::decode(reader, state).set_err_elem::<Self>()?;
 
         // Contains the offset of the size (for error reporting), the expected size, the offset of
         // of content T, and the (unparsed) bytes of contents.
@@ -208,25 +273,30 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
             limit_prealloc_capacity::<(usize, u32, usize, Vec<u8>)>(element_count));
         // Read each element into a buffer first (+ the information mentioned before).
         for _ in 0..element_count {
-            let size_offset = *offset;
-            let content_size_bytes = u32::decode(reader, offset).set_err_elem::<WithSize<T>>()?;
+            let size_offset = state.current_offset;
+            let content_size_bytes = u32::decode(reader, state).set_err_elem::<WithSize<T>>()?;
 
-            let content_offset = *offset;
+            let content_offset = state.current_offset;
             let mut buf = vec![0u8; content_size_bytes as usize];
             reader.read_exact(buf.as_mut_slice()).add_err_info::<T>(content_offset)?;
-            *offset += content_size_bytes as usize;
+            state.current_offset += content_size_bytes as usize;
 
             elements.push((size_offset, content_size_bytes, content_offset, buf));
+
+            // TODO push content_offset into code idx <-> offset decode_state.
         }
 
         // Then, parallel decoding of each buffer to actual elements T.
         let decoded: Result<Vec<WithSize<T>>, Error> = elements.into_par_iter()
-            .map(|(size_offset, expected_size_bytes, mut offset, buf)| -> Result<WithSize<T>, Error> {
+            .map(|(size_offset, expected_size_bytes, offset_before_content, buf)| -> Result<WithSize<T>, Error> {
+                // Every individual code section parser gets its own state. This only works, because
+                // the code_offsets have already been inserted during serial parsing above, and
+                // the rest of the decode state is only for the global current_offset in bytes.
+                let mut forked_state = DecodeState::with_offset(offset_before_content);
+                let t = T::decode(&mut &buf[..], &mut forked_state)?;
                 // While a too short size will result in an Eof error, we still need to check that
                 // the size was not too long (i.e., that the whole buffer has been consumed).
-                let offset_before_content = offset;
-                let t = T::decode(&mut &buf[..], &mut offset)?;
-                let actual_size_bytes = offset - offset_before_content;
+                let actual_size_bytes = forked_state.current_offset - offset_before_content;
 
                 if actual_size_bytes != expected_size_bytes as usize {
                     return Err(Error::new::<T>(
@@ -266,9 +336,9 @@ impl<T: WasmBinary + Send + Sync> WasmBinary for Parallel<Vec<WithSize<T>>> {
 }
 
 impl<T: WasmBinary> WasmBinary for Box<[T]> {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
         // Reuse Vec implementation, and just drop capacity field to get Box<[T]>.
-        Ok(Vec::<T>::decode(reader, offset)?.into_boxed_slice())
+        Ok(Vec::<T>::decode(reader, state)?.into_boxed_slice())
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
@@ -284,11 +354,11 @@ impl<T: WasmBinary> WasmBinary for Box<[T]> {
 
 /// UTF-8 strings.
 impl WasmBinary for String {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
         // Reuse Vec<u8> implementation, then convert to UTF-8, consuming the buffer so no
         // re-allocation is necessary.
-        let offset_before = *offset;
-        let buf: Vec<u8> = Vec::decode(reader, offset).set_err_elem::<String>()?;
+        let offset_before = state.current_offset;
+        let buf: Vec<u8> = Vec::decode(reader, state).set_err_elem::<String>()?;
         Ok(String::from_utf8(buf).add_err_info::<String>(offset_before)?)
     }
 
@@ -306,28 +376,28 @@ impl WasmBinary for String {
 /* Special cases that cannot be derived and need a manual impl */
 
 impl WasmBinary for Module {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
         // Check magic number.
         let mut magic_number = [0u8; 4];
         reader.read_exact(&mut magic_number).add_err_info::<Module>(0)?;
         if &magic_number != b"\0asm" {
             return Err(Error::new::<Module>(0, ErrorKind::MagicNumber { actual: magic_number }));
         }
-        *offset += 4;
+        state.current_offset += 4;
 
         // Check version.
         let version = reader.read_u32::<LittleEndian>().add_err_info::<Module>(4)?;
         if version != 1 {
             return Err(Error::new::<Module>(4, ErrorKind::Version { actual: version }));
         }
-        *offset += 4;
+        state.current_offset += 4;
 
         // Parse sections until EOF.
         let mut sections = Vec::new();
         let mut last_section_type = None;
         loop {
-            let offset_section_begin = *offset;
-            match Section::decode(reader, offset) {
+            let offset_section_begin = state.current_offset;
+            match Section::decode(reader, state) {
                 Ok(mut section) => {
                     // To insert custom sections at the correct place when serializing again, we
                     // need to remember after which other non-custom section they originally came.
@@ -337,6 +407,8 @@ impl WasmBinary for Module {
                         last_section_type = Some(std::mem::discriminant(&section));
                     }
                     sections.push(section);
+
+                    // TODO push mapping of section discriminant <-> offset_section_begin to section_offsets
                 }
                 // If we cannot even read one more byte (the ID of the next section), we are done.
                 Err(e) if e.kind() == &ErrorKind::Eof && e.offset() == offset_section_begin => break,
@@ -362,12 +434,12 @@ impl WasmBinary for Module {
 
 /// needs manual impl because of block handling: End op-code terminates body, but only if block stack is empty
 impl WasmBinary for Expr {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
         let mut instructions = Vec::new();
 
         let mut block_depth = 0;
         while block_depth >= 0 {
-            let instr = Instr::decode(reader, offset)?;
+            let instr = Instr::decode(reader, state)?;
 
             block_depth += match instr {
                 Instr::Block(..) | Instr::Loop(..) | Instr::If(..) => 1,
@@ -395,15 +467,15 @@ impl WasmBinary for Expr {
 /// Needs manual impl because of compressed format: even though BlockType is "logically" an enum,
 /// it has no tag, because they know that 0x40 (empty block) and ValType bytes are disjoint.
 impl WasmBinary for BlockType {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let tag = u8::decode(reader, offset).set_err_elem::<Self>()?;
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
+        let tag = u8::decode(reader, state).set_err_elem::<Self>()?;
         Ok(BlockType(match tag {
             0x40 => None,
             byte => {
                 // Retry, now interpreting as ValType.
                 let buf = [byte; 1];
-                *offset -= 1;
-                Some(ValType::decode(&mut &buf[..], offset)?)
+                state.current_offset -= 1;
+                Some(ValType::decode(&mut &buf[..], state)?)
             }
         }))
     }
@@ -419,18 +491,18 @@ impl WasmBinary for BlockType {
 /// Needs manual impl because the tag if max is present comes at the beginning of the struct, not
 /// before the max field.
 impl WasmBinary for Limits {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let tag = u8::decode(reader, offset).set_err_elem::<Self>()?;
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
+        let tag = u8::decode(reader, state).set_err_elem::<Self>()?;
         Ok(match tag {
             0x00 => Limits {
-                initial_size: u32::decode(reader, offset)?,
+                initial_size: u32::decode(reader, state)?,
                 max_size: None,
             },
             0x01 => Limits {
-                initial_size: u32::decode(reader, offset)?,
-                max_size: Some(u32::decode(reader, offset)?),
+                initial_size: u32::decode(reader, state)?,
+                max_size: Some(u32::decode(reader, state)?),
             },
-            byte => return Err(Error::invalid_tag::<Limits>(*offset, byte))
+            byte => return Err(Error::invalid_tag::<Limits>(state.current_offset, byte))
         })
     }
 
@@ -452,21 +524,21 @@ impl WasmBinary for Limits {
 }
 
 impl<T> WasmBinary for PhantomData<T> {
-    fn decode<R: io::Read>(_: &mut R, _: &mut usize) -> Result<Self, Error> { Ok(PhantomData) }
+    fn decode<R: io::Read>(_: &mut R, _: &mut DecodeState) -> Result<Self, Error> { Ok(PhantomData) }
     fn encode<W: io::Write>(&self, _: &mut W) -> io::Result<usize> { Ok(0) }
 }
 
 /* Custom sections and name subsection parsing. */
 
 impl WasmBinary for CustomSection {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
-        let size_offset = *offset;
-        let section_size_bytes = u32::decode(reader, offset).set_err_elem::<Self>()?;
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
+        let size_offset = state.current_offset;
+        let section_size_bytes = u32::decode(reader, state).set_err_elem::<Self>()?;
 
         // Each custom section must have a name, see https://webassembly.github.io/spec/core/binary/modules.html#binary-customsec
-        let name_offset = *offset;
-        let name = String::decode(reader, offset).set_err_elem::<Self>()?;
-        let name_size_bytes = *offset - name_offset;
+        let name_offset = state.current_offset;
+        let name = String::decode(reader, state).set_err_elem::<Self>()?;
+        let name_size_bytes = state.current_offset - name_offset;
 
         // The size of the section includes also the bytes of the name, so we have to subtract
         // the size of the name to get the size of the content only.
@@ -476,20 +548,20 @@ impl WasmBinary for CustomSection {
                 size_offset,
                 ErrorKind::Size {
                     expected: section_size_bytes,
-                    actual: *offset - size_offset,
+                    actual: state.current_offset - size_offset,
                 }))?;
 
         // Read to a buffer first, so that we can always fall back to returning a raw custom section.
-        let mut content_offset = *offset;
+        let mut content_state = DecodeState::with_offset(state.current_offset);
         let mut content = vec![0u8; content_size_bytes as usize];
-        reader.read_exact(content.as_mut_slice()).add_err_info::<Self>(*offset)?;
-        *offset += content_size_bytes;
+        reader.read_exact(content.as_mut_slice()).add_err_info::<Self>(state.current_offset)?;
+        state.current_offset += content_size_bytes;
 
         let section = match name.as_str() {
             "name" => {
                 // Unfortunately, some name sections are invalid (e.g., from the UE4 engine, an
                 // early Wasm binary). But we don't want to fail completely, so downgrade to warning.
-                match NameSection::decode(&mut content.as_slice(), &mut content_offset) {
+                match NameSection::decode(&mut content.as_slice(), &mut content_state) {
                     Ok(name_section) => CustomSection::Name(name_section),
                     Err(err) => {
                         eprintln!("Warning: Wasm binary at offset 0x{:x} ({}): could not parse name section", size_offset, size_offset);
@@ -533,12 +605,12 @@ impl WasmBinary for CustomSection {
 }
 
 impl WasmBinary for NameSection {
-    fn decode<R: io::Read>(reader: &mut R, offset: &mut usize) -> Result<Self, Error> {
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
         // Parse subsections until EOF, cf. Module sections parsing.
         let mut subsections = Vec::new();
         loop {
-            let offset_section_begin = *offset;
-            match NameSubSection::decode(reader, offset) {
+            let offset_section_begin = state.current_offset;
+            match NameSubSection::decode(reader, state) {
                 Ok(section) => subsections.push(section),
                 // If we cannot even read one more byte (the ID of the next section), we are done.
                 Err(e) if e.kind() == &ErrorKind::Eof && e.offset() == offset_section_begin => break,
