@@ -102,14 +102,14 @@ pub struct Local {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ParamRef<'a> {
     // ValType is a Copy-type and smaller than a pointer, so store as value instead of reference.
-    type_: ValType,
-    name: Option<&'a str>,
+    pub type_: ValType,
+    pub name: Option<&'a str>,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ParamMut<'a> {
-    type_: &'a mut ValType,
-    name: &'a mut Option<String>,
+    pub type_: &'a mut ValType,
+    pub name: &'a mut Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -734,6 +734,7 @@ impl Instr {
     }
 }
 
+// FIXME Does not respect the width formatting modifier.
 impl fmt::Display for Instr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.to_name())?;
