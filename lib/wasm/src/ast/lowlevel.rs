@@ -32,6 +32,8 @@ pub enum Section {
     #[tag = 9] Element(WithSize<Vec<Element>>),
     #[tag = 10] Code(WithSize<Parallel<Vec<WithSize<Code>>>>),
     // Exchange with the following line to disable parallel decoding of code section (instructions).
+    // FIXME This code path has diverged/aged, and is no longer up-to-par with the parallel code:
+    //   The serial code (commented-out in the next line) does not record the code index <-> byte offset mapping.
     // #[tag = 10] Code(WithSize<Vec<WithSize<Code>>>),
     #[tag = 11] Data(WithSize<Vec<Data>>),
 }
