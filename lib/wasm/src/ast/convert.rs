@@ -73,12 +73,12 @@ impl From<ll::Module> for hl::Module {
                 // Pass through unknown custom sections unmodified.
                 ll::Section::Custom(ll::CustomSection::Raw(sec)) => module.custom_sections.push(sec),
 
-                ll::Section::Type(ll::WithSize(types_)) => types = types_,
+                ll::Section::Type(ll::WithSize(ll::SectionOffset(types_))) => types = types_,
 
                 /* Imported functions, tables, memories, and globals are first added to the respective index spaces... */
 
-                ll::Section::Import(vec) => {
-                    for import_ in vec.0 {
+                ll::Section::Import(ll::WithSize(ll::SectionOffset(imports))) => {
+                    for import_ in imports {
                         let export = Vec::new();
                         match import_.type_ {
                             ll::ImportType::Function(type_idx) => module.functions.push(
@@ -110,7 +110,7 @@ impl From<ll::Module> for hl::Module {
 
                 /* Then all "local" (i.e., non-imported) functions/tables/memories/globals are added. */
 
-                ll::Section::Function(ll::WithSize(function_signatures)) => {
+                ll::Section::Function(ll::WithSize(ll::SectionOffset(function_signatures))) => {
                     for type_idx in function_signatures {
                         module.functions.push(
                             hl::Function::new(
@@ -122,7 +122,7 @@ impl From<ll::Module> for hl::Module {
                         );
                     }
                 }
-                ll::Section::Global(ll::WithSize(globals)) => {
+                ll::Section::Global(ll::WithSize(ll::SectionOffset(globals))) => {
                     for ll::Global { type_, init } in globals {
                         module.globals.push(hl::Global {
                             type_,
@@ -131,7 +131,7 @@ impl From<ll::Module> for hl::Module {
                         });
                     }
                 }
-                ll::Section::Table(ll::WithSize(tables)) => {
+                ll::Section::Table(ll::WithSize(ll::SectionOffset(tables))) => {
                     for type_ in tables {
                         module.tables.push(hl::Table {
                             type_,
@@ -141,7 +141,7 @@ impl From<ll::Module> for hl::Module {
                         });
                     }
                 }
-                ll::Section::Memory(ll::WithSize(memories)) => {
+                ll::Section::Memory(ll::WithSize(ll::SectionOffset(memories))) => {
                     for type_ in memories {
                         module.memories.push(hl::Memory {
                             type_,
@@ -154,7 +154,7 @@ impl From<ll::Module> for hl::Module {
 
                 /* Other metadata sections: Export, Start */
 
-                ll::Section::Export(ll::WithSize(exports)) => {
+                ll::Section::Export(ll::WithSize(ll::SectionOffset(exports))) => {
                     for ll::Export { name, type_ } in exports {
                         match type_ {
                             ll::ExportType::Function(idx) => module.functions[idx.into_inner()].export.push(name),
@@ -164,11 +164,11 @@ impl From<ll::Module> for hl::Module {
                         }
                     }
                 }
-                ll::Section::Start(ll::WithSize(function_idx)) => module.start = Some(function_idx.into_inner().into()),
+                ll::Section::Start(ll::WithSize(ll::SectionOffset(function_idx))) => module.start = Some(function_idx.into_inner().into()),
 
                 /* Finally, all "contents" of the already declared functions/tables/memories. */
 
-                ll::Section::Element(ll::WithSize(elements)) => {
+                ll::Section::Element(ll::WithSize(ll::SectionOffset(elements))) => {
                     for element in elements {
                         module.tables[element.table_idx.into_inner()].elements.push(hl::Element {
                             offset: from_lowlevel_expr(element.offset, &types),
@@ -176,7 +176,7 @@ impl From<ll::Module> for hl::Module {
                         })
                     }
                 }
-                ll::Section::Code(ll::WithSize(code)) => {
+                ll::Section::Code(ll::WithSize(ll::SectionOffset(code))) => {
                     let imported_function_count = module.functions.iter()
                         .filter(|f| f.import().is_some())
                         .count();
@@ -187,7 +187,7 @@ impl From<ll::Module> for hl::Module {
                         module.functions[imported_function_count + i].code = hl::ImportOrPresent::Present(code);
                     }
                 }
-                ll::Section::Data(ll::WithSize(data)) => {
+                ll::Section::Data(ll::WithSize(ll::SectionOffset(data))) => {
                     for data in data {
                         module.memories[data.memory_idx.into_inner()].data.push(hl::Data {
                             offset: from_lowlevel_expr(data.offset, &types),
@@ -484,43 +484,43 @@ impl From<&hl::Module> for ll::Module {
             .map(|(type_, _)| type_.clone())
             .collect::<Vec<FunctionType>>();
         if !types.is_empty() {
-            sections.push(ll::Section::Type(ll::WithSize(types)));
+            sections.push(ll::Section::Type(ll::WithSize(ll::SectionOffset(types))));
         }
 
         // Import
         if !imports.is_empty() {
-            sections.push(ll::Section::Import(ll::WithSize(imports)));
+            sections.push(ll::Section::Import(ll::WithSize(ll::SectionOffset(imports))));
         }
 
         // Function
         if !functions.is_empty() {
-            sections.push(ll::Section::Function(ll::WithSize(functions)));
+            sections.push(ll::Section::Function(ll::WithSize(ll::SectionOffset(functions))));
         }
 
         // Table
         if !tables.is_empty() {
-            sections.push(ll::Section::Table(ll::WithSize(tables)));
+            sections.push(ll::Section::Table(ll::WithSize(ll::SectionOffset(tables))));
         }
 
         // Memory
         if !memories.is_empty() {
-            sections.push(ll::Section::Memory(ll::WithSize(memories)));
+            sections.push(ll::Section::Memory(ll::WithSize(ll::SectionOffset(memories))));
         }
 
         // Global
         if !globals.is_empty() {
-            sections.push(ll::Section::Global(ll::WithSize(globals)));
+            sections.push(ll::Section::Global(ll::WithSize(ll::SectionOffset(globals))));
         }
 
         // Export
         let exports = to_lowlevel_exports(&module, &state);
         if !exports.is_empty() {
-            sections.push(ll::Section::Export(ll::WithSize(exports)));
+            sections.push(ll::Section::Export(ll::WithSize(ll::SectionOffset(exports))));
         }
 
         // Start
         if let Some(start_func_idx) = module.start {
-            sections.push(ll::Section::Start(ll::WithSize(state.map_function_idx(start_func_idx))));
+            sections.push(ll::Section::Start(ll::WithSize(ll::SectionOffset(state.map_function_idx(start_func_idx)))));
         }
 
         // Element
@@ -534,7 +534,7 @@ impl From<&hl::Module> for ll::Module {
                 .collect::<Vec<_>>())
             .collect();
         if !elements.is_empty() {
-            sections.push(ll::Section::Element(ll::WithSize(elements)));
+            sections.push(ll::Section::Element(ll::WithSize(ll::SectionOffset(elements))));
         }
 
         // Code
@@ -544,7 +544,7 @@ impl From<&hl::Module> for ll::Module {
             .map(|code| to_lowlevel_code(code, &state))
             .collect();
         if !code.is_empty() {
-            sections.push(ll::Section::Code(ll::WithSize(ll::Parallel(code))));
+            sections.push(ll::Section::Code(ll::WithSize(ll::SectionOffset(ll::Parallel(code)))));
         }
 
         // Data
@@ -558,7 +558,7 @@ impl From<&hl::Module> for ll::Module {
                 .collect::<Vec<_>>())
             .collect();
         if !data.is_empty() {
-            sections.push(ll::Section::Data(ll::WithSize(data)));
+            sections.push(ll::Section::Data(ll::WithSize(ll::SectionOffset(data))));
         }
 
         // Name section, always after Data section.

@@ -45,6 +45,7 @@ impl highlevel::Module {
         Ok(lowlevel::Module::from_file(path)?.into())
     }
 
+    /// The returned offsets are given in terms of the original "low-level" sections and functions.
     pub fn from_file_with_offsets<P: AsRef<Path>>(path: P) -> Result<(Self, Offsets), Error> {
         let (module, offsets) = lowlevel::Module::from_file_with_offsets(path)?;
         Ok((module.into(), offsets))

@@ -9,33 +9,40 @@ pub struct Module {
 }
 
 /// Just a marker; does not save the size itself since that changes during transformations anyway.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
 pub struct WithSize<T>(pub T);
 
 /// Just a marker to indicate that parallel decoding/encoding is possible.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+// TODO Remove and instead replace its only use in Parallel<Vec<WithSize<Code>>> by a
+//   special-purpose ParallelCode or so. See below.
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
 pub struct Parallel<T>(pub T);
+
+/// Just a marker to instruct the parser to store the offset of the contents in the decoding state.
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
+pub struct SectionOffset<T>(pub T);
 
 /* Sections */
 
+// TODO add SaveSectionOffset<T> marker
 #[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Section {
     #[tag = 0] Custom(CustomSection),
-    #[tag = 1] Type(WithSize<Vec<FunctionType>>),
-    #[tag = 2] Import(WithSize<Vec<Import>>),
-    #[tag = 3] Function(WithSize<Vec<Idx<FunctionType>>>),
-    #[tag = 4] Table(WithSize<Vec<TableType>>),
-    #[tag = 5] Memory(WithSize<Vec<MemoryType>>),
-    #[tag = 6] Global(WithSize<Vec<Global>>),
-    #[tag = 7] Export(WithSize<Vec<Export>>),
-    #[tag = 8] Start(WithSize<Idx<Function>>),
-    #[tag = 9] Element(WithSize<Vec<Element>>),
-    #[tag = 10] Code(WithSize<Parallel<Vec<WithSize<Code>>>>),
+    #[tag = 1] Type(WithSize<SectionOffset<Vec<FunctionType>>>),
+    #[tag = 2] Import(WithSize<SectionOffset<Vec<Import>>>),
+    #[tag = 3] Function(WithSize<SectionOffset<Vec<Idx<FunctionType>>>>),
+    #[tag = 4] Table(WithSize<SectionOffset<Vec<TableType>>>),
+    #[tag = 5] Memory(WithSize<SectionOffset<Vec<MemoryType>>>),
+    #[tag = 6] Global(WithSize<SectionOffset<Vec<Global>>>),
+    #[tag = 7] Export(WithSize<SectionOffset<Vec<Export>>>),
+    #[tag = 8] Start(WithSize<SectionOffset<Idx<Function>>>),
+    #[tag = 9] Element(WithSize<SectionOffset<Vec<Element>>>),
+    #[tag = 10] Code(WithSize<SectionOffset<Parallel<Vec<WithSize<Code>>>>>),
     // Exchange with the following line to disable parallel decoding of code section (instructions).
     // FIXME This code path has diverged/aged, and is no longer up-to-par with the parallel code:
     //   The serial code (commented-out in the next line) does not record the code index <-> byte offset mapping.
     // #[tag = 10] Code(WithSize<Vec<WithSize<Code>>>),
-    #[tag = 11] Data(WithSize<Vec<Data>>),
+    #[tag = 11] Data(WithSize<SectionOffset<Vec<Data>>>),
 }
 
 #[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
