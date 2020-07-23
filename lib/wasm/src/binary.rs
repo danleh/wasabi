@@ -1,6 +1,5 @@
 use std::io;
 use std::marker::PhantomData;
-use std::mem::Discriminant;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use ordered_float::OrderedFloat;
@@ -9,7 +8,7 @@ use wasabi_leb128::{ReadLeb128, WriteLeb128};
 
 use crate::{BlockType, Idx, Limits, RawCustomSection, ValType};
 use crate::error::{AddErrInfo, Error, ErrorKind, SetErrElem};
-use crate::lowlevel::{CustomSection, Expr, Function, Instr, Module, NameSection, NameSubSection, Parallel, Section, WithSize, ImportType, SectionOffset};
+use crate::lowlevel::{CustomSection, Expr, Instr, Module, NameSection, NameSubSection, Parallel, Section, WithSize, ImportType, SectionOffset, Offsets};
 
 /* Trait and impl for decoding/encoding between binary format (as per spec) and our own formats (see ast module) */
 
@@ -73,49 +72,6 @@ impl DecodeState {
             sections,
             functions_code,
         }
-    }
-}
-
-/// Metainformation how low-level sections and function bodies map to byte offsets in the binary.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct Offsets {
-    /// Section offsets point to the beginning of the content of a section, i.e., after the size.
-    pub sections: Vec<(Discriminant<Section>, usize)>,
-    /// Code offsets are only present for non-imported function, and also point to after the size
-    /// if the code element (similar to section offsets).
-    pub functions_code: Vec<(Idx<Function>, usize)>,
-}
-
-impl Offsets {
-    /// Returns the offsets of all (low-level) sections with a tag matching the given section.
-    /// Use with, e.g., lowlevel::Section::Type(Default::default()).
-    // TODO Using Discriminant<Section> as a marker is not optimal, since multiple sections
-    //   can match, i.e., we have to return Vec<> here...
-    //   Identifying sections by their reference would be nicer (not ambiguous), but
-    //   requires self-referential Offset struct (?), so more complicated API with Pin<Module>?
-    pub fn sections(&self, section: &Section) -> Vec<usize> {
-        let tag = std::mem::discriminant(section);
-        self.sections.iter()
-            .cloned()
-            .filter_map(|(section, offset)|
-                if section == tag { Some(offset) } else { None })
-            .collect()
-    }
-
-    /// Returns the (low-level) function index with the  given offset of its code (if any).
-    pub fn function_code_to_idx(&self, code_offset: usize) -> Option<Idx<Function>> {
-        self.functions_code.iter()
-            .cloned()
-            .find_map(|(func, offset)|
-                if offset == code_offset { Some(func) } else { None })
-    }
-
-    /// Returns the code offset of the (low-level) function with the given index (if any).
-    pub fn function_idx_to_code(&self, idx: Idx<Function>) -> Option<usize> {
-        self.functions_code.iter()
-            .cloned()
-            .find_map(|(func, offset)|
-                if func == idx { Some(offset) } else { None })
     }
 }
 

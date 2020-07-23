@@ -1,3 +1,5 @@
+use std::mem::Discriminant;
+
 use binary_derive::WasmBinary;
 use ordered_float::OrderedFloat;
 
@@ -6,6 +8,49 @@ use crate::{BlockType, FunctionType, GlobalType, Idx, Label, Memarg, MemoryType,
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Module {
     pub sections: Vec<Section>,
+}
+
+/// Metainformation how low-level sections and function bodies map to byte offsets in the binary.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct Offsets {
+    /// Section offsets point to the beginning of the content of a section, i.e., after the size.
+    pub sections: Vec<(Discriminant<Section>, usize)>,
+    /// Code offsets are only present for non-imported function, and also point to after the size
+    /// if the code element (similar to section offsets).
+    pub functions_code: Vec<(Idx<Function>, usize)>,
+}
+
+impl Offsets {
+    /// Returns the offsets of all (low-level) sections with a tag matching the given section.
+    /// Use with, e.g., lowlevel::Section::Type(Default::default()).
+    // TODO Using Discriminant<Section> as a marker is not optimal, since multiple sections
+    //   can match, i.e., we have to return Vec<> here...
+    //   Identifying sections by their reference would be nicer (not ambiguous), but
+    //   requires self-referential Offset struct (?), so more complicated API with Pin<Module>?
+    pub fn sections(&self, section: &Section) -> Vec<usize> {
+        let tag = std::mem::discriminant(section);
+        self.sections.iter()
+            .cloned()
+            .filter_map(|(section, offset)|
+                if section == tag { Some(offset) } else { None })
+            .collect()
+    }
+
+    /// Returns the (low-level) function index with the  given offset of its code (if any).
+    pub fn function_offset_to_idx(&self, code_offset: usize) -> Option<Idx<Function>> {
+        self.functions_code.iter()
+            .cloned()
+            .find_map(|(func, offset)|
+                if offset == code_offset { Some(func) } else { None })
+    }
+
+    /// Returns the code offset of the (low-level) function with the given index (if any).
+    pub fn function_idx_to_offset(&self, idx: Idx<Function>) -> Option<usize> {
+        self.functions_code.iter()
+            .cloned()
+            .find_map(|(func, offset)|
+                if func == idx { Some(offset) } else { None })
+    }
 }
 
 /// Just a marker; does not save the size itself since that changes during transformations anyway.

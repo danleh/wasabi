@@ -5,6 +5,7 @@ pub use crate::ast::*;
 // Export WasmBinary trait directly under the crate.
 mod binary;
 pub use crate::binary::WasmBinary;
+pub use crate::binary::DecodeState;
 
 // Export Error and ErrorKind directly under the crate.
 mod error;
@@ -18,7 +19,7 @@ mod tests;
  */
 
 use crate::error::AddErrInfo;
-use crate::binary::{DecodeState, Offsets};
+use crate::lowlevel::Offsets;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use std::path::Path;
