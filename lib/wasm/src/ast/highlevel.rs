@@ -744,7 +744,9 @@ impl fmt::Display for Instr {
         match self {
             // instructions without arguments
             Unreachable | Nop | Drop | Select | Return
-            | Block(_) | Loop(_) | If(_) | Else | End
+            // TODO not sure if we should print block types if non-empty?
+            | Block(_) | Loop(_) | If(_)
+            | Else | End
             | MemorySize(_) | MemoryGrow(_)
             | Numeric(_) => Ok(()),
 
@@ -758,10 +760,15 @@ impl fmt::Display for Instr {
             }
 
             Call(func_idx) => write!(f, " {}", func_idx.into_inner()),
-            CallIndirect(_, table_idx) => write!(f, " {}", table_idx.into_inner()),
+            // FIXME Printing the table index is inconsistent, when we don't print the memory index
+            // for memory size and memory grow.
+            // CallIndirect(_, table_idx) => write!(f, " {}", table_idx.into_inner()),
+            // TODO print indirect type
+            CallIndirect(_, _) => Ok(()),
 
             Local(_, local_idx) => write!(f, " {}", local_idx.into_inner()),
             Global(_, global_idx) => write!(f, " {}", global_idx.into_inner()),
+
             Load(_, memarg) | Store(_, memarg) => {
                 if memarg.offset != 0 {
                     write!(f, " offset={}", memarg.offset)?;

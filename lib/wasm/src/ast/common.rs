@@ -213,6 +213,7 @@ impl<T> Ord for Idx<T> {
 }
 
 // Similar to indices, labels are just a typed wrapper around numbers in the binary format.
+// TODO make consistent with Idx: make field private, use into_inner().
 #[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Label(pub u32);
 
