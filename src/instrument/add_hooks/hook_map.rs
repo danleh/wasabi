@@ -377,7 +377,7 @@ impl HookMap {
 
 /// e.g. "call" + [I32, F64] -> "call_iF"
 fn mangle_polymorphic_name(name: &str, tys: &[ValType]) -> String {
-    let mut mangled = name.to_string();
+    let mut mangled = name.to_string().replace(".", "_");
     if !tys.is_empty() {
         mangled.push('_');
     }
