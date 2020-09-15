@@ -754,7 +754,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet) -> Option<String> 
         }
 
         // finally, switch dummy body out against instrumented body
-        ::std::mem::replace(&mut function.code_mut().unwrap().body, instrumented_body);
+        function.code_mut().unwrap().body = instrumented_body;
     });
 
     // actually add the hooks to module and check that inserted Idx is the one on the Hook struct
