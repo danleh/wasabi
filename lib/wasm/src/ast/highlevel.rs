@@ -835,6 +835,10 @@ impl Module {
         &self.globals[idx.into_inner()]
     }
 
+    pub fn global_mut(&mut self, idx: Idx<Global>) -> &mut Global {
+        &mut self.globals[idx.into_inner()]
+    }
+
 
     pub fn add_function(&mut self, type_: FunctionType, locals: Vec<ValType>, body: Vec<Instr>) -> Idx<Function> {
         self.functions.push(Function::new(
