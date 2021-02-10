@@ -21,8 +21,8 @@ serde_json = "1.0"
 serde_plain = "0.3.0"
 
 # command-line interface and error handling
-structopt = "0.3.2"
-enumset = "0.4.0"
+structopt = "0.3.2" # TODO update to clap v3 beta
+enumset = "1.0.4"
 main_error = "0.1.0"
 
 [profile.release]
