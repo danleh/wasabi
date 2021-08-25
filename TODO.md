@@ -1,3 +1,5 @@
+Move away from Travis CI (no longer offered for OSS projects) to GitHub actions (?)
+
 # Larger Refactorings, Simplification, Long-term Maintainability
 
 - Keep low-level/high-level structure of wasabi-wasm crate, but:

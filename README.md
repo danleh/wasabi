@@ -1,4 +1,4 @@
-# Wasabi [![Build Status](https://travis-ci.com/danleh/wasabi.svg?branch=master)](https://travis-ci.com/danleh/wasabi)
+# Wasabi
 
 ## Tutorial at PLDI 2019
 
