@@ -1,3 +1,10 @@
+# Larger Refactorings, Simplification, Long-term Maintainability
+
+- Keep low-level/high-level structure of wasabi-wasm crate, but:
+    * Do not derive low-level parsers from (owning) datatypes, but rather use bytcodealliance's wasmparser: supports many more extensions, streaming parser, no need to maintain my own macro/low-level structure
+    * Make high-level AST non-owning by converting everything owning (like Vec<Type>) to iterators?
+        - Difficult for things that we splice together from different sources (e.g., Function from type, function, and code sections?)
+
 # Documentation, Usability
 
 - API documentation
@@ -14,10 +21,10 @@
 
 # Engineering, Small Features, Tests
 
-- proper error handling in library and binary with [failure](https://boats.gitlab.io/failure/intro.html) crate
+- proper error handling in library and binary with this_error and anyhow crates
     * implement own Error type
     * replace panics with ```Result<_, wasabi::Error>```
-    * implement ```From``` and ```Error``` traits
+    * derive ```From``` and ```Error``` traits
 - Update syn/quote of wasm_binary crate to 1.0 (to stay up to date + remove crate duplication in wasabi crate)
 - Compile wasabi to WebAssembly for Node.JS and in-browser usage (with wasm-bindgen?)
 - Reduce memory allocations (see eval/perf/ heaptrack data) in hook_map::instr() and Hook::new()
