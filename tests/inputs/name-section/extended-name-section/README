@@ -1,0 +1,3 @@
+From own experiments (in an unrelated WebAssembly project), where an updated Emscripten 2.0.28 (cea345ca464ab73ab04c5f62c3bd1e7ccc4d3718) produced a binary with global and data segment names.
+As of 2021-08-25, I implemented (partial, local names are missing) support for the extended name section in the lowlevel format. However those names are not carried over into the highlevel format, i.e., there is no `name` field on the `highlevel::Global` etc.
+This way the name section is at least not fully skipped...

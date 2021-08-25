@@ -13,6 +13,7 @@ use crate::WasmBinary;
 const WASM_TEST_INPUTS_DIR: &'static str = "../../tests/inputs";
 const WASM_TEST_INPUT_LARGE: &'static str = "../../tests/inputs/real-world/bananabread/bb.wasm";
 const WASM_TEST_INPUT_NAMES_SECTION: &'static str = "../../tests/inputs/name-section/wabt-tests/names.wasm";
+const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &'static str = "../../tests/inputs/name-section/extended-name-section/vuln.wasm";
 
 #[test]
 fn decode_encode_is_valid_wasm() {
@@ -148,6 +149,15 @@ fn code_offsets_like_objdump() {
     assert_eq!(offsets.function_code_to_idx(0x1e38b7), Some(Idx::from(3641)));
     assert_eq!(offsets.function_idx_to_code(Idx::from(3642)), Some(0x1e38d2));
     assert_eq!(offsets.function_code_to_idx(0x1e38d2), Some(Idx::from(3642)));
+}
+
+#[test]
+fn extended_name_sections_can_be_parsed_to_lowlevel() {
+    let module = lowlevel::Module::from_file(WASM_TEST_INPUT_EXTENDED_NAMES_SECTION).unwrap();
+    assert!(module.sections.iter().any(|section| match section {
+        lowlevel::Section::Custom(lowlevel::CustomSection::Name(_)) => true,
+        _ => false,
+    }), "parsed module does not have a name section but should have");
 }
 
 /*
