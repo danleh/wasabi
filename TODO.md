@@ -1,4 +1,5 @@
-Move away from Travis CI (no longer offered for OSS projects) to GitHub actions (?)
+- Move away from Travis CI (no longer offered for OSS projects) to GitHub actions (?)
+    * add test also for `wasm` AST/instrumentation library
 
 # Larger Refactorings, Simplification, Long-term Maintainability
 
