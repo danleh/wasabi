@@ -50,6 +50,10 @@ impl From<ll::Module> for hl::Module {
                                 }
                                 local_names = names;
                             }
+                            _ => {
+                                // FIXME: This just ignores other low-level name sections!
+                                // TODO: Add `.name` fields to `hl::Global` etc.
+                            }
                         }
                     }
 

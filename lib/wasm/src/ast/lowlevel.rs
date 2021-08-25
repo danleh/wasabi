@@ -385,6 +385,16 @@ pub enum NameSubSection {
     #[tag = 0x00] Module(WithSize<String>),
     #[tag = 0x01] Function(WithSize<NameMap<Function>>),
     #[tag = 0x02] Local(WithSize<IndirectNameMap<Function, Local>>),
+    // TODO: Names for labels are not really parsed, here we just store the bytes.
+    // Implement as in
+    // https://github.com/WebAssembly/extended-name-section/blob/master/proposals/extended-name-section/Overview.md#label-names
+    #[tag = 0x03] Label(Vec<u8>),
+    #[tag = 0x04] Type(WithSize<NameMap<FunctionType>>),
+    #[tag = 0x05] Table(WithSize<NameMap<Table>>),
+    #[tag = 0x06] Memory(WithSize<NameMap<Memory>>),
+    #[tag = 0x07] Global(WithSize<NameMap<Global>>),
+    #[tag = 0x08] Element(WithSize<NameMap<Element>>),
+    #[tag = 0x09] Data(WithSize<NameMap<Data>>),
 }
 
 pub type NameMap<T> = Vec<NameAssoc<T>>;

@@ -574,7 +574,7 @@ impl WasmBinary for CustomSection {
                 match NameSection::decode(&mut content.as_slice(), &mut content_state) {
                     Ok(name_section) => CustomSection::Name(name_section),
                     Err(err) => {
-                        eprintln!("Warning: Wasm binary at offset 0x{:x} ({}): could not parse name section", size_offset, size_offset);
+                        eprintln!("Warning: Wasm binary at offset 0x{:x} ({}): could not parse name section, ignoring whole section...", size_offset, size_offset);
                         eprintln!("Caused by: {}", err);
                         // Keep the section as a raw section at least
                         CustomSection::Raw(RawCustomSection { name, content, after: None })
