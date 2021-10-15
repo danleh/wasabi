@@ -1,5 +1,6 @@
 // Export AST types directly under crate, without ast prefix.
 mod ast;
+
 pub use crate::ast::*;
 
 // Export WasmBinary trait directly under the crate.
@@ -50,6 +51,13 @@ impl highlevel::Module {
     pub fn from_file_with_offsets<P: AsRef<Path>>(path: P) -> Result<(Self, Offsets), Error> {
         let (module, offsets) = lowlevel::Module::from_file_with_offsets(path)?;
         Ok((module.into(), offsets))
+    }
+
+    pub fn from_file_with_offsets_wasmparser(path: impl AsRef<Path>) -> Result<(Self, Offsets), Box<dyn std::error::Error>> {
+        let reader = File::open(path)?;
+        // TODO benchmark, but if I do the buffer mgmt right, this should not be necessary
+        // let reader = BufReader::new(reader);
+        Ok(ast::wasmparser::parse_module_with_offsets(reader)?)
     }
 
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> io::Result<usize> {

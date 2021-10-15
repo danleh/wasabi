@@ -16,6 +16,22 @@ const WASM_TEST_INPUT_NAMES_SECTION: &'static str = "../../tests/inputs/name-sec
 const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &'static str = "../../tests/inputs/name-section/extended-name-section/vuln.wasm";
 
 #[test]
+fn wasmparser_equal_old_parser() {
+    for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
+        println!("{}", path.display());
+        
+        let (module_old, offsets_old) = highlevel::Module::from_file_with_offsets(&path)
+            .expect(&format!("could not decode valid wasm file '{}'", path.display()));
+        
+        let (module_new, offsets_new) = highlevel::Module::from_file_with_offsets_wasmparser(&path)
+            .expect(&format!("could not decode valid wasm file '{}'", path.display()));
+
+        assert_eq!(module_new, module_old);
+        assert_eq!(offsets_new, offsets_old);        
+    }
+}
+
+#[test]
 fn decode_encode_is_valid_wasm() {
     for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
         println!("{}", path.display());
