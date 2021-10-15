@@ -74,6 +74,7 @@ impl ValType {
 
 #[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]
 #[tag = 0x60]
+// TODO rename to FuncType
 pub struct FunctionType {
     // Use Box instead of Vec to save the capacity field (smaller size of the struct), since
     // funtion types are immutable anyway (i.e., no dynamic adding/removing of input/result types).
@@ -155,10 +156,19 @@ impl<T> Idx<T> {
     pub fn into_inner(self) -> usize { self.0 as usize }
 }
 
+// TODO remove and replace with u32 only
+// Why accept + convert to a usize if its anyway always u32?
 impl<T> From<usize> for Idx<T> {
     #[inline]
     fn from(u: usize) -> Self {
         Idx(u.try_into().expect("wasm32 only allows u32 indices"), PhantomData)
+    }
+}
+
+impl<T> From<u32> for Idx<T> {
+    #[inline]
+    fn from(u: u32) -> Self {
+        Idx(u, PhantomData)
     }
 }
 

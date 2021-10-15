@@ -51,7 +51,7 @@ pub struct Function {
     // it is currently impossible to change the number of function parameters without breaking the
     // invariant.
     // However, so far it was never necessary to change the type signature of an existing function.
-    param_names: Vec<Option<String>>,
+    pub(crate) param_names: Vec<Option<String>>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]

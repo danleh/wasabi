@@ -146,8 +146,8 @@ fn section_offsets_like_objdump() {
             lowlevel::NameSection { subsections: Vec::new() }
         ))), vec![0x1f]);
     // Also try the (only) function code offset, for completion.
-    assert_eq!(offsets.function_idx_to_offset(Idx::from(0)), Some(0x17));
-    assert_eq!(offsets.function_offset_to_idx(0x17), Some(Idx::from(0)));
+    assert_eq!(offsets.function_idx_to_offset(Idx::from(0u32)), Some(0x17));
+    assert_eq!(offsets.function_offset_to_idx(0x17), Some(Idx::from(0u32)));
 }
 
 #[test]
@@ -156,15 +156,15 @@ fn code_offsets_like_objdump() {
 
     // Test first two and last two functions.
     // Expected values are taken from wasm-objdump output.
-    assert_eq!(offsets.function_idx_to_offset(Idx::from(383)), Some(0x5522));
-    assert_eq!(offsets.function_offset_to_idx(0x5522), Some(Idx::from(383)));
-    assert_eq!(offsets.function_idx_to_offset(Idx::from(384)), Some(0x5545));
-    assert_eq!(offsets.function_offset_to_idx(0x5545), Some(Idx::from(384)));
+    assert_eq!(offsets.function_idx_to_offset(Idx::from(383u32)), Some(0x5522));
+    assert_eq!(offsets.function_offset_to_idx(0x5522), Some(Idx::from(383u32)));
+    assert_eq!(offsets.function_idx_to_offset(Idx::from(384u32)), Some(0x5545));
+    assert_eq!(offsets.function_offset_to_idx(0x5545), Some(Idx::from(384u32)));
 
-    assert_eq!(offsets.function_idx_to_offset(Idx::from(3641)), Some(0x1e38b7));
-    assert_eq!(offsets.function_offset_to_idx(0x1e38b7), Some(Idx::from(3641)));
-    assert_eq!(offsets.function_idx_to_offset(Idx::from(3642)), Some(0x1e38d2));
-    assert_eq!(offsets.function_offset_to_idx(0x1e38d2), Some(Idx::from(3642)));
+    assert_eq!(offsets.function_idx_to_offset(Idx::from(3641u32)), Some(0x1e38b7));
+    assert_eq!(offsets.function_offset_to_idx(0x1e38b7), Some(Idx::from(3641u32)));
+    assert_eq!(offsets.function_idx_to_offset(Idx::from(3642u32)), Some(0x1e38d2));
+    assert_eq!(offsets.function_offset_to_idx(0x1e38d2), Some(Idx::from(3642u32)));
 }
 
 #[test]

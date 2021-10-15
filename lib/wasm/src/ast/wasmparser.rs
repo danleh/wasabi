@@ -1,65 +1,129 @@
 use std::cmp::max;
 use std::convert::TryInto;
-use std::{io, iter};
 use std::path::Path;
+use std::{io, iter};
 
-use wasmparser::{BinaryReaderError, Chunk, Parser, Payload};
+use wasmparser::{BinaryReaderError, Chunk, Parser, Payload, TypeDef};
 
+use crate::{FunctionType, ValType};
 use crate::error::{AddErrInfo, Error};
-use crate::highlevel::Module;
+use crate::highlevel::{Code, Function, ImportOrPresent, Module};
 use crate::lowlevel::Offsets;
 
 /// 64 KiB, the minimum amount of bytes read in one chunk from the input reader.
 const MIN_READ_SIZE: usize = 64 * 1024;
 
-pub fn parse_module_with_offsets<R: io::Read>(mut reader: R) -> Result<(Module, Offsets), BinaryReaderError> {
-    let mut buf = Vec::with_capacity(MIN_READ_SIZE);
-    let mut data = &buf[..];
-    let mut offset: u64 = 0;
-    let mut parser = Parser::new(offset);
-    let mut eof = false;
+pub fn parse_module_with_offsets<R: io::Read>(
+    mut reader: R,
+) -> Result<(Module, Offsets), BinaryReaderError> {
+    // TODO Streaming reading: read only 8-64 KiB chunks of the reader, use `Parser::parser()`.
+    let mut buf = Vec::new();
+    reader.read_to_end(&mut buf).unwrap();
 
-    loop {
+    let mut module = Module::default();
 
-        println!();
-        println!("current buf capacity: {}", buf.capacity());
-        println!("current buf len:      {}", buf.len());
-        println!("buf: {:?}", buf);
+    let mut types = Vec::new();
 
-        let (payload, consumed_bytes) = match parser.parse(data, eof)? {
-            Chunk::NeedMoreData(size_hint) => {
-                // Guaranteed by `Parser::parser()` contract.
-                assert!(!eof);
-
-                let increase_buf_size = max(MIN_READ_SIZE, size_hint as usize);
-                println!("size_hint:            {}", size_hint);
-
-                let len = buf.len();
-                buf.extend((0..increase_buf_size).map(|_| 0u8));
-                let bytes_read = reader.read(&mut buf[len..]).unwrap();
-
-                println!("read bytes:           {}", bytes_read);
-
-                buf.truncate(len + bytes_read);
-                eof = bytes_read == 0;
-
-                continue;                
-            }
-            Chunk::Parsed { consumed, payload } => (payload, consumed),
-        };
-
-        println!("consumed_bytes:    {}", consumed_bytes);
+    let offset = 0;
+    for payload in Parser::new(offset).parse_all(&buf) {
+        let payload = payload?;
         println!("{:?}", payload);
 
-        if let Payload::End = payload {
-            break;
+        match payload {
+            Payload::Version { .. } => {}
+            Payload::TypeSection(mut reader) => {
+                let count = reader.get_count();
+                types = Vec::with_capacity(count as usize);
+                for _ in 0..count {
+                    let ty = reader.read()?;
+                    match ty {
+                        TypeDef::Func(ty) => types.push(convert_func_ty(ty)),
+                        TypeDef::Instance(_) => todo!(),
+                        TypeDef::Module(_) => todo!(),
+                    }
+                }
+                assert_eq!(types.len(), count as usize);
+            },
+            Payload::ImportSection(_) => {},
+            Payload::AliasSection(_) => {},
+            Payload::InstanceSection(_) => {},
+            Payload::FunctionSection(mut reader) => {
+                let count = reader.get_count();
+                module.functions = Vec::with_capacity(count as usize);
+                for _ in 0..count {
+                    let ty_i = reader.read()? as usize;
+                    let type_ = types.get(ty_i).unwrap().clone();
+                    module.functions.push(Function { // TODO use Function::new()
+                        type_,
+                        code: ImportOrPresent::Present(Code {
+                            locals: Vec::new(),
+                            body: Vec::new(),
+                        }),
+                        export: Vec::new(),
+                        name: None,
+                        param_names: Vec::new(),
+                    })
+                }
+            },
+            Payload::TableSection(_) => {},
+            Payload::MemorySection(_) => {},
+            Payload::TagSection(_) => {},
+            Payload::GlobalSection(_) => {},
+            Payload::ExportSection(_) => {},
+            Payload::StartSection { func, range } => {
+                module.start = Some(func.into())
+            },
+            Payload::ElementSection(_) => {},
+            Payload::DataCountSection { count, range } => {},
+            Payload::DataSection(_) => {},
+            Payload::CustomSection {
+                name,
+                data_offset,
+                data,
+                range,
+            } => {},
+            Payload::CodeSectionStart { count, range, size } => {},
+            Payload::CodeSectionEntry(_) => {},
+            Payload::ModuleSectionStart { count, range, size } => {},
+            Payload::ModuleSectionEntry { parser, range } => {},
+            Payload::UnknownSection {
+                id,
+                contents,
+                range,
+            } => {},
+            Payload::End => {},
         }
-
-        buf.drain(..consumed_bytes);
-    
     }
 
-    todo!()
+    let offsets = Offsets {
+        sections: Vec::new(),
+        functions_code: Vec::new(),
+    };
+
+    Ok((module, offsets))
+}
+
+fn convert_func_ty(ty: wasmparser::FuncType) -> FunctionType {
+    FunctionType { 
+        // TODO Optimize, no intermediate collection to Vec.
+        params: ty.params.iter().cloned().map(convert_ty).collect::<Vec<_>>().into(),
+        results: ty.returns.iter().cloned().map(convert_ty).collect::<Vec<_>>().into(),
+    }
+}
+
+fn convert_ty(ty: wasmparser::Type) -> ValType {
+    match ty {
+        wasmparser::Type::I32 => ValType::I32,
+        wasmparser::Type::I64 => ValType::I64,
+        wasmparser::Type::F32 => ValType::F32,
+        wasmparser::Type::F64 => ValType::F64,
+        wasmparser::Type::V128 => todo!(),
+        wasmparser::Type::FuncRef => todo!(),
+        wasmparser::Type::ExternRef => todo!(),
+        wasmparser::Type::ExnRef => todo!(),
+        wasmparser::Type::Func => todo!(),
+        wasmparser::Type::EmptyBlockType => todo!(),
+    }
 }
 
 // impl<T> AddErrInfo<T> for Result<T, BinaryReaderError> {

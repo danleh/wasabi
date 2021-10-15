@@ -56,7 +56,7 @@ impl highlevel::Module {
     pub fn from_file_with_offsets_wasmparser(path: impl AsRef<Path>) -> Result<(Self, Offsets), Box<dyn std::error::Error>> {
         let reader = File::open(path)?;
         // TODO benchmark, but if I do the buffer mgmt right, this should not be necessary
-        // let reader = BufReader::new(reader);
+        let reader = BufReader::new(reader);
         Ok(ast::wasmparser::parse_module_with_offsets(reader)?)
     }
 

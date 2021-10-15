@@ -16,7 +16,7 @@ pub struct Offsets {
     /// Section offsets point to the beginning of the content of a section, i.e., after the size.
     pub sections: Vec<(Discriminant<Section>, usize)>,
     /// Code offsets are only present for non-imported function, and also point to after the size
-    /// if the code element (similar to section offsets).
+    /// in the code element (similar to section offsets).
     pub functions_code: Vec<(Idx<Function>, usize)>,
 }
 
