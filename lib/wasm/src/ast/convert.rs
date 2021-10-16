@@ -119,7 +119,7 @@ impl From<ll::Module> for hl::Module {
                             hl::Function::new(
                                 types[type_idx.into_inner()].clone(),
                                 // Use an empty body/locals for now, code is only converted later.
-                                hl::Code { locals: vec![], body: vec![] },
+                                hl::Code::new(),
                             )
                         );
                     }

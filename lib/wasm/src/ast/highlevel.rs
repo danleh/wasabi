@@ -82,6 +82,7 @@ pub struct Memory {
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Code {
     pub locals: Vec<Local>,
+    // TODO rename to instrs
     pub body: Expr,
 }
 
@@ -1193,6 +1194,15 @@ impl Global {
 }
 
 impl Table {
+    pub fn new(type_: TableType) -> Table {
+        Table {
+            type_,
+            import: None,
+            elements: Vec::new(),
+            export: Vec::new(),
+        }
+    }
+
     pub fn new_imported(type_: TableType, import_module: String, import_name: String) -> Table {
         Table { 
             type_, 
@@ -1208,6 +1218,15 @@ impl Table {
 }
 
 impl Memory {
+    pub fn new(type_: MemoryType) -> Memory {
+        Memory {
+            type_,
+            import: None,
+            data: Vec::new(),
+            export: Vec::new(),
+        }
+    }
+
     pub fn new_imported(type_: MemoryType, import_module: String, import_name: String) -> Memory {
         Memory { 
             type_, 
