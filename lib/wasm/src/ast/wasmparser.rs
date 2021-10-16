@@ -4,9 +4,15 @@ use std::{fmt, io, iter};
 use ordered_float::OrderedFloat;
 use wasmparser::{ImportSectionEntryType, Parser, Payload, TypeDef};
 
-use crate::highlevel::{Code, Function, Global, GlobalOp, ImportOrPresent, Instr, LoadOp, LocalOp, Memory, Module, StoreOp, Table};
+use crate::highlevel::{
+    Code, Data, Element, Function, Global, GlobalOp, ImportOrPresent, Instr, LoadOp, Local,
+    LocalOp, Memory, Module, StoreOp, Table,
+};
 use crate::lowlevel::Offsets;
-use crate::{BlockType, ElemType, FunctionType, GlobalType, Label, Limits, Memarg, MemoryType, Mutability, TableType, Val, ValType};
+use crate::{
+    BlockType, ElemType, FunctionType, GlobalType, Idx, Label, Limits, Memarg, MemoryType,
+    Mutability, TableType, Val, ValType,
+};
 
 /// 64 KiB, the minimum amount of bytes read in one chunk from the input reader.
 const MIN_READ_SIZE: usize = 64 * 1024;
@@ -20,7 +26,11 @@ pub fn parse_module_with_offsets<R: io::Read>(
     reader.read_to_end(&mut buf)?;
 
     let mut module = Module::default();
+
+    // State during module parsing.
     let mut types = Types::none();
+    let mut imported_function_count = 0;
+    let mut current_code_idx = 0;
 
     let offset = 0;
     for payload in Parser::new(offset).parse_all(&buf) {
@@ -36,7 +46,7 @@ pub fn parse_module_with_offsets<R: io::Read>(
                     match ty {
                         TypeDef::Func(ty) => types.add(ty)?,
                         TypeDef::Instance(_) | TypeDef::Module(_) => {
-                            Err(UnsupportedError::new(WasmExtension::ModuleLinking))?
+                            Err(UnsupportedError(WasmExtension::ModuleLinking))?
                         }
                     }
                 }
@@ -49,13 +59,18 @@ pub fn parse_module_with_offsets<R: io::Read>(
                     let import_module = import.module.to_string();
                     let import_name = import
                         .field
-                        .ok_or(UnsupportedError::new(WasmExtension::ModuleLinking))?
+                        .ok_or(UnsupportedError(WasmExtension::ModuleLinking))?
                         .to_string();
 
                     match import.ty {
-                        ImportSectionEntryType::Function(ty_i) => module.functions.push(
-                            Function::new_imported(types.get(ty_i)?, import_module, import_name),
-                        ),
+                        ImportSectionEntryType::Function(ty_i) => {
+                            imported_function_count += 1;
+                            module.functions.push(Function::new_imported(
+                                types.get(ty_i)?,
+                                import_module,
+                                import_name,
+                            ))
+                        }
                         ImportSectionEntryType::Global(ty) => module.globals.push(
                             Global::new_imported(convert_global_ty(ty), import_module, import_name),
                         ),
@@ -70,40 +85,50 @@ pub fn parse_module_with_offsets<R: io::Read>(
                             ))
                         }
                         ImportSectionEntryType::Tag(_) => {
-                            Err(UnsupportedError::new(WasmExtension::ExceptionHandling))?
+                            Err(UnsupportedError(WasmExtension::ExceptionHandling))?
                         }
                         ImportSectionEntryType::Module(_) | ImportSectionEntryType::Instance(_) => {
-                            Err(UnsupportedError::new(WasmExtension::ModuleLinking))?
+                            Err(UnsupportedError(WasmExtension::ModuleLinking))?
                         }
                     }
                 }
             }
-            Payload::AliasSection(_) => Err(UnsupportedError::new(WasmExtension::ModuleLinking))?,
-            Payload::InstanceSection(_) => {
-                Err(UnsupportedError::new(WasmExtension::ModuleLinking))?
-            }
+            Payload::AliasSection(_) => Err(UnsupportedError(WasmExtension::ModuleLinking))?,
+            Payload::InstanceSection(_) => Err(UnsupportedError(WasmExtension::ModuleLinking))?,
             Payload::FunctionSection(mut reader) => {
                 let count = reader.get_count();
-                module.functions = Vec::with_capacity(count as usize);
+                module.functions.reserve(u32_to_usize(count));
                 for _ in 0..count {
                     let ty_i = reader.read()?;
                     let type_ = types.get(ty_i)?;
-                    module.functions.push(Function::new(
-                        type_,
-                        // Use empty locals and body for now, fill in later when parsing the code section.
-                        Code::new(),
-                    ));
+                    // Fill in the code of the function later with the code section.
+                    module.functions.push(Function::new(type_, Code::new()));
                 }
             }
-            Payload::TableSection(_) => {
-                todo!()
+            Payload::TableSection(mut reader) => {
+                let count = reader.get_count();
+                module.tables.reserve(u32_to_usize(count));
+                for _ in 0..count {
+                    let type_ = reader.read()?;
+                    let type_ = convert_table_ty(type_)?;
+                    // Fill in the elements of the table later with the elem section.
+                    module.tables.push(Table::new(type_));
+                }
             }
-            Payload::MemorySection(_) => {
-                todo!()
+            Payload::MemorySection(mut reader) => {
+                let count = reader.get_count();
+                module.memories.reserve(u32_to_usize(count));
+                for _ in 0..count {
+                    let type_ = reader.read()?;
+                    let type_ = convert_memory_ty(type_)?;
+                    // Fill in the data of the memory later with the data section.
+                    module.memories.push(Memory::new(type_));
+                }
             }
-            Payload::TagSection(_) => Err(UnsupportedError::new(WasmExtension::ExceptionHandling))?,
+            Payload::TagSection(_) => Err(UnsupportedError(WasmExtension::ExceptionHandling))?,
             Payload::GlobalSection(mut reader) => {
                 let count = reader.get_count();
+                module.globals.reserve(u32_to_usize(count));
                 for _ in 0..count {
                     let global = reader.read()?;
                     let type_ = convert_global_ty(global.ty);
@@ -117,18 +142,137 @@ pub fn parse_module_with_offsets<R: io::Read>(
                     module.globals.push(Global::new(type_, init))
                 }
             }
-            Payload::ExportSection(_) => {
-                todo!()
+            Payload::ExportSection(mut reader) => {
+                let count = reader.get_count();
+                for _ in 0..count {
+                    let export = reader.read()?;
+                    let name = export.field.to_string();
+                    let idx = u32_to_usize(export.index);
+                    use wasmparser::ExternalKind;
+                    match export.kind {
+                        ExternalKind::Function => module
+                            .functions
+                            .get_mut(idx)
+                            .ok_or(IndexError::<Function>(idx.into()))?
+                            .export
+                            .push(name),
+                        ExternalKind::Table => module
+                            .tables
+                            .get_mut(idx)
+                            .ok_or(IndexError::<Table>(idx.into()))?
+                            .export
+                            .push(name),
+                        ExternalKind::Memory => module
+                            .memories
+                            .get_mut(idx)
+                            .ok_or(IndexError::<Memory>(idx.into()))?
+                            .export
+                            .push(name),
+                        ExternalKind::Global => module
+                            .globals
+                            .get_mut(idx)
+                            .ok_or(IndexError::<Global>(idx.into()))?
+                            .export
+                            .push(name),
+                        ExternalKind::Tag => {
+                            Err(UnsupportedError(WasmExtension::ExceptionHandling))?
+                        }
+                        ExternalKind::Type => Err(UnsupportedError(WasmExtension::TypeImports))?,
+                        ExternalKind::Module | ExternalKind::Instance => {
+                            Err(UnsupportedError(WasmExtension::ModuleLinking))?
+                        }
+                    }
+                }
             }
-            Payload::StartSection { func, range } => module.start = Some(func.into()),
-            Payload::ElementSection(_) => {
-                todo!()
+            Payload::StartSection { func, range: _ } => module.start = Some(func.into()),
+            Payload::ElementSection(mut reader) => {
+                let count = reader.get_count();
+                for _ in 0..count {
+                    let element = reader.read()?;
+                    let elem_type = convert_elem_ty(element.ty)?;
+
+                    let items_reader = element.items.get_items_reader()?;
+                    let mut items = Vec::with_capacity(u32_to_usize(items_reader.get_count()));
+                    for item in items_reader {
+                        let item = item?;
+                        use wasmparser::ElementItem;
+                        items.push(match item {
+                            ElementItem::Func(idx) => idx.into(),
+                            ElementItem::Expr(_) => todo!(),
+                        });
+                    }
+
+                    use wasmparser::ElementKind;
+                    match element.kind {
+                        ElementKind::Active {
+                            table_index,
+                            init_expr,
+                        } => {
+                            let table = module
+                                .tables
+                                .get_mut(u32_to_usize(table_index))
+                                .ok_or(IndexError::<Table>(table_index.into()))?;
+
+                            // TODO I am not sure this is correct.
+                            if table.type_.0 != elem_type {
+                                Err("type error: table and element not fitting together")?
+                            }
+
+                            // Most offset expressions are just a constant and the end instruction.
+                            let mut offset = Vec::with_capacity(2);
+                            for op in init_expr.get_operators_reader() {
+                                offset.push(convert_instr(op?, &types)?)
+                            }
+
+                            table.elements.push(Element {
+                                offset,
+                                functions: items,
+                            })
+                        }
+                        ElementKind::Passive => {
+                            Err(UnsupportedError(WasmExtension::BulkMemoryOperations))?
+                        }
+                        ElementKind::Declared => {
+                            Err(UnsupportedError(WasmExtension::ReferenceTypes))?
+                        }
+                    }
+                }
             }
-            Payload::DataCountSection { count, range } => {
-                todo!()
+            Payload::DataCountSection { count: _, range: _ } => {
+                Err(UnsupportedError(WasmExtension::BulkMemoryOperations))?
             }
-            Payload::DataSection(_) => {
-                todo!()
+            Payload::DataSection(mut reader) => {
+                let count = reader.get_count();
+                for _ in 0..count {
+                    let data = reader.read()?;
+
+                    use wasmparser::DataKind;
+                    match data.kind {
+                        DataKind::Active {
+                            memory_index,
+                            init_expr,
+                        } => {
+                            let memory = module
+                                .memories
+                                .get_mut(u32_to_usize(memory_index))
+                                .ok_or(IndexError::<Memory>(memory_index.into()))?;
+
+                            // Most offset expressions are just a constant and the end instruction.
+                            let mut offset = Vec::with_capacity(2);
+                            for op in init_expr.get_operators_reader() {
+                                offset.push(convert_instr(op?, &types)?)
+                            }
+
+                            memory.data.push(Data {
+                                offset,
+                                bytes: data.data.to_vec(),
+                            })
+                        }
+                        DataKind::Passive => {
+                            Err(UnsupportedError(WasmExtension::BulkMemoryOperations))?
+                        }
+                    }
+                }
             }
             Payload::CustomSection {
                 name,
@@ -137,28 +281,49 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 range,
             } => {
                 todo!()
+                // TODO name section
+                // TODO other sections -> ignore/save as data
             }
-            Payload::CodeSectionStart { count, range, size } => {
-                todo!()
-            }
-            Payload::CodeSectionEntry(_) => {
-                todo!()
-            }
-            Payload::ModuleSectionStart { count, range, size } => {
-                todo!()
-            }
-            Payload::ModuleSectionEntry { parser, range } => {
-                todo!()
-            }
-            Payload::UnknownSection {
-                id,
-                contents,
-                range,
+            Payload::CodeSectionStart {
+                count: _,
+                range: _,
+                size: _,
             } => {
-                todo!()
+                // Because the individual code section entries (i.e., function bodies)
+                // are parsed in the following, we don't need to do anything with the
+                // code section start itself.
             }
+            Payload::CodeSectionEntry(body) => {
+                // TODO parallelize
+
+                let func_idx = imported_function_count + current_code_idx;
+                let function = module
+                    .functions
+                    .get_mut(func_idx)
+                    .ok_or(IndexError::<Function>(func_idx.into()))?;
+
+                function.code = ImportOrPresent::Present(parse_body(body, &types)?);
+
+                current_code_idx += 1;
+            }
+            Payload::ModuleSectionStart {
+                count: _,
+                range: _,
+                size: _,
+            } => Err(UnsupportedError(WasmExtension::ModuleLinking))?,
+            Payload::ModuleSectionEntry {
+                parser: _,
+                range: _,
+            } => Err(UnsupportedError(WasmExtension::ModuleLinking))?,
+            Payload::UnknownSection {
+                id: _,
+                contents: _,
+                range: _,
+            } => Err("unknown section")?,
             Payload::End => {
-                todo!()
+                // I don't understand what this end marker is for?
+                // If the module ended (i.e., the input buffer is exhausted),
+                // there isn't any payload following, so this won't reach anyway.
             }
         }
     }
@@ -169,6 +334,37 @@ pub fn parse_module_with_offsets<R: io::Read>(
     };
 
     Ok((module, offsets))
+}
+
+fn parse_body(
+    body: wasmparser::FunctionBody,
+    types: &Types,
+) -> Result<Code, Box<dyn std::error::Error>> {
+    let mut locals = Vec::new();
+    for local in body.get_locals_reader()? {
+        let (count, type_) = local?;
+        for _ in 0..count {
+            locals.push(Local::new(convert_ty(type_)));
+        }
+    }
+
+    // There is roughly one instruction per byte, so reserve space for
+    // approximately this many instructions.
+    let wasmparser::Range {
+        start: body_start,
+        end: body_end,
+    } = body.range();
+    let body_byte_size = body_end - body_start;
+    let mut instrs = Vec::with_capacity(body_byte_size);
+
+    for op in body.get_operators_reader()? {
+        instrs.push(convert_instr(op?, &types)?);
+    }
+
+    Ok(Code {
+        locals,
+        body: instrs,
+    })
 }
 
 #[allow(unused)]
@@ -194,7 +390,7 @@ fn convert_instr(
         | wp::Throw { index: _ }
         | wp::Rethrow { relative_depth: _ }
         | wp::Delegate { relative_depth: _ } => {
-            Err(UnsupportedError::new(WasmExtension::ExceptionHandling))?
+            Err(UnsupportedError(WasmExtension::ExceptionHandling))?
         }
 
         wp::Br { relative_depth } => Br(Label(relative_depth)),
@@ -221,12 +417,12 @@ fn convert_instr(
         | wp::ReturnCallIndirect {
             index: _,
             table_index: _,
-        } => Err(UnsupportedError::new(WasmExtension::TailCall))?,
+        } => Err(UnsupportedError(WasmExtension::TailCall))?,
 
         wp::Drop => Drop,
         wp::Select => Select,
 
-        wp::TypedSelect { ty } => Err(UnsupportedError::new(WasmExtension::ReferenceTypes))?,
+        wp::TypedSelect { ty } => Err(UnsupportedError(WasmExtension::ReferenceTypes))?,
 
         wp::LocalGet { local_index } => Local(LocalOp::Get, local_index.into()),
         wp::LocalSet { local_index } => Local(LocalOp::Set, local_index.into()),
@@ -266,25 +462,25 @@ fn convert_instr(
         // above 255, so ignore `mem_byte` here.
         wp::MemorySize { mem, mem_byte: _ } => {
             if mem != 0 {
-                Err(UnsupportedError::new(WasmExtension::MultiMemory))?
+                Err(UnsupportedError(WasmExtension::MultiMemory))?
             }
             MemorySize(0u32.into())
-        },
+        }
         wp::MemoryGrow { mem, mem_byte: _ } => {
             if mem != 0 {
-                Err(UnsupportedError::new(WasmExtension::MultiMemory))?
+                Err(UnsupportedError(WasmExtension::MultiMemory))?
             }
             MemoryGrow(0u32.into())
-        },
+        }
 
         wp::I32Const { value } => Const(Val::I32(value)),
         wp::I64Const { value } => Const(Val::I64(value)),
         wp::F32Const { value } => Const(Val::F32(OrderedFloat(f32::from_bits(value.bits())))),
         wp::F64Const { value } => Const(Val::F64(OrderedFloat(f64::from_bits(value.bits())))),
 
-        wp::RefNull { ty: _ } |
-        wp::RefIsNull |
-        wp::RefFunc { function_index: _ } => Err(UnsupportedError::new(WasmExtension::ReferenceTypes))?,
+        wp::RefNull { ty: _ } | wp::RefIsNull | wp::RefFunc { function_index: _ } => {
+            Err(UnsupportedError(WasmExtension::ReferenceTypes))?
+        }
 
         wp::I32Eqz => todo!(),
         wp::I32Eq => todo!(),
@@ -744,9 +940,12 @@ fn convert_instr(
 }
 
 fn convert_memarg(memarg: wasmparser::MemoryImmediate) -> Result<Memarg, UnsupportedError> {
-    let offset: u32 = memarg.offset.try_into().map_err(|_| UnsupportedError::new(WasmExtension::Memory64))?;
+    let offset: u32 = memarg
+        .offset
+        .try_into()
+        .map_err(|_| UnsupportedError(WasmExtension::Memory64))?;
     if memarg.memory != 0 {
-        Err(UnsupportedError::new(WasmExtension::MultiMemory))?
+        Err(UnsupportedError(WasmExtension::MultiMemory))?
     }
     Ok(Memarg {
         alignment_exp: memarg.align,
@@ -756,7 +955,7 @@ fn convert_memarg(memarg: wasmparser::MemoryImmediate) -> Result<Memarg, Unsuppo
 
 fn convert_memory_ty(ty: wasmparser::MemoryType) -> Result<MemoryType, UnsupportedError> {
     if ty.memory64 {
-        Err(UnsupportedError::new(WasmExtension::Memory64))?
+        Err(UnsupportedError(WasmExtension::Memory64))?
     }
     Ok(MemoryType(Limits {
         initial_size: ty
@@ -836,17 +1035,18 @@ fn convert_global_ty(ty: wasmparser::GlobalType) -> GlobalType {
 }
 
 fn convert_ty(ty: wasmparser::Type) -> ValType {
+    use wasmparser::Type;
     match ty {
-        wasmparser::Type::I32 => ValType::I32,
-        wasmparser::Type::I64 => ValType::I64,
-        wasmparser::Type::F32 => ValType::F32,
-        wasmparser::Type::F64 => ValType::F64,
-        wasmparser::Type::V128 => todo!(),
-        wasmparser::Type::FuncRef => todo!(),
-        wasmparser::Type::ExternRef => todo!(),
-        wasmparser::Type::ExnRef => todo!(),
-        wasmparser::Type::Func => todo!(),
-        wasmparser::Type::EmptyBlockType => unreachable!("this function should only be called with generic types, for block types this should already be covered"),
+        Type::I32 => ValType::I32,
+        Type::I64 => ValType::I64,
+        Type::F32 => ValType::F32,
+        Type::F64 => ValType::F64,
+        Type::V128 => todo!(),
+        Type::FuncRef => todo!(),
+        Type::ExternRef => todo!(),
+        Type::ExnRef => todo!(),
+        Type::Func => todo!(),
+        Type::EmptyBlockType => unreachable!("this function should only be called with generic types, for block types this should already be covered"),
     }
 }
 
@@ -858,10 +1058,27 @@ fn convert_ty(ty: wasmparser::Type) -> ValType {
 // }
 
 #[derive(Debug)]
-struct UnsupportedError {
-    //     offset: usize,
-    extension: WasmExtension,
+struct IndexError<T>(Idx<T>);
+
+impl<T: fmt::Debug> std::error::Error for IndexError<T> {}
+
+impl<T> fmt::Display for IndexError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let type_name = std::any::type_name::<T>().split("::").last().unwrap();
+        writeln!(
+            f,
+            "{} index out of bounds: {}",
+            type_name,
+            self.0.into_inner()
+        )
+    }
 }
+
+// TODO higher level error type that contains:
+//     offset: usize,
+
+#[derive(Debug)]
+struct UnsupportedError(WasmExtension);
 
 impl std::error::Error for UnsupportedError {}
 
@@ -870,19 +1087,13 @@ impl fmt::Display for UnsupportedError {
         writeln!(
             f,
             "This module uses a WebAssembly extension we don't support yet: {}",
-            self.extension.name()
+            self.0.name()
         )?;
         writeln!(
             f,
             "See {} for more information about the extension.",
-            self.extension.url()
+            self.0.url()
         )
-    }
-}
-
-impl UnsupportedError {
-    pub fn new(extension: WasmExtension) -> Self {
-        UnsupportedError { extension }
     }
 }
 
@@ -894,6 +1105,8 @@ pub enum WasmExtension {
     TailCall,
     ReferenceTypes,
     MultiMemory,
+    TypeImports,
+    BulkMemoryOperations,
 }
 
 impl WasmExtension {
@@ -905,7 +1118,9 @@ impl WasmExtension {
             ExceptionHandling => "exception handling",
             TailCall => "tail calls",
             ReferenceTypes => "reference types",
-            MultiMemory => "multiple memories"
+            MultiMemory => "multiple memories",
+            TypeImports => "type imports",
+            BulkMemoryOperations => "bulk memory operations",
         }
     }
 
@@ -917,7 +1132,9 @@ impl WasmExtension {
             ExceptionHandling => r"https://github.com/WebAssembly/exception-handling",
             TailCall => r"https://github.com/WebAssembly/tail-call",
             ReferenceTypes => r"https://github.com/WebAssembly/reference-types",
-            MultiMemory => r"https://github.com/WebAssembly/multi-memory"
+            MultiMemory => r"https://github.com/WebAssembly/multi-memory",
+            TypeImports => r"https://github.com/WebAssembly/proposal-type-imports",
+            BulkMemoryOperations => r"https://github.com/WebAssembly/bulk-memory-operations",
         }
     }
 }
@@ -950,14 +1167,15 @@ impl Types {
         Ok(())
     }
 
-    // TODO typed error
-    pub fn get(&self, idx: u32) -> Result<FunctionType, &'static str> {
-        self.0
+    pub fn get(&self, idx: u32) -> Result<FunctionType, Box<dyn std::error::Error>> {
+        Ok(self
+            .0
             .as_ref()
+            // TODO typed error
             .ok_or("missing type section")?
             .get(u32_to_usize(idx))
             .cloned()
-            .ok_or("missing type at index ?")
+            .ok_or(IndexError::<FunctionType>(idx.into()))?)
     }
 }
 

@@ -19,6 +19,9 @@ const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &'static str = "../../tests/inputs
 fn test_main() {
     // let wasm = &b"\0asm\x01\0\0\0"[..];
     let wasm = std::fs::read(WASM_TEST_INPUT_LARGE).unwrap();
+
+    let wasm_old = highlevel::Module::from_file(WASM_TEST_INPUT_LARGE).unwrap();
+
     println!("{:#?}", crate::wasmparser::parse_module_with_offsets(&wasm[..]));
 }
 
