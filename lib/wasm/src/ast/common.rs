@@ -17,6 +17,7 @@ pub enum Val {
     I64(i64),
     // Wrap floats, such that they can be ordered and compared (unlike IEEE754 floats),
     // to make it possible, e.g., to put instructions in HashSets etc.
+    // TODO replace those with bitpatterns of the floats, similar to wasmparser::Ieee32 and 64
     F32(OrderedFloat<f32>),
     F64(OrderedFloat<f64>),
 }

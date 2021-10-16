@@ -88,8 +88,7 @@ impl From<ll::Module> for hl::Module {
                             ll::ImportType::Function(type_idx) => module.functions.push(
                                 hl::Function::new_imported(
                                     types[type_idx.into_inner()].clone(),
-                                    import_.module, import_.name,
-                                    export)
+                                    import_.module, import_.name)
                             ),
                             ll::ImportType::Global(type_) => module.globals.push(hl::Global {
                                 type_,
@@ -121,7 +120,6 @@ impl From<ll::Module> for hl::Module {
                                 types[type_idx.into_inner()].clone(),
                                 // Use an empty body/locals for now, code is only converted later.
                                 hl::Code { locals: vec![], body: vec![] },
-                                Vec::new()
                             )
                         );
                     }

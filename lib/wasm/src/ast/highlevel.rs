@@ -51,7 +51,7 @@ pub struct Function {
     // it is currently impossible to change the number of function parameters without breaking the
     // invariant.
     // However, so far it was never necessary to change the type signature of an existing function.
-    pub(crate) param_names: Vec<Option<String>>,
+    param_names: Vec<Option<String>>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -166,6 +166,7 @@ pub enum Instr {
     Load(LoadOp, Memarg),
     Store(StoreOp, Memarg),
 
+    /// TODO remove memory index, because we can only handle Idx=0 anyway.
     MemorySize(Idx<Memory>),
     MemoryGrow(Idx<Memory>),
 
@@ -847,7 +848,6 @@ impl Module {
                 locals: locals.into_iter().map(Local::new).collect(),
                 body,
             },
-            Vec::new(),
         ));
         (self.functions.len() - 1).into()
     }
@@ -856,7 +856,6 @@ impl Module {
         self.functions.push(Function::new_imported(
             type_,
             module, name,
-            Vec::new(),
         ));
         (self.functions.len() - 1).into()
     }
@@ -880,23 +879,23 @@ impl Module {
 }
 
 impl Function {
-    pub fn new(type_: FunctionType, code: Code, export: Vec<String>) -> Self {
+    pub fn new(type_: FunctionType, code: Code) -> Self {
         let param_names = vec![None; type_.params.len()];
         Function {
             type_,
             code: ImportOrPresent::Present(code),
-            export,
+            export: Vec::new(),
             name: None,
             param_names,
         }
     }
 
-    pub fn new_imported(type_: FunctionType, import_module: String, import_name: String, export: Vec<String>) -> Self {
+    pub fn new_imported(type_: FunctionType, import_module: String, import_name: String) -> Self {
         let param_names = vec![None; type_.params.len()];
         Function {
             type_,
             code: ImportOrPresent::Import(import_module, import_name),
-            export,
+            export: Vec::new(),
             name: None,
             param_names,
         }
@@ -1121,6 +1120,12 @@ impl Local {
     }
 }
 
+impl Code {
+    pub fn new() -> Self {
+        Code { locals: Vec::new(), body: Vec::new() }
+    }
+}
+
 // See description on enum type above.
 impl<'a> ParamOrLocalRef<'a> {
     pub fn type_(self) -> ValType {
@@ -1154,6 +1159,22 @@ impl<'a> ParamOrLocalMut<'a> {
 }
 
 impl Global {
+    pub fn new(type_: GlobalType, init: Expr) -> Self {
+        Global { 
+            type_, 
+            init: ImportOrPresent::Present(init), 
+            export: Vec::new(), 
+        }
+    }
+
+    pub fn new_imported(type_: GlobalType, import_module: String, import_name: String) -> Self {
+        Global { 
+            type_, 
+            init: ImportOrPresent::Import(import_module, import_name), 
+            export: Vec::new(),
+        }
+    }
+
     pub fn import(&self) -> Option<(&str, &str)> {
         if let ImportOrPresent::Import(module, name) = &self.init {
             Some((module.as_str(), name.as_str()))
@@ -1172,12 +1193,30 @@ impl Global {
 }
 
 impl Table {
+    pub fn new_imported(type_: TableType, import_module: String, import_name: String) -> Table {
+        Table { 
+            type_, 
+            import: Some((import_module, import_name)),
+            elements: Vec::new(),
+            export: Vec::new()
+        }
+    }
+
     pub fn import(&self) -> Option<(&str, &str)> {
         self.import.as_ref().map(|(module, name)| (module.as_str(), name.as_str()))
     }
 }
 
 impl Memory {
+    pub fn new_imported(type_: MemoryType, import_module: String, import_name: String) -> Memory {
+        Memory { 
+            type_, 
+            import: Some((import_module, import_name)),
+            data: Vec::new(), 
+            export: Vec::new()
+        }
+    }
+
     pub fn import(&self) -> Option<(&str, &str)> {
         self.import.as_ref().map(|(module, name)| (module.as_str(), name.as_str()))
     }
