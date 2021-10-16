@@ -4,10 +4,7 @@ use std::{fmt, io, iter};
 use ordered_float::OrderedFloat;
 use wasmparser::{ImportSectionEntryType, Parser, Payload, TypeDef};
 
-use crate::highlevel::{
-    Code, Data, Element, Function, Global, GlobalOp, ImportOrPresent, Instr, LoadOp, Local,
-    LocalOp, Memory, Module, StoreOp, Table,
-};
+use crate::highlevel::{Code, Data, Element, Function, Global, GlobalOp, ImportOrPresent, Instr, LoadOp, Local, LocalOp, Memory, Module, NumericOp, StoreOp, Table};
 use crate::lowlevel::Offsets;
 use crate::{
     BlockType, ElemType, FunctionType, GlobalType, Idx, Label, Limits, Memarg, MemoryType,
@@ -482,460 +479,464 @@ fn convert_instr(
             Err(UnsupportedError(WasmExtension::ReferenceTypes))?
         }
 
-        wp::I32Eqz => todo!(),
-        wp::I32Eq => todo!(),
-        wp::I32Ne => todo!(),
-        wp::I32LtS => todo!(),
-        wp::I32LtU => todo!(),
-        wp::I32GtS => todo!(),
-        wp::I32GtU => todo!(),
-        wp::I32LeS => todo!(),
-        wp::I32LeU => todo!(),
-        wp::I32GeS => todo!(),
-        wp::I32GeU => todo!(),
-        wp::I64Eqz => todo!(),
-        wp::I64Eq => todo!(),
-        wp::I64Ne => todo!(),
-        wp::I64LtS => todo!(),
-        wp::I64LtU => todo!(),
-        wp::I64GtS => todo!(),
-        wp::I64GtU => todo!(),
-        wp::I64LeS => todo!(),
-        wp::I64LeU => todo!(),
-        wp::I64GeS => todo!(),
-        wp::I64GeU => todo!(),
-        wp::F32Eq => todo!(),
-        wp::F32Ne => todo!(),
-        wp::F32Lt => todo!(),
-        wp::F32Gt => todo!(),
-        wp::F32Le => todo!(),
-        wp::F32Ge => todo!(),
-        wp::F64Eq => todo!(),
-        wp::F64Ne => todo!(),
-        wp::F64Lt => todo!(),
-        wp::F64Gt => todo!(),
-        wp::F64Le => todo!(),
-        wp::F64Ge => todo!(),
-        wp::I32Clz => todo!(),
-        wp::I32Ctz => todo!(),
-        wp::I32Popcnt => todo!(),
-        wp::I32Add => todo!(),
-        wp::I32Sub => todo!(),
-        wp::I32Mul => todo!(),
-        wp::I32DivS => todo!(),
-        wp::I32DivU => todo!(),
-        wp::I32RemS => todo!(),
-        wp::I32RemU => todo!(),
-        wp::I32And => todo!(),
-        wp::I32Or => todo!(),
-        wp::I32Xor => todo!(),
-        wp::I32Shl => todo!(),
-        wp::I32ShrS => todo!(),
-        wp::I32ShrU => todo!(),
-        wp::I32Rotl => todo!(),
-        wp::I32Rotr => todo!(),
-        wp::I64Clz => todo!(),
-        wp::I64Ctz => todo!(),
-        wp::I64Popcnt => todo!(),
-        wp::I64Add => todo!(),
-        wp::I64Sub => todo!(),
-        wp::I64Mul => todo!(),
-        wp::I64DivS => todo!(),
-        wp::I64DivU => todo!(),
-        wp::I64RemS => todo!(),
-        wp::I64RemU => todo!(),
-        wp::I64And => todo!(),
-        wp::I64Or => todo!(),
-        wp::I64Xor => todo!(),
-        wp::I64Shl => todo!(),
-        wp::I64ShrS => todo!(),
-        wp::I64ShrU => todo!(),
-        wp::I64Rotl => todo!(),
-        wp::I64Rotr => todo!(),
-        wp::F32Abs => todo!(),
-        wp::F32Neg => todo!(),
-        wp::F32Ceil => todo!(),
-        wp::F32Floor => todo!(),
-        wp::F32Trunc => todo!(),
-        wp::F32Nearest => todo!(),
-        wp::F32Sqrt => todo!(),
-        wp::F32Add => todo!(),
-        wp::F32Sub => todo!(),
-        wp::F32Mul => todo!(),
-        wp::F32Div => todo!(),
-        wp::F32Min => todo!(),
-        wp::F32Max => todo!(),
-        wp::F32Copysign => todo!(),
-        wp::F64Abs => todo!(),
-        wp::F64Neg => todo!(),
-        wp::F64Ceil => todo!(),
-        wp::F64Floor => todo!(),
-        wp::F64Trunc => todo!(),
-        wp::F64Nearest => todo!(),
-        wp::F64Sqrt => todo!(),
-        wp::F64Add => todo!(),
-        wp::F64Sub => todo!(),
-        wp::F64Mul => todo!(),
-        wp::F64Div => todo!(),
-        wp::F64Min => todo!(),
-        wp::F64Max => todo!(),
-        wp::F64Copysign => todo!(),
-        wp::I32WrapI64 => todo!(),
-        wp::I32TruncF32S => todo!(),
-        wp::I32TruncF32U => todo!(),
-        wp::I32TruncF64S => todo!(),
-        wp::I32TruncF64U => todo!(),
-        wp::I64ExtendI32S => todo!(),
-        wp::I64ExtendI32U => todo!(),
-        wp::I64TruncF32S => todo!(),
-        wp::I64TruncF32U => todo!(),
-        wp::I64TruncF64S => todo!(),
-        wp::I64TruncF64U => todo!(),
-        wp::F32ConvertI32S => todo!(),
-        wp::F32ConvertI32U => todo!(),
-        wp::F32ConvertI64S => todo!(),
-        wp::F32ConvertI64U => todo!(),
-        wp::F32DemoteF64 => todo!(),
-        wp::F64ConvertI32S => todo!(),
-        wp::F64ConvertI32U => todo!(),
-        wp::F64ConvertI64S => todo!(),
-        wp::F64ConvertI64U => todo!(),
-        wp::F64PromoteF32 => todo!(),
-        wp::I32ReinterpretF32 => todo!(),
-        wp::I64ReinterpretF64 => todo!(),
-        wp::F32ReinterpretI32 => todo!(),
-        wp::F64ReinterpretI64 => todo!(),
-        wp::I32Extend8S => todo!(),
-        wp::I32Extend16S => todo!(),
-        wp::I64Extend8S => todo!(),
-        wp::I64Extend16S => todo!(),
-        wp::I64Extend32S => todo!(),
-        wp::I32TruncSatF32S => todo!(),
-        wp::I32TruncSatF32U => todo!(),
-        wp::I32TruncSatF64S => todo!(),
-        wp::I32TruncSatF64U => todo!(),
-        wp::I64TruncSatF32S => todo!(),
-        wp::I64TruncSatF32U => todo!(),
-        wp::I64TruncSatF64S => todo!(),
-        wp::I64TruncSatF64U => todo!(),
-        wp::MemoryInit { segment, mem } => todo!(),
-        wp::DataDrop { segment } => todo!(),
-        wp::MemoryCopy { src, dst } => todo!(),
-        wp::MemoryFill { mem } => todo!(),
-        wp::TableInit { segment, table } => todo!(),
-        wp::ElemDrop { segment } => todo!(),
-        wp::TableCopy {
-            dst_table,
-            src_table,
-        } => todo!(),
-        wp::TableFill { table } => todo!(),
-        wp::TableGet { table } => todo!(),
-        wp::TableSet { table } => todo!(),
-        wp::TableGrow { table } => todo!(),
-        wp::TableSize { table } => todo!(),
-        wp::MemoryAtomicNotify { memarg } => todo!(),
-        wp::MemoryAtomicWait32 { memarg } => todo!(),
-        wp::MemoryAtomicWait64 { memarg } => todo!(),
-        wp::AtomicFence { flags } => todo!(),
-        wp::I32AtomicLoad { memarg } => todo!(),
-        wp::I64AtomicLoad { memarg } => todo!(),
-        wp::I32AtomicLoad8U { memarg } => todo!(),
-        wp::I32AtomicLoad16U { memarg } => todo!(),
-        wp::I64AtomicLoad8U { memarg } => todo!(),
-        wp::I64AtomicLoad16U { memarg } => todo!(),
-        wp::I64AtomicLoad32U { memarg } => todo!(),
-        wp::I32AtomicStore { memarg } => todo!(),
-        wp::I64AtomicStore { memarg } => todo!(),
-        wp::I32AtomicStore8 { memarg } => todo!(),
-        wp::I32AtomicStore16 { memarg } => todo!(),
-        wp::I64AtomicStore8 { memarg } => todo!(),
-        wp::I64AtomicStore16 { memarg } => todo!(),
-        wp::I64AtomicStore32 { memarg } => todo!(),
-        wp::I32AtomicRmwAdd { memarg } => todo!(),
-        wp::I64AtomicRmwAdd { memarg } => todo!(),
-        wp::I32AtomicRmw8AddU { memarg } => todo!(),
-        wp::I32AtomicRmw16AddU { memarg } => todo!(),
-        wp::I64AtomicRmw8AddU { memarg } => todo!(),
-        wp::I64AtomicRmw16AddU { memarg } => todo!(),
-        wp::I64AtomicRmw32AddU { memarg } => todo!(),
-        wp::I32AtomicRmwSub { memarg } => todo!(),
-        wp::I64AtomicRmwSub { memarg } => todo!(),
-        wp::I32AtomicRmw8SubU { memarg } => todo!(),
-        wp::I32AtomicRmw16SubU { memarg } => todo!(),
-        wp::I64AtomicRmw8SubU { memarg } => todo!(),
-        wp::I64AtomicRmw16SubU { memarg } => todo!(),
-        wp::I64AtomicRmw32SubU { memarg } => todo!(),
-        wp::I32AtomicRmwAnd { memarg } => todo!(),
-        wp::I64AtomicRmwAnd { memarg } => todo!(),
-        wp::I32AtomicRmw8AndU { memarg } => todo!(),
-        wp::I32AtomicRmw16AndU { memarg } => todo!(),
-        wp::I64AtomicRmw8AndU { memarg } => todo!(),
-        wp::I64AtomicRmw16AndU { memarg } => todo!(),
-        wp::I64AtomicRmw32AndU { memarg } => todo!(),
-        wp::I32AtomicRmwOr { memarg } => todo!(),
-        wp::I64AtomicRmwOr { memarg } => todo!(),
-        wp::I32AtomicRmw8OrU { memarg } => todo!(),
-        wp::I32AtomicRmw16OrU { memarg } => todo!(),
-        wp::I64AtomicRmw8OrU { memarg } => todo!(),
-        wp::I64AtomicRmw16OrU { memarg } => todo!(),
-        wp::I64AtomicRmw32OrU { memarg } => todo!(),
-        wp::I32AtomicRmwXor { memarg } => todo!(),
-        wp::I64AtomicRmwXor { memarg } => todo!(),
-        wp::I32AtomicRmw8XorU { memarg } => todo!(),
-        wp::I32AtomicRmw16XorU { memarg } => todo!(),
-        wp::I64AtomicRmw8XorU { memarg } => todo!(),
-        wp::I64AtomicRmw16XorU { memarg } => todo!(),
-        wp::I64AtomicRmw32XorU { memarg } => todo!(),
-        wp::I32AtomicRmwXchg { memarg } => todo!(),
-        wp::I64AtomicRmwXchg { memarg } => todo!(),
-        wp::I32AtomicRmw8XchgU { memarg } => todo!(),
-        wp::I32AtomicRmw16XchgU { memarg } => todo!(),
-        wp::I64AtomicRmw8XchgU { memarg } => todo!(),
-        wp::I64AtomicRmw16XchgU { memarg } => todo!(),
-        wp::I64AtomicRmw32XchgU { memarg } => todo!(),
-        wp::I32AtomicRmwCmpxchg { memarg } => todo!(),
-        wp::I64AtomicRmwCmpxchg { memarg } => todo!(),
-        wp::I32AtomicRmw8CmpxchgU { memarg } => todo!(),
-        wp::I32AtomicRmw16CmpxchgU { memarg } => todo!(),
-        wp::I64AtomicRmw8CmpxchgU { memarg } => todo!(),
-        wp::I64AtomicRmw16CmpxchgU { memarg } => todo!(),
-        wp::I64AtomicRmw32CmpxchgU { memarg } => todo!(),
-        wp::V128Load { memarg } => todo!(),
-        wp::V128Load8x8S { memarg } => todo!(),
-        wp::V128Load8x8U { memarg } => todo!(),
-        wp::V128Load16x4S { memarg } => todo!(),
-        wp::V128Load16x4U { memarg } => todo!(),
-        wp::V128Load32x2S { memarg } => todo!(),
-        wp::V128Load32x2U { memarg } => todo!(),
-        wp::V128Load8Splat { memarg } => todo!(),
-        wp::V128Load16Splat { memarg } => todo!(),
-        wp::V128Load32Splat { memarg } => todo!(),
-        wp::V128Load64Splat { memarg } => todo!(),
-        wp::V128Load32Zero { memarg } => todo!(),
-        wp::V128Load64Zero { memarg } => todo!(),
-        wp::V128Store { memarg } => todo!(),
-        wp::V128Load8Lane { memarg, lane } => todo!(),
-        wp::V128Load16Lane { memarg, lane } => todo!(),
-        wp::V128Load32Lane { memarg, lane } => todo!(),
-        wp::V128Load64Lane { memarg, lane } => todo!(),
-        wp::V128Store8Lane { memarg, lane } => todo!(),
-        wp::V128Store16Lane { memarg, lane } => todo!(),
-        wp::V128Store32Lane { memarg, lane } => todo!(),
-        wp::V128Store64Lane { memarg, lane } => todo!(),
-        wp::V128Const { value } => todo!(),
-        wp::I8x16Shuffle { lanes } => todo!(),
-        wp::I8x16ExtractLaneS { lane } => todo!(),
-        wp::I8x16ExtractLaneU { lane } => todo!(),
-        wp::I8x16ReplaceLane { lane } => todo!(),
-        wp::I16x8ExtractLaneS { lane } => todo!(),
-        wp::I16x8ExtractLaneU { lane } => todo!(),
-        wp::I16x8ReplaceLane { lane } => todo!(),
-        wp::I32x4ExtractLane { lane } => todo!(),
-        wp::I32x4ReplaceLane { lane } => todo!(),
-        wp::I64x2ExtractLane { lane } => todo!(),
-        wp::I64x2ReplaceLane { lane } => todo!(),
-        wp::F32x4ExtractLane { lane } => todo!(),
-        wp::F32x4ReplaceLane { lane } => todo!(),
-        wp::F64x2ExtractLane { lane } => todo!(),
-        wp::F64x2ReplaceLane { lane } => todo!(),
-        wp::I8x16Swizzle => todo!(),
-        wp::I8x16Splat => todo!(),
-        wp::I16x8Splat => todo!(),
-        wp::I32x4Splat => todo!(),
-        wp::I64x2Splat => todo!(),
-        wp::F32x4Splat => todo!(),
-        wp::F64x2Splat => todo!(),
-        wp::I8x16Eq => todo!(),
-        wp::I8x16Ne => todo!(),
-        wp::I8x16LtS => todo!(),
-        wp::I8x16LtU => todo!(),
-        wp::I8x16GtS => todo!(),
-        wp::I8x16GtU => todo!(),
-        wp::I8x16LeS => todo!(),
-        wp::I8x16LeU => todo!(),
-        wp::I8x16GeS => todo!(),
-        wp::I8x16GeU => todo!(),
-        wp::I16x8Eq => todo!(),
-        wp::I16x8Ne => todo!(),
-        wp::I16x8LtS => todo!(),
-        wp::I16x8LtU => todo!(),
-        wp::I16x8GtS => todo!(),
-        wp::I16x8GtU => todo!(),
-        wp::I16x8LeS => todo!(),
-        wp::I16x8LeU => todo!(),
-        wp::I16x8GeS => todo!(),
-        wp::I16x8GeU => todo!(),
-        wp::I32x4Eq => todo!(),
-        wp::I32x4Ne => todo!(),
-        wp::I32x4LtS => todo!(),
-        wp::I32x4LtU => todo!(),
-        wp::I32x4GtS => todo!(),
-        wp::I32x4GtU => todo!(),
-        wp::I32x4LeS => todo!(),
-        wp::I32x4LeU => todo!(),
-        wp::I32x4GeS => todo!(),
-        wp::I32x4GeU => todo!(),
-        wp::I64x2Eq => todo!(),
-        wp::I64x2Ne => todo!(),
-        wp::I64x2LtS => todo!(),
-        wp::I64x2GtS => todo!(),
-        wp::I64x2LeS => todo!(),
-        wp::I64x2GeS => todo!(),
-        wp::F32x4Eq => todo!(),
-        wp::F32x4Ne => todo!(),
-        wp::F32x4Lt => todo!(),
-        wp::F32x4Gt => todo!(),
-        wp::F32x4Le => todo!(),
-        wp::F32x4Ge => todo!(),
-        wp::F64x2Eq => todo!(),
-        wp::F64x2Ne => todo!(),
-        wp::F64x2Lt => todo!(),
-        wp::F64x2Gt => todo!(),
-        wp::F64x2Le => todo!(),
-        wp::F64x2Ge => todo!(),
-        wp::V128Not => todo!(),
-        wp::V128And => todo!(),
-        wp::V128AndNot => todo!(),
-        wp::V128Or => todo!(),
-        wp::V128Xor => todo!(),
-        wp::V128Bitselect => todo!(),
-        wp::V128AnyTrue => todo!(),
-        wp::I8x16Abs => todo!(),
-        wp::I8x16Neg => todo!(),
-        wp::I8x16Popcnt => todo!(),
-        wp::I8x16AllTrue => todo!(),
-        wp::I8x16Bitmask => todo!(),
-        wp::I8x16NarrowI16x8S => todo!(),
-        wp::I8x16NarrowI16x8U => todo!(),
-        wp::I8x16Shl => todo!(),
-        wp::I8x16ShrS => todo!(),
-        wp::I8x16ShrU => todo!(),
-        wp::I8x16Add => todo!(),
-        wp::I8x16AddSatS => todo!(),
-        wp::I8x16AddSatU => todo!(),
-        wp::I8x16Sub => todo!(),
-        wp::I8x16SubSatS => todo!(),
-        wp::I8x16SubSatU => todo!(),
-        wp::I8x16MinS => todo!(),
-        wp::I8x16MinU => todo!(),
-        wp::I8x16MaxS => todo!(),
-        wp::I8x16MaxU => todo!(),
-        wp::I8x16RoundingAverageU => todo!(),
-        wp::I16x8ExtAddPairwiseI8x16S => todo!(),
-        wp::I16x8ExtAddPairwiseI8x16U => todo!(),
-        wp::I16x8Abs => todo!(),
-        wp::I16x8Neg => todo!(),
-        wp::I16x8Q15MulrSatS => todo!(),
-        wp::I16x8AllTrue => todo!(),
-        wp::I16x8Bitmask => todo!(),
-        wp::I16x8NarrowI32x4S => todo!(),
-        wp::I16x8NarrowI32x4U => todo!(),
-        wp::I16x8ExtendLowI8x16S => todo!(),
-        wp::I16x8ExtendHighI8x16S => todo!(),
-        wp::I16x8ExtendLowI8x16U => todo!(),
-        wp::I16x8ExtendHighI8x16U => todo!(),
-        wp::I16x8Shl => todo!(),
-        wp::I16x8ShrS => todo!(),
-        wp::I16x8ShrU => todo!(),
-        wp::I16x8Add => todo!(),
-        wp::I16x8AddSatS => todo!(),
-        wp::I16x8AddSatU => todo!(),
-        wp::I16x8Sub => todo!(),
-        wp::I16x8SubSatS => todo!(),
-        wp::I16x8SubSatU => todo!(),
-        wp::I16x8Mul => todo!(),
-        wp::I16x8MinS => todo!(),
-        wp::I16x8MinU => todo!(),
-        wp::I16x8MaxS => todo!(),
-        wp::I16x8MaxU => todo!(),
-        wp::I16x8RoundingAverageU => todo!(),
-        wp::I16x8ExtMulLowI8x16S => todo!(),
-        wp::I16x8ExtMulHighI8x16S => todo!(),
-        wp::I16x8ExtMulLowI8x16U => todo!(),
-        wp::I16x8ExtMulHighI8x16U => todo!(),
-        wp::I32x4ExtAddPairwiseI16x8S => todo!(),
-        wp::I32x4ExtAddPairwiseI16x8U => todo!(),
-        wp::I32x4Abs => todo!(),
-        wp::I32x4Neg => todo!(),
-        wp::I32x4AllTrue => todo!(),
-        wp::I32x4Bitmask => todo!(),
-        wp::I32x4ExtendLowI16x8S => todo!(),
-        wp::I32x4ExtendHighI16x8S => todo!(),
-        wp::I32x4ExtendLowI16x8U => todo!(),
-        wp::I32x4ExtendHighI16x8U => todo!(),
-        wp::I32x4Shl => todo!(),
-        wp::I32x4ShrS => todo!(),
-        wp::I32x4ShrU => todo!(),
-        wp::I32x4Add => todo!(),
-        wp::I32x4Sub => todo!(),
-        wp::I32x4Mul => todo!(),
-        wp::I32x4MinS => todo!(),
-        wp::I32x4MinU => todo!(),
-        wp::I32x4MaxS => todo!(),
-        wp::I32x4MaxU => todo!(),
-        wp::I32x4DotI16x8S => todo!(),
-        wp::I32x4ExtMulLowI16x8S => todo!(),
-        wp::I32x4ExtMulHighI16x8S => todo!(),
-        wp::I32x4ExtMulLowI16x8U => todo!(),
-        wp::I32x4ExtMulHighI16x8U => todo!(),
-        wp::I64x2Abs => todo!(),
-        wp::I64x2Neg => todo!(),
-        wp::I64x2AllTrue => todo!(),
-        wp::I64x2Bitmask => todo!(),
-        wp::I64x2ExtendLowI32x4S => todo!(),
-        wp::I64x2ExtendHighI32x4S => todo!(),
-        wp::I64x2ExtendLowI32x4U => todo!(),
-        wp::I64x2ExtendHighI32x4U => todo!(),
-        wp::I64x2Shl => todo!(),
-        wp::I64x2ShrS => todo!(),
-        wp::I64x2ShrU => todo!(),
-        wp::I64x2Add => todo!(),
-        wp::I64x2Sub => todo!(),
-        wp::I64x2Mul => todo!(),
-        wp::I64x2ExtMulLowI32x4S => todo!(),
-        wp::I64x2ExtMulHighI32x4S => todo!(),
-        wp::I64x2ExtMulLowI32x4U => todo!(),
-        wp::I64x2ExtMulHighI32x4U => todo!(),
-        wp::F32x4Ceil => todo!(),
-        wp::F32x4Floor => todo!(),
-        wp::F32x4Trunc => todo!(),
-        wp::F32x4Nearest => todo!(),
-        wp::F32x4Abs => todo!(),
-        wp::F32x4Neg => todo!(),
-        wp::F32x4Sqrt => todo!(),
-        wp::F32x4Add => todo!(),
-        wp::F32x4Sub => todo!(),
-        wp::F32x4Mul => todo!(),
-        wp::F32x4Div => todo!(),
-        wp::F32x4Min => todo!(),
-        wp::F32x4Max => todo!(),
-        wp::F32x4PMin => todo!(),
-        wp::F32x4PMax => todo!(),
-        wp::F64x2Ceil => todo!(),
-        wp::F64x2Floor => todo!(),
-        wp::F64x2Trunc => todo!(),
-        wp::F64x2Nearest => todo!(),
-        wp::F64x2Abs => todo!(),
-        wp::F64x2Neg => todo!(),
-        wp::F64x2Sqrt => todo!(),
-        wp::F64x2Add => todo!(),
-        wp::F64x2Sub => todo!(),
-        wp::F64x2Mul => todo!(),
-        wp::F64x2Div => todo!(),
-        wp::F64x2Min => todo!(),
-        wp::F64x2Max => todo!(),
-        wp::F64x2PMin => todo!(),
-        wp::F64x2PMax => todo!(),
-        wp::I32x4TruncSatF32x4S => todo!(),
-        wp::I32x4TruncSatF32x4U => todo!(),
-        wp::F32x4ConvertI32x4S => todo!(),
-        wp::F32x4ConvertI32x4U => todo!(),
-        wp::I32x4TruncSatF64x2SZero => todo!(),
-        wp::I32x4TruncSatF64x2UZero => todo!(),
-        wp::F64x2ConvertLowI32x4S => todo!(),
-        wp::F64x2ConvertLowI32x4U => todo!(),
-        wp::F32x4DemoteF64x2Zero => todo!(),
-        wp::F64x2PromoteLowF32x4 => todo!(),
+        wp::I32Eqz => Numeric(NumericOp::I32Eqz),
+        wp::I32Eq => Numeric(NumericOp::I32Eq),
+        wp::I32Ne => Numeric(NumericOp::I32Ne),
+        wp::I32LtS => Numeric(NumericOp::I32LtS),
+        wp::I32LtU => Numeric(NumericOp::I32LtU),
+        wp::I32GtS => Numeric(NumericOp::I32GtS),
+        wp::I32GtU => Numeric(NumericOp::I32GtU),
+        wp::I32LeS => Numeric(NumericOp::I32LeS),
+        wp::I32LeU => Numeric(NumericOp::I32LeU),
+        wp::I32GeS => Numeric(NumericOp::I32GeS),
+        wp::I32GeU => Numeric(NumericOp::I32GeU),
+        wp::I64Eqz => Numeric(NumericOp::I64Eqz),
+        wp::I64Eq => Numeric(NumericOp::I64Eq),
+        wp::I64Ne => Numeric(NumericOp::I64Ne),
+        wp::I64LtS => Numeric(NumericOp::I64LtS),
+        wp::I64LtU => Numeric(NumericOp::I64LtU),
+        wp::I64GtS => Numeric(NumericOp::I64GtS),
+        wp::I64GtU => Numeric(NumericOp::I64GtU),
+        wp::I64LeS => Numeric(NumericOp::I64LeS),
+        wp::I64LeU => Numeric(NumericOp::I64LeU),
+        wp::I64GeS => Numeric(NumericOp::I64GeS),
+        wp::I64GeU => Numeric(NumericOp::I64GeU),
+        wp::F32Eq => Numeric(NumericOp::F32Eq),
+        wp::F32Ne => Numeric(NumericOp::F32Ne),
+        wp::F32Lt => Numeric(NumericOp::F32Lt),
+        wp::F32Gt => Numeric(NumericOp::F32Gt),
+        wp::F32Le => Numeric(NumericOp::F32Le),
+        wp::F32Ge => Numeric(NumericOp::F32Ge),
+        wp::F64Eq => Numeric(NumericOp::F64Eq),
+        wp::F64Ne => Numeric(NumericOp::F64Ne),
+        wp::F64Lt => Numeric(NumericOp::F64Lt),
+        wp::F64Gt => Numeric(NumericOp::F64Gt),
+        wp::F64Le => Numeric(NumericOp::F64Le),
+        wp::F64Ge => Numeric(NumericOp::F64Ge),
+        wp::I32Clz => Numeric(NumericOp::I32Clz),
+        wp::I32Ctz => Numeric(NumericOp::I32Ctz),
+        wp::I32Popcnt => Numeric(NumericOp::I32Popcnt),
+        wp::I32Add => Numeric(NumericOp::I32Add),
+        wp::I32Sub => Numeric(NumericOp::I32Sub),
+        wp::I32Mul => Numeric(NumericOp::I32Mul),
+        wp::I32DivS => Numeric(NumericOp::I32DivS),
+        wp::I32DivU => Numeric(NumericOp::I32DivU),
+        wp::I32RemS => Numeric(NumericOp::I32RemS),
+        wp::I32RemU => Numeric(NumericOp::I32RemU),
+        wp::I32And => Numeric(NumericOp::I32And),
+        wp::I32Or => Numeric(NumericOp::I32Or),
+        wp::I32Xor => Numeric(NumericOp::I32Xor),
+        wp::I32Shl => Numeric(NumericOp::I32Shl),
+        wp::I32ShrS => Numeric(NumericOp::I32ShrS),
+        wp::I32ShrU => Numeric(NumericOp::I32ShrU),
+        wp::I32Rotl => Numeric(NumericOp::I32Rotl),
+        wp::I32Rotr => Numeric(NumericOp::I32Rotr),
+        wp::I64Clz => Numeric(NumericOp::I64Clz),
+        wp::I64Ctz => Numeric(NumericOp::I64Ctz),
+        wp::I64Popcnt => Numeric(NumericOp::I64Popcnt),
+        wp::I64Add => Numeric(NumericOp::I64Add),
+        wp::I64Sub => Numeric(NumericOp::I64Sub),
+        wp::I64Mul => Numeric(NumericOp::I64Mul),
+        wp::I64DivS => Numeric(NumericOp::I64DivS),
+        wp::I64DivU => Numeric(NumericOp::I64DivU),
+        wp::I64RemS => Numeric(NumericOp::I64RemS),
+        wp::I64RemU => Numeric(NumericOp::I64RemU),
+        wp::I64And => Numeric(NumericOp::I64And),
+        wp::I64Or => Numeric(NumericOp::I64Or),
+        wp::I64Xor => Numeric(NumericOp::I64Xor),
+        wp::I64Shl => Numeric(NumericOp::I64Shl),
+        wp::I64ShrS => Numeric(NumericOp::I64ShrS),
+        wp::I64ShrU => Numeric(NumericOp::I64ShrU),
+        wp::I64Rotl => Numeric(NumericOp::I64Rotl),
+        wp::I64Rotr => Numeric(NumericOp::I64Rotr),
+        wp::F32Abs => Numeric(NumericOp::F32Abs),
+        wp::F32Neg => Numeric(NumericOp::F32Neg),
+        wp::F32Ceil => Numeric(NumericOp::F32Ceil),
+        wp::F32Floor => Numeric(NumericOp::F32Floor),
+        wp::F32Trunc => Numeric(NumericOp::F32Trunc),
+        wp::F32Nearest => Numeric(NumericOp::F32Nearest),
+        wp::F32Sqrt => Numeric(NumericOp::F32Sqrt),
+        wp::F32Add => Numeric(NumericOp::F32Add),
+        wp::F32Sub => Numeric(NumericOp::F32Sub),
+        wp::F32Mul => Numeric(NumericOp::F32Mul),
+        wp::F32Div => Numeric(NumericOp::F32Div),
+        wp::F32Min => Numeric(NumericOp::F32Min),
+        wp::F32Max => Numeric(NumericOp::F32Max),
+        wp::F32Copysign => Numeric(NumericOp::F32Copysign),
+        wp::F64Abs => Numeric(NumericOp::F64Abs),
+        wp::F64Neg => Numeric(NumericOp::F64Neg),
+        wp::F64Ceil => Numeric(NumericOp::F64Ceil),
+        wp::F64Floor => Numeric(NumericOp::F64Floor),
+        wp::F64Trunc => Numeric(NumericOp::F64Trunc),
+        wp::F64Nearest => Numeric(NumericOp::F64Nearest),
+        wp::F64Sqrt => Numeric(NumericOp::F64Sqrt),
+        wp::F64Add => Numeric(NumericOp::F64Add),
+        wp::F64Sub => Numeric(NumericOp::F64Sub),
+        wp::F64Mul => Numeric(NumericOp::F64Mul),
+        wp::F64Div => Numeric(NumericOp::F64Div),
+        wp::F64Min => Numeric(NumericOp::F64Min),
+        wp::F64Max => Numeric(NumericOp::F64Max),
+        wp::F64Copysign => Numeric(NumericOp::F64Copysign),
+        wp::I32WrapI64 => Numeric(NumericOp::I32WrapI64),
+        wp::I32TruncF32S => Numeric(NumericOp::I32TruncF32S),
+        wp::I32TruncF32U => Numeric(NumericOp::I32TruncF32U),
+        wp::I32TruncF64S => Numeric(NumericOp::I32TruncF64S),
+        wp::I32TruncF64U => Numeric(NumericOp::I32TruncF64U),
+        wp::I64ExtendI32S => Numeric(NumericOp::I64ExtendI32S),
+        wp::I64ExtendI32U => Numeric(NumericOp::I64ExtendI32U),
+        wp::I64TruncF32S => Numeric(NumericOp::I64TruncF32S),
+        wp::I64TruncF32U => Numeric(NumericOp::I64TruncF32U),
+        wp::I64TruncF64S => Numeric(NumericOp::I64TruncF64S),
+        wp::I64TruncF64U => Numeric(NumericOp::I64TruncF64U),
+        wp::F32ConvertI32S => Numeric(NumericOp::F32ConvertI32S),
+        wp::F32ConvertI32U => Numeric(NumericOp::F32ConvertI32U),
+        wp::F32ConvertI64S => Numeric(NumericOp::F32ConvertI64S),
+        wp::F32ConvertI64U => Numeric(NumericOp::F32ConvertI64U),
+        wp::F32DemoteF64 => Numeric(NumericOp::F32DemoteF64),
+        wp::F64ConvertI32S => Numeric(NumericOp::F64ConvertI32S),
+        wp::F64ConvertI32U => Numeric(NumericOp::F64ConvertI32U),
+        wp::F64ConvertI64S => Numeric(NumericOp::F64ConvertI64S),
+        wp::F64ConvertI64U => Numeric(NumericOp::F64ConvertI64U),
+        wp::F64PromoteF32 => Numeric(NumericOp::F64PromoteF32),
+        wp::I32ReinterpretF32 => Numeric(NumericOp::I32ReinterpretF32),
+        wp::I64ReinterpretF64 => Numeric(NumericOp::I64ReinterpretF64),
+        wp::F32ReinterpretI32 => Numeric(NumericOp::F32ReinterpretI32),
+        wp::F64ReinterpretI64 => Numeric(NumericOp::F64ReinterpretI64),
+
+        wp::I32Extend8S |
+        wp::I32Extend16S |
+        wp::I64Extend8S |
+        wp::I64Extend16S |
+        wp::I64Extend32S => Err(UnsupportedError(WasmExtension::SignExtensionOps))?,
+
+        wp::I32TruncSatF32S |
+        wp::I32TruncSatF32U |
+        wp::I32TruncSatF64S |
+        wp::I32TruncSatF64U |
+        wp::I64TruncSatF32S |
+        wp::I64TruncSatF32U |
+        wp::I64TruncSatF64S |
+        wp::I64TruncSatF64U => Err(UnsupportedError(WasmExtension::NontrappingFloatToIntConversion))?,
+
+        wp::MemoryInit { segment: _, mem: _ } |
+        wp::DataDrop { segment: _ } |
+        wp::MemoryCopy { src: _, dst: _ } |
+        wp::MemoryFill { mem: _ } |
+        wp::TableInit { segment: _, table: _ } |
+        wp::ElemDrop { segment: _ } |
+        wp::TableCopy { dst_table: _, src_table: _ } => Err(UnsupportedError(WasmExtension::BulkMemoryOperations))?,
+        
+        wp::TableFill { table: _ } => Err(UnsupportedError(WasmExtension::ReferenceTypes))?,
+        
+        wp::TableGet { table: _ } |
+        wp::TableSet { table: _ } |
+        wp::TableGrow { table: _ } |
+        wp::TableSize { table: _ } => Err(UnsupportedError(WasmExtension::ReferenceTypes))?,
+        
+        wp::MemoryAtomicNotify { memarg: _ } |
+        wp::MemoryAtomicWait32 { memarg: _ } |
+        wp::MemoryAtomicWait64 { memarg: _ } |
+        wp::AtomicFence { flags: _ } |
+        wp::I32AtomicLoad { memarg: _ } |
+        wp::I64AtomicLoad { memarg: _ } |
+        wp::I32AtomicLoad8U { memarg: _ } |
+        wp::I32AtomicLoad16U { memarg: _ } |
+        wp::I64AtomicLoad8U { memarg: _ } |
+        wp::I64AtomicLoad16U { memarg: _ } |
+        wp::I64AtomicLoad32U { memarg: _ } |
+        wp::I32AtomicStore { memarg: _ } |
+        wp::I64AtomicStore { memarg: _ } |
+        wp::I32AtomicStore8 { memarg: _ } |
+        wp::I32AtomicStore16 { memarg: _ } |
+        wp::I64AtomicStore8 { memarg: _ } |
+        wp::I64AtomicStore16 { memarg: _ } |
+        wp::I64AtomicStore32 { memarg: _ } |
+        wp::I32AtomicRmwAdd { memarg: _ } |
+        wp::I64AtomicRmwAdd { memarg: _ } |
+        wp::I32AtomicRmw8AddU { memarg: _ } |
+        wp::I32AtomicRmw16AddU { memarg: _ } |
+        wp::I64AtomicRmw8AddU { memarg: _ } |
+        wp::I64AtomicRmw16AddU { memarg: _ } |
+        wp::I64AtomicRmw32AddU { memarg: _ } |
+        wp::I32AtomicRmwSub { memarg: _ } |
+        wp::I64AtomicRmwSub { memarg: _ } |
+        wp::I32AtomicRmw8SubU { memarg: _ } |
+        wp::I32AtomicRmw16SubU { memarg: _ } |
+        wp::I64AtomicRmw8SubU { memarg: _ } |
+        wp::I64AtomicRmw16SubU { memarg: _ } |
+        wp::I64AtomicRmw32SubU { memarg: _ } |
+        wp::I32AtomicRmwAnd { memarg: _ } |
+        wp::I64AtomicRmwAnd { memarg: _ } |
+        wp::I32AtomicRmw8AndU { memarg: _ } |
+        wp::I32AtomicRmw16AndU { memarg: _ } |
+        wp::I64AtomicRmw8AndU { memarg: _ } |
+        wp::I64AtomicRmw16AndU { memarg: _ } |
+        wp::I64AtomicRmw32AndU { memarg: _ } |
+        wp::I32AtomicRmwOr { memarg: _ } |
+        wp::I64AtomicRmwOr { memarg: _ } |
+        wp::I32AtomicRmw8OrU { memarg: _ } |
+        wp::I32AtomicRmw16OrU { memarg: _ } |
+        wp::I64AtomicRmw8OrU { memarg: _ } |
+        wp::I64AtomicRmw16OrU { memarg: _ } |
+        wp::I64AtomicRmw32OrU { memarg: _ } |
+        wp::I32AtomicRmwXor { memarg: _ } |
+        wp::I64AtomicRmwXor { memarg: _ } |
+        wp::I32AtomicRmw8XorU { memarg: _ } |
+        wp::I32AtomicRmw16XorU { memarg: _ } |
+        wp::I64AtomicRmw8XorU { memarg: _ } |
+        wp::I64AtomicRmw16XorU { memarg: _ } |
+        wp::I64AtomicRmw32XorU { memarg: _ } |
+        wp::I32AtomicRmwXchg { memarg: _ } |
+        wp::I64AtomicRmwXchg { memarg: _ } |
+        wp::I32AtomicRmw8XchgU { memarg: _ } |
+        wp::I32AtomicRmw16XchgU { memarg: _ } |
+        wp::I64AtomicRmw8XchgU { memarg: _ } |
+        wp::I64AtomicRmw16XchgU { memarg: _ } |
+        wp::I64AtomicRmw32XchgU { memarg: _ } |
+        wp::I32AtomicRmwCmpxchg { memarg: _ } |
+        wp::I64AtomicRmwCmpxchg { memarg: _ } |
+        wp::I32AtomicRmw8CmpxchgU { memarg: _ } |
+        wp::I32AtomicRmw16CmpxchgU { memarg: _ } |
+        wp::I64AtomicRmw8CmpxchgU { memarg: _ } |
+        wp::I64AtomicRmw16CmpxchgU { memarg: _ } |
+        wp::I64AtomicRmw32CmpxchgU { memarg: _ } => Err(UnsupportedError(WasmExtension::Threads))?,
+        
+        wp::V128Load { memarg: _ } |
+        wp::V128Load8x8S { memarg: _ } |
+        wp::V128Load8x8U { memarg: _ } |
+        wp::V128Load16x4S { memarg: _ } |
+        wp::V128Load16x4U { memarg: _ } |
+        wp::V128Load32x2S { memarg: _ } |
+        wp::V128Load32x2U { memarg: _ } |
+        wp::V128Load8Splat { memarg: _ } |
+        wp::V128Load16Splat { memarg: _ } |
+        wp::V128Load32Splat { memarg: _ } |
+        wp::V128Load64Splat { memarg: _ } |
+        wp::V128Load32Zero { memarg: _ } |
+        wp::V128Load64Zero { memarg: _ } |
+        wp::V128Store { memarg: _ } |
+        wp::V128Load8Lane { memarg: _, lane: _ } |
+        wp::V128Load16Lane { memarg: _, lane: _ } |
+        wp::V128Load32Lane { memarg: _, lane: _ } |
+        wp::V128Load64Lane { memarg: _, lane: _ } |
+        wp::V128Store8Lane { memarg: _, lane: _ } |
+        wp::V128Store16Lane { memarg: _, lane: _ } |
+        wp::V128Store32Lane { memarg: _, lane: _ } |
+        wp::V128Store64Lane { memarg: _, lane: _ } |
+        wp::V128Const { value: _ } |
+        wp::I8x16Shuffle { lanes: _ } |
+        wp::I8x16ExtractLaneS { lane: _ } |
+        wp::I8x16ExtractLaneU { lane: _ } |
+        wp::I8x16ReplaceLane { lane: _ } |
+        wp::I16x8ExtractLaneS { lane: _ } |
+        wp::I16x8ExtractLaneU { lane: _ } |
+        wp::I16x8ReplaceLane { lane: _ } |
+        wp::I32x4ExtractLane { lane: _ } |
+        wp::I32x4ReplaceLane { lane: _ } |
+        wp::I64x2ExtractLane { lane: _ } |
+        wp::I64x2ReplaceLane { lane: _ } |
+        wp::F32x4ExtractLane { lane: _ } |
+        wp::F32x4ReplaceLane { lane: _ } |
+        wp::F64x2ExtractLane { lane: _ } |
+        wp::F64x2ReplaceLane { lane: _ } |
+        wp::I8x16Swizzle |
+        wp::I8x16Splat |
+        wp::I16x8Splat |
+        wp::I32x4Splat |
+        wp::I64x2Splat |
+        wp::F32x4Splat |
+        wp::F64x2Splat |
+        wp::I8x16Eq |
+        wp::I8x16Ne |
+        wp::I8x16LtS |
+        wp::I8x16LtU |
+        wp::I8x16GtS |
+        wp::I8x16GtU |
+        wp::I8x16LeS |
+        wp::I8x16LeU |
+        wp::I8x16GeS |
+        wp::I8x16GeU |
+        wp::I16x8Eq |
+        wp::I16x8Ne |
+        wp::I16x8LtS |
+        wp::I16x8LtU |
+        wp::I16x8GtS |
+        wp::I16x8GtU |
+        wp::I16x8LeS |
+        wp::I16x8LeU |
+        wp::I16x8GeS |
+        wp::I16x8GeU |
+        wp::I32x4Eq |
+        wp::I32x4Ne |
+        wp::I32x4LtS |
+        wp::I32x4LtU |
+        wp::I32x4GtS |
+        wp::I32x4GtU |
+        wp::I32x4LeS |
+        wp::I32x4LeU |
+        wp::I32x4GeS |
+        wp::I32x4GeU |
+        wp::I64x2Eq |
+        wp::I64x2Ne |
+        wp::I64x2LtS |
+        wp::I64x2GtS |
+        wp::I64x2LeS |
+        wp::I64x2GeS |
+        wp::F32x4Eq |
+        wp::F32x4Ne |
+        wp::F32x4Lt |
+        wp::F32x4Gt |
+        wp::F32x4Le |
+        wp::F32x4Ge |
+        wp::F64x2Eq |
+        wp::F64x2Ne |
+        wp::F64x2Lt |
+        wp::F64x2Gt |
+        wp::F64x2Le |
+        wp::F64x2Ge |
+        wp::V128Not |
+        wp::V128And |
+        wp::V128AndNot |
+        wp::V128Or |
+        wp::V128Xor |
+        wp::V128Bitselect |
+        wp::V128AnyTrue |
+        wp::I8x16Abs |
+        wp::I8x16Neg |
+        wp::I8x16Popcnt |
+        wp::I8x16AllTrue |
+        wp::I8x16Bitmask |
+        wp::I8x16NarrowI16x8S |
+        wp::I8x16NarrowI16x8U |
+        wp::I8x16Shl |
+        wp::I8x16ShrS |
+        wp::I8x16ShrU |
+        wp::I8x16Add |
+        wp::I8x16AddSatS |
+        wp::I8x16AddSatU |
+        wp::I8x16Sub |
+        wp::I8x16SubSatS |
+        wp::I8x16SubSatU |
+        wp::I8x16MinS |
+        wp::I8x16MinU |
+        wp::I8x16MaxS |
+        wp::I8x16MaxU |
+        wp::I8x16RoundingAverageU |
+        wp::I16x8ExtAddPairwiseI8x16S |
+        wp::I16x8ExtAddPairwiseI8x16U |
+        wp::I16x8Abs |
+        wp::I16x8Neg |
+        wp::I16x8Q15MulrSatS |
+        wp::I16x8AllTrue |
+        wp::I16x8Bitmask |
+        wp::I16x8NarrowI32x4S |
+        wp::I16x8NarrowI32x4U |
+        wp::I16x8ExtendLowI8x16S |
+        wp::I16x8ExtendHighI8x16S |
+        wp::I16x8ExtendLowI8x16U |
+        wp::I16x8ExtendHighI8x16U |
+        wp::I16x8Shl |
+        wp::I16x8ShrS |
+        wp::I16x8ShrU |
+        wp::I16x8Add |
+        wp::I16x8AddSatS |
+        wp::I16x8AddSatU |
+        wp::I16x8Sub |
+        wp::I16x8SubSatS |
+        wp::I16x8SubSatU |
+        wp::I16x8Mul |
+        wp::I16x8MinS |
+        wp::I16x8MinU |
+        wp::I16x8MaxS |
+        wp::I16x8MaxU |
+        wp::I16x8RoundingAverageU |
+        wp::I16x8ExtMulLowI8x16S |
+        wp::I16x8ExtMulHighI8x16S |
+        wp::I16x8ExtMulLowI8x16U |
+        wp::I16x8ExtMulHighI8x16U |
+        wp::I32x4ExtAddPairwiseI16x8S |
+        wp::I32x4ExtAddPairwiseI16x8U |
+        wp::I32x4Abs |
+        wp::I32x4Neg |
+        wp::I32x4AllTrue |
+        wp::I32x4Bitmask |
+        wp::I32x4ExtendLowI16x8S |
+        wp::I32x4ExtendHighI16x8S |
+        wp::I32x4ExtendLowI16x8U |
+        wp::I32x4ExtendHighI16x8U |
+        wp::I32x4Shl |
+        wp::I32x4ShrS |
+        wp::I32x4ShrU |
+        wp::I32x4Add |
+        wp::I32x4Sub |
+        wp::I32x4Mul |
+        wp::I32x4MinS |
+        wp::I32x4MinU |
+        wp::I32x4MaxS |
+        wp::I32x4MaxU |
+        wp::I32x4DotI16x8S |
+        wp::I32x4ExtMulLowI16x8S |
+        wp::I32x4ExtMulHighI16x8S |
+        wp::I32x4ExtMulLowI16x8U |
+        wp::I32x4ExtMulHighI16x8U |
+        wp::I64x2Abs |
+        wp::I64x2Neg |
+        wp::I64x2AllTrue |
+        wp::I64x2Bitmask |
+        wp::I64x2ExtendLowI32x4S |
+        wp::I64x2ExtendHighI32x4S |
+        wp::I64x2ExtendLowI32x4U |
+        wp::I64x2ExtendHighI32x4U |
+        wp::I64x2Shl |
+        wp::I64x2ShrS |
+        wp::I64x2ShrU |
+        wp::I64x2Add |
+        wp::I64x2Sub |
+        wp::I64x2Mul |
+        wp::I64x2ExtMulLowI32x4S |
+        wp::I64x2ExtMulHighI32x4S |
+        wp::I64x2ExtMulLowI32x4U |
+        wp::I64x2ExtMulHighI32x4U |
+        wp::F32x4Ceil |
+        wp::F32x4Floor |
+        wp::F32x4Trunc |
+        wp::F32x4Nearest |
+        wp::F32x4Abs |
+        wp::F32x4Neg |
+        wp::F32x4Sqrt |
+        wp::F32x4Add |
+        wp::F32x4Sub |
+        wp::F32x4Mul |
+        wp::F32x4Div |
+        wp::F32x4Min |
+        wp::F32x4Max |
+        wp::F32x4PMin |
+        wp::F32x4PMax |
+        wp::F64x2Ceil |
+        wp::F64x2Floor |
+        wp::F64x2Trunc |
+        wp::F64x2Nearest |
+        wp::F64x2Abs |
+        wp::F64x2Neg |
+        wp::F64x2Sqrt |
+        wp::F64x2Add |
+        wp::F64x2Sub |
+        wp::F64x2Mul |
+        wp::F64x2Div |
+        wp::F64x2Min |
+        wp::F64x2Max |
+        wp::F64x2PMin |
+        wp::F64x2PMax |
+        wp::I32x4TruncSatF32x4S |
+        wp::I32x4TruncSatF32x4U |
+        wp::F32x4ConvertI32x4S |
+        wp::F32x4ConvertI32x4U |
+        wp::I32x4TruncSatF64x2SZero |
+        wp::I32x4TruncSatF64x2UZero |
+        wp::F64x2ConvertLowI32x4S |
+        wp::F64x2ConvertLowI32x4U |
+        wp::F32x4DemoteF64x2Zero |
+        wp::F64x2PromoteLowF32x4 => Err(UnsupportedError(WasmExtension::Simd))?,
     })
 }
 
@@ -1107,6 +1108,10 @@ pub enum WasmExtension {
     MultiMemory,
     TypeImports,
     BulkMemoryOperations,
+    Threads,
+    Simd,
+    SignExtensionOps,
+    NontrappingFloatToIntConversion
 }
 
 impl WasmExtension {
@@ -1121,6 +1126,10 @@ impl WasmExtension {
             MultiMemory => "multiple memories",
             TypeImports => "type imports",
             BulkMemoryOperations => "bulk memory operations",
+            Threads => "threads and atomics",
+            Simd => "SIMD",
+            SignExtensionOps => "sign-extension operators",
+            NontrappingFloatToIntConversion => "non-trapping float-to-int conversions"
         }
     }
 
@@ -1135,6 +1144,10 @@ impl WasmExtension {
             MultiMemory => r"https://github.com/WebAssembly/multi-memory",
             TypeImports => r"https://github.com/WebAssembly/proposal-type-imports",
             BulkMemoryOperations => r"https://github.com/WebAssembly/bulk-memory-operations",
+            Threads => r"https://github.com/WebAssembly/threads",
+            Simd => r"https://github.com/WebAssembly/simd",
+            SignExtensionOps => r"https://github.com/WebAssembly/sign-extension-ops",
+            NontrappingFloatToIntConversion => r"https://github.com/WebAssembly/nontrapping-float-to-int-conversions",
         }
     }
 }
