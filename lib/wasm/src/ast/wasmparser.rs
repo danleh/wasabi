@@ -1,14 +1,15 @@
 use std::convert::TryInto;
+use std::mem::Discriminant;
 use std::{fmt, io, iter};
 
 use ordered_float::OrderedFloat;
-use wasmparser::{ImportSectionEntryType, NameSectionReader, Naming, Parser, Payload, TypeDef};
+use wasmparser::{ImportSectionEntryType, NameSectionReader, Naming, Parser, Payload, SectionReader, TypeDef};
 
 use crate::highlevel::{
     Code, Data, Element, Function, Global, GlobalOp, ImportOrPresent, Instr, LoadOp, Local,
     LocalOp, Memory, Module, NumericOp, StoreOp, Table,
 };
-use crate::lowlevel::Offsets;
+use crate::lowlevel::{self, CustomSection, NameSection, Offsets, Section, SectionOffset, WithSize};
 use crate::{
     BlockType, ElemType, FunctionType, GlobalType, Idx, Label, Limits, Memarg, MemoryType,
     Mutability, TableType, Val, ValType,
@@ -31,6 +32,8 @@ pub fn parse_module_with_offsets<R: io::Read>(
     let mut types = Types::none();
     let mut imported_function_count = 0;
     let mut current_code_idx = 0;
+    let mut section_offsets = Vec::with_capacity(16);
+    let mut function_offsets = Vec::new();
 
     let offset = 0;
     for payload in Parser::new(offset).parse_all(&buf) {
@@ -39,6 +42,11 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 // The version number is checked by wasmparser to always be 1.
             }
             Payload::TypeSection(mut reader) => {
+                let discriminant = std::mem::discriminant(&Section::Type(Default::default()));
+                // This is the offset AFTER the section tag and size in bytes,
+                // but BEFORE the number of elements in the section.
+                section_offsets.push((discriminant, reader.range().start));
+
                 let count = reader.get_count();
                 types.set_capacity(count)?;
                 for _ in 0..count {
@@ -52,6 +60,9 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 }
             }
             Payload::ImportSection(mut reader) => {
+                let discriminant = std::mem::discriminant(&Section::Import(Default::default()));
+                section_offsets.push((discriminant, reader.range().start));
+
                 let count = reader.get_count();
                 for _ in 0..count {
                     let import = reader.read()?;
@@ -96,6 +107,9 @@ pub fn parse_module_with_offsets<R: io::Read>(
             Payload::AliasSection(_) => Err(UnsupportedError(WasmExtension::ModuleLinking))?,
             Payload::InstanceSection(_) => Err(UnsupportedError(WasmExtension::ModuleLinking))?,
             Payload::FunctionSection(mut reader) => {
+                let discriminant = std::mem::discriminant(&Section::Function(Default::default()));
+                section_offsets.push((discriminant, reader.range().start));
+
                 let count = reader.get_count();
                 module.functions.reserve(u32_to_usize(count));
                 for _ in 0..count {
@@ -106,6 +120,9 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 }
             }
             Payload::TableSection(mut reader) => {
+                let discriminant = std::mem::discriminant(&Section::Table(Default::default()));
+                section_offsets.push((discriminant, reader.range().start));
+
                 let count = reader.get_count();
                 module.tables.reserve(u32_to_usize(count));
                 for _ in 0..count {
@@ -116,6 +133,9 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 }
             }
             Payload::MemorySection(mut reader) => {
+                let discriminant = std::mem::discriminant(&Section::Memory(Default::default()));
+                section_offsets.push((discriminant, reader.range().start));
+
                 let count = reader.get_count();
                 module.memories.reserve(u32_to_usize(count));
                 for _ in 0..count {
@@ -127,6 +147,9 @@ pub fn parse_module_with_offsets<R: io::Read>(
             }
             Payload::TagSection(_) => Err(UnsupportedError(WasmExtension::ExceptionHandling))?,
             Payload::GlobalSection(mut reader) => {
+                let discriminant = std::mem::discriminant(&Section::Global(Default::default()));
+                section_offsets.push((discriminant, reader.range().start));
+
                 let count = reader.get_count();
                 module.globals.reserve(u32_to_usize(count));
                 for _ in 0..count {
@@ -143,6 +166,9 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 }
             }
             Payload::ExportSection(mut reader) => {
+                let discriminant = std::mem::discriminant(&Section::Export(Default::default()));
+                section_offsets.push((discriminant, reader.range().start));
+
                 let count = reader.get_count();
                 for _ in 0..count {
                     let export = reader.read()?;
@@ -184,8 +210,16 @@ pub fn parse_module_with_offsets<R: io::Read>(
                     }
                 }
             }
-            Payload::StartSection { func, range: _ } => module.start = Some(func.into()),
+            Payload::StartSection { func, range } => {
+                let discriminant = std::mem::discriminant(&Section::Start(WithSize(SectionOffset(0u32.into()))));
+                section_offsets.push((discriminant, range.start));
+
+                module.start = Some(func.into())
+            },
             Payload::ElementSection(mut reader) => {
+                let discriminant = std::mem::discriminant(&Section::Element(Default::default()));
+                section_offsets.push((discriminant, reader.range().start));
+
                 let count = reader.get_count();
                 for _ in 0..count {
                     let element = reader.read()?;
@@ -242,6 +276,9 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 Err(UnsupportedError(WasmExtension::BulkMemoryOperations))?
             }
             Payload::DataSection(mut reader) => {
+                let discriminant = std::mem::discriminant(&Section::Data(Default::default()));
+                section_offsets.push((discriminant, reader.range().start));
+
                 let count = reader.get_count();
                 for _ in 0..count {
                     let data = reader.read()?;
@@ -278,8 +315,11 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 name: "name",
                 data_offset,
                 data,
-                range: _,
+                range,
             } => {
+                let discriminant = std::mem::discriminant(&Section::Custom(CustomSection::Name(NameSection { subsections: Vec::new() })));
+                section_offsets.push((discriminant, range.start));
+
                 // TODO if name section cannot be parsed, do not error but warn and save as bytes
 
                 let reader = NameSectionReader::new(data, data_offset)?;
@@ -345,10 +385,15 @@ pub fn parse_module_with_offsets<R: io::Read>(
             // TODO other sections -> ignore/save as data
             Payload::CustomSection { .. } => todo!(),
             Payload::CodeSectionStart {
-                count: _,
-                range: _,
+                count,
+                range,
                 size: _,
             } => {
+                let discriminant = std::mem::discriminant(&Section::Code(Default::default()));
+                section_offsets.push((discriminant, range.start));
+
+                function_offsets = Vec::with_capacity(u32_to_usize(count));
+
                 // Because the individual code section entries (i.e., function bodies)
                 // are parsed in the following, we don't need to do anything with the
                 // code section start itself.
@@ -357,6 +402,9 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 // TODO parallelize
 
                 let func_idx = imported_function_count + current_code_idx;
+
+                function_offsets.push((func_idx.into(), body.range().start));
+
                 let function = module
                     .functions
                     .get_mut(func_idx)
@@ -389,8 +437,8 @@ pub fn parse_module_with_offsets<R: io::Read>(
     }
 
     let offsets = Offsets {
-        sections: Vec::new(),
-        functions_code: Vec::new(),
+        sections: section_offsets,
+        functions_code: function_offsets,
     };
 
     Ok((module, offsets))
