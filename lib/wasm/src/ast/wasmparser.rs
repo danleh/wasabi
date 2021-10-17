@@ -3,6 +3,7 @@ use std::mem::Discriminant;
 use std::{fmt, io, iter};
 
 use ordered_float::OrderedFloat;
+use rayon::iter::{ParallelDrainRange, ParallelIterator};
 use wasmparser::{
     ImportSectionEntryType, NameSectionReader, Naming, Parser, Payload, SectionReader, TypeDef,
 };
@@ -38,6 +39,10 @@ pub fn parse_module_with_offsets<R: io::Read>(
     let mut current_code_idx = 0;
     let mut section_offsets = Vec::with_capacity(16);
     let mut function_offsets = Vec::new();
+    // In its own vector, such that parallel processing of the code section
+    // doesn't require synchronization on the shared `module`.
+    let mut function_bodies = Vec::new();
+    let mut code_entries_count = 0;
 
     let offset = 0;
     for payload in Parser::new(offset).parse_all(&buf) {
@@ -427,25 +432,36 @@ pub fn parse_module_with_offsets<R: io::Read>(
 
                 function_offsets = Vec::with_capacity(u32_to_usize(count));
 
-                // Because the individual code section entries (i.e., function bodies)
-                // are parsed in the following, we don't need to do anything with the
-                // code section start itself.
+                code_entries_count = count;
+                function_bodies = Vec::with_capacity(u32_to_usize(count));
             }
             Payload::CodeSectionEntry(body) => {
-                // TODO parallelize
-
                 let func_idx = imported_function_count + current_code_idx;
 
                 function_offsets.push((func_idx.into(), body.range().start));
 
-                let function = module
-                    .functions
-                    .get_mut(func_idx)
-                    .ok_or(IndexError::<Function>(func_idx.into()))?;
-
-                function.code = ImportOrPresent::Present(parse_body(body, &types)?);
+                function_bodies.push((func_idx, body));
 
                 current_code_idx += 1;
+
+                let last_code_entry = current_code_idx == code_entries_count;
+                if last_code_entry {
+                    // Parse and convert to high-levl instructions in parallel.
+                    let function_bodies: Vec<_> = function_bodies
+                        .par_drain(..) 
+                        .map(|(i, body)| {
+                            // FIXME ugly hack to get error Send + Sync.
+                            (i, parse_body(body, &types).map_err(|e| e.to_string()))
+                        })
+                        .collect();
+                    for (func_idx, code) in function_bodies {
+                        let function = module
+                            .functions
+                            .get_mut(u32_to_usize(func_idx))
+                            .ok_or(IndexError::<Function>(func_idx.into()))?;
+                        function.code = ImportOrPresent::Present(code?);
+                    }
+                }
             }
             Payload::ModuleSectionStart {
                 count: _,
@@ -464,7 +480,7 @@ pub fn parse_module_with_offsets<R: io::Read>(
             Payload::End => {
                 // I don't understand what this end marker is for?
                 // If the module ended (i.e., the input buffer is exhausted),
-                // there isn't any payload following, so this won't reach anyway.
+                // there is just no more payload following, isn't there?
             }
         }
     }
