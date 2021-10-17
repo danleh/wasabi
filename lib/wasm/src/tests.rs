@@ -2,7 +2,6 @@ use std::error::Error;
 use std::fs::File;
 use std::io::{self, Read};
 
-// FIXME Replace this with unstable feature test.
 use bencher::{Bencher, benchmark_group, benchmark_main};
 use test_utilities::*;
 
@@ -14,16 +13,6 @@ const WASM_TEST_INPUTS_DIR: &'static str = "../../tests/inputs";
 const WASM_TEST_INPUT_LARGE: &'static str = "../../tests/inputs/real-world/bananabread/bb.wasm";
 const WASM_TEST_INPUT_NAMES_SECTION: &'static str = "../../tests/inputs/name-section/wabt-tests/names.wasm";
 const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &'static str = "../../tests/inputs/name-section/extended-name-section/vuln.wasm";
-
-#[test]
-fn test_main() {
-    // let wasm = &b"\0asm\x01\0\0\0"[..];
-    let wasm = std::fs::read(WASM_TEST_INPUT_LARGE).unwrap();
-
-    let wasm_old = highlevel::Module::from_file(WASM_TEST_INPUT_LARGE).unwrap();
-
-    println!("{:#?}", crate::wasmparser::parse_module_with_offsets(&wasm[..]));
-}
 
 #[test]
 fn wasmparser_equal_old_parser() {
@@ -194,7 +183,8 @@ fn extended_name_sections_can_be_parsed_to_lowlevel() {
 
 benchmark_group!(benches, decode_lowlevel_speed, encode_lowlevel_speed,
                           convert_lowlevel_to_highlevel_speed, convert_highlevel_to_lowlevel_speed,
-                          clone_lowlevel_module_speed, clone_highlevel_module_speed);
+                          clone_lowlevel_module_speed, clone_highlevel_module_speed,
+);
 benchmark_main!(benches);
 
 fn decode_lowlevel_speed(bencher: &mut Bencher) {

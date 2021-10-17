@@ -697,7 +697,14 @@ dependencies = [
  "rayon",
  "serde",
  "wasabi_leb128",
+ "wasmparser",
 ]
+
+[[package]]
+name = "wasmparser"
+version = "0.81.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98930446519f63d00a836efdc22f67766ceae8dbcc1571379f2bcabc6b2b9abc"
 
 [[package]]
 name = "winapi"
