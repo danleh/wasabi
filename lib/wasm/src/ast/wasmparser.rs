@@ -3,16 +3,20 @@ use std::mem::Discriminant;
 use std::{fmt, io, iter};
 
 use ordered_float::OrderedFloat;
-use wasmparser::{ImportSectionEntryType, NameSectionReader, Naming, Parser, Payload, SectionReader, TypeDef};
+use wasmparser::{
+    ImportSectionEntryType, NameSectionReader, Naming, Parser, Payload, SectionReader, TypeDef,
+};
 
 use crate::highlevel::{
     Code, Data, Element, Function, Global, GlobalOp, ImportOrPresent, Instr, LoadOp, Local,
     LocalOp, Memory, Module, NumericOp, StoreOp, Table,
 };
-use crate::lowlevel::{self, CustomSection, NameSection, Offsets, Section, SectionOffset, WithSize};
+use crate::lowlevel::{
+    self, CustomSection, NameSection, Offsets, Section, SectionOffset, WithSize,
+};
 use crate::{
     BlockType, ElemType, FunctionType, GlobalType, Idx, Label, Limits, Memarg, MemoryType,
-    Mutability, TableType, Val, ValType,
+    Mutability, RawCustomSection, TableType, Val, ValType,
 };
 
 /// 64 KiB, the minimum amount of bytes read in one chunk from the input reader.
@@ -211,11 +215,12 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 }
             }
             Payload::StartSection { func, range } => {
-                let discriminant = std::mem::discriminant(&Section::Start(WithSize(SectionOffset(0u32.into()))));
+                let discriminant =
+                    std::mem::discriminant(&Section::Start(WithSize(SectionOffset(0u32.into()))));
                 section_offsets.push((discriminant, range.start));
 
                 module.start = Some(func.into())
-            },
+            }
             Payload::ElementSection(mut reader) => {
                 let discriminant = std::mem::discriminant(&Section::Element(Default::default()));
                 section_offsets.push((discriminant, reader.range().start));
@@ -317,7 +322,10 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 data,
                 range,
             } => {
-                let discriminant = std::mem::discriminant(&Section::Custom(CustomSection::Name(NameSection { subsections: Vec::new() })));
+                let discriminant =
+                    std::mem::discriminant(&Section::Custom(CustomSection::Name(NameSection {
+                        subsections: Vec::new(),
+                    })));
                 section_offsets.push((discriminant, range.start));
 
                 // TODO if name section cannot be parsed, do not error but warn and save as bytes
@@ -383,7 +391,32 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 }
             }
             // TODO other sections -> ignore/save as data
-            Payload::CustomSection { .. } => todo!(),
+            Payload::CustomSection {
+                name,
+                data_offset: _,
+                data,
+                range,
+            } => {
+                let raw_custom_section = RawCustomSection {
+                    name: name.to_string(),
+                    content: data.to_vec(),
+                    after: section_offsets
+                        .last()
+                        .map(|(section, _offset)| section)
+                        .cloned(),
+                };
+
+                let discriminant = std::mem::discriminant(&Section::Custom(CustomSection::Raw(
+                    RawCustomSection {
+                        name: "".into(),
+                        content: Vec::new(),
+                        after: None,
+                    },
+                )));
+                section_offsets.push((discriminant, range.start));
+
+                module.custom_sections.push(raw_custom_section);
+            }
             Payload::CodeSectionStart {
                 count,
                 range,
