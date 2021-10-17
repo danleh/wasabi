@@ -3,7 +3,7 @@ use std::mem::Discriminant;
 use std::{fmt, io, iter};
 
 use ordered_float::OrderedFloat;
-use rayon::iter::{ParallelDrainRange, ParallelIterator};
+use rayon::prelude::*;
 use wasmparser::{
     ImportSectionEntryType, NameSectionReader, Naming, Parser, Payload, SectionReader, TypeDef,
 };
