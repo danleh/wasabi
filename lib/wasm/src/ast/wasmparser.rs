@@ -2,9 +2,12 @@ use std::convert::TryInto;
 use std::{fmt, io, iter};
 
 use ordered_float::OrderedFloat;
-use wasmparser::{ImportSectionEntryType, Parser, Payload, TypeDef};
+use wasmparser::{ImportSectionEntryType, NameSectionReader, Naming, Parser, Payload, TypeDef};
 
-use crate::highlevel::{Code, Data, Element, Function, Global, GlobalOp, ImportOrPresent, Instr, LoadOp, Local, LocalOp, Memory, Module, NumericOp, StoreOp, Table};
+use crate::highlevel::{
+    Code, Data, Element, Function, Global, GlobalOp, ImportOrPresent, Instr, LoadOp, Local,
+    LocalOp, Memory, Module, NumericOp, StoreOp, Table,
+};
 use crate::lowlevel::Offsets;
 use crate::{
     BlockType, ElemType, FunctionType, GlobalType, Idx, Label, Limits, Memarg, MemoryType,
@@ -272,15 +275,75 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 }
             }
             Payload::CustomSection {
-                name,
+                name: "name",
                 data_offset,
                 data,
-                range,
+                range: _,
             } => {
-                todo!()
-                // TODO name section
-                // TODO other sections -> ignore/save as data
+                // TODO if name section cannot be parsed, do not error but warn and save as bytes
+
+                let reader = NameSectionReader::new(data, data_offset)?;
+                for name_subsection in reader {
+                    let name_subsection = name_subsection?;
+                    use wasmparser::Name;
+                    match name_subsection {
+                        Name::Module(name) => {
+                            let prev = module.name.replace(name.get_name()?.to_string());
+                            if let Some(_) = prev {
+                                Err("duplicate module name")?
+                            }
+                        }
+                        Name::Function(name_map) => {
+                            let mut name_map = name_map.get_map()?;
+                            for _ in 0..name_map.get_count() {
+                                let Naming { index, name } = name_map.read()?;
+                                module
+                                    .functions
+                                    .get_mut(u32_to_usize(index))
+                                    .ok_or(IndexError::<Function>(index.into()))?
+                                    .name = Some(name.to_string());
+                            }
+                        }
+                        Name::Local(indirect_name_map) => {
+                            let mut indirect_name_map = indirect_name_map.get_indirect_map()?;
+                            for _ in 0..indirect_name_map.get_indirect_count() {
+                                let indirect_naming = indirect_name_map.read()?;
+
+                                let function_idx = indirect_naming.indirect_index;
+                                let function = module
+                                    .functions
+                                    .get_mut(u32_to_usize(function_idx))
+                                    .ok_or(IndexError::<Function>(function_idx.into()))?;
+
+                                let mut name_map = indirect_naming.get_map()?;
+                                for _ in 0..name_map.get_count() {
+                                    let Naming {
+                                        index: local_idx,
+                                        name,
+                                    } = name_map.read()?;
+                                    *function.param_or_local_name_mut(local_idx.into()) =
+                                        Some(name.to_string());
+                                }
+                            }
+                        }
+                        // TODO
+                        Name::Label(_)
+                        | Name::Type(_)
+                        | Name::Table(_)
+                        | Name::Memory(_)
+                        | Name::Global(_)
+                        | Name::Element(_)
+                        | Name::Data(_)
+                        | Name::Unknown {
+                            ty: _,
+                            data: _,
+                            range: _,
+                        } => println!("todo: name section parsing/conversion"),
+                    }
+                }
             }
+            // TODO other sections -> ignore/save as data
+            Payload::CustomSection { .. } => todo!(),
             Payload::CodeSectionStart {
                 count: _,
                 range: _,
@@ -603,340 +666,350 @@ fn convert_instr(
         wp::F32ReinterpretI32 => Numeric(NumericOp::F32ReinterpretI32),
         wp::F64ReinterpretI64 => Numeric(NumericOp::F64ReinterpretI64),
 
-        wp::I32Extend8S |
-        wp::I32Extend16S |
-        wp::I64Extend8S |
-        wp::I64Extend16S |
-        wp::I64Extend32S => Err(UnsupportedError(WasmExtension::SignExtensionOps))?,
+        wp::I32Extend8S
+        | wp::I32Extend16S
+        | wp::I64Extend8S
+        | wp::I64Extend16S
+        | wp::I64Extend32S => Err(UnsupportedError(WasmExtension::SignExtensionOps))?,
 
-        wp::I32TruncSatF32S |
-        wp::I32TruncSatF32U |
-        wp::I32TruncSatF64S |
-        wp::I32TruncSatF64U |
-        wp::I64TruncSatF32S |
-        wp::I64TruncSatF32U |
-        wp::I64TruncSatF64S |
-        wp::I64TruncSatF64U => Err(UnsupportedError(WasmExtension::NontrappingFloatToIntConversion))?,
+        wp::I32TruncSatF32S
+        | wp::I32TruncSatF32U
+        | wp::I32TruncSatF64S
+        | wp::I32TruncSatF64U
+        | wp::I64TruncSatF32S
+        | wp::I64TruncSatF32U
+        | wp::I64TruncSatF64S
+        | wp::I64TruncSatF64U => Err(UnsupportedError(
+            WasmExtension::NontrappingFloatToIntConversion,
+        ))?,
 
-        wp::MemoryInit { segment: _, mem: _ } |
-        wp::DataDrop { segment: _ } |
-        wp::MemoryCopy { src: _, dst: _ } |
-        wp::MemoryFill { mem: _ } |
-        wp::TableInit { segment: _, table: _ } |
-        wp::ElemDrop { segment: _ } |
-        wp::TableCopy { dst_table: _, src_table: _ } => Err(UnsupportedError(WasmExtension::BulkMemoryOperations))?,
-        
+        wp::MemoryInit { segment: _, mem: _ }
+        | wp::DataDrop { segment: _ }
+        | wp::MemoryCopy { src: _, dst: _ }
+        | wp::MemoryFill { mem: _ }
+        | wp::TableInit {
+            segment: _,
+            table: _,
+        }
+        | wp::ElemDrop { segment: _ }
+        | wp::TableCopy {
+            dst_table: _,
+            src_table: _,
+        } => Err(UnsupportedError(WasmExtension::BulkMemoryOperations))?,
+
         wp::TableFill { table: _ } => Err(UnsupportedError(WasmExtension::ReferenceTypes))?,
-        
-        wp::TableGet { table: _ } |
-        wp::TableSet { table: _ } |
-        wp::TableGrow { table: _ } |
-        wp::TableSize { table: _ } => Err(UnsupportedError(WasmExtension::ReferenceTypes))?,
-        
-        wp::MemoryAtomicNotify { memarg: _ } |
-        wp::MemoryAtomicWait32 { memarg: _ } |
-        wp::MemoryAtomicWait64 { memarg: _ } |
-        wp::AtomicFence { flags: _ } |
-        wp::I32AtomicLoad { memarg: _ } |
-        wp::I64AtomicLoad { memarg: _ } |
-        wp::I32AtomicLoad8U { memarg: _ } |
-        wp::I32AtomicLoad16U { memarg: _ } |
-        wp::I64AtomicLoad8U { memarg: _ } |
-        wp::I64AtomicLoad16U { memarg: _ } |
-        wp::I64AtomicLoad32U { memarg: _ } |
-        wp::I32AtomicStore { memarg: _ } |
-        wp::I64AtomicStore { memarg: _ } |
-        wp::I32AtomicStore8 { memarg: _ } |
-        wp::I32AtomicStore16 { memarg: _ } |
-        wp::I64AtomicStore8 { memarg: _ } |
-        wp::I64AtomicStore16 { memarg: _ } |
-        wp::I64AtomicStore32 { memarg: _ } |
-        wp::I32AtomicRmwAdd { memarg: _ } |
-        wp::I64AtomicRmwAdd { memarg: _ } |
-        wp::I32AtomicRmw8AddU { memarg: _ } |
-        wp::I32AtomicRmw16AddU { memarg: _ } |
-        wp::I64AtomicRmw8AddU { memarg: _ } |
-        wp::I64AtomicRmw16AddU { memarg: _ } |
-        wp::I64AtomicRmw32AddU { memarg: _ } |
-        wp::I32AtomicRmwSub { memarg: _ } |
-        wp::I64AtomicRmwSub { memarg: _ } |
-        wp::I32AtomicRmw8SubU { memarg: _ } |
-        wp::I32AtomicRmw16SubU { memarg: _ } |
-        wp::I64AtomicRmw8SubU { memarg: _ } |
-        wp::I64AtomicRmw16SubU { memarg: _ } |
-        wp::I64AtomicRmw32SubU { memarg: _ } |
-        wp::I32AtomicRmwAnd { memarg: _ } |
-        wp::I64AtomicRmwAnd { memarg: _ } |
-        wp::I32AtomicRmw8AndU { memarg: _ } |
-        wp::I32AtomicRmw16AndU { memarg: _ } |
-        wp::I64AtomicRmw8AndU { memarg: _ } |
-        wp::I64AtomicRmw16AndU { memarg: _ } |
-        wp::I64AtomicRmw32AndU { memarg: _ } |
-        wp::I32AtomicRmwOr { memarg: _ } |
-        wp::I64AtomicRmwOr { memarg: _ } |
-        wp::I32AtomicRmw8OrU { memarg: _ } |
-        wp::I32AtomicRmw16OrU { memarg: _ } |
-        wp::I64AtomicRmw8OrU { memarg: _ } |
-        wp::I64AtomicRmw16OrU { memarg: _ } |
-        wp::I64AtomicRmw32OrU { memarg: _ } |
-        wp::I32AtomicRmwXor { memarg: _ } |
-        wp::I64AtomicRmwXor { memarg: _ } |
-        wp::I32AtomicRmw8XorU { memarg: _ } |
-        wp::I32AtomicRmw16XorU { memarg: _ } |
-        wp::I64AtomicRmw8XorU { memarg: _ } |
-        wp::I64AtomicRmw16XorU { memarg: _ } |
-        wp::I64AtomicRmw32XorU { memarg: _ } |
-        wp::I32AtomicRmwXchg { memarg: _ } |
-        wp::I64AtomicRmwXchg { memarg: _ } |
-        wp::I32AtomicRmw8XchgU { memarg: _ } |
-        wp::I32AtomicRmw16XchgU { memarg: _ } |
-        wp::I64AtomicRmw8XchgU { memarg: _ } |
-        wp::I64AtomicRmw16XchgU { memarg: _ } |
-        wp::I64AtomicRmw32XchgU { memarg: _ } |
-        wp::I32AtomicRmwCmpxchg { memarg: _ } |
-        wp::I64AtomicRmwCmpxchg { memarg: _ } |
-        wp::I32AtomicRmw8CmpxchgU { memarg: _ } |
-        wp::I32AtomicRmw16CmpxchgU { memarg: _ } |
-        wp::I64AtomicRmw8CmpxchgU { memarg: _ } |
-        wp::I64AtomicRmw16CmpxchgU { memarg: _ } |
-        wp::I64AtomicRmw32CmpxchgU { memarg: _ } => Err(UnsupportedError(WasmExtension::Threads))?,
-        
-        wp::V128Load { memarg: _ } |
-        wp::V128Load8x8S { memarg: _ } |
-        wp::V128Load8x8U { memarg: _ } |
-        wp::V128Load16x4S { memarg: _ } |
-        wp::V128Load16x4U { memarg: _ } |
-        wp::V128Load32x2S { memarg: _ } |
-        wp::V128Load32x2U { memarg: _ } |
-        wp::V128Load8Splat { memarg: _ } |
-        wp::V128Load16Splat { memarg: _ } |
-        wp::V128Load32Splat { memarg: _ } |
-        wp::V128Load64Splat { memarg: _ } |
-        wp::V128Load32Zero { memarg: _ } |
-        wp::V128Load64Zero { memarg: _ } |
-        wp::V128Store { memarg: _ } |
-        wp::V128Load8Lane { memarg: _, lane: _ } |
-        wp::V128Load16Lane { memarg: _, lane: _ } |
-        wp::V128Load32Lane { memarg: _, lane: _ } |
-        wp::V128Load64Lane { memarg: _, lane: _ } |
-        wp::V128Store8Lane { memarg: _, lane: _ } |
-        wp::V128Store16Lane { memarg: _, lane: _ } |
-        wp::V128Store32Lane { memarg: _, lane: _ } |
-        wp::V128Store64Lane { memarg: _, lane: _ } |
-        wp::V128Const { value: _ } |
-        wp::I8x16Shuffle { lanes: _ } |
-        wp::I8x16ExtractLaneS { lane: _ } |
-        wp::I8x16ExtractLaneU { lane: _ } |
-        wp::I8x16ReplaceLane { lane: _ } |
-        wp::I16x8ExtractLaneS { lane: _ } |
-        wp::I16x8ExtractLaneU { lane: _ } |
-        wp::I16x8ReplaceLane { lane: _ } |
-        wp::I32x4ExtractLane { lane: _ } |
-        wp::I32x4ReplaceLane { lane: _ } |
-        wp::I64x2ExtractLane { lane: _ } |
-        wp::I64x2ReplaceLane { lane: _ } |
-        wp::F32x4ExtractLane { lane: _ } |
-        wp::F32x4ReplaceLane { lane: _ } |
-        wp::F64x2ExtractLane { lane: _ } |
-        wp::F64x2ReplaceLane { lane: _ } |
-        wp::I8x16Swizzle |
-        wp::I8x16Splat |
-        wp::I16x8Splat |
-        wp::I32x4Splat |
-        wp::I64x2Splat |
-        wp::F32x4Splat |
-        wp::F64x2Splat |
-        wp::I8x16Eq |
-        wp::I8x16Ne |
-        wp::I8x16LtS |
-        wp::I8x16LtU |
-        wp::I8x16GtS |
-        wp::I8x16GtU |
-        wp::I8x16LeS |
-        wp::I8x16LeU |
-        wp::I8x16GeS |
-        wp::I8x16GeU |
-        wp::I16x8Eq |
-        wp::I16x8Ne |
-        wp::I16x8LtS |
-        wp::I16x8LtU |
-        wp::I16x8GtS |
-        wp::I16x8GtU |
-        wp::I16x8LeS |
-        wp::I16x8LeU |
-        wp::I16x8GeS |
-        wp::I16x8GeU |
-        wp::I32x4Eq |
-        wp::I32x4Ne |
-        wp::I32x4LtS |
-        wp::I32x4LtU |
-        wp::I32x4GtS |
-        wp::I32x4GtU |
-        wp::I32x4LeS |
-        wp::I32x4LeU |
-        wp::I32x4GeS |
-        wp::I32x4GeU |
-        wp::I64x2Eq |
-        wp::I64x2Ne |
-        wp::I64x2LtS |
-        wp::I64x2GtS |
-        wp::I64x2LeS |
-        wp::I64x2GeS |
-        wp::F32x4Eq |
-        wp::F32x4Ne |
-        wp::F32x4Lt |
-        wp::F32x4Gt |
-        wp::F32x4Le |
-        wp::F32x4Ge |
-        wp::F64x2Eq |
-        wp::F64x2Ne |
-        wp::F64x2Lt |
-        wp::F64x2Gt |
-        wp::F64x2Le |
-        wp::F64x2Ge |
-        wp::V128Not |
-        wp::V128And |
-        wp::V128AndNot |
-        wp::V128Or |
-        wp::V128Xor |
-        wp::V128Bitselect |
-        wp::V128AnyTrue |
-        wp::I8x16Abs |
-        wp::I8x16Neg |
-        wp::I8x16Popcnt |
-        wp::I8x16AllTrue |
-        wp::I8x16Bitmask |
-        wp::I8x16NarrowI16x8S |
-        wp::I8x16NarrowI16x8U |
-        wp::I8x16Shl |
-        wp::I8x16ShrS |
-        wp::I8x16ShrU |
-        wp::I8x16Add |
-        wp::I8x16AddSatS |
-        wp::I8x16AddSatU |
-        wp::I8x16Sub |
-        wp::I8x16SubSatS |
-        wp::I8x16SubSatU |
-        wp::I8x16MinS |
-        wp::I8x16MinU |
-        wp::I8x16MaxS |
-        wp::I8x16MaxU |
-        wp::I8x16RoundingAverageU |
-        wp::I16x8ExtAddPairwiseI8x16S |
-        wp::I16x8ExtAddPairwiseI8x16U |
-        wp::I16x8Abs |
-        wp::I16x8Neg |
-        wp::I16x8Q15MulrSatS |
-        wp::I16x8AllTrue |
-        wp::I16x8Bitmask |
-        wp::I16x8NarrowI32x4S |
-        wp::I16x8NarrowI32x4U |
-        wp::I16x8ExtendLowI8x16S |
-        wp::I16x8ExtendHighI8x16S |
-        wp::I16x8ExtendLowI8x16U |
-        wp::I16x8ExtendHighI8x16U |
-        wp::I16x8Shl |
-        wp::I16x8ShrS |
-        wp::I16x8ShrU |
-        wp::I16x8Add |
-        wp::I16x8AddSatS |
-        wp::I16x8AddSatU |
-        wp::I16x8Sub |
-        wp::I16x8SubSatS |
-        wp::I16x8SubSatU |
-        wp::I16x8Mul |
-        wp::I16x8MinS |
-        wp::I16x8MinU |
-        wp::I16x8MaxS |
-        wp::I16x8MaxU |
-        wp::I16x8RoundingAverageU |
-        wp::I16x8ExtMulLowI8x16S |
-        wp::I16x8ExtMulHighI8x16S |
-        wp::I16x8ExtMulLowI8x16U |
-        wp::I16x8ExtMulHighI8x16U |
-        wp::I32x4ExtAddPairwiseI16x8S |
-        wp::I32x4ExtAddPairwiseI16x8U |
-        wp::I32x4Abs |
-        wp::I32x4Neg |
-        wp::I32x4AllTrue |
-        wp::I32x4Bitmask |
-        wp::I32x4ExtendLowI16x8S |
-        wp::I32x4ExtendHighI16x8S |
-        wp::I32x4ExtendLowI16x8U |
-        wp::I32x4ExtendHighI16x8U |
-        wp::I32x4Shl |
-        wp::I32x4ShrS |
-        wp::I32x4ShrU |
-        wp::I32x4Add |
-        wp::I32x4Sub |
-        wp::I32x4Mul |
-        wp::I32x4MinS |
-        wp::I32x4MinU |
-        wp::I32x4MaxS |
-        wp::I32x4MaxU |
-        wp::I32x4DotI16x8S |
-        wp::I32x4ExtMulLowI16x8S |
-        wp::I32x4ExtMulHighI16x8S |
-        wp::I32x4ExtMulLowI16x8U |
-        wp::I32x4ExtMulHighI16x8U |
-        wp::I64x2Abs |
-        wp::I64x2Neg |
-        wp::I64x2AllTrue |
-        wp::I64x2Bitmask |
-        wp::I64x2ExtendLowI32x4S |
-        wp::I64x2ExtendHighI32x4S |
-        wp::I64x2ExtendLowI32x4U |
-        wp::I64x2ExtendHighI32x4U |
-        wp::I64x2Shl |
-        wp::I64x2ShrS |
-        wp::I64x2ShrU |
-        wp::I64x2Add |
-        wp::I64x2Sub |
-        wp::I64x2Mul |
-        wp::I64x2ExtMulLowI32x4S |
-        wp::I64x2ExtMulHighI32x4S |
-        wp::I64x2ExtMulLowI32x4U |
-        wp::I64x2ExtMulHighI32x4U |
-        wp::F32x4Ceil |
-        wp::F32x4Floor |
-        wp::F32x4Trunc |
-        wp::F32x4Nearest |
-        wp::F32x4Abs |
-        wp::F32x4Neg |
-        wp::F32x4Sqrt |
-        wp::F32x4Add |
-        wp::F32x4Sub |
-        wp::F32x4Mul |
-        wp::F32x4Div |
-        wp::F32x4Min |
-        wp::F32x4Max |
-        wp::F32x4PMin |
-        wp::F32x4PMax |
-        wp::F64x2Ceil |
-        wp::F64x2Floor |
-        wp::F64x2Trunc |
-        wp::F64x2Nearest |
-        wp::F64x2Abs |
-        wp::F64x2Neg |
-        wp::F64x2Sqrt |
-        wp::F64x2Add |
-        wp::F64x2Sub |
-        wp::F64x2Mul |
-        wp::F64x2Div |
-        wp::F64x2Min |
-        wp::F64x2Max |
-        wp::F64x2PMin |
-        wp::F64x2PMax |
-        wp::I32x4TruncSatF32x4S |
-        wp::I32x4TruncSatF32x4U |
-        wp::F32x4ConvertI32x4S |
-        wp::F32x4ConvertI32x4U |
-        wp::I32x4TruncSatF64x2SZero |
-        wp::I32x4TruncSatF64x2UZero |
-        wp::F64x2ConvertLowI32x4S |
-        wp::F64x2ConvertLowI32x4U |
-        wp::F32x4DemoteF64x2Zero |
-        wp::F64x2PromoteLowF32x4 => Err(UnsupportedError(WasmExtension::Simd))?,
+
+        wp::TableGet { table: _ }
+        | wp::TableSet { table: _ }
+        | wp::TableGrow { table: _ }
+        | wp::TableSize { table: _ } => Err(UnsupportedError(WasmExtension::ReferenceTypes))?,
+
+        wp::MemoryAtomicNotify { memarg: _ }
+        | wp::MemoryAtomicWait32 { memarg: _ }
+        | wp::MemoryAtomicWait64 { memarg: _ }
+        | wp::AtomicFence { flags: _ }
+        | wp::I32AtomicLoad { memarg: _ }
+        | wp::I64AtomicLoad { memarg: _ }
+        | wp::I32AtomicLoad8U { memarg: _ }
+        | wp::I32AtomicLoad16U { memarg: _ }
+        | wp::I64AtomicLoad8U { memarg: _ }
+        | wp::I64AtomicLoad16U { memarg: _ }
+        | wp::I64AtomicLoad32U { memarg: _ }
+        | wp::I32AtomicStore { memarg: _ }
+        | wp::I64AtomicStore { memarg: _ }
+        | wp::I32AtomicStore8 { memarg: _ }
+        | wp::I32AtomicStore16 { memarg: _ }
+        | wp::I64AtomicStore8 { memarg: _ }
+        | wp::I64AtomicStore16 { memarg: _ }
+        | wp::I64AtomicStore32 { memarg: _ }
+        | wp::I32AtomicRmwAdd { memarg: _ }
+        | wp::I64AtomicRmwAdd { memarg: _ }
+        | wp::I32AtomicRmw8AddU { memarg: _ }
+        | wp::I32AtomicRmw16AddU { memarg: _ }
+        | wp::I64AtomicRmw8AddU { memarg: _ }
+        | wp::I64AtomicRmw16AddU { memarg: _ }
+        | wp::I64AtomicRmw32AddU { memarg: _ }
+        | wp::I32AtomicRmwSub { memarg: _ }
+        | wp::I64AtomicRmwSub { memarg: _ }
+        | wp::I32AtomicRmw8SubU { memarg: _ }
+        | wp::I32AtomicRmw16SubU { memarg: _ }
+        | wp::I64AtomicRmw8SubU { memarg: _ }
+        | wp::I64AtomicRmw16SubU { memarg: _ }
+        | wp::I64AtomicRmw32SubU { memarg: _ }
+        | wp::I32AtomicRmwAnd { memarg: _ }
+        | wp::I64AtomicRmwAnd { memarg: _ }
+        | wp::I32AtomicRmw8AndU { memarg: _ }
+        | wp::I32AtomicRmw16AndU { memarg: _ }
+        | wp::I64AtomicRmw8AndU { memarg: _ }
+        | wp::I64AtomicRmw16AndU { memarg: _ }
+        | wp::I64AtomicRmw32AndU { memarg: _ }
+        | wp::I32AtomicRmwOr { memarg: _ }
+        | wp::I64AtomicRmwOr { memarg: _ }
+        | wp::I32AtomicRmw8OrU { memarg: _ }
+        | wp::I32AtomicRmw16OrU { memarg: _ }
+        | wp::I64AtomicRmw8OrU { memarg: _ }
+        | wp::I64AtomicRmw16OrU { memarg: _ }
+        | wp::I64AtomicRmw32OrU { memarg: _ }
+        | wp::I32AtomicRmwXor { memarg: _ }
+        | wp::I64AtomicRmwXor { memarg: _ }
+        | wp::I32AtomicRmw8XorU { memarg: _ }
+        | wp::I32AtomicRmw16XorU { memarg: _ }
+        | wp::I64AtomicRmw8XorU { memarg: _ }
+        | wp::I64AtomicRmw16XorU { memarg: _ }
+        | wp::I64AtomicRmw32XorU { memarg: _ }
+        | wp::I32AtomicRmwXchg { memarg: _ }
+        | wp::I64AtomicRmwXchg { memarg: _ }
+        | wp::I32AtomicRmw8XchgU { memarg: _ }
+        | wp::I32AtomicRmw16XchgU { memarg: _ }
+        | wp::I64AtomicRmw8XchgU { memarg: _ }
+        | wp::I64AtomicRmw16XchgU { memarg: _ }
+        | wp::I64AtomicRmw32XchgU { memarg: _ }
+        | wp::I32AtomicRmwCmpxchg { memarg: _ }
+        | wp::I64AtomicRmwCmpxchg { memarg: _ }
+        | wp::I32AtomicRmw8CmpxchgU { memarg: _ }
+        | wp::I32AtomicRmw16CmpxchgU { memarg: _ }
+        | wp::I64AtomicRmw8CmpxchgU { memarg: _ }
+        | wp::I64AtomicRmw16CmpxchgU { memarg: _ }
+        | wp::I64AtomicRmw32CmpxchgU { memarg: _ } => {
+            Err(UnsupportedError(WasmExtension::Threads))?
+        }
+
+        wp::V128Load { memarg: _ }
+        | wp::V128Load8x8S { memarg: _ }
+        | wp::V128Load8x8U { memarg: _ }
+        | wp::V128Load16x4S { memarg: _ }
+        | wp::V128Load16x4U { memarg: _ }
+        | wp::V128Load32x2S { memarg: _ }
+        | wp::V128Load32x2U { memarg: _ }
+        | wp::V128Load8Splat { memarg: _ }
+        | wp::V128Load16Splat { memarg: _ }
+        | wp::V128Load32Splat { memarg: _ }
+        | wp::V128Load64Splat { memarg: _ }
+        | wp::V128Load32Zero { memarg: _ }
+        | wp::V128Load64Zero { memarg: _ }
+        | wp::V128Store { memarg: _ }
+        | wp::V128Load8Lane { memarg: _, lane: _ }
+        | wp::V128Load16Lane { memarg: _, lane: _ }
+        | wp::V128Load32Lane { memarg: _, lane: _ }
+        | wp::V128Load64Lane { memarg: _, lane: _ }
+        | wp::V128Store8Lane { memarg: _, lane: _ }
+        | wp::V128Store16Lane { memarg: _, lane: _ }
+        | wp::V128Store32Lane { memarg: _, lane: _ }
+        | wp::V128Store64Lane { memarg: _, lane: _ }
+        | wp::V128Const { value: _ }
+        | wp::I8x16Shuffle { lanes: _ }
+        | wp::I8x16ExtractLaneS { lane: _ }
+        | wp::I8x16ExtractLaneU { lane: _ }
+        | wp::I8x16ReplaceLane { lane: _ }
+        | wp::I16x8ExtractLaneS { lane: _ }
+        | wp::I16x8ExtractLaneU { lane: _ }
+        | wp::I16x8ReplaceLane { lane: _ }
+        | wp::I32x4ExtractLane { lane: _ }
+        | wp::I32x4ReplaceLane { lane: _ }
+        | wp::I64x2ExtractLane { lane: _ }
+        | wp::I64x2ReplaceLane { lane: _ }
+        | wp::F32x4ExtractLane { lane: _ }
+        | wp::F32x4ReplaceLane { lane: _ }
+        | wp::F64x2ExtractLane { lane: _ }
+        | wp::F64x2ReplaceLane { lane: _ }
+        | wp::I8x16Swizzle
+        | wp::I8x16Splat
+        | wp::I16x8Splat
+        | wp::I32x4Splat
+        | wp::I64x2Splat
+        | wp::F32x4Splat
+        | wp::F64x2Splat
+        | wp::I8x16Eq
+        | wp::I8x16Ne
+        | wp::I8x16LtS
+        | wp::I8x16LtU
+        | wp::I8x16GtS
+        | wp::I8x16GtU
+        | wp::I8x16LeS
+        | wp::I8x16LeU
+        | wp::I8x16GeS
+        | wp::I8x16GeU
+        | wp::I16x8Eq
+        | wp::I16x8Ne
+        | wp::I16x8LtS
+        | wp::I16x8LtU
+        | wp::I16x8GtS
+        | wp::I16x8GtU
+        | wp::I16x8LeS
+        | wp::I16x8LeU
+        | wp::I16x8GeS
+        | wp::I16x8GeU
+        | wp::I32x4Eq
+        | wp::I32x4Ne
+        | wp::I32x4LtS
+        | wp::I32x4LtU
+        | wp::I32x4GtS
+        | wp::I32x4GtU
+        | wp::I32x4LeS
+        | wp::I32x4LeU
+        | wp::I32x4GeS
+        | wp::I32x4GeU
+        | wp::I64x2Eq
+        | wp::I64x2Ne
+        | wp::I64x2LtS
+        | wp::I64x2GtS
+        | wp::I64x2LeS
+        | wp::I64x2GeS
+        | wp::F32x4Eq
+        | wp::F32x4Ne
+        | wp::F32x4Lt
+        | wp::F32x4Gt
+        | wp::F32x4Le
+        | wp::F32x4Ge
+        | wp::F64x2Eq
+        | wp::F64x2Ne
+        | wp::F64x2Lt
+        | wp::F64x2Gt
+        | wp::F64x2Le
+        | wp::F64x2Ge
+        | wp::V128Not
+        | wp::V128And
+        | wp::V128AndNot
+        | wp::V128Or
+        | wp::V128Xor
+        | wp::V128Bitselect
+        | wp::V128AnyTrue
+        | wp::I8x16Abs
+        | wp::I8x16Neg
+        | wp::I8x16Popcnt
+        | wp::I8x16AllTrue
+        | wp::I8x16Bitmask
+        | wp::I8x16NarrowI16x8S
+        | wp::I8x16NarrowI16x8U
+        | wp::I8x16Shl
+        | wp::I8x16ShrS
+        | wp::I8x16ShrU
+        | wp::I8x16Add
+        | wp::I8x16AddSatS
+        | wp::I8x16AddSatU
+        | wp::I8x16Sub
+        | wp::I8x16SubSatS
+        | wp::I8x16SubSatU
+        | wp::I8x16MinS
+        | wp::I8x16MinU
+        | wp::I8x16MaxS
+        | wp::I8x16MaxU
+        | wp::I8x16RoundingAverageU
+        | wp::I16x8ExtAddPairwiseI8x16S
+        | wp::I16x8ExtAddPairwiseI8x16U
+        | wp::I16x8Abs
+        | wp::I16x8Neg
+        | wp::I16x8Q15MulrSatS
+        | wp::I16x8AllTrue
+        | wp::I16x8Bitmask
+        | wp::I16x8NarrowI32x4S
+        | wp::I16x8NarrowI32x4U
+        | wp::I16x8ExtendLowI8x16S
+        | wp::I16x8ExtendHighI8x16S
+        | wp::I16x8ExtendLowI8x16U
+        | wp::I16x8ExtendHighI8x16U
+        | wp::I16x8Shl
+        | wp::I16x8ShrS
+        | wp::I16x8ShrU
+        | wp::I16x8Add
+        | wp::I16x8AddSatS
+        | wp::I16x8AddSatU
+        | wp::I16x8Sub
+        | wp::I16x8SubSatS
+        | wp::I16x8SubSatU
+        | wp::I16x8Mul
+        | wp::I16x8MinS
+        | wp::I16x8MinU
+        | wp::I16x8MaxS
+        | wp::I16x8MaxU
+        | wp::I16x8RoundingAverageU
+        | wp::I16x8ExtMulLowI8x16S
+        | wp::I16x8ExtMulHighI8x16S
+        | wp::I16x8ExtMulLowI8x16U
+        | wp::I16x8ExtMulHighI8x16U
+        | wp::I32x4ExtAddPairwiseI16x8S
+        | wp::I32x4ExtAddPairwiseI16x8U
+        | wp::I32x4Abs
+        | wp::I32x4Neg
+        | wp::I32x4AllTrue
+        | wp::I32x4Bitmask
+        | wp::I32x4ExtendLowI16x8S
+        | wp::I32x4ExtendHighI16x8S
+        | wp::I32x4ExtendLowI16x8U
+        | wp::I32x4ExtendHighI16x8U
+        | wp::I32x4Shl
+        | wp::I32x4ShrS
+        | wp::I32x4ShrU
+        | wp::I32x4Add
+        | wp::I32x4Sub
+        | wp::I32x4Mul
+        | wp::I32x4MinS
+        | wp::I32x4MinU
+        | wp::I32x4MaxS
+        | wp::I32x4MaxU
+        | wp::I32x4DotI16x8S
+        | wp::I32x4ExtMulLowI16x8S
+        | wp::I32x4ExtMulHighI16x8S
+        | wp::I32x4ExtMulLowI16x8U
+        | wp::I32x4ExtMulHighI16x8U
+        | wp::I64x2Abs
+        | wp::I64x2Neg
+        | wp::I64x2AllTrue
+        | wp::I64x2Bitmask
+        | wp::I64x2ExtendLowI32x4S
+        | wp::I64x2ExtendHighI32x4S
+        | wp::I64x2ExtendLowI32x4U
+        | wp::I64x2ExtendHighI32x4U
+        | wp::I64x2Shl
+        | wp::I64x2ShrS
+        | wp::I64x2ShrU
+        | wp::I64x2Add
+        | wp::I64x2Sub
+        | wp::I64x2Mul
+        | wp::I64x2ExtMulLowI32x4S
+        | wp::I64x2ExtMulHighI32x4S
+        | wp::I64x2ExtMulLowI32x4U
+        | wp::I64x2ExtMulHighI32x4U
+        | wp::F32x4Ceil
+        | wp::F32x4Floor
+        | wp::F32x4Trunc
+        | wp::F32x4Nearest
+        | wp::F32x4Abs
+        | wp::F32x4Neg
+        | wp::F32x4Sqrt
+        | wp::F32x4Add
+        | wp::F32x4Sub
+        | wp::F32x4Mul
+        | wp::F32x4Div
+        | wp::F32x4Min
+        | wp::F32x4Max
+        | wp::F32x4PMin
+        | wp::F32x4PMax
+        | wp::F64x2Ceil
+        | wp::F64x2Floor
+        | wp::F64x2Trunc
+        | wp::F64x2Nearest
+        | wp::F64x2Abs
+        | wp::F64x2Neg
+        | wp::F64x2Sqrt
+        | wp::F64x2Add
+        | wp::F64x2Sub
+        | wp::F64x2Mul
+        | wp::F64x2Div
+        | wp::F64x2Min
+        | wp::F64x2Max
+        | wp::F64x2PMin
+        | wp::F64x2PMax
+        | wp::I32x4TruncSatF32x4S
+        | wp::I32x4TruncSatF32x4U
+        | wp::F32x4ConvertI32x4S
+        | wp::F32x4ConvertI32x4U
+        | wp::I32x4TruncSatF64x2SZero
+        | wp::I32x4TruncSatF64x2UZero
+        | wp::F64x2ConvertLowI32x4S
+        | wp::F64x2ConvertLowI32x4U
+        | wp::F32x4DemoteF64x2Zero
+        | wp::F64x2PromoteLowF32x4 => Err(UnsupportedError(WasmExtension::Simd))?,
     })
 }
 
@@ -1111,7 +1184,7 @@ pub enum WasmExtension {
     Threads,
     Simd,
     SignExtensionOps,
-    NontrappingFloatToIntConversion
+    NontrappingFloatToIntConversion,
 }
 
 impl WasmExtension {
@@ -1129,7 +1202,7 @@ impl WasmExtension {
             Threads => "threads and atomics",
             Simd => "SIMD",
             SignExtensionOps => "sign-extension operators",
-            NontrappingFloatToIntConversion => "non-trapping float-to-int conversions"
+            NontrappingFloatToIntConversion => "non-trapping float-to-int conversions",
         }
     }
 
@@ -1147,7 +1220,9 @@ impl WasmExtension {
             Threads => r"https://github.com/WebAssembly/threads",
             Simd => r"https://github.com/WebAssembly/simd",
             SignExtensionOps => r"https://github.com/WebAssembly/sign-extension-ops",
-            NontrappingFloatToIntConversion => r"https://github.com/WebAssembly/nontrapping-float-to-int-conversions",
+            NontrappingFloatToIntConversion => {
+                r"https://github.com/WebAssembly/nontrapping-float-to-int-conversions"
+            }
         }
     }
 }
