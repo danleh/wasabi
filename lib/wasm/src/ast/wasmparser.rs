@@ -1,6 +1,6 @@
 use std::convert::TryInto;
-use std::mem::Discriminant;
-use std::{fmt, io, iter};
+use std::fmt;
+use std::io;
 
 use ordered_float::OrderedFloat;
 use rayon::prelude::*;
@@ -12,25 +12,24 @@ use crate::highlevel::{
     Code, Data, Element, Function, Global, GlobalOp, ImportOrPresent, Instr, LoadOp, Local,
     LocalOp, Memory, Module, NumericOp, StoreOp, Table,
 };
-use crate::lowlevel::{
-    self, CustomSection, NameSection, Offsets, Section, SectionOffset, WithSize,
-};
+use crate::lowlevel::{CustomSection, NameSection, Offsets, Section, SectionOffset, WithSize};
 use crate::{
     BlockType, ElemType, FunctionType, GlobalType, Idx, Label, Limits, Memarg, MemoryType,
     Mutability, RawCustomSection, TableType, Val, ValType,
 };
 
-/// 64 KiB, the minimum amount of bytes read in one chunk from the input reader.
-const MIN_READ_SIZE: usize = 64 * 1024;
-
 pub fn parse_module_with_offsets<R: io::Read>(
     mut reader: R,
     // TODO once all "benign"/correct cases work, implement proper typed error.
 ) -> Result<(Module, Offsets), Box<dyn std::error::Error>> {
-    // TODO Streaming reading: read only 8-64 KiB chunks of the reader, use `Parser::parser()`.
+    // This reads the whole file into a vector first, so it's not streaming in the sense of
+    // "can start analysis before all bytes are received", but it is stream in the sense of
+    // "not necessary to parse a section fully before going to the next section" (although
+    // this is purely because of wasmparser's event-driven design.)
     let mut buf = Vec::new();
     reader.read_to_end(&mut buf)?;
 
+    // The final module to return.
     let mut module = Module::default();
 
     // State during module parsing.
@@ -39,8 +38,8 @@ pub fn parse_module_with_offsets<R: io::Read>(
     let mut current_code_idx = 0;
     let mut section_offsets = Vec::with_capacity(16);
     let mut function_offsets = Vec::new();
-    // In its own vector, such that parallel processing of the code section
-    // doesn't require synchronization on the shared `module`.
+    // Put the function bodies in their own vector, such that parallel processing of the
+    // code section doesn't require synchronization on the shared `module` variable.
     let mut function_bodies = Vec::new();
     let mut code_entries_count = 0;
 
@@ -51,6 +50,9 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 // The version number is checked by wasmparser to always be 1.
             }
             Payload::TypeSection(mut reader) => {
+                // TODO Index the section offsets not by the section's discriminant, but by
+                // a new enum `SectionId`, which is just the section name for "normal" sections,
+                // and CustomSection(name: String) for custom sections (whose name should be unique).
                 let discriminant = std::mem::discriminant(&Section::Type(Default::default()));
                 // This is the offset AFTER the section tag and size in bytes,
                 // but BEFORE the number of elements in the section.
@@ -395,7 +397,6 @@ pub fn parse_module_with_offsets<R: io::Read>(
                     }
                 }
             }
-            // TODO other sections -> ignore/save as data
             Payload::CustomSection {
                 name,
                 data_offset: _,
@@ -448,7 +449,7 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 if last_code_entry {
                     // Parse and convert to high-levl instructions in parallel.
                     let function_bodies: Vec<_> = function_bodies
-                        .par_drain(..) 
+                        .par_drain(..)
                         .map(|(i, body)| {
                             // FIXME ugly hack to get error Send + Sync.
                             (i, parse_body(body, &types).map_err(|e| e.to_string()))
@@ -507,11 +508,7 @@ fn parse_body(
 
     // There is roughly one instruction per byte, so reserve space for
     // approximately this many instructions.
-    let wasmparser::Range {
-        start: body_start,
-        end: body_end,
-    } = body.range();
-    let body_byte_size = body_end - body_start;
+    let body_byte_size = body.range().end - body.range().start;
     let mut instrs = Vec::with_capacity(body_byte_size);
 
     for op in body.get_operators_reader()? {
@@ -574,7 +571,7 @@ fn convert_instr(
         | wp::ReturnCallIndirect {
             index: _,
             table_index: _,
-        } => Err(UnsupportedError(WasmExtension::TailCall))?,
+        } => Err(UnsupportedError(WasmExtension::TailCalls))?,
 
         wp::Drop => Drop,
         wp::Select => Select,
@@ -776,9 +773,7 @@ fn convert_instr(
         | wp::I64TruncSatF32S
         | wp::I64TruncSatF32U
         | wp::I64TruncSatF64S
-        | wp::I64TruncSatF64U => Err(UnsupportedError(
-            WasmExtension::NontrappingFloatToIntConversion,
-        ))?,
+        | wp::I64TruncSatF64U => Err(UnsupportedError(WasmExtension::NontrappingFloatToInt))?,
 
         wp::MemoryInit { segment: _, mem: _ }
         | wp::DataDrop { segment: _ }
@@ -868,7 +863,7 @@ fn convert_instr(
         | wp::I64AtomicRmw8CmpxchgU { memarg: _ }
         | wp::I64AtomicRmw16CmpxchgU { memarg: _ }
         | wp::I64AtomicRmw32CmpxchgU { memarg: _ } => {
-            Err(UnsupportedError(WasmExtension::Threads))?
+            Err(UnsupportedError(WasmExtension::ThreadsAtomics))?
         }
 
         wp::V128Load { memarg: _ }
@@ -1176,7 +1171,6 @@ fn convert_block_ty(ty: wasmparser::TypeOrFuncType) -> Result<BlockType, Unsuppo
 
 fn convert_func_ty(ty: wasmparser::FuncType) -> FunctionType {
     FunctionType {
-        // TODO Optimize, no intermediate collection to Vec.
         params: ty
             .params
             .iter()
@@ -1257,69 +1251,79 @@ impl fmt::Display for UnsupportedError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
-            "This module uses a WebAssembly extension we don't support yet: {}",
-            self.0.name()
-        )?;
-        writeln!(
-            f,
-            "See {} for more information about the extension.",
-            self.0.url()
+            "This module uses a WebAssembly extension we don't support yet: {}\n\
+            See {} for more information about the extension.",
+            self.0.name(),
+            self.0.url(),
         )
     }
 }
 
+/// See https://webassembly.org/roadmap/ and https://github.com/WebAssembly/proposals.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum WasmExtension {
-    ModuleLinking,
+    // Extensions that are already standardized and merged into WebAssembly 1.1:
+    NontrappingFloatToInt,
+    SignExtensionOps,
+    MultiValue,
+    ReferenceTypes,
+    BulkMemoryOperations,
+
+    // Standardized, but not yet merged into the core spec (as of 2021-10):
+    Simd,
+
+    // In rough decreasing order of stability (i.e., increasing order of
+    // breaking changes):
+    ThreadsAtomics,
     Memory64,
     ExceptionHandling,
-    TailCall,
-    ReferenceTypes,
-    MultiMemory,
+    TailCalls,
     TypeImports,
-    BulkMemoryOperations,
-    Threads,
-    Simd,
-    SignExtensionOps,
-    NontrappingFloatToIntConversion,
+    MultiMemory,
+    ModuleLinking,
 }
 
 impl WasmExtension {
     pub fn name(self) -> &'static str {
         use WasmExtension::*;
         match self {
-            ModuleLinking => "module linking",
+            NontrappingFloatToInt => "non-trapping float-to-int conversions",
+            SignExtensionOps => "sign-extension operators",
+            MultiValue => "multiple return/result values",
+            ReferenceTypes => "reference types",
+            BulkMemoryOperations => "bulk memory operations",
+
+            Simd => "SIMD",
+
+            ThreadsAtomics => "threads and atomics",
             Memory64 => "64-bit memory",
             ExceptionHandling => "exception handling",
-            TailCall => "tail calls",
-            ReferenceTypes => "reference types",
-            MultiMemory => "multiple memories",
+            TailCalls => "tail calls",
             TypeImports => "type imports",
-            BulkMemoryOperations => "bulk memory operations",
-            Threads => "threads and atomics",
-            Simd => "SIMD",
-            SignExtensionOps => "sign-extension operators",
-            NontrappingFloatToIntConversion => "non-trapping float-to-int conversions",
+            MultiMemory => "multiple memories",
+            ModuleLinking => "module linking",
         }
     }
 
+    #[rustfmt::skip]
     pub fn url(self) -> &'static str {
         use WasmExtension::*;
         match self {
-            ModuleLinking => r"https://github.com/WebAssembly/module-linking",
+            NontrappingFloatToInt => r"https://github.com/WebAssembly/nontrapping-float-to-int-conversions",
+            SignExtensionOps => r"https://github.com/WebAssembly/sign-extension-ops",
+            MultiValue => r"https://github.com/WebAssembly/multi-value",
+            ReferenceTypes => r"https://github.com/WebAssembly/reference-types",
+            BulkMemoryOperations => r"https://github.com/WebAssembly/bulk-memory-operations",
+
+            Simd => r"https://github.com/WebAssembly/simd",
+
+            ThreadsAtomics => r"https://github.com/WebAssembly/threads",
             Memory64 => r"https://github.com/WebAssembly/memory64",
             ExceptionHandling => r"https://github.com/WebAssembly/exception-handling",
-            TailCall => r"https://github.com/WebAssembly/tail-call",
-            ReferenceTypes => r"https://github.com/WebAssembly/reference-types",
-            MultiMemory => r"https://github.com/WebAssembly/multi-memory",
+            TailCalls => r"https://github.com/WebAssembly/tail-call",
             TypeImports => r"https://github.com/WebAssembly/proposal-type-imports",
-            BulkMemoryOperations => r"https://github.com/WebAssembly/bulk-memory-operations",
-            Threads => r"https://github.com/WebAssembly/threads",
-            Simd => r"https://github.com/WebAssembly/simd",
-            SignExtensionOps => r"https://github.com/WebAssembly/sign-extension-ops",
-            NontrappingFloatToIntConversion => {
-                r"https://github.com/WebAssembly/nontrapping-float-to-int-conversions"
-            }
+            MultiMemory => r"https://github.com/WebAssembly/multi-memory",
+            ModuleLinking => r"https://github.com/WebAssembly/module-linking",
         }
     }
 }
