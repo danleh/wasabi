@@ -40,7 +40,7 @@ impl TypeChecker {
         let height = frame.height;
         let unreachable = frame.unreachable;
         // TODO(Daniel): I don't really understand why this is necessary: understand and document.
-        if self.value_stack.len() == height  {
+        if self.value_stack.len() == height {
             if unreachable {
                 return Ok(None);
             } else {
@@ -75,7 +75,10 @@ impl TypeChecker {
     }
 
     #[must_use]
-    pub fn pop_vals_expected(&mut self, expected: &[ValType]) -> Result<Vec<Option<ValType>>, String> {
+    pub fn pop_vals_expected(
+        &mut self,
+        expected: &[ValType],
+    ) -> Result<Vec<Option<ValType>>, String> {
         expected
             .iter()
             // The expected types must be checked in reverse order...
@@ -91,12 +94,7 @@ impl TypeChecker {
      * Control stack operations:
      */
 
-    pub fn push_ctrl(
-        &mut self,
-        instr: &Instr,
-        inputs: Vec<ValType>,
-        results: Vec<ValType>,
-    ) {
+    pub fn push_ctrl(&mut self, instr: &Instr, inputs: Vec<ValType>, results: Vec<ValType>) {
         self.control_stack.push(ControlFrame {
             block_instr: match instr {
                 Instr::Block(_) => BlockInstr::Block,
@@ -114,7 +112,9 @@ impl TypeChecker {
 
     #[must_use]
     pub fn top_ctrl(&mut self) -> Result<&mut ControlFrame, String> {
-        self.control_stack.last_mut().ok_or("empty control stack".to_string())
+        self.control_stack
+            .last_mut()
+            .ok_or("empty control stack".to_string())
     }
 
     #[must_use]
@@ -126,7 +126,10 @@ impl TypeChecker {
         if self.value_stack.len() != height {
             return Err("value stack underflow".into());
         }
-        Ok(self.control_stack.pop().expect("already checked with top_ctrl()"))
+        Ok(self
+            .control_stack
+            .pop()
+            .expect("already checked with top_ctrl()"))
     }
 
     pub fn label_types(&self, frame: &ControlFrame) -> Vec<ValType> {
@@ -141,7 +144,8 @@ impl TypeChecker {
     pub fn unreachable(&mut self) -> Result<(), String> {
         let new_stack_height = self.top_ctrl()?.height;
         // Drop all values in the current block from the stack.
-        self.value_stack.resize_with(new_stack_height, || panic!("stack underflow"));
+        self.value_stack
+            .resize_with(new_stack_height, || panic!("stack underflow"));
         self.top_ctrl()?.unreachable = true;
         Ok(())
     }
@@ -150,7 +154,7 @@ impl TypeChecker {
 #[derive(Debug)]
 pub struct ControlFrame {
     block_instr: BlockInstr,
-    
+
     // Input and result types of the block.
     inputs: Vec<ValType>,
     results: Vec<ValType>,
@@ -158,7 +162,7 @@ pub struct ControlFrame {
     // Height of the value stack at the start of the block, used to check that
     // operands do not underflow the current block.
     height: usize,
-    
+
     // Flag recording whether the remainder of the block is unreachable, used to
     // handle stack-polymorphic typing after branches.
     unreachable: bool,
@@ -193,34 +197,61 @@ pub fn types(
     module: &Module,
 ) -> Result<Vec<FunctionType>, String> {
     let mut types = Vec::with_capacity(instrs.len());
+    let mut state = TypeChecker::new();
     for instr in instrs {
         use Instr::*;
         let ty = match (instr, instr.to_type()) {
-            (Unreachable, _) => todo!(), // FIXME
+            (Unreachable, Some(ty)) => {
+                state.unreachable()?;
+                ty
+            }
 
             // For all those where we know the type already from the instruction
             // alone.
-            // FIXME includes `Unreachable` even though it is stack-polymorphic.
-            (_, Some(ty)) => ty,
+            // FIXME remove unreachable from Instruction::to_type() function
+            // TODO rename Instruction::to_type() to `simple_type` or so.
+            // TODO then move Unreachable case down
+            (_, Some(ty)) => {
+                state.pop_vals_expected(&ty.params)?;
+                state.push_vals(&ty.results);
+                ty
+            }
 
+            /* Cases which are still monomorphic, but where we need context
+             * information for the type.
+             */
             (Local(op, idx), _) => {
                 let local_ty = function.param_or_local_type(*idx);
                 let op_ty = op.to_type(local_ty);
-                // type_stack.instr(&op_ty);
+                state.pop_vals_expected(&op_ty.params)?;
+                state.push_vals(&op_ty.results);
                 op_ty
             }
             (Global(op, idx), _) => {
                 let global_ty = module.global(*idx);
                 let op_ty = op.to_type(global_ty.type_.0);
+                state.pop_vals_expected(&op_ty.params)?;
+                state.push_vals(&op_ty.results);
+                op_ty
+            }
+            (Call(idx), _) => {
+                let op_ty = module.function(*idx).type_.clone();
+                state.pop_vals_expected(&op_ty.params)?;
+                state.push_vals(&op_ty.results);
                 op_ty
             }
 
-            (Call(idx), _) => module.function(*idx).type_.clone(),
-
             // Value-polymorphic:
             // TODO use type stack
-            (Drop, _) => todo!(),
-            (Select, _) => todo!(),
+            (Drop, _) => {
+                let ty = state.pop_val()?;
+                // FIXME how do I make this concrete?
+                // TODO look at reference interpreter or binaryen or WABT
+                todo!()
+            },
+            (Select, _) => {
+                todo!()
+            },
 
             // All of those are stack-polymorphic:
             (Block(_), _) => todo!(),
