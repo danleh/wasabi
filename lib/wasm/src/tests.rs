@@ -16,6 +16,21 @@ const WASM_TEST_INPUT_NAMES_SECTION: &'static str = "../../tests/inputs/name-sec
 const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &'static str = "../../tests/inputs/name-section/extended-name-section/vuln.wasm";
 
 #[test]
+fn type_checking() {
+    for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
+        println!("{}", path.display());
+        let module = highlevel::Module::from_file(&path)
+            .expect(&format!("could not decode valid wasm file '{}'", path.display()));
+        for (_idx, func) in module.functions() {
+            if let Some(code) = func.code() {
+                crate::types::types(&code.body, func, &module).expect("valid Wasm file should type-check");
+            }
+        }
+        break;
+    }
+}
+
+#[test]
 fn decode_encode_is_valid_wasm() {
     for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
         println!("{}", path.display());
