@@ -6,6 +6,7 @@ use std::io::{self, Read};
 use bencher::{Bencher, benchmark_group, benchmark_main};
 use test_utilities::*;
 
+use crate::types::check_module;
 use crate::{highlevel, lowlevel, Idx};
 use crate::binary::DecodeState;
 use crate::WasmBinary;
@@ -21,12 +22,12 @@ fn type_checking() {
         println!("{}", path.display());
         let module = highlevel::Module::from_file(&path)
             .expect(&format!("could not decode valid wasm file '{}'", path.display()));
-        for (_idx, func) in module.functions() {
-            if let Some(code) = func.code() {
-                crate::types::types(&code.body, func, &module).expect("valid Wasm file should type-check");
-            }
-        }
-        break;
+        check_module(&module)
+            .map_err(|mut err| {
+                err.file = Some(path.clone());
+                err
+            })
+            .expect("valid binary should type check");
     }
 }
 

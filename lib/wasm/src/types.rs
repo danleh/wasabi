@@ -1,22 +1,46 @@
+use std::{path::PathBuf, fmt};
+
 use crate::{
     highlevel::{Function, Instr, LocalOp, Module},
-    FunctionType, ValType,
+    FunctionType, Idx, Label, ValType,
 };
 
-/// Standard type-checking for WebAssembly instruction sequences, as described
-/// with a reference algorithm in the specification:
+/// Strongly inspired by the official type-checking algorithm, as described
+/// in the specification:
 /// https://webassembly.github.io/spec/core/appendix/algorithm.html#algo-valid
-
-// TODO track height
+/// Except that we don't care about stack height validation, because we assume
+/// that only valid modules can be analyzed; and that we produce types for each
+/// instruction, instead of only checking if they are valid (see `InstructionType`).
 
 #[derive(Debug)]
 pub struct TypeChecker {
     /// Option<ValType> as a replacement for Unknown types, so `None` == Unknown.
     value_stack: Vec<Option<ValType>>,
-    control_stack: Vec<ControlFrame>,
+    pub /* FIXME */ control_stack: Vec<ControlFrame>,
 }
 
-// TODO error type
+#[derive(Debug)]
+pub struct Error {
+    pub msg: String,
+    pub file: Option<PathBuf>,
+    pub function: Option<Idx<Function>>,
+    pub instruction: Option<(usize, Instr)>,
+}
+
+impl Error {
+    pub fn new(msg: impl Into<String>) -> Self {
+        Error {
+            msg: msg.into(),
+            file: None,
+            function: None,
+            instruction: None,
+        }
+    }
+}
+
+// TODO data gathering:
+// for our dataset: how many functions without memory loads/stores
+// how many functions with call_indirect?
 
 impl TypeChecker {
     pub fn new() -> Self {
@@ -24,6 +48,10 @@ impl TypeChecker {
             value_stack: Vec::new(),
             control_stack: Vec::new(),
         }
+    }
+
+    pub fn val_stack_str(&self) -> String {
+        format!("[{}]", self.value_stack.iter().map(val_type_unknown).collect::<Vec<_>>().join(", "))
     }
 
     /*
@@ -35,35 +63,37 @@ impl TypeChecker {
     }
 
     #[must_use]
-    pub fn pop_val(&mut self) -> Result<Option<ValType>, String> {
+    pub fn pop_val(&mut self) -> Result<Option<ValType>, Error> {
         let frame = self.top_ctrl()?;
         let height = frame.height;
         let unreachable = frame.unreachable;
         // TODO(Daniel): I don't really understand why this is necessary: understand and document.
-        if self.value_stack.len() == height {
+        // if self.value_stack.len() == height {
             if unreachable {
                 return Ok(None);
-            } else {
-                return Err("value stack underflow".into());
             }
-        }
+        //     else {
+        //         return Err(Error::new("value stack underflow"));
+        //     }
+        // }
         self.value_stack
             .pop()
-            .ok_or("expected a value, but value stack was empty".into())
+            .ok_or(Error::new("expected a value, but value stack was empty"))
     }
 
     #[must_use]
     pub fn pop_val_expected(
         &mut self,
         expected: Option<ValType>,
-    ) -> Result<Option<ValType>, String> {
+    ) -> Result<Option<ValType>, Error> {
         let actual = self.pop_val()?;
+        // println!("actual: {:?}, expected: {:?}", actual, expected);
         match (actual, expected) {
             (Some(actual), Some(expected)) if actual == expected => Ok(Some(actual)),
-            (Some(actual), Some(expected)) => Err(format!(
+            (Some(actual), Some(expected)) => Err(Error::new(format!(
                 "expected type {:?}, but got {:?}",
                 expected, actual
-            )),
+            ))),
             _ => Ok(actual),
         }
     }
@@ -78,27 +108,39 @@ impl TypeChecker {
     pub fn pop_vals_expected(
         &mut self,
         expected: &[ValType],
-    ) -> Result<Vec<Option<ValType>>, String> {
-        expected
+    ) -> Result<Vec<Option<ValType>>, Error> {
+        // println!("expected: {:?}", expected);
+        // println!("actual: {:?}", self.value_stack);
+        let actual: Result<Vec<_>, _> = expected
             .iter()
             // The expected types must be checked in reverse order...
             .rev()
             .map(|expected| self.pop_val_expected(Some(*expected)))
-            // ...but returned in the correct order, so reverse again.
-            .rev()
-            // Goes from `Iter<Result<...>>` to `Result<Vec<...>>`.
-            .collect()
+            .collect();
+        let mut actual = actual?;
+        actual.reverse();
+        Ok(actual)
     }
 
     /*
      * Control stack operations:
      */
+    pub fn push_ctrl_func(&mut self, results: Vec<ValType>) {
+        self.control_stack.push(ControlFrame {
+            block_instr: BlockInstr::Function,
+            inputs: Vec::new(),
+            results,
+            height: 0,
+            unreachable: false,
+        })
+    }
 
     pub fn push_ctrl(&mut self, instr: &Instr, inputs: Vec<ValType>, results: Vec<ValType>) {
         self.control_stack.push(ControlFrame {
             block_instr: match instr {
                 Instr::Block(_) => BlockInstr::Block,
                 Instr::If(_) => BlockInstr::If,
+                Instr::Else => BlockInstr::Else,
                 Instr::Loop(_) => BlockInstr::Loop,
                 _ => panic!("non-control instruction {:?}", instr),
             },
@@ -111,21 +153,33 @@ impl TypeChecker {
     }
 
     #[must_use]
-    pub fn top_ctrl(&mut self) -> Result<&mut ControlFrame, String> {
+    pub fn top_ctrl(&mut self) -> Result<&mut ControlFrame, Error> {
         self.control_stack
             .last_mut()
-            .ok_or("empty control stack".to_string())
+            .ok_or(Error::new("empty control stack"))
     }
 
     #[must_use]
-    pub fn pop_ctrl(&mut self) -> Result<ControlFrame, String> {
+    pub fn get_ctrl(&self, label: Label) -> Result<&ControlFrame, Error> {
+        self.control_stack
+            .iter()
+            .rev()
+            .nth(label.0 as usize)
+            .ok_or(Error::new(format!(
+                "invalid control stack label {}",
+                label.0
+            )))
+    }
+
+    #[must_use]
+    pub fn pop_ctrl(&mut self) -> Result<ControlFrame, Error> {
         let frame = self.top_ctrl()?;
         let results = frame.results.clone();
         let height = frame.height;
         self.pop_vals_expected(&results)?;
-        if self.value_stack.len() != height {
-            return Err("value stack underflow".into());
-        }
+        // if self.value_stack.len() != height {
+        //     return Err(Error::new("value stack underflow"));
+        // }
         Ok(self
             .control_stack
             .pop()
@@ -141,7 +195,7 @@ impl TypeChecker {
     }
 
     #[must_use]
-    pub fn unreachable(&mut self) -> Result<(), String> {
+    pub fn unreachable(&mut self) -> Result<(), Error> {
         let new_stack_height = self.top_ctrl()?.height;
         // Drop all values in the current block from the stack.
         self.value_stack
@@ -170,9 +224,92 @@ pub struct ControlFrame {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum BlockInstr {
+    Function,
     Block,
     If,
+    Else,
     Loop,
+}
+
+#[derive(Debug)]
+pub struct InstructionType {
+    inputs: Vec<Option<ValType>>,
+    results: Vec<Option<ValType>>,
+}
+
+impl InstructionType {
+    pub fn new() -> Self {
+        InstructionType {
+            inputs: Vec::new(),
+            results: Vec::new(),
+        }
+    }
+
+    pub fn lift(func_ty: &FunctionType) -> Self {
+        InstructionType {
+            inputs: func_ty.params.iter().map(|ty| Some(*ty)).collect(),
+            results: func_ty.results.iter().map(|ty| Some(*ty)).collect(),
+        }
+    }
+}
+
+fn val_type_unknown(ty: &Option<ValType>) -> &'static str {
+    match ty {
+        Some(ValType::I32) => "i32",
+        Some(ValType::I64) => "i64",
+        Some(ValType::F32) => "f32",
+        Some(ValType::F64) => "f64",
+        None => "?",
+    }
+}
+
+impl fmt::Display for InstructionType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}] -> [{}]", 
+            self.inputs.iter().map(val_type_unknown).collect::<Vec<_>>().join(", "),
+            self.results.iter().map(val_type_unknown).collect::<Vec<_>>().join(", "),
+        )
+    }
+}
+
+impl From<FunctionType> for InstructionType {
+    fn from(func_ty: FunctionType) -> Self {
+        InstructionType::lift(&func_ty)
+    }
+}
+
+#[must_use]
+fn merge_unknown_types(
+    ty1: Option<ValType>,
+    ty2: Option<ValType>,
+) -> Result<Option<ValType>, Error> {
+    match (ty1, ty2) {
+        (None, None) => Ok(None),
+        (None, Some(ty)) | (Some(ty), None) => Ok(Some(ty)),
+        (Some(ty1), Some(ty2)) => {
+            if ty1 == ty2 {
+                Ok(Some(ty1))
+            } else {
+                Err(Error::new(format!(
+                    "cannot merge incompatible types {} and {}",
+                    ty1, ty2
+                )))
+            }
+        }
+    }
+}
+
+pub fn check_module(module: &Module) -> Result<(), Error> {
+    for (func_idx, func) in module.functions() {
+        if let Some(code) = func.code() {
+            println!("  func ${}  {}", func_idx.into_inner(), func.type_);
+            types(&code.body, func, &module).map_err(|mut err| {
+                err.function = Some(func_idx);
+                err
+            })?;
+        }
+    }
+    Ok(())
 }
 
 // TODO return iterator of (instruction, type) instead of owning Vec.
@@ -195,80 +332,165 @@ pub fn types(
     instrs: &[Instr],
     function: &Function,
     module: &Module,
-) -> Result<Vec<FunctionType>, String> {
+) -> Result<Vec<InstructionType>, Error> {
     let mut types = Vec::with_capacity(instrs.len());
     let mut state = TypeChecker::new();
-    for instr in instrs {
+    state.push_ctrl_func(function.type_.results.iter().cloned().collect());
+    for (instr_idx, instr) in instrs.iter().enumerate() {
         use Instr::*;
-        let ty = match (instr, instr.to_type()) {
-            (Unreachable, Some(ty)) => {
-                state.unreachable()?;
-                ty
-            }
+        let ty = || -> Result<InstructionType, Error> {
+            Ok(match (instr, instr.to_type()) {
+                (Unreachable, Some(ty)) => {
+                    state.unreachable()?;
+                    ty.into()
+                }
 
-            // For all those where we know the type already from the instruction
-            // alone.
-            // FIXME remove unreachable from Instruction::to_type() function
-            // TODO rename Instruction::to_type() to `simple_type` or so.
-            // TODO then move Unreachable case down
-            (_, Some(ty)) => {
-                state.pop_vals_expected(&ty.params)?;
-                state.push_vals(&ty.results);
-                ty
-            }
+                // For all those where we know the type already from the instruction
+                // alone.
+                // FIXME remove unreachable from Instruction::to_type() function
+                // TODO rename Instruction::to_type() to `simple_type` or so.
+                // TODO then move Unreachable case down
+                (_, Some(ty)) => {
+                    state.pop_vals_expected(&ty.params)?;
+                    state.push_vals(&ty.results);
+                    ty.into()
+                }
 
-            /* Cases which are still monomorphic, but where we need context
-             * information for the type.
-             */
-            (Local(op, idx), _) => {
-                let local_ty = function.param_or_local_type(*idx);
-                let op_ty = op.to_type(local_ty);
-                state.pop_vals_expected(&op_ty.params)?;
-                state.push_vals(&op_ty.results);
-                op_ty
-            }
-            (Global(op, idx), _) => {
-                let global_ty = module.global(*idx);
-                let op_ty = op.to_type(global_ty.type_.0);
-                state.pop_vals_expected(&op_ty.params)?;
-                state.push_vals(&op_ty.results);
-                op_ty
-            }
-            (Call(idx), _) => {
-                let op_ty = module.function(*idx).type_.clone();
-                state.pop_vals_expected(&op_ty.params)?;
-                state.push_vals(&op_ty.results);
-                op_ty
-            }
+                /* Cases which are still monomorphic, but where we need context
+                 * information for the type.
+                 */
+                (Local(op, idx), _) => {
+                    let local_ty = function.param_or_local_type(*idx);
+                    let op_ty = op.to_type(local_ty);
+                    state.pop_vals_expected(&op_ty.params)?;
+                    state.push_vals(&op_ty.results);
+                    op_ty.into()
+                }
+                (Global(op, idx), _) => {
+                    let global_ty = module.global(*idx);
+                    let op_ty = op.to_type(global_ty.type_.0);
+                    state.pop_vals_expected(&op_ty.params)?;
+                    state.push_vals(&op_ty.results);
+                    op_ty.into()
+                }
+                (Call(idx), _) => {
+                    let op_ty = module.function(*idx).type_.clone();
+                    state.pop_vals_expected(&op_ty.params)?;
+                    state.push_vals(&op_ty.results);
+                    op_ty.into()
+                }
 
-            // Value-polymorphic:
-            // TODO use type stack
-            (Drop, _) => {
-                let ty = state.pop_val()?;
-                // FIXME how do I make this concrete?
-                // TODO look at reference interpreter or binaryen or WABT
-                todo!()
-            },
-            (Select, _) => {
-                todo!()
-            },
+                // Value-polymorphic:
+                (Drop, _) => {
+                    let ty = state.pop_val()?;
+                    InstructionType {
+                        inputs: vec![ty],
+                        results: Vec::new(),
+                    }
+                }
+                (Select, _) => {
+                    state.pop_val_expected(Some(ValType::I32))?;
+                    let ty1 = state.pop_val()?;
+                    let ty2 = state.pop_val()?;
+                    let ty = merge_unknown_types(ty1, ty2)?;
+                    state.push_val(ty);
+                    InstructionType {
+                        inputs: vec![Some(ValType::I32), ty, ty],
+                        results: Vec::new(),
+                    }
+                }
 
-            // All of those are stack-polymorphic:
-            (Block(_), _) => todo!(),
-            (Loop(_), _) => todo!(),
-            (If(_), _) => todo!(),
-            (Else, _) => todo!(),
-            (End, _) => todo!(),
-            (Br(_), _) => todo!(),
-            (BrIf(_), _) => todo!(),
-            (BrTable { table, default }, _) => todo!(),
-            (Return, _) => todo!(),
+                // All of those are stack-polymorphic:
+                (Block(block_ty), _) | (Loop(block_ty), _) => {
+                    state.push_ctrl(instr, Vec::new(), block_ty.0.into_iter().collect());
+                    InstructionType::new()
+                }
+                (If(block_ty), _) => {
+                    state.pop_val_expected(Some(ValType::I32))?;
+                    state.push_ctrl(instr, Vec::new(), block_ty.0.into_iter().collect());
+                    InstructionType {
+                        inputs: vec![Some(ValType::I32)],
+                        results: Vec::new(),
+                    }
+                }
+                (End, _) => {
+                    let frame = state.pop_ctrl()?;
+                    state.push_vals(&frame.results);
+                    InstructionType {
+                        inputs: Vec::new(),
+                        results: frame.results.into_iter().map(Some).collect(),
+                    }
+                }
+                (Else, _) => {
+                    let frame = state.pop_ctrl()?;
+                    if frame.block_instr != BlockInstr::If {
+                        return Err(Error::new("else instruction not matching if"));
+                    }
+                    state.push_ctrl(instr, frame.inputs, frame.results.clone());
+                    InstructionType {
+                        inputs: Vec::new(),
+                        results: frame.results.into_iter().map(Some).collect(),
+                    }
+                }
+                (Br(label), _) => {
+                    let ty =
+                        state.pop_vals_expected(&state.label_types(state.get_ctrl(*label)?))?;
+                    state.unreachable()?;
+                    InstructionType {
+                        inputs: ty,
+                        results: Vec::new(),
+                    }
+                }
+                (BrIf(label), _) => {
+                    state.pop_val_expected(Some(ValType::I32))?;
+                    let ty = state.label_types(state.get_ctrl(*label)?);
+                    let ty =
+                        state.pop_vals_expected(&ty)?;
+                    state.push_vals(&state.label_types(state.get_ctrl(*label)?));
+                    InstructionType {
+                        inputs: ty.clone(),
+                        results: ty,
+                    }
+                }
+                (BrTable { table, default }, _) => {
+                    state.pop_val_expected(Some(ValType::I32))?;
+                    for label in table {
+                        state.pop_vals_expected(&state.label_types(state.get_ctrl(*label)?))?;
+                        state.push_vals(&state.label_types(state.get_ctrl(*label)?));
+                    }
+                    let ty =
+                        state.pop_vals_expected(&state.label_types(state.get_ctrl(*default)?))?;
+                    state.unreachable()?;
+                    InstructionType {
+                        inputs: ty,
+                        results: Vec::new(),
+                    }
+                }
+                (Return, _) => {
+                    let ty = &function.type_.results;
+                    state.pop_vals_expected(ty)?;
+                    state.unreachable()?;
+                    InstructionType {
+                        inputs: ty.iter().map(|ty| Some(*ty)).collect(),
+                        results: Vec::new(),
+                    }
+                }
 
-            (instr, None) => unreachable!(
-                "instruction {:?} with non-primitive type not handled",
-                instr
-            ),
-        };
+                (instr, None) => unreachable!(
+                    "instruction {:?} with non-primitive type not handled",
+                    instr
+                ),
+            })
+        }()
+        .map_err(|mut err| {
+            err.instruction = Some((instr_idx, instr.clone()));
+            err
+        })?;
+        println!("    {:<5} {:40} {:30} {}", 
+            instr_idx,
+            format!("{:?}", instr), 
+            format!("{}", ty), 
+            state.val_stack_str());
         types.push(ty);
     }
     Ok(types)
