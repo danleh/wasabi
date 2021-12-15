@@ -744,11 +744,11 @@ impl fmt::Display for Instr {
         match self {
             // instructions without arguments
             Unreachable | Nop | Drop | Select | Return
-            // TODO not sure if we should print block types if non-empty?
-            | Block(_) | Loop(_) | If(_)
             | Else | End
             | MemorySize(_) | MemoryGrow(_)
             | Numeric(_) => Ok(()),
+
+            Block(ty) | Loop(ty) | If(ty) => write!(f, " {}", ty),
 
             Br(label) => write!(f, " {}", label.0),
             BrIf(label) => write!(f, " {}", label.0),
@@ -760,11 +760,9 @@ impl fmt::Display for Instr {
             }
 
             Call(func_idx) => write!(f, " {}", func_idx.into_inner()),
-            // FIXME Printing the table index is inconsistent, when we don't print the memory index
-            // for memory size and memory grow.
-            // CallIndirect(_, table_idx) => write!(f, " {}", table_idx.into_inner()),
-            // TODO print indirect type
-            CallIndirect(_, _) => Ok(()),
+            // We don't print the table index, because we also don't for memory.size and memory.grow,
+            // and because in the MVP the table index is going to be 0 anyway.
+            CallIndirect(func_ty, _table_idx) => write!(f, " {}", func_ty),
 
             Local(_, local_idx) => write!(f, " {}", local_idx.into_inner()),
             Global(_, global_idx) => write!(f, " {}", global_idx.into_inner()),

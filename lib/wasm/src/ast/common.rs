@@ -99,8 +99,8 @@ pub struct BlockType(pub Option<ValType>);
 impl fmt::Display for BlockType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.0 {
-            Some(ty) => write!(f, "[{}]", ty),
-            None => write!(f, "[]"),
+            Some(ty) => write!(f, "[] -> [{}]", ty),
+            None => write!(f, "[] -> []"),
         }
     }
 }
