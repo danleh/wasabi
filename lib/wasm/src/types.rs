@@ -231,8 +231,8 @@ pub enum BlockInstr {
 
 #[derive(Debug)]
 pub struct InstructionType {
-    inputs: Vec<Option<ValType>>,
-    results: Vec<Option<ValType>>,
+    pub inputs: Vec<Option<ValType>>,
+    pub results: Vec<Option<ValType>>,
 }
 
 impl InstructionType {
@@ -300,7 +300,7 @@ fn merge_unknown_types(
 pub fn check_module(module: &Module) -> Result<(), Error> {
     for (func_idx, func) in module.functions() {
         if let Some(code) = func.code() {
-            println!("  func ${}  {}", func_idx.into_inner(), func.type_);
+            // println!("  func ${}  {}", func_idx.into_inner(), func.type_);
             types(&code.body, func, &module).map_err(|mut err| {
                 err.function = Some(func_idx);
                 err
@@ -483,11 +483,11 @@ pub fn types(
             err.instruction = Some((instr_idx, instr.clone()));
             err
         })?;
-        println!("    {:<5} {:40} {:30} {}", 
-            instr_idx,
-            format!("{:?}", instr), 
-            format!("{}", ty), 
-            state.val_stack_str());
+        // println!("    {:<5} {:40} {:30} {}", 
+        //     instr_idx,
+        //     format!("{:?}", instr), 
+        //     format!("{}", ty), 
+        //     state.val_stack_str());
         types.push(ty);
     }
     Ok(types)
