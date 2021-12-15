@@ -16,7 +16,7 @@ use crate::{
 pub struct TypeChecker {
     /// Option<ValType> as a replacement for Unknown types, so `None` == Unknown.
     value_stack: Vec<Option<ValType>>,
-    pub /* FIXME */ control_stack: Vec<ControlFrame>,
+    control_stack: Vec<ControlFrame>,
 }
 
 #[derive(Debug)]
@@ -87,7 +87,6 @@ impl TypeChecker {
         expected: Option<ValType>,
     ) -> Result<Option<ValType>, Error> {
         let actual = self.pop_val()?;
-        // println!("actual: {:?}, expected: {:?}", actual, expected);
         match (actual, expected) {
             (Some(actual), Some(expected)) if actual == expected => Ok(Some(actual)),
             (Some(actual), Some(expected)) => Err(Error::new(format!(
@@ -109,14 +108,13 @@ impl TypeChecker {
         &mut self,
         expected: &[ValType],
     ) -> Result<Vec<Option<ValType>>, Error> {
-        // println!("expected: {:?}", expected);
-        // println!("actual: {:?}", self.value_stack);
         let actual: Result<Vec<_>, _> = expected
             .iter()
             // The expected types must be checked in reverse order...
             .rev()
             .map(|expected| self.pop_val_expected(Some(*expected)))
             .collect();
+        // ...and the result must be reversed again for it to be correct.
         let mut actual = actual?;
         actual.reverse();
         Ok(actual)
@@ -314,7 +312,6 @@ pub fn check_module(module: &Module) -> Result<(), Error> {
 
 // TODO return iterator of (instruction, type) instead of owning Vec.
 // TODO take iterator of instrs instead of Vec.
-// TODO proper error type, not String.
 // See https://webassembly.github.io/spec/core/valid/instructions.html for a
 // good overview of the typing rules for individual instructions and sequences
 // of instructions.
@@ -477,7 +474,7 @@ pub fn types(
                 }
 
                 (instr, None) => unreachable!(
-                    "instruction {:?} with non-primitive type not handled",
+                    "instruction {:?} without \"simple\" type not handled",
                     instr
                 ),
             })
