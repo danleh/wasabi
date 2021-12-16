@@ -1,8 +1,10 @@
-use crate::{Val, FunctionType, Idx};
-use crate::highlevel::{Instr, Function, Module};
+use std::fmt;
+
 use crate::highlevel::Instr::*;
 use crate::highlevel::NumericOp::*;
+use crate::highlevel::{Function, Instr, Module};
 use crate::types::types;
+use crate::{FunctionType, Idx, Val};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct FoldedExpr(Instr, Vec<FoldedExpr>);
@@ -13,11 +15,35 @@ impl FoldedExpr {
     }
 }
 
-pub fn folds(instrs: &[Instr], function: &Function, module: &Module) -> Result<Vec<FoldedExpr>, String> {
+impl fmt::Display for FoldedExpr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Print leaf instructions without parentheses.
+        if self.1.is_empty() {
+            write!(f, "{}", self.0)
+        } else {
+            write!(
+                f,
+                "({}, {})",
+                self.0,
+                self.1
+                    .iter()
+                    .map(|expr| format!("{}", expr))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+    }
+}
+
+pub fn folds(
+    instrs: &[Instr],
+    function: &Function,
+    module: &Module,
+) -> Result<Vec<FoldedExpr>, String> {
     let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
     let mut stack = Vec::new();
     for (instr, ty) in instrs.iter().zip(tys.into_iter()) {
-        println!("{:?}, {:?}",instr, ty);
+        println!("{:?}, {:?}", instr, ty);
         let n_inputs = ty.inputs.len();
         let n_results = ty.results.len();
         let expr = if n_inputs == 0 {
@@ -26,7 +52,7 @@ pub fn folds(instrs: &[Instr], function: &Function, module: &Module) -> Result<V
             let mut args = Vec::new();
             for _ in 0..n_inputs {
                 let x = stack.pop().unwrap();
-                println!("{:?}",x);
+                println!("{:?}", x);
                 args.push(x);
             }
             args.reverse();
@@ -55,9 +81,7 @@ fn drop() {
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..2];
     let actual = folds(instrs, func, &module).unwrap();
-    let expected = vec![FoldedExpr(
-        Drop,
-        vec![FoldedExpr::new(Const(Val::I32(3)))])];
+    let expected = vec![FoldedExpr(Drop, vec![FoldedExpr::new(Const(Val::I32(3)))])];
     assert_eq!(actual, expected);
 }
 
@@ -70,9 +94,12 @@ fn add() {
     let actual = folds(instrs, func, &module).unwrap();
     let expected = vec![FoldedExpr(
         Numeric(I32Add),
-        vec![FoldedExpr::new(Const(Val::I32(3))), 
-            FoldedExpr::new(Const(Val::I32(4)))]
-        )];
+        vec![
+            FoldedExpr::new(Const(Val::I32(3))),
+            FoldedExpr::new(Const(Val::I32(4))),
+        ],
+    )];
+    println!("{}", expected[0]);
     assert_eq!(actual, expected);
 }
 
@@ -85,9 +112,38 @@ fn call_ind() {
     let actual = folds(instrs, func, &module).unwrap();
     let expected = vec![FoldedExpr(
         CallIndirect(FunctionType::new(&[], &[]), Idx::from(0)),
-        vec![
-            FoldedExpr::new(Const(Val::I32(0)))
-        ]
-        )];
+        vec![FoldedExpr::new(Const(Val::I32(0)))],
+    )];
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn multiple_expr() {
+    let module = Module::from_file("../../tests/inputs/folding/multiple.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    // let instrs = &func.code().unwrap().body[0..2];
+    let actual = folds(instrs, func, &module).unwrap();
+    let expected = vec![
+        FoldedExpr(
+            Numeric(I32Add),
+            vec![
+                FoldedExpr::new(Const(Val::I32(0))),
+                FoldedExpr::new(Const(Val::I32(1))),
+            ],
+        ),
+        FoldedExpr(
+            Drop,
+            vec![FoldedExpr(
+                Numeric(I32Add),
+                vec![
+                    FoldedExpr::new(Const(Val::I32(2))),
+                    FoldedExpr::new(Const(Val::I32(3))),
+                ],
+            )],
+        ),
+        FoldedExpr::new(Drop),
+    ];
+    println!("{}", actual.iter().map(|e| format!("{}", e)).collect::<Vec<_>>().join("\n"));
     assert_eq!(actual, expected);
 }
