@@ -2,16 +2,30 @@
 use crate::{highlevel::{self, Module, Function}, types::types};
 use crate::highlevel::Instr::*;
 use crate::Val;
+use crate::highlevel::NumericOp::*;
+
+
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Var (usize); 
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Instr { 
-    pub lhs : Option<Var>,
+    pub lhs : Vec<Var>,
     pub op : highlevel::Instr, 
     pub args : Vec<Var>,
 } 
+
+impl Instr { 
+    pub fn new(lhs: Vec<Var>, op : highlevel::Instr, args: Vec<Var>) 
+    -> Self {
+        Instr {
+            lhs,
+            op,
+            args,
+        }
+    }
+}
 
 pub fn wimplify (
     instrs: &[highlevel::Instr],
@@ -19,36 +33,31 @@ pub fn wimplify (
     module: &Module,
 ) -> Result<Vec<Instr>, String> {
     let mut var_stack = Vec::new();
-    let mut result = Vec::new();
     let mut var_count = 0; 
     let mut result_instrs = Vec::new();
     let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
     
     for (instr, ty) in instrs.iter().zip(tys.into_iter()) {
-        //println!("{:?}, {:?}", instr, ty);
+        println!("{:?}, {:?}", instr, ty);
         let n_inputs = ty.inputs.len();
         let n_results = ty.results.len();
 
-        let result_instr = if n_inputs == 0 { 
-            var_count += 1; 
-            var_stack.push(Var(var_count-1)); 
-            result.push(ty.results); 
-            Instr {
-                lhs : Some(Var(var_count-1)), 
-                op : instr.clone(), 
-                args : Vec::new(), 
-            }
-        } else { 
+        let result_instr = {
+            
             let mut args = Vec::new(); 
             for _ in 0..n_inputs {
                 args.push(var_stack.pop().unwrap()); 
-                result.pop(); 
             }
-            var_count += 1; 
-            var_stack.push(Var(var_count-1)); 
-            result.push(ty.results); 
+            
+            let mut lhs = Vec::new(); 
+            for _ in 0..n_results {
+                lhs.push(Var(var_count));
+                var_stack.push(Var(var_count)); 
+                var_count += 1; 
+            }  
+            
             Instr {
-                lhs : Some(Var(var_count-1)), 
+                lhs : lhs, 
                 op : instr.clone(), 
                 args : args, 
             }
@@ -69,7 +78,7 @@ fn constant() {
     //println!("actual {:?}",actual); 
     let expected = vec![
         Instr {
-            lhs : Some(Var(0)), 
+            lhs : vec![Var(0)], 
             op : Const(Val::I32(3)), 
             args : Vec::new(), 
         }
@@ -85,23 +94,22 @@ fn drop() {
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..2];
     let actual = wimplify(instrs, func, &module).unwrap();
-    //println!("actual {:?}",actual); 
+    println!("actual {:?}",actual); 
     let expected = vec![
         Instr {
-            lhs : Some(Var(0)), 
+            lhs : vec![Var(0)], 
             op : Const(Val::I32(3)), 
             args : Vec::new(), 
         },
         Instr {
-            lhs : Some(Var(1)), 
+            lhs : Vec::new(), 
             op : Drop, 
             args : vec![Var(0)], 
-        }
-        
+        }        
     ];
     assert_eq!(actual, expected);
 }
-/*
+
 #[test]
 fn add() {
     let module = Module::from_file("../../tests/inputs/folding/add.wasm").unwrap();
@@ -109,14 +117,12 @@ fn add() {
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..3];
     let actual = wimplify(instrs, func, &module).unwrap();
-    let expected = vec![FoldedExpr(
-        Numeric(I32Add),
-        vec![
-            FoldedExpr::new(Const(Val::I32(3))),
-            FoldedExpr::new(Const(Val::I32(4))),
-        ],
-    )];
-    println!("{}", expected[0]);
+    let expected = vec![
+        Instr::new(vec![Var(0)], Const(Val::I32(3)) , Vec::new()),
+        Instr::new(vec![Var(1)], Const(Val::I32(4)) , Vec::new()),
+        Instr::new(vec![Var(2)], Numeric(I32Add), vec![Var(1), Var(0)]),  
+    ];
+    println!("{:?}", expected);
     assert_eq!(actual, expected);
 }
 
@@ -127,13 +133,30 @@ fn call_ind() {
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..2];
     let actual = wimplify(instrs, func, &module).unwrap();
-    let expected = vec![FoldedExpr(
-        CallIndirect(FunctionType::new(&[], &[]), Idx::from(0)),
-        vec![FoldedExpr::new(Const(Val::I32(0)))],
-    )];
-    assert_eq!(actual, expected);
+    println!("{:?}",actual);
+    // let expected = vec![FoldedExpr(
+    //     CallIndirect(FunctionType::new(&[], &[]), Idx::from(0)),
+    //     vec![FoldedExpr::new(Const(Val::I32(0)))],
+    // )];
+    // assert_eq!(actual, expected);
 }
 
+#[test]
+fn block_br() {
+    let module = Module::from_file("../../tests/inputs/folding/block-br.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    // let instrs = func.code().unwrap().body.as_slice();
+    let instrs = &func.code().unwrap().body;
+    let actual = wimplify(instrs, func, &module).unwrap();
+    println!("{:?}",actual);
+    // let expected = vec![FoldedExpr(
+    //     CallIndirect(FunctionType::new(&[], &[]), Idx::from(0)),
+    //     vec![FoldedExpr::new(Const(Val::I32(0)))],
+    // )];
+    // assert_eq!(actual, expected);
+}
+
+/*
 #[test]
 fn multiple_expr() {
     let module = Module::from_file("../../tests/inputs/folding/multiple.wasm").unwrap();

@@ -464,6 +464,7 @@ pub fn types(
                     }
                 }
                 (Return, _) => {
+                    todo!("currently not stack polymorphic "); 
                     let ty = &function.type_.results;
                     state.pop_vals_expected(ty)?;
                     state.unreachable()?;
@@ -471,6 +472,7 @@ pub fn types(
                         inputs: ty.iter().map(|ty| Some(*ty)).collect(),
                         results: Vec::new(),
                     }
+                    
                 }
 
                 (instr, None) => unreachable!(
