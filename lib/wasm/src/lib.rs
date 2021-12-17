@@ -13,6 +13,7 @@ pub use crate::error::{Error, ErrorKind};
 
 mod types;
 mod folding;
+mod wimple;
 
 #[cfg(test)]
 mod tests;
