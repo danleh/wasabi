@@ -1,3 +1,4 @@
+use std::fmt;
 
 use crate::{highlevel::{self, Module, Function}, types::types};
 use crate::highlevel::Instr::*;
@@ -25,6 +26,48 @@ impl Instr {
             args,
         }
     }
+}
+
+impl fmt::Display for Instr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // handle the LHS 
+        if !self.lhs.is_empty() {
+            write!(f, "v{} = ", self.lhs[0].0)?;
+        } 
+        // op is always printed 
+        write!(f, "{}", self.op)?;
+        // handle the args
+        if !self.args.is_empty() {
+            write!(f, "(")?; 
+            for (ind, var) in self.args.iter().enumerate() {
+                if ind == self.args.len()-1 {
+                    write!(f, "v{}", var.0)?;
+                } else {
+                    write!(f, "v{}, ", var.0)?;
+                }
+            }
+            write!(f, ")",)
+        } else {
+            write!(f, "")
+        }
+         
+    }
+        // Print leaf instructions without parentheses.
+    //     if self.1.is_empty() {
+    //         write!(f, "{}", self.0)
+    //     } else {
+    //         write!(
+    //             f,
+    //             "({}, {})",
+    //             self.0,
+    //             self.1
+    //                 .iter()
+    //                 .map(|expr| format!("{}", expr))
+    //                 .collect::<Vec<_>>()
+    //                 .join(", ")
+    //         )
+    //     }
+    // }
 }
 
 pub fn wimplify (
@@ -76,6 +119,9 @@ fn constant() {
     let instrs = &func.code().unwrap().body[0..1];
     let actual = wimplify(instrs, func, &module).unwrap();
     //println!("actual {:?}",actual); 
+    for ins in &actual {
+        println!("{}", ins);
+    }
     let expected = vec![
         Instr {
             lhs : vec![Var(0)], 
@@ -94,7 +140,10 @@ fn drop() {
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..2];
     let actual = wimplify(instrs, func, &module).unwrap();
-    println!("actual {:?}",actual); 
+    //println!("actual {:?}",actual); 
+    for ins in &actual {
+        println!("{}", ins);
+    }
     let expected = vec![
         Instr {
             lhs : vec![Var(0)], 
@@ -117,6 +166,9 @@ fn add() {
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..3];
     let actual = wimplify(instrs, func, &module).unwrap();
+    for ins in &actual {
+        println!("{}", ins);
+    }
     let expected = vec![
         Instr::new(vec![Var(0)], Const(Val::I32(3)) , Vec::new()),
         Instr::new(vec![Var(1)], Const(Val::I32(4)) , Vec::new()),
@@ -133,7 +185,10 @@ fn call_ind() {
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..2];
     let actual = wimplify(instrs, func, &module).unwrap();
-    println!("{:?}",actual);
+    //println!("{:?}",actual);
+    for ins in &actual {
+        println!("{}", ins);
+    }
     // let expected = vec![FoldedExpr(
     //     CallIndirect(FunctionType::new(&[], &[]), Idx::from(0)),
     //     vec![FoldedExpr::new(Const(Val::I32(0)))],
@@ -148,7 +203,10 @@ fn block_br() {
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body;
     let actual = wimplify(instrs, func, &module).unwrap();
-    println!("{:?}",actual);
+    //println!("{:?}",actual);
+    for ins in &actual {
+        println!("{}", ins);
+    }
     // let expected = vec![FoldedExpr(
     //     CallIndirect(FunctionType::new(&[], &[]), Idx::from(0)),
     //     vec![FoldedExpr::new(Const(Val::I32(0)))],
