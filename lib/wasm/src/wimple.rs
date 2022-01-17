@@ -5,25 +5,29 @@ use crate::highlevel::Instr::*;
 use crate::Val;
 use crate::highlevel::NumericOp::*;
 
-
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum WimpleRhs {
+    InstVec(Vec<Instr>), 
+    VarVec(Vec<Var>)
+}
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub struct Var (usize); 
+pub struct Var(usize); 
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Instr { 
     pub lhs : Vec<Var>,
     pub op : highlevel::Instr, 
-    pub args : Vec<Var>,
+    pub rhs : WimpleRhs,
 } 
 
 impl Instr { 
-    pub fn new(lhs: Vec<Var>, op : highlevel::Instr, args: Vec<Var>) 
+    pub fn new(lhs: Vec<Var>, op : highlevel::Instr, rhs: WimpleRhs) 
     -> Self {
         Instr {
             lhs,
             op,
-            args,
+            rhs,
         }
     }
 }
@@ -36,38 +40,32 @@ impl fmt::Display for Instr {
         } 
         // op is always printed 
         write!(f, "{}", self.op)?;
-        // handle the args
-        if !self.args.is_empty() {
-            write!(f, "(")?; 
-            for (ind, var) in self.args.iter().enumerate() {
-                if ind == self.args.len()-1 {
-                    write!(f, "v{}", var.0)?;
-                } else {
-                    write!(f, "v{}, ", var.0)?;
+        // handle the rhs
+        match &self.rhs {
+            WimpleRhs::InstVec(inst_vec) => {
+                write!(f, "{{\n")?; 
+                for inst in inst_vec {
+                    write!(f, "{}", inst); 
                 }
-            }
-            write!(f, ")",)
-        } else {
-            write!(f, "")
-        }
-         
+                write!(f, "\n}}") 
+            },
+            WimpleRhs::VarVec(var_vec) => {
+                if !var_vec.is_empty() {
+                    write!(f, "(")?; 
+                    for (ind, var) in var_vec.iter().enumerate() {
+                        if ind == var_vec.len()-1 {
+                            write!(f, "v{}", var.0)?;
+                        } else {
+                            write!(f, "v{}, ", var.0)?;
+                        }
+                    }
+                    write!(f, ")",)
+                } else {
+                    write!(f, "")
+                }
+            },
+        }     
     }
-        // Print leaf instructions without parentheses.
-    //     if self.1.is_empty() {
-    //         write!(f, "{}", self.0)
-    //     } else {
-    //         write!(
-    //             f,
-    //             "({}, {})",
-    //             self.0,
-    //             self.1
-    //                 .iter()
-    //                 .map(|expr| format!("{}", expr))
-    //                 .collect::<Vec<_>>()
-    //                 .join(", ")
-    //         )
-    //     }
-    // }
 }
 
 pub fn wimplify (
@@ -102,8 +100,9 @@ pub fn wimplify (
             Instr {
                 lhs : lhs, 
                 op : instr.clone(), 
-                args : args, 
+                rhs : WimpleRhs::VarVec(args), 
             }
+            
         }; 
         result_instrs.push(result_instr);
     } 
@@ -126,7 +125,7 @@ fn constant() {
         Instr {
             lhs : vec![Var(0)], 
             op : Const(Val::I32(3)), 
-            args : Vec::new(), 
+            rhs : WimpleRhs::VarVec(Vec::new()), 
         }
         ];
     assert_eq!(actual, expected);
@@ -148,12 +147,12 @@ fn drop() {
         Instr {
             lhs : vec![Var(0)], 
             op : Const(Val::I32(3)), 
-            args : Vec::new(), 
+            rhs : WimpleRhs::VarVec(Vec::new()), 
         },
         Instr {
             lhs : Vec::new(), 
             op : Drop, 
-            args : vec![Var(0)], 
+            rhs : WimpleRhs::VarVec(vec![Var(0)]), 
         }        
     ];
     assert_eq!(actual, expected);
@@ -170,9 +169,9 @@ fn add() {
         println!("{}", ins);
     }
     let expected = vec![
-        Instr::new(vec![Var(0)], Const(Val::I32(3)) , Vec::new()),
-        Instr::new(vec![Var(1)], Const(Val::I32(4)) , Vec::new()),
-        Instr::new(vec![Var(2)], Numeric(I32Add), vec![Var(1), Var(0)]),  
+        Instr::new(vec![Var(0)], Const(Val::I32(3)) , WimpleRhs::VarVec(Vec::new())),
+        Instr::new(vec![Var(1)], Const(Val::I32(4)) , WimpleRhs::VarVec(Vec::new())),
+        Instr::new(vec![Var(2)], Numeric(I32Add), WimpleRhs::VarVec(vec![Var(1), Var(0)])),  
     ];
     println!("{:?}", expected);
     assert_eq!(actual, expected);
