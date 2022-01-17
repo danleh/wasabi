@@ -1,4 +1,7 @@
-use std::fmt;
+use std::{fmt, path::Path, io::{self, ErrorKind}};
+
+use logos::Logos;
+use regex::Regex;
 
 use crate::{highlevel::{self, Module, Function}, types::types};
 use crate::highlevel::Instr::*;
@@ -30,7 +33,74 @@ impl Instr {
             rhs,
         }
     }
+
+    pub fn parse(str: &str) -> io::Result<Vec<Self>> {
+        for (token, span) in WimplTextToken::lexer(str).spanned() {
+            let span = &str[span];
+            println!("{:?} {:?}", token, span);
+        }
+        todo!()
+    }
+
+    /// Convenience function to parse Wimpl from a filename.
+    pub fn from_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
+        let str = std::fs::read_to_string(filename)?;
+        Ok(Self::parse(&str)?)
+    }
 }
+
+// https://crates.io/crates/logos
+#[derive(Logos, Debug, PartialEq)]
+pub enum WimplTextToken {
+    #[token("(")]
+    LParen,
+    
+    #[token(")")]
+    RParen,
+    
+    #[token(",")]
+    Comma,
+
+    #[token("=")]
+    Equals,
+    
+    #[regex(r"v\d+")]
+    Variable,
+
+    #[regex(r"\s+", logos::skip)]
+    Whitespace,
+
+    #[regex("[a-z][a-z0-9.]+")]
+    Token,
+    
+    // #[token("(")]
+    // Immediate(String),
+
+    #[error]
+    Error,
+}
+
+// fn tokenize_wimpl(str: &str) -> io::Result<Vec<WimplTextToken>> {
+//     let var_re = Regex::new(r"^v\d+$").unwrap();
+
+//     for token in str.split_inclusive(&['\n', ' ', '(', ')', ','][..]) {
+//         // DEBUG
+//         println!("{:?}", token);
+        
+//         use WimplTextToken::*;
+//         match token {
+//             "=" => Equals,
+//             "(" => LParen,
+//             ")" => RParen,
+//             "," => Comma,
+//             " " | "\n" => continue,
+//             _ if var_re.is_match(token) => Variable(token.to_string()),
+
+//             _ => return Err(io::Error::new(ErrorKind::Other, format!("unknown token: {:?}", token))),
+//         };
+//     }
+//     todo!()
+// }
 
 impl fmt::Display for Instr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -108,6 +178,19 @@ pub fn wimplify (
     } 
 
     Ok(result_instrs)
+}
+
+#[test]
+fn constant_file() {
+    let path = "tests/wimpl/const.wimpl"; 
+    let expected = Instr::from_file(path).unwrap(); 
+
+    let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = &func.code().unwrap().body[0..1];
+    let actual = wimplify(instrs, func, &module).unwrap();
+    
+    assert_eq!(actual, expected);
 }
 
 #[test]

@@ -1,0 +1,27 @@
+v0 = i32.const 3
+v1 = i32.load offset=5
+i32.add(v0,v1)
+
+\n 
+(
+{ 
+
+v0 = loop { ... }
+v0 = if (bool) { 
+
+}
+i32.load[offset=3](v0, v1)
+
+i32.load offset=3, align=2
+i32.load(3, v0,v1)
+v10 = ...//index calc
+call_indirect(t0, v10)
+
+
+i32.load{args=(v0, v1)}
+i32.load{offset=3, args=(v0, v1)}
+v10 = ...//index calc
+call_indirect{type=[]->[], args=(v10)}
+
+
+<instr>(args...)
