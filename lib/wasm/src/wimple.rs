@@ -70,7 +70,7 @@ pub enum WimplTextToken {
     #[regex(r"\s+", logos::skip)]
     Whitespace,
 
-    #[regex("[a-z][a-z0-9.]+")]
+    #[regex("[a-z][a-z0-9._]+")]
     Token,
     
     // #[token("(")]

@@ -30,6 +30,15 @@ impl Val {
             Val::F64(_) => ValType::F64,
         }
     }
+
+    pub fn parse_text(str: &str, ty: ValType) -> Result<Self, ()> {
+        Ok(match ty {
+            ValType::I32 => Val::I32(str.parse().map_err(|_| ())?),
+            ValType::I64 => Val::I64(str.parse().map_err(|_| ())?),
+            ValType::F32 => Val::F32(str.parse().map_err(|_| ())?),
+            ValType::F64 => Val::F64(str.parse().map_err(|_| ())?),
+        })
+    }
 }
 
 impl fmt::Display for Val {
@@ -70,6 +79,16 @@ impl ValType {
             ValType::F64 => 'F',
         }
     }
+
+    pub fn parse_text(str: &str) -> Result<Self, ()> {
+        Ok(match str.trim() {
+            "i32" => ValType::I32, 
+            "i64" => ValType::I64, 
+            "f32" => ValType::F32, 
+            "f64" => ValType::F64, 
+            _ => return Err(())
+        })
+    }
 }
 
 #[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]
@@ -83,7 +102,34 @@ pub struct FunctionType {
 
 impl FunctionType {
     pub fn new(params: &[ValType], results: &[ValType]) -> Self {
-        FunctionType { params: params.into(), results: results.into() }
+        FunctionType { 
+            params: params.into(), 
+            results: results.into() 
+        }
+    }
+
+    pub fn parse_text(str: &str) -> Result<Self, ()> {
+        // Split by the arrow.
+        let mut splitted = str.split("->");
+        let params = splitted.next().ok_or(())?;
+        let results = splitted.next().ok_or(())?;
+        if let None = splitted.next() {
+            // Split individual types by comma, and remove brackets.
+            let params = params
+                .split(&['[', ']', ','][..])
+                .map(ValType::parse_text)
+                .collect::<Result<Vec<_>, _>>()?
+                .into();
+            let results = results
+                .split(&['[', ']', ','][..])
+                .map(ValType::parse_text)
+                .collect::<Result<Vec<_>, _>>()?
+                .into();
+            Ok(FunctionType { params, results })
+        } else {
+            // More than one arrow in the type is invalid.
+            Err(())
+        }
     }
 }
 
@@ -95,6 +141,18 @@ impl fmt::Display for FunctionType {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct BlockType(pub Option<ValType>);
+
+impl BlockType {
+    pub fn parse_text(str: &str) -> Result<Self, ()> {
+        let FunctionType { params, results } = FunctionType::parse_text(str)?;
+        match (&params[..], &results[..]) {
+            ([], []) => Ok(BlockType(None)),
+            ([], [ty]) => Ok(BlockType(Some(*ty))),
+            // `BlockType` is a subset of all `FunctionType`s.
+            _ => Err(())
+        }
+    }
+}
 
 impl fmt::Display for BlockType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
