@@ -117,11 +117,13 @@ impl FunctionType {
             // Split individual types by comma, and remove brackets.
             let params = params
                 .split(&['[', ']', ','][..])
+                .filter(|str| !str.is_empty())
                 .map(ValType::parse_text)
                 .collect::<Result<Vec<_>, _>>()?
                 .into();
             let results = results
                 .split(&['[', ']', ','][..])
+                .filter(|str| !str.is_empty())
                 .map(ValType::parse_text)
                 .collect::<Result<Vec<_>, _>>()?
                 .into();

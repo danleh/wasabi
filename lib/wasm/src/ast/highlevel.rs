@@ -741,8 +741,6 @@ impl Instr {
         use LoadOp::*;
         use StoreOp::*;
 
-        let (operator, rest) = str.split_once(char::is_whitespace).ok_or(())?;
-
         fn parse_idx<T>(str: &str) -> Result<Idx<T>, ()> {
             let int: usize = str.parse().map_err(|_| ())?; 
             Ok(int.into())
@@ -750,7 +748,7 @@ impl Instr {
         fn parse_label(str: &str) -> Result<Label, ()> {
             Ok(Label(str.parse().map_err(|_| ())?))
         }
-        
+
         fn parse_memarg(str: &str, natural_alignment_exp: u8) -> Result<Memarg, ()> {
             // Default values for Memarg.
             let mut offset = 0; 
@@ -776,6 +774,7 @@ impl Instr {
             parse_memarg(str, store_op.natural_alignment_exp())
         }
 
+        let (operator, rest) = str.split_once(char::is_whitespace).ok_or(())?;
         Ok(match operator {
             "unreachable" => Unreachable,
             "nop" => Nop,

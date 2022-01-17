@@ -1,6 +1,6 @@
 use std::{fmt, path::Path, io::{self, ErrorKind}};
 
-use logos::Logos;
+use logos::{Logos, Lexer};
 use regex::Regex;
 
 use crate::{highlevel::{self, Module, Function}, types::types};
@@ -34,12 +34,53 @@ impl Instr {
         }
     }
 
-    pub fn parse(str: &str) -> io::Result<Vec<Self>> {
-        for (token, span) in WimplTextToken::lexer(str).spanned() {
-            let span = &str[span];
-            println!("{:?} {:?}", token, span);
+    pub fn parse_instr(mut lexer: Lexer<WimplTextToken>) -> io::Result<Self> {
+        let mut instr = Instr {
+            lhs: Vec::new(),
+            op: highlevel::Instr::Nop,
+            rhs: WimpleRhs::VarVec(Vec::new())
+        };
+
+        match lexer.next() {
+            Some(WimplTextToken::Variable(i)) => instr.lhs.push(Var(i)),
+            None => return Err(io::Error::new(ErrorKind::UnexpectedEof, "missing Wimpl instruction")),
+            Some(WimplTextToken::AlphaNum) => {
+                let start_instr = lexer.span().start;
+                println!("in AlphaNum: start={}", start_instr);
+
+                let mut current = lexer.next().unwrap();
+                while current != WimplTextToken::LParen && current != WimplTextToken::Linebreak {
+                    current = lexer.next().unwrap();
+                }
+                let end_instr = lexer.span().end - 1;
+                println!("in AlphaNum: end={}", end_instr);
+                
+                let op_str = &lexer.source()[start_instr..end_instr].trim();
+                println!("in AlphaNum: op_str={:?}", op_str);
+
+                instr.op = highlevel::Instr::parse_text(op_str)
+                    .map_err(|_| io::Error::new(ErrorKind::Other, "unknown"))?;
+
+                // TODO parse argument list
+            }
+            _ => todo!()
         }
-        todo!()
+        
+        Ok(instr)
+    }
+
+    // pub fn parse_args_list(lexer) -> ... {
+    //     expect_token(LParen)
+    //     while next_token != RParen
+    //         if Comma => Ignore
+    //         if Variable => add to result
+    //         else ERROR
+    //     return result vec
+    // }
+
+    pub fn parse(str: &str) -> io::Result<Vec<Self>> {
+        let mut lexer = WimplTextToken::lexer(str);
+        Ok(vec![Self::parse_instr(lexer)?])
     }
 
     /// Convenience function to parse Wimpl from a filename.
@@ -50,57 +91,50 @@ impl Instr {
 }
 
 // https://crates.io/crates/logos
-#[derive(Logos, Debug, PartialEq)]
+#[derive(Logos, Debug, PartialEq, Eq)]
 pub enum WimplTextToken {
     #[token("(")]
     LParen,
     
     #[token(")")]
     RParen,
+
+    #[token("[")]
+    LBracket,
     
+    #[token("]")]
+    RBracket,
+    
+    #[token("{")]
+    LBrace,
+    
+    #[token("}")]
+    RBrace,
+
+    #[token("->")]
+    Arrow,
+
     #[token(",")]
     Comma,
 
     #[token("=")]
     Equals,
     
-    #[regex(r"v\d+")]
-    Variable,
+    #[regex(r"v\d+", |str| str.slice()[1..].parse())]
+    Variable(usize),
+
+    #[token("\n")]
+    Linebreak,
 
     #[regex(r"\s+", logos::skip)]
     Whitespace,
 
-    #[regex("[a-z][a-z0-9._]+")]
-    Token,
+    #[regex(r"[a-zA-Z0-9_\.]+")]
+    AlphaNum,
     
-    // #[token("(")]
-    // Immediate(String),
-
     #[error]
     Error,
 }
-
-// fn tokenize_wimpl(str: &str) -> io::Result<Vec<WimplTextToken>> {
-//     let var_re = Regex::new(r"^v\d+$").unwrap();
-
-//     for token in str.split_inclusive(&['\n', ' ', '(', ')', ','][..]) {
-//         // DEBUG
-//         println!("{:?}", token);
-        
-//         use WimplTextToken::*;
-//         match token {
-//             "=" => Equals,
-//             "(" => LParen,
-//             ")" => RParen,
-//             "," => Comma,
-//             " " | "\n" => continue,
-//             _ if var_re.is_match(token) => Variable(token.to_string()),
-
-//             _ => return Err(io::Error::new(ErrorKind::Other, format!("unknown token: {:?}", token))),
-//         };
-//     }
-//     todo!()
-// }
 
 impl fmt::Display for Instr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
