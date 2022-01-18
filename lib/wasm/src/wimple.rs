@@ -181,7 +181,7 @@ pub enum Instr {
     },
     MemoryGrow {
         lhs: Var,
-        new_size: Var,
+        pages: Var,
     },
 
     Const {
@@ -465,7 +465,7 @@ impl fmt::Display for Instr {
             // s1 = memory.size
             MemorySize { lhs: _ } => write!(f, "memory.size")?,
             // s1 = memory.grow(s0)
-            MemoryGrow { lhs: _, new_size } => write!(f, "memory.grow({})", new_size)?,
+            MemoryGrow { lhs: _, pages } => write!(f, "memory.grow({})", pages)?,
 
             // s1 = i32.const 3
             Const { lhs: _, val } => write!(f, "{}.const {}", val.to_type(), val)?,
@@ -482,9 +482,9 @@ impl fmt::Display for Instr {
     }
 }
 
-// https://crates.io/crates/logos
+/// Tokens of the Wimpl text representation.
 #[derive(Logos, Debug, PartialEq, Eq)]
-pub enum WimplTextToken {
+pub enum Token {
     #[token("(")]
     LParen,
 
@@ -509,17 +509,26 @@ pub enum WimplTextToken {
     #[token(",")]
     Comma,
 
+    #[token(":")]
+    Colon,
+
     #[token("=")]
     Equals,
-
-    #[regex(r"v\d+", |str| str.slice()[1..].parse())]
-    Variable(usize),
 
     #[token("\n")]
     Linebreak,
 
     #[regex(r"\s+", logos::skip)]
     Whitespace,
+
+    #[regex(r"(s|l|g|p)\d+", |str| str.slice()[1..].parse())]
+    Variable(usize),
+
+    #[regex(r"f\d+", |str| str.slice()[1..].parse())]
+    Function(usize),
+
+    #[regex(r"@label\d+", |str| str.slice().strip_prefix("@label").unwrap().parse())]
+    Label(usize),
 
     #[regex(r"[a-zA-Z0-9_\.]+")]
     AlphaNum,
