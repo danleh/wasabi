@@ -176,8 +176,27 @@ pub enum Instr {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum LocalOp { Get, Set, Tee }
 
+impl LocalOp {
+    pub fn to_type(self, local_ty: ValType) -> FunctionType {
+        match self {
+            LocalOp::Get => FunctionType::new(&[], &[local_ty]),
+            LocalOp::Set => FunctionType::new(&[local_ty], &[]),
+            LocalOp::Tee => FunctionType::new(&[local_ty], &[local_ty]),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum GlobalOp { Get, Set }
+
+impl GlobalOp {
+    pub fn to_type(self, global_ty: ValType) -> FunctionType {
+        match self {
+            GlobalOp::Get => FunctionType::new(&[], &[global_ty]),
+            GlobalOp::Set => FunctionType::new(&[global_ty], &[]),
+        }
+    }
+}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum LoadOp {
@@ -212,6 +231,148 @@ pub enum StoreOp {
     I64Store8,
     I64Store16,
     I64Store32,
+}
+
+/// Common trait for `LoadOp` and `StoreOp`.
+pub trait MemoryOp : Sized {
+    fn to_name(self) -> &'static str;
+    fn to_type(self) -> FunctionType;
+
+    // See comments on Memarg type for more information on the alignment hint and natural alignment.
+    fn natural_alignment_exp(self) -> u8;
+    fn natural_alignment(self) -> u32 {
+        2u32.pow(self.natural_alignment_exp() as u32)
+    }
+}
+
+impl MemoryOp for LoadOp {
+    fn to_name(self) -> &'static str {
+        use LoadOp::*;
+        match self {
+            I32Load => "i32.load",
+            I64Load => "i64.load",
+            F32Load => "f32.load",
+            F64Load => "f64.load",
+
+            I32Load8S => "i32.load8_s",
+            I32Load8U => "i32.load8_u",
+            I32Load16S => "i32.load16_s",
+            I32Load16U => "i32.load16_u",
+
+            I64Load8S => "i64.load8_s",
+            I64Load8U => "i64.load8_u",
+            I64Load16S => "i64.load16_s",
+            I64Load16U => "i64.load16_u",
+            I64Load32S => "i64.load32_s",
+            I64Load32U => "i64.load32_u",
+        }
+    }
+
+    fn to_type(self) -> FunctionType {
+        use LoadOp::*;
+        use ValType::*;
+        match self {
+            I32Load => FunctionType::new(&[I32], &[I32]),
+            I64Load => FunctionType::new(&[I32], &[I64]),
+            F32Load => FunctionType::new(&[I32], &[F32]),
+            F64Load => FunctionType::new(&[I32], &[F64]),
+
+            I32Load8S => FunctionType::new(&[I32], &[I32]),
+            I32Load8U => FunctionType::new(&[I32], &[I32]),
+            I32Load16S => FunctionType::new(&[I32], &[I32]),
+            I32Load16U => FunctionType::new(&[I32], &[I32]),
+            I64Load8S => FunctionType::new(&[I32], &[I64]),
+            I64Load8U => FunctionType::new(&[I32], &[I64]),
+            I64Load16S => FunctionType::new(&[I32], &[I64]),
+            I64Load16U => FunctionType::new(&[I32], &[I64]),
+            I64Load32S => FunctionType::new(&[I32], &[I64]),
+            I64Load32U => FunctionType::new(&[I32], &[I64]),
+        }
+    }
+
+    fn natural_alignment_exp(self) -> u8 {
+        use LoadOp::*;
+        match self {
+            I32Load => 2,
+            I64Load => 3,
+            F32Load => 2,
+            F64Load => 3,
+
+            I32Load8S => 0,
+            I32Load8U => 0,
+            I32Load16S => 1,
+            I32Load16U => 1,
+            I64Load8S => 0,
+            I64Load8U => 0,
+            I64Load16S => 1,
+            I64Load16U => 1,
+            I64Load32S => 2,
+            I64Load32U => 2,
+        }
+    }
+}
+
+impl MemoryOp for StoreOp {
+    fn to_name(self) -> &'static str {
+        use StoreOp::*;
+        match self {
+            I32Store => "i32.store",
+            I64Store => "i64.store",
+            F32Store => "f32.store",
+            F64Store => "f64.store",
+            
+            I32Store8 => "i32.store8",
+            I32Store16 => "i32.store16",
+            I64Store8 => "i64.store8",
+            I64Store16 => "i64.store16",
+            I64Store32 => "i64.store32",
+        }
+    }
+
+    fn to_type(self) -> FunctionType {
+        use StoreOp::*;
+        use ValType::*;
+        match self {
+            I32Store => FunctionType::new(&[I32, I32], &[]),
+            I64Store => FunctionType::new(&[I32, I64], &[]),
+            F32Store => FunctionType::new(&[I32, F32], &[]),
+            F64Store => FunctionType::new(&[I32, F64], &[]),
+
+            I32Store8 => FunctionType::new(&[I32, I32], &[]),
+            I32Store16 => FunctionType::new(&[I32, I32], &[]),
+            I64Store8 => FunctionType::new(&[I32, I64], &[]),
+            I64Store16 => FunctionType::new(&[I32, I64], &[]),
+            I64Store32 => FunctionType::new(&[I32, I64], &[]),
+        }
+    }
+
+    fn natural_alignment_exp(self) -> u8 {
+        use StoreOp::*;
+        match self {
+            I32Store => 2,
+            I64Store => 3,
+            F32Store => 2,
+            F64Store => 3,
+
+            I32Store8 => 0,
+            I32Store16 => 1,
+            I64Store8 => 0,
+            I64Store16 => 1,
+            I64Store32 => 2,
+        }
+    }
+}
+
+impl fmt::Display for LoadOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.to_name())
+    }
+}
+
+impl fmt::Display for StoreOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.to_name())
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -360,29 +521,142 @@ pub enum NumericOp {
     F64Copysign,
 }
 
-
-/* Type information for each instruction */
-
-impl LocalOp {
-    pub fn to_type(self, local_ty: ValType) -> FunctionType {
-        match self {
-            LocalOp::Get => FunctionType::new(&[], &[local_ty]),
-            LocalOp::Set => FunctionType::new(&[local_ty], &[]),
-            LocalOp::Tee => FunctionType::new(&[local_ty], &[local_ty]),
-        }
-    }
-}
-
-impl GlobalOp {
-    pub fn to_type(self, global_ty: ValType) -> FunctionType {
-        match self {
-            GlobalOp::Get => FunctionType::new(&[], &[global_ty]),
-            GlobalOp::Set => FunctionType::new(&[global_ty], &[]),
-        }
+impl fmt::Display for NumericOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_name())
     }
 }
 
 impl NumericOp {
+    pub fn to_name(&self) -> &'static str {
+        use NumericOp::*;
+        match self {
+            I32Eqz => "i32.eqz",
+            I64Eqz => "i64.eqz",
+            I32Clz => "i32.clz",
+            I32Ctz => "i32.ctz",
+            I32Popcnt => "i32.popcnt",
+            I64Clz => "i64.clz",
+            I64Ctz => "i64.ctz",
+            I64Popcnt => "i64.popcnt",
+            F32Abs => "f32.abs",
+            F32Neg => "f32.neg",
+            F32Ceil => "f32.ceil",
+            F32Floor => "f32.floor",
+            F32Trunc => "f32.trunc",
+            F32Nearest => "f32.nearest",
+            F32Sqrt => "f32.sqrt",
+            F64Abs => "f64.abs",
+            F64Neg => "f64.neg",
+            F64Ceil => "f64.ceil",
+            F64Floor => "f64.floor",
+            F64Trunc => "f64.trunc",
+            F64Nearest => "f64.nearest",
+            F64Sqrt => "f64.sqrt",
+            I32WrapI64 => "i32.wrap_i64",
+            I32TruncF32S => "i32.trunc_f32_s",
+            I32TruncF32U => "i32.trunc_f32_u",
+            I32TruncF64S => "i32.trunc_f64_s",
+            I32TruncF64U => "i32.trunc_f64_u",
+            I64ExtendI32S => "i64.extend_i32_s",
+            I64ExtendI32U => "i64.extend_i32_u",
+            I64TruncF32S => "i64.trunc_f32_s",
+            I64TruncF32U => "i64.trunc_f32_u",
+            I64TruncF64S => "i64.trunc_f64_s",
+            I64TruncF64U => "i64.trunc_f64_u",
+            F32ConvertI32S => "f32.convert_i32_s",
+            F32ConvertI32U => "f32.convert_i32_u",
+            F32ConvertI64S => "f32.convert_i64_s",
+            F32ConvertI64U => "f32.convert_i64_u",
+            F32DemoteF64 => "f32.demote_f64",
+            F64ConvertI32S => "f64.convert_i32_s",
+            F64ConvertI32U => "f64.convert_i32_u",
+            F64ConvertI64S => "f64.convert_i64_s",
+            F64ConvertI64U => "f64.convert_i64_u",
+            F64PromoteF32 => "f64.promote_f32",
+            I32ReinterpretF32 => "i32.reinterpret_f32",
+            I64ReinterpretF64 => "i64.reinterpret_f64",
+            F32ReinterpretI32 => "f32.reinterpret_i32",
+            F64ReinterpretI64 => "f64.reinterpret_i64",
+            I32Eq => "i32.eq",
+            I32Ne => "i32.ne",
+            I32LtS => "i32.lt_s",
+            I32LtU => "i32.lt_u",
+            I32GtS => "i32.gt_s",
+            I32GtU => "i32.gt_u",
+            I32LeS => "i32.le_s",
+            I32LeU => "i32.le_u",
+            I32GeS => "i32.ge_s",
+            I32GeU => "i32.ge_u",
+            I64Eq => "i64.eq",
+            I64Ne => "i64.ne",
+            I64LtS => "i64.lt_s",
+            I64LtU => "i64.lt_u",
+            I64GtS => "i64.gt_s",
+            I64GtU => "i64.gt_u",
+            I64LeS => "i64.le_s",
+            I64LeU => "i64.le_u",
+            I64GeS => "i64.ge_s",
+            I64GeU => "i64.ge_u",
+            F32Eq => "f32.eq",
+            F32Ne => "f32.ne",
+            F32Lt => "f32.lt",
+            F32Gt => "f32.gt",
+            F32Le => "f32.le",
+            F32Ge => "f32.ge",
+            F64Eq => "f64.eq",
+            F64Ne => "f64.ne",
+            F64Lt => "f64.lt",
+            F64Gt => "f64.gt",
+            F64Le => "f64.le",
+            F64Ge => "f64.ge",
+            I32Add => "i32.add",
+            I32Sub => "i32.sub",
+            I32Mul => "i32.mul",
+            I32DivS => "i32.div_s",
+            I32DivU => "i32.div_u",
+            I32RemS => "i32.rem_s",
+            I32RemU => "i32.rem_u",
+            I32And => "i32.and",
+            I32Or => "i32.or",
+            I32Xor => "i32.xor",
+            I32Shl => "i32.shl",
+            I32ShrS => "i32.shr_s",
+            I32ShrU => "i32.shr_u",
+            I32Rotl => "i32.rotl",
+            I32Rotr => "i32.rotr",
+            I64Add => "i64.add",
+            I64Sub => "i64.sub",
+            I64Mul => "i64.mul",
+            I64DivS => "i64.div_s",
+            I64DivU => "i64.div_u",
+            I64RemS => "i64.rem_s",
+            I64RemU => "i64.rem_u",
+            I64And => "i64.and",
+            I64Or => "i64.or",
+            I64Xor => "i64.xor",
+            I64Shl => "i64.shl",
+            I64ShrS => "i64.shr_s",
+            I64ShrU => "i64.shr_u",
+            I64Rotl => "i64.rotl",
+            I64Rotr => "i64.rotr",
+            F32Add => "f32.add",
+            F32Sub => "f32.sub",
+            F32Mul => "f32.mul",
+            F32Div => "f32.div",
+            F32Min => "f32.min",
+            F32Max => "f32.max",
+            F32Copysign => "f32.copysign",
+            F64Add => "f64.add",
+            F64Sub => "f64.sub",
+            F64Mul => "f64.mul",
+            F64Div => "f64.div",
+            F64Min => "f64.min",
+            F64Max => "f64.max",
+            F64Copysign => "f64.copysign",
+        }
+    }
+
     pub fn to_type(self) -> FunctionType {
         use NumericOp::*;
         use ValType::*;
@@ -432,96 +706,6 @@ impl NumericOp {
     }
 }
 
-pub trait MemoryOp : Sized {
-    fn to_type(self) -> FunctionType;
-
-    // See comments on Memarg type for more information on the alignment hint and natural alignment.
-    fn natural_alignment_exp(self) -> u8;
-    fn natural_alignment(self) -> u32 {
-        2u32.pow(self.natural_alignment_exp() as u32)
-    }
-}
-
-impl MemoryOp for LoadOp {
-    fn to_type(self) -> FunctionType {
-        use LoadOp::*;
-        use ValType::*;
-        match self {
-            I32Load => FunctionType::new(&[I32], &[I32]),
-            I64Load => FunctionType::new(&[I32], &[I64]),
-            F32Load => FunctionType::new(&[I32], &[F32]),
-            F64Load => FunctionType::new(&[I32], &[F64]),
-
-            I32Load8S => FunctionType::new(&[I32], &[I32]),
-            I32Load8U => FunctionType::new(&[I32], &[I32]),
-            I32Load16S => FunctionType::new(&[I32], &[I32]),
-            I32Load16U => FunctionType::new(&[I32], &[I32]),
-            I64Load8S => FunctionType::new(&[I32], &[I64]),
-            I64Load8U => FunctionType::new(&[I32], &[I64]),
-            I64Load16S => FunctionType::new(&[I32], &[I64]),
-            I64Load16U => FunctionType::new(&[I32], &[I64]),
-            I64Load32S => FunctionType::new(&[I32], &[I64]),
-            I64Load32U => FunctionType::new(&[I32], &[I64]),
-        }
-    }
-
-    fn natural_alignment_exp(self) -> u8 {
-        use LoadOp::*;
-        match self {
-            I32Load => 2,
-            I64Load => 3,
-            F32Load => 2,
-            F64Load => 3,
-
-            I32Load8S => 0,
-            I32Load8U => 0,
-            I32Load16S => 1,
-            I32Load16U => 1,
-            I64Load8S => 0,
-            I64Load8U => 0,
-            I64Load16S => 1,
-            I64Load16U => 1,
-            I64Load32S => 2,
-            I64Load32U => 2,
-        }
-    }
-}
-
-impl MemoryOp for StoreOp {
-    fn to_type(self) -> FunctionType {
-        use StoreOp::*;
-        use ValType::*;
-        match self {
-            I32Store => FunctionType::new(&[I32, I32], &[]),
-            I64Store => FunctionType::new(&[I32, I64], &[]),
-            F32Store => FunctionType::new(&[I32, F32], &[]),
-            F64Store => FunctionType::new(&[I32, F64], &[]),
-
-            I32Store8 => FunctionType::new(&[I32, I32], &[]),
-            I32Store16 => FunctionType::new(&[I32, I32], &[]),
-            I64Store8 => FunctionType::new(&[I32, I64], &[]),
-            I64Store16 => FunctionType::new(&[I32, I64], &[]),
-            I64Store32 => FunctionType::new(&[I32, I64], &[]),
-        }
-    }
-
-    fn natural_alignment_exp(self) -> u8 {
-        use StoreOp::*;
-        match self {
-            I32Store => 2,
-            I64Store => 3,
-            F32Store => 2,
-            F64Store => 3,
-
-            I32Store8 => 0,
-            I32Store16 => 1,
-            I64Store8 => 0,
-            I64Store16 => 1,
-            I64Store32 => 2,
-        }
-    }
-}
-
 impl Instr {
     /// for all where the type can be determined by just looking at the instruction, not additional
     /// information like the function or module etc.
@@ -554,182 +738,44 @@ impl Instr {
     /// returns instruction name as in Wasm spec
     pub fn to_name(&self) -> &'static str {
         use Instr::*;
-        use NumericOp::*;
-        use LoadOp::*;
-        use StoreOp::*;
         match *self {
             Unreachable => "unreachable",
             Nop => "nop",
+            
             Block(_) => "block",
             Loop(_) => "loop",
             If(_) => "if",
             Else => "else",
             End => "end",
+            
             Br(_) => "br",
             BrIf(_) => "br_if",
             BrTable { .. } => "br_table",
+            
             Return => "return",
             Call(_) => "call",
             CallIndirect(_, _) => "call_indirect",
+            
             Drop => "drop",
             Select => "select",
+
             Local(LocalOp::Get, _) => "local.get",
             Local(LocalOp::Set, _) => "local.set",
             Local(LocalOp::Tee, _) => "local.tee",
             Global(GlobalOp::Get, _) => "global.get",
             Global(GlobalOp::Set, _) => "global.set",
+
             MemorySize(_) => "memory.size",
             MemoryGrow(_) => "memory.grow",
+
             Const(Val::I32(_)) => "i32.const",
             Const(Val::I64(_)) => "i64.const",
             Const(Val::F32(_)) => "f32.const",
             Const(Val::F64(_)) => "f64.const",
-            Load(I32Load, _) => "i32.load",
-            Load(I64Load, _) => "i64.load",
-            Load(F32Load, _) => "f32.load",
-            Load(F64Load, _) => "f64.load",
-            Load(I32Load8S, _) => "i32.load8_s",
-            Load(I32Load8U, _) => "i32.load8_u",
-            Load(I32Load16S, _) => "i32.load16_s",
-            Load(I32Load16U, _) => "i32.load16_u",
-            Load(I64Load8S, _) => "i64.load8_s",
-            Load(I64Load8U, _) => "i64.load8_u",
-            Load(I64Load16S, _) => "i64.load16_s",
-            Load(I64Load16U, _) => "i64.load16_u",
-            Load(I64Load32S, _) => "i64.load32_s",
-            Load(I64Load32U, _) => "i64.load32_u",
-            Store(I32Store, _) => "i32.store",
-            Store(I64Store, _) => "i64.store",
-            Store(F32Store, _) => "f32.store",
-            Store(F64Store, _) => "f64.store",
-            Store(I32Store8, _) => "i32.store8",
-            Store(I32Store16, _) => "i32.store16",
-            Store(I64Store8, _) => "i64.store8",
-            Store(I64Store16, _) => "i64.store16",
-            Store(I64Store32, _) => "i64.store32",
-            Numeric(I32Eqz) => "i32.eqz",
-            Numeric(I64Eqz) => "i64.eqz",
-            Numeric(I32Clz) => "i32.clz",
-            Numeric(I32Ctz) => "i32.ctz",
-            Numeric(I32Popcnt) => "i32.popcnt",
-            Numeric(I64Clz) => "i64.clz",
-            Numeric(I64Ctz) => "i64.ctz",
-            Numeric(I64Popcnt) => "i64.popcnt",
-            Numeric(F32Abs) => "f32.abs",
-            Numeric(F32Neg) => "f32.neg",
-            Numeric(F32Ceil) => "f32.ceil",
-            Numeric(F32Floor) => "f32.floor",
-            Numeric(F32Trunc) => "f32.trunc",
-            Numeric(F32Nearest) => "f32.nearest",
-            Numeric(F32Sqrt) => "f32.sqrt",
-            Numeric(F64Abs) => "f64.abs",
-            Numeric(F64Neg) => "f64.neg",
-            Numeric(F64Ceil) => "f64.ceil",
-            Numeric(F64Floor) => "f64.floor",
-            Numeric(F64Trunc) => "f64.trunc",
-            Numeric(F64Nearest) => "f64.nearest",
-            Numeric(F64Sqrt) => "f64.sqrt",
-            Numeric(I32WrapI64) => "i32.wrap_i64",
-            Numeric(I32TruncF32S) => "i32.trunc_f32_s",
-            Numeric(I32TruncF32U) => "i32.trunc_f32_u",
-            Numeric(I32TruncF64S) => "i32.trunc_f64_s",
-            Numeric(I32TruncF64U) => "i32.trunc_f64_u",
-            Numeric(I64ExtendI32S) => "i64.extend_i32_s",
-            Numeric(I64ExtendI32U) => "i64.extend_i32_u",
-            Numeric(I64TruncF32S) => "i64.trunc_f32_s",
-            Numeric(I64TruncF32U) => "i64.trunc_f32_u",
-            Numeric(I64TruncF64S) => "i64.trunc_f64_s",
-            Numeric(I64TruncF64U) => "i64.trunc_f64_u",
-            Numeric(F32ConvertI32S) => "f32.convert_i32_s",
-            Numeric(F32ConvertI32U) => "f32.convert_i32_u",
-            Numeric(F32ConvertI64S) => "f32.convert_i64_s",
-            Numeric(F32ConvertI64U) => "f32.convert_i64_u",
-            Numeric(F32DemoteF64) => "f32.demote_f64",
-            Numeric(F64ConvertI32S) => "f64.convert_i32_s",
-            Numeric(F64ConvertI32U) => "f64.convert_i32_u",
-            Numeric(F64ConvertI64S) => "f64.convert_i64_s",
-            Numeric(F64ConvertI64U) => "f64.convert_i64_u",
-            Numeric(F64PromoteF32) => "f64.promote_f32",
-            Numeric(I32ReinterpretF32) => "i32.reinterpret_f32",
-            Numeric(I64ReinterpretF64) => "i64.reinterpret_f64",
-            Numeric(F32ReinterpretI32) => "f32.reinterpret_i32",
-            Numeric(F64ReinterpretI64) => "f64.reinterpret_i64",
-            Numeric(I32Eq) => "i32.eq",
-            Numeric(I32Ne) => "i32.ne",
-            Numeric(I32LtS) => "i32.lt_s",
-            Numeric(I32LtU) => "i32.lt_u",
-            Numeric(I32GtS) => "i32.gt_s",
-            Numeric(I32GtU) => "i32.gt_u",
-            Numeric(I32LeS) => "i32.le_s",
-            Numeric(I32LeU) => "i32.le_u",
-            Numeric(I32GeS) => "i32.ge_s",
-            Numeric(I32GeU) => "i32.ge_u",
-            Numeric(I64Eq) => "i64.eq",
-            Numeric(I64Ne) => "i64.ne",
-            Numeric(I64LtS) => "i64.lt_s",
-            Numeric(I64LtU) => "i64.lt_u",
-            Numeric(I64GtS) => "i64.gt_s",
-            Numeric(I64GtU) => "i64.gt_u",
-            Numeric(I64LeS) => "i64.le_s",
-            Numeric(I64LeU) => "i64.le_u",
-            Numeric(I64GeS) => "i64.ge_s",
-            Numeric(I64GeU) => "i64.ge_u",
-            Numeric(F32Eq) => "f32.eq",
-            Numeric(F32Ne) => "f32.ne",
-            Numeric(F32Lt) => "f32.lt",
-            Numeric(F32Gt) => "f32.gt",
-            Numeric(F32Le) => "f32.le",
-            Numeric(F32Ge) => "f32.ge",
-            Numeric(F64Eq) => "f64.eq",
-            Numeric(F64Ne) => "f64.ne",
-            Numeric(F64Lt) => "f64.lt",
-            Numeric(F64Gt) => "f64.gt",
-            Numeric(F64Le) => "f64.le",
-            Numeric(F64Ge) => "f64.ge",
-            Numeric(I32Add) => "i32.add",
-            Numeric(I32Sub) => "i32.sub",
-            Numeric(I32Mul) => "i32.mul",
-            Numeric(I32DivS) => "i32.div_s",
-            Numeric(I32DivU) => "i32.div_u",
-            Numeric(I32RemS) => "i32.rem_s",
-            Numeric(I32RemU) => "i32.rem_u",
-            Numeric(I32And) => "i32.and",
-            Numeric(I32Or) => "i32.or",
-            Numeric(I32Xor) => "i32.xor",
-            Numeric(I32Shl) => "i32.shl",
-            Numeric(I32ShrS) => "i32.shr_s",
-            Numeric(I32ShrU) => "i32.shr_u",
-            Numeric(I32Rotl) => "i32.rotl",
-            Numeric(I32Rotr) => "i32.rotr",
-            Numeric(I64Add) => "i64.add",
-            Numeric(I64Sub) => "i64.sub",
-            Numeric(I64Mul) => "i64.mul",
-            Numeric(I64DivS) => "i64.div_s",
-            Numeric(I64DivU) => "i64.div_u",
-            Numeric(I64RemS) => "i64.rem_s",
-            Numeric(I64RemU) => "i64.rem_u",
-            Numeric(I64And) => "i64.and",
-            Numeric(I64Or) => "i64.or",
-            Numeric(I64Xor) => "i64.xor",
-            Numeric(I64Shl) => "i64.shl",
-            Numeric(I64ShrS) => "i64.shr_s",
-            Numeric(I64ShrU) => "i64.shr_u",
-            Numeric(I64Rotl) => "i64.rotl",
-            Numeric(I64Rotr) => "i64.rotr",
-            Numeric(F32Add) => "f32.add",
-            Numeric(F32Sub) => "f32.sub",
-            Numeric(F32Mul) => "f32.mul",
-            Numeric(F32Div) => "f32.div",
-            Numeric(F32Min) => "f32.min",
-            Numeric(F32Max) => "f32.max",
-            Numeric(F32Copysign) => "f32.copysign",
-            Numeric(F64Add) => "f64.add",
-            Numeric(F64Sub) => "f64.sub",
-            Numeric(F64Mul) => "f64.mul",
-            Numeric(F64Div) => "f64.div",
-            Numeric(F64Min) => "f64.min",
-            Numeric(F64Max) => "f64.max",
-            Numeric(F64Copysign) => "f64.copysign",
+
+            Load(op, _) => op.to_name(),
+            Store(op, _) => op.to_name(),
+            Numeric(op) => op.to_name(),
         }
     }
 
