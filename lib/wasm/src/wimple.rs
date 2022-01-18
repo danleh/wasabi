@@ -1,19 +1,25 @@
-use std::{fmt, path::Path, io::{self, ErrorKind}};
+use std::{
+    fmt,
+    io::{self, ErrorKind},
+    path::Path,
+};
 
-use logos::{Logos, Lexer};
+use logos::{Lexer, Logos};
 use regex::Regex;
 
-use crate::{highlevel::{self, Module, Function, LoadOp, StoreOp, NumericOp}, types::types, FunctionType, Memarg};
-use crate::highlevel::Instr::*;
 use crate::Val;
-use crate::highlevel::NumericOp::*;
+use crate::{
+    highlevel::{self, Function, LoadOp, Module, NumericOp, StoreOp},
+    types::types,
+    FunctionType, Memarg,
+};
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum Var { 
-    Stack(usize), //s0..n
-    Local(usize), //l0..n
-    Global(usize), //g0..n
-    Param(usize),  //p0..n
+pub enum Var {
+    Stack(usize),
+    Local(usize),
+    Global(usize),
+    Param(usize),
 }
 
 impl fmt::Display for Var {
@@ -86,7 +92,7 @@ pub enum Instr {
     //     s1 = i32.const 3
     //     s1
     // }
-    Block { 
+    Block {
         lhs: Option<Var>,
         label: Label,
         body: Block,
@@ -96,7 +102,7 @@ pub enum Instr {
     //     br @label0 (s1)
     //     s1
     // }
-    Loop { 
+    Loop {
         lhs: Option<Var>,
         label: Label,
         body: Block,
@@ -108,8 +114,9 @@ pub enum Instr {
     //     s2 = i32.const 6
     //     s2
     // }
-    If { //if, if-else, select, br_if
-        lhs: Option<Var>, 
+    If {
+        //if, if-else, select, br_if
+        lhs: Option<Var>,
         condition: Var,
         // no label for select or br_if
         // br_if 3 (s0)
@@ -117,31 +124,31 @@ pub enum Instr {
         // if (s0) { br @label3 }
         label: Option<Label>,
         // invariant: if and else must either both return value or none
-        if_body: Block, 
-        else_body: Option<Block>, 
+        if_body: Block,
+        else_body: Option<Block>,
     },
-    
+
     // br @label0 (s1)
     Br {
-        target: Label, 
+        target: Label,
         values: Vec<Var>,
     },
     // br-table (s0) @label0, @label1, @label2, default=label@3
     BrTable {
-        index: Var, 
+        index: Var,
         table: Vec<Label>,
-        default: Label
+        default: Label,
     },
-    
+
     // return (s1)
     Return {
-        value: Option<Var>
+        value: Option<Var>,
     },
 
     // s0 = call f1 (s1)
     Call {
         lhs: Option<Var>,
-        func: Func, 
+        func: Func,
         args: Vec<Var>,
     },
     // s2 = call_indirect []->[i32] (s0) (s1, s2, s3...)
@@ -149,17 +156,17 @@ pub enum Instr {
         lhs: Option<Var>,
         type_: FunctionType,
         table_index: Var,
-        args: Vec<Var>
+        args: Vec<Var>,
     },
 
     // don't generate Wimpl Instr for Drop, but remove stack variable
     // encode Select -> If { lhs : s0, label = fresh(), condition=pop stack, if-branch=vec[pop stack], else-branch=vec[pop-stack], }
-     
+
     // local.set, global.set, local.tee, local.get, global.get
     // s2 = s1
     Assign {
         lhs: Var,
-        rhs: Var
+        rhs: Var,
     },
 
     // s1 = i32.load offset=3 align=4 (s0)
@@ -176,16 +183,21 @@ pub enum Instr {
         op: StoreOp,
         memarg: Memarg,
     },
-    
+
     // s1 = memory.size
-    MemorySize { lhs: Var },
+    MemorySize {
+        lhs: Var,
+    },
     // s1 = memory.grow(s0)
-    MemoryGrow { lhs: Var, new_size: Var },
+    MemoryGrow {
+        lhs: Var,
+        new_size: Var,
+    },
 
     // s1 = i32.const 3
     Const {
         lhs: Var,
-        val: Val, 
+        val: Val,
     },
 
     // s2 = i32.add(s0, s1)
@@ -194,7 +206,7 @@ pub enum Instr {
         op: NumericOp,
         lhs: Var,
         rhs: Vec<Var>,
-    }
+    },
 }
 
 impl Instr {
@@ -212,38 +224,38 @@ impl Instr {
             Call { lhs, .. } => *lhs,
             CallIndirect { lhs, .. } => *lhs,
 
-            Assign { lhs, ..} => Some(*lhs),
+            Assign { lhs, .. } => Some(*lhs),
 
-            Load { lhs, ..} => Some(*lhs),
-            Store {..} => None,
-            
+            Load { lhs, .. } => Some(*lhs),
+            Store { .. } => None,
+
             MemorySize { lhs } => Some(*lhs),
-            MemoryGrow { lhs, ..} => Some(*lhs),
-            
+            MemoryGrow { lhs, .. } => Some(*lhs),
+
             Const { lhs, .. } => Some(*lhs),
             Numeric { lhs, .. } => Some(*lhs),
         }
     }
 
-    pub fn new(lhs: Vec<Var>, op : highlevel::Instr, rhs: WimpleRhs) 
-    -> Self {
-        Instr {
-            lhs,
-            op,
-            rhs,
-        }
+    pub fn new(lhs: Vec<Var>, op: highlevel::Instr, rhs: WimpleRhs) -> Self {
+        Instr { lhs, op, rhs }
     }
 
     pub fn parse_instr(mut lexer: Lexer<WimplTextToken>) -> io::Result<Self> {
         let mut instr = Instr {
             lhs: Vec::new(),
             op: highlevel::Instr::Nop,
-            rhs: WimpleRhs::VarVec(Vec::new())
+            rhs: WimpleRhs::VarVec(Vec::new()),
         };
 
         match lexer.next() {
             Some(WimplTextToken::Variable(i)) => instr.lhs.push(Var(i)),
-            None => return Err(io::Error::new(ErrorKind::UnexpectedEof, "missing Wimpl instruction")),
+            None => {
+                return Err(io::Error::new(
+                    ErrorKind::UnexpectedEof,
+                    "missing Wimpl instruction",
+                ))
+            }
             Some(WimplTextToken::AlphaNum) => {
                 let start_instr = lexer.span().start;
                 println!("in AlphaNum: start={}", start_instr);
@@ -254,7 +266,7 @@ impl Instr {
                 }
                 let end_instr = lexer.span().end - 1;
                 println!("in AlphaNum: end={}", end_instr);
-                
+
                 let op_str = &lexer.source()[start_instr..end_instr].trim();
                 println!("in AlphaNum: op_str={:?}", op_str);
 
@@ -263,9 +275,9 @@ impl Instr {
 
                 // TODO parse argument list
             }
-            _ => todo!()
+            _ => todo!(),
         }
-        
+
         Ok(instr)
     }
 
@@ -283,7 +295,7 @@ impl Instr {
         Ok(vec![Self::parse_instr(lexer)?])
 
         // program = instr*
-        // instr = (variable '=')? operator args? 
+        // instr = (variable '=')? operator args?
         // args = '(' (variable ',')* variable ')'
     }
 
@@ -326,55 +338,78 @@ impl fmt::Display for Instr {
 
             Block { lhs, label, body } => write!(f, "{}: block {}", label, body)?,
             Loop { lhs, label, body } => write!(f, "{}: loop {}", label, body)?,
-            If { lhs, condition, label, if_body, else_body } => {
+            If {
+                lhs,
+                condition,
+                label,
+                if_body,
+                else_body,
+            } => {
                 if let Some(label) = label {
-                    write!(f, "{}: ", label);                    
+                    write!(f, "{}: ", label);
                 }
                 write!(f, "if ({}) {}", condition, if_body)?;
                 if let Some(else_branch) = else_body {
                     write!(f, "\nelse {}", else_branch)?;
                 }
             }
- 
+
             Br { target, values } => {
                 write!(f, "br {}", target)?;
-                display_list(f, values, "(", ")", ","); 
+                display_list(f, values, "(", ")", ",");
+            }
+            BrTable {
+                index,
+                table,
+                default,
+            } => {
+                write!(f, "br_table ({})", index)?;
+                display_list(f, table, "", "", ",")?;
+                write!(f, ", default={}", default)?;
+            }
+            Return { value } => match value {
+                Some(value) => write!(f, "return ({})", value)?,
+                None => write!(f, "return")?,
             },
-            BrTable { index, table, default } => {
-                write!(f, "br_table ({})", index)?; 
-                display_list(f, table, "", "", ",")?; 
-                write!(f, ", default={}", default)?; 
-            }
-            Return { value } => {
-                match value {
-                    Some(value) => write!(f, "return ({})", value)?,
-                    None => write!(f, "return")?,
-                }
-            }
-            
+
             Call { lhs, func, args } => {
                 write!(f, "call {} ", func)?;
-                display_list(f, args, "(", ")", ",")?; 
+                display_list(f, args, "(", ")", ",")?;
             }
-            
-            CallIndirect { lhs, type_, table_index, args } => {
-                write!(f, "call_indirect {} ({}) ", type_, table_index)?; 
-                display_list(f, args, "(", ")", ",")?;     
+
+            CallIndirect {
+                lhs,
+                type_,
+                table_index,
+                args,
+            } => {
+                write!(f, "call_indirect {} ({}) ", type_, table_index)?;
+                display_list(f, args, "(", ")", ",")?;
             }
-            
-            Assign { lhs, rhs } => write!(f, "{} = {}", lhs, rhs)?, 
-            
-            Load { lhs, addr, op, memarg } => write!(f, "{} ({})", op, addr)?,
-            Store { value, addr, op, memarg } => write!(f, "{} ({}) ({})", op, addr, value)?,
+
+            Assign { lhs, rhs } => write!(f, "{} = {}", lhs, rhs)?,
+
+            Load {
+                lhs,
+                addr,
+                op,
+                memarg,
+            } => write!(f, "{} ({})", op, addr)?,
+            Store {
+                value,
+                addr,
+                op,
+                memarg,
+            } => write!(f, "{} ({}) ({})", op, addr, value)?,
             MemorySize { lhs } => write!(f, "memory.size")?,
             MemoryGrow { lhs, new_size } => write!(f, "memory.grow({})", new_size)?,
             Const { lhs, val } => write!(f, "{}.const {}", val.to_type(), val)?,
             Numeric { op, lhs, rhs } => {
                 write!(f, "{}", op)?;
                 display_list(f, rhs, "(", ")", ",")?;
-            },
+            }
         };
-        write!(f, "\n"); 
+        write!(f, "\n");
         Ok(())
     }
 }
@@ -384,19 +419,19 @@ impl fmt::Display for Instr {
 pub enum WimplTextToken {
     #[token("(")]
     LParen,
-    
+
     #[token(")")]
     RParen,
 
     #[token("[")]
     LBracket,
-    
+
     #[token("]")]
     RBracket,
-    
+
     #[token("{")]
     LBrace,
-    
+
     #[token("}")]
     RBrace,
 
@@ -408,7 +443,7 @@ pub enum WimplTextToken {
 
     #[token("=")]
     Equals,
-    
+
     #[regex(r"v\d+", |str| str.slice()[1..].parse())]
     Variable(usize),
 
@@ -420,82 +455,80 @@ pub enum WimplTextToken {
 
     #[regex(r"[a-zA-Z0-9_\.]+")]
     AlphaNum,
-    
+
     #[error]
     Error,
 }
 
-pub fn wimplify (
+pub fn wimplify(
     instrs: &[highlevel::Instr],
     function: &Function,
     module: &Module,
 ) -> Result<Vec<Instr>, String> {
     let mut var_stack = Vec::new();
-    let mut var_count = 0; 
+    let mut var_count = 0;
     let mut result_instrs = Vec::new();
     let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
-    
+
     for (instr, ty) in instrs.iter().zip(tys.into_iter()) {
         println!("{:?}, {:?}", instr, ty);
         let n_inputs = ty.inputs.len();
         let n_results = ty.results.len();
 
         let result_instr = {
-            
-            let mut args = Vec::new(); 
+            let mut args = Vec::new();
             for _ in 0..n_inputs {
-                args.push(var_stack.pop().unwrap()); 
+                args.push(var_stack.pop().unwrap());
             }
-            
-            let mut lhs = Vec::new(); 
+
+            let mut lhs = Vec::new();
             for _ in 0..n_results {
                 lhs.push(Var(var_count));
-                var_stack.push(Var(var_count)); 
-                var_count += 1; 
-            }  
-            
-            Instr {
-                lhs : lhs, 
-                op : instr.clone(), 
-                rhs : WimpleRhs::VarVec(args), 
+                var_stack.push(Var(var_count));
+                var_count += 1;
             }
-            
-        }; 
+
+            Instr {
+                lhs: lhs,
+                op: instr.clone(),
+                rhs: WimpleRhs::VarVec(args),
+            }
+        };
         result_instrs.push(result_instr);
-    } 
+    }
 
     Ok(result_instrs)
 }
 
 #[test]
 fn wimpl_text_syntax() {
-    let parsed = Instr::from_file("tests/wimpl/syntax.wimpl").unwrap(); 
+    let parsed = Instr::from_file("tests/wimpl/syntax.wimpl").unwrap();
 
     let expected = Instr::new(
-        Vec::new(), 
+        Vec::new(),
         Const(Val::I32(2)),
-        WimpleRhs::VarVec(Vec::new())
+        WimpleRhs::VarVec(Vec::new()),
     );
     assert_eq!(parsed[0], expected);
 
     let expected = Instr::new(
-        vec![Var(0)], 
+        vec![Var(0)],
         Const(Val::I32(3)),
-        WimpleRhs::VarVec(Vec::new())
+        WimpleRhs::VarVec(Vec::new()),
     );
     assert_eq!(parsed[1], expected);
 }
 
 #[test]
 fn constant_file() {
-    let path = "tests/wimpl/const.wimpl"; 
-    let expected = Instr::from_file(path).unwrap(); 
+    let path = "tests/wimpl/const.wimpl";
+    let expected = Instr::from_file(path).unwrap();
 
     let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = &func.code().unwrap().body[0..1];
     let actual = wimplify(instrs, func, &module).unwrap();
-    
+
     assert_eq!(actual, expected);
 }
 
@@ -506,20 +539,17 @@ fn constant() {
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..1];
     let actual = wimplify(instrs, func, &module).unwrap();
-    //println!("actual {:?}",actual); 
+    //println!("actual {:?}",actual);
     for ins in &actual {
         println!("{}", ins);
     }
-    let expected = vec![
-        Instr {
-            lhs : vec![Var(0)], 
-            op : Const(Val::I32(3)), 
-            rhs : WimpleRhs::VarVec(Vec::new()), 
-        }
-        ];
+    let expected = vec![Instr {
+        lhs: vec![Var(0)],
+        op: Const(Val::I32(3)),
+        rhs: WimpleRhs::VarVec(Vec::new()),
+    }];
     assert_eq!(actual, expected);
 }
-
 
 #[test]
 fn drop() {
@@ -528,21 +558,21 @@ fn drop() {
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..2];
     let actual = wimplify(instrs, func, &module).unwrap();
-    //println!("actual {:?}",actual); 
+    //println!("actual {:?}",actual);
     for ins in &actual {
         println!("{}", ins);
     }
     let expected = vec![
         Instr {
-            lhs : vec![Var(0)], 
-            op : Const(Val::I32(3)), 
-            rhs : WimpleRhs::VarVec(Vec::new()), 
+            lhs: vec![Var(0)],
+            op: Const(Val::I32(3)),
+            rhs: WimpleRhs::VarVec(Vec::new()),
         },
         Instr {
-            lhs : Vec::new(), 
-            op : Drop, 
-            rhs : WimpleRhs::VarVec(vec![Var(0)]), 
-        }        
+            lhs: Vec::new(),
+            op: Drop,
+            rhs: WimpleRhs::VarVec(vec![Var(0)]),
+        },
     ];
     assert_eq!(actual, expected);
 }
@@ -558,9 +588,21 @@ fn add() {
         println!("{}", ins);
     }
     let expected = vec![
-        Instr::new(vec![Var(0)], Const(Val::I32(3)) , WimpleRhs::VarVec(Vec::new())),
-        Instr::new(vec![Var(1)], Const(Val::I32(4)) , WimpleRhs::VarVec(Vec::new())),
-        Instr::new(vec![Var(2)], Numeric(I32Add), WimpleRhs::VarVec(vec![Var(1), Var(0)])),  
+        Instr::new(
+            vec![Var(0)],
+            Const(Val::I32(3)),
+            WimpleRhs::VarVec(Vec::new()),
+        ),
+        Instr::new(
+            vec![Var(1)],
+            Const(Val::I32(4)),
+            WimpleRhs::VarVec(Vec::new()),
+        ),
+        Instr::new(
+            vec![Var(2)],
+            Numeric(I32Add),
+            WimpleRhs::VarVec(vec![Var(1), Var(0)]),
+        ),
     ];
     println!("{:?}", expected);
     assert_eq!(actual, expected);
