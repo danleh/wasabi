@@ -515,23 +515,20 @@ pub enum Token {
     #[token("=")]
     Equals,
 
-    #[token("\n")]
+    #[token("@")]
+    At,
+
+    #[regex(r"[a-zA-Z0-9_\.]+")]
+    AlphaNum,
+
+    #[token("\n", logos::skip)]
     Linebreak,
 
     #[regex(r"\s+", logos::skip)]
     Whitespace,
 
-    #[regex(r"(s|l|g|p)\d+", |str| str.slice()[1..].parse())]
-    Variable(usize),
-
-    #[regex(r"f\d+", |str| str.slice()[1..].parse())]
-    Function(usize),
-
-    #[regex(r"@label\d+", |str| str.slice().strip_prefix("@label").unwrap().parse())]
-    Label(usize),
-
-    #[regex(r"[a-zA-Z0-9_\.]+")]
-    AlphaNum,
+    #[regex(r"//.*", logos::skip)]
+    Comment,
 
     #[error]
     Error,
@@ -727,6 +724,15 @@ fn pretty_print() {
   br @label1
 }",
     );
+}
+
+#[test]
+fn lexing() {
+    let str = std::fs::read_to_string("tests/wimpl/syntax.wimpl").unwrap();
+    let lexer = Token::lexer(&str);
+    for (token, span) in lexer.spanned() {
+        println!("{:3?}  {:10}  {:?}", span.clone(), format!("{:?}", token), &str[span]);
+    }
 }
 
 // #[test]
