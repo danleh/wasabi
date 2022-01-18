@@ -1062,22 +1062,18 @@ impl fmt::Display for Instr {
             Local(_, local_idx) => write!(f, " {}", local_idx.into_inner()),
             Global(_, global_idx) => write!(f, " {}", global_idx.into_inner()),
 
-            Load(_, memarg) | Store(_, memarg) => {
-                if memarg.offset != 0 {
-                    write!(f, " offset={}", memarg.offset)?;
+            Load(op, memarg) => {
+                if !memarg.is_default(*op) {
+                    f.write_str(" ")?;
                 }
-
-                let natural_alignment_exp = match self {
-                    Load(load_op, _) => load_op.natural_alignment_exp(),
-                    Store(store_op, _) => store_op.natural_alignment_exp(),
-                    _ => unreachable!()
-                };
-                if memarg.alignment_exp != natural_alignment_exp {
-                    write!(f, " align={}", memarg.alignment())?;
+                memarg.fmt(f, *op)
+            },
+            Store(op, memarg) => {
+                if !memarg.is_default(*op) {
+                    f.write_str(" ")?;
                 }
-
-                Ok(())
-            }
+                memarg.fmt(f, *op)
+            },
 
             Const(val) => write!(f, " {}", val)
         }

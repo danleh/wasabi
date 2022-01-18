@@ -7,6 +7,7 @@ use ordered_float::OrderedFloat;
 use serde::{Serialize, Serializer};
 
 use crate::WasmBinary;
+use crate::highlevel::MemoryOp;
 
 /* AST nodes common to high- and low-level representations. */
 
@@ -285,8 +286,9 @@ impl Serialize for Label {
 
 /* Code */
 
-#[derive(WasmBinary, Debug, Copy, Clone, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Memarg {
+    pub offset: u32,
     /// The alignment of load/stores is just a hint for the VM that says "the effective address of
     /// this load/store should be aligned to <alignment>".
     /// However, if that hint is wrong and the actual address is not aligned, the load/store still
@@ -304,12 +306,32 @@ pub struct Memarg {
     /// See https://webassembly.github.io/spec/core/syntax/instructions.html#memory-instructions
     /// and https://webassembly.github.io/spec/core/text/instructions.html#memory-instructions.
     pub alignment_exp: u8,
-    pub offset: u32,
 }
 
 impl Memarg {
+    pub fn default(op: impl MemoryOp) -> Self {
+        Self {
+            offset: 0,
+            alignment_exp: op.natural_alignment_exp()
+        }
+    }
+
+    pub fn is_default(self, op: impl MemoryOp) -> bool {
+        self == Self::default(op)
+    }
+
     pub fn alignment(self) -> u32 {
         2u32.pow(self.alignment_exp as u32)
+    }
+
+    /// Formats non-default fields, depends on natural alignment of `op`.
+    pub fn fmt(&self, f: &mut fmt::Formatter<'_>, op: impl MemoryOp) -> fmt::Result {
+        match (self.offset, self.alignment_exp == op.natural_alignment_exp()) {
+            (0, true) => Ok(()),
+            (0, false) => write!(f, "align={}", self.alignment()),
+            (_, true) => write!(f, "offset={}", self.offset),
+            (_, false) => write!(f, "offset={} align={}", self.offset, self.alignment()),
+        }
     }
 }
 
