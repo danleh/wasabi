@@ -7,7 +7,7 @@ use std::{
 use logos::{Lexer, Logos};
 use regex::Regex;
 
-use crate::{Val, highlevel::MemoryOp, ValType};
+use crate::{highlevel::MemoryOp, Val, ValType};
 use crate::{
     highlevel::{self, Function, LoadOp, Module, NumericOp, StoreOp},
     types::types,
@@ -100,8 +100,8 @@ impl fmt::Display for Body {
 // between stack variables and locals/globals.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Instr {
-    Unreachable,
     // Simplify: nop is not necessary for analysis.
+    Unreachable,
 
     Block {
         lhs: Option<Var>,
@@ -115,7 +115,7 @@ pub enum Instr {
     },
     If {
         lhs: Option<Var>,
-        // No label for an if generated from select or br_if 
+        // No label for an if generated from select or br_if
         // (where this if block is never the target of a branch).
         label: Option<Label>,
         condition: Var,
@@ -309,7 +309,7 @@ fn display_delim<T>(
 where
     T: IntoIterator,
     T::IntoIter: DoubleEndedIterator,
-    T::Item: fmt::Display
+    T::Item: fmt::Display,
 {
     let mut iter = values.into_iter();
     match iter.next_back() {
@@ -326,7 +326,7 @@ where
     }
 }
 
-// Pretty-prints instructions, including indenting nested blocks. 
+// Pretty-prints instructions, including indenting nested blocks.
 // Comments show examples.
 // Conventions for the text format:
 // - Things in parentheses (x, y) signify runtime arguments.
@@ -346,20 +346,28 @@ impl fmt::Display for Instr {
             //   s1 = i32.const 3
             //   s1
             // }
-            Block { lhs: _, label, body } => write!(f, "{}: block {}", label, body)?,
+            Block {
+                lhs: _,
+                label,
+                body,
+            } => write!(f, "{}: block {}", label, body)?,
             // s0 = @label0: loop {
             //     s1 = i32.const 3
             //     br @label0 (s1)
             //     s1
             // }
-            Loop { lhs: _, label, body } => write!(f, "{}: loop {}", label, body)?,
+            Loop {
+                lhs: _,
+                label,
+                body,
+            } => write!(f, "{}: loop {}", label, body)?,
             // s0 = @label0: if {
             //     s1 = i32.const 3
             //     s1
             // } else {
             //     s2 = i32.const 6
             //     s2
-            // }            
+            // }
             If {
                 lhs: _,
                 condition,
@@ -398,7 +406,7 @@ impl fmt::Display for Instr {
             Return { value } => {
                 f.write_str("return")?;
                 display_delim(f, value, " (", ")", ", ")?;
-            },
+            }
 
             // s0 = call f1 (s1)
             Call { lhs: _, func, args } => {
@@ -453,7 +461,7 @@ impl fmt::Display for Instr {
                 }
                 write!(f, "({}) ({})", addr, value)?;
             }
-            
+
             // s1 = memory.size
             MemorySize { lhs: _ } => write!(f, "memory.size")?,
             // s1 = memory.grow(s0)
@@ -563,82 +571,152 @@ pub enum WimplTextToken {
 #[test]
 fn pretty_print() {
     // Convenience:
-    use Instr::*;
-    use Var::*;
-    use Val::*;
+    use highlevel::LoadOp::*;
     use highlevel::NumericOp::*;
     use highlevel::StoreOp::*;
-    use highlevel::LoadOp::*;
+    use Instr::*;
+    use Val::*;
+    use Var::*;
     fn test(wimpl: Instr, str: &str) {
         assert_eq!(wimpl.to_string(), str);
     }
 
     test(Unreachable, "unreachable");
 
-    test(Assign { lhs: Global(0), rhs: Local(0) }, "g0 = l0");
-
-    test(Const { lhs: Stack(0), val: I32(1337) }, "s0 = i32.const 1337");
-    test(Numeric { lhs: Stack(1), op: I32Add, rhs: vec![Stack(2), Stack(3)] }, "s1 = i32.add(s2, s3)");
+    test(
+        Assign {
+            lhs: Global(0),
+            rhs: Local(0),
+        },
+        "g0 = l0",
+    );
 
     test(
-        Load { lhs: Stack(1), op: I32Load, memarg: Memarg::default(I32Load), addr: Stack(0) },
-        "s1 = i32.load(s0)"
+        Const {
+            lhs: Stack(0),
+            val: I32(1337),
+        },
+        "s0 = i32.const 1337",
+    );
+    test(
+        Numeric {
+            lhs: Stack(1),
+            op: I32Add,
+            rhs: vec![Stack(2), Stack(3)],
+        },
+        "s1 = i32.add(s2, s3)",
+    );
+
+    test(
+        Load {
+            lhs: Stack(1),
+            op: I32Load,
+            memarg: Memarg::default(I32Load),
+            addr: Stack(0),
+        },
+        "s1 = i32.load(s0)",
     );
     // Non-default alignment:
     test(
-        Store { op: I64Store8, value: Stack(1), addr: Stack(2), memarg: Memarg { offset: 0, alignment_exp: 4 } }, 
-        "i64.store8 align=16 (s2) (s1)"
+        Store {
+            op: I64Store8,
+            value: Stack(1),
+            addr: Stack(2),
+            memarg: Memarg {
+                offset: 0,
+                alignment_exp: 4,
+            },
+        },
+        "i64.store8 align=16 (s2) (s1)",
     );
 
-    test(Br { target: Label(0), value: None }, "br @label0");
+    test(
+        Br {
+            target: Label(0),
+            value: None,
+        },
+        "br @label0",
+    );
     // With index and value.
     test(
-        BrTable { idx: Stack(0), table: vec![Label(1), Label(2)], default: Label(0), value: Some(Stack(1)) },
-        "br_table @label1 @label2 default=@label0 (s0) (s1)"
+        BrTable {
+            idx: Stack(0),
+            table: vec![Label(1), Label(2)],
+            default: Label(0),
+            value: Some(Stack(1)),
+        },
+        "br_table @label1 @label2 default=@label0 (s0) (s1)",
     );
 
     // Always print the argument parentheses, even if no arguments passed.
     test(
-        Call { lhs: None, func: Func(7), args: Vec::new() },
-        "call f7 ()"
+        Call {
+            lhs: None,
+            func: Func(7),
+            args: Vec::new(),
+        },
+        "call f7 ()",
     );
     test(
-        CallIndirect { 
-            lhs: Some(Stack(1)), 
-            type_: FunctionType::new(&[ValType::I32], &[ValType::I32]), 
+        CallIndirect {
+            lhs: Some(Stack(1)),
+            type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
             table_idx: Stack(0),
-            args: vec![Stack(2), Stack(3)]
+            args: vec![Stack(2), Stack(3)],
         },
-        "s1 = call_indirect [i32] -> [i32] (s0) (s2, s3)"
+        "s1 = call_indirect [i32] -> [i32] (s0) (s2, s3)",
     );
 
     // Single if + br (which is our form of br_if).
     test(
-        If { lhs: None, condition: Stack(0), label: None, if_body: Body {
-            instrs: vec![Br { target: Label(0), value: None }],
-            result: None,
-        }, else_body: None }, 
-        "if (s0) { br @label0 }"
+        If {
+            lhs: None,
+            condition: Stack(0),
+            label: None,
+            if_body: Body {
+                instrs: vec![Br {
+                    target: Label(0),
+                    value: None,
+                }],
+                result: None,
+            },
+            else_body: None,
+        },
+        "if (s0) { br @label0 }",
     );
     // Multi-line and nested loop/block.
     test(
-        Loop { lhs: None, label: Label(1), body: Body { 
-            instrs: vec![
-                Block { lhs: Some(Stack(0)), label: Label(2), body: Body {
-                    instrs: vec![Const { lhs: Stack(1), val: I32(7) }],
-                    result: Some(Stack(1))
-                }},
-                Br { target: Label(1), value: None }
-            ],
-            result: None
-        } },
+        Loop {
+            lhs: None,
+            label: Label(1),
+            body: Body {
+                instrs: vec![
+                    Block {
+                        lhs: Some(Stack(0)),
+                        label: Label(2),
+                        body: Body {
+                            instrs: vec![Const {
+                                lhs: Stack(1),
+                                val: I32(7),
+                            }],
+                            result: Some(Stack(1)),
+                        },
+                    },
+                    Br {
+                        target: Label(1),
+                        value: None,
+                    },
+                ],
+                result: None,
+            },
+        },
         r"@label1: loop {
   s0 = @label2: block {
     s1 = i32.const 7
     s1
   }
   br @label1
-}"
+}",
     );
 }
 
