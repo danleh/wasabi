@@ -87,55 +87,48 @@ impl fmt::Display for Body {
     }
 }
 
+/// Wimpl instructions make the following major changes over high-level Wasm:
+/// - Remove the evaluation/operand stack completely, every instruction takes
+/// explicit arguments and optionally produces a (in the Wasm MVP) single LHS.
+/// - Stratify, i.e., express instructions that add no expressiveness as
+/// combinations of simple instructions, e.g., br_if and select.
+/// - Resolve relative, numerical branch targets to explicitly labeled blocks.
+/// - Represent stack variables, locals, globals, and function parameters with
+/// a single `Variable` construct. As a side-effect of this replaces all
+/// local.* and global.* instructions with a single `Assign` instruction.
+// TODO Optimize this representation, in particular remove redundant assignments
+// between stack variables and locals/globals.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Instr {
-    // no nop
-
-    // unreachable
     Unreachable,
+    // Simplify: nop is not necessary for analysis.
 
-    // s0 = @label0: block {
-    //     s1 = i32.const 3
-    //     s1
-    // }
     Block {
         lhs: Option<Var>,
         label: Label,
         body: Body,
     },
-    // s0 = @label0: loop {
-    //     s1 = i32.const 3
-    //     br @label0 (s1)
-    //     s1
-    // }
     Loop {
         lhs: Option<Var>,
         label: Label,
         body: Body,
     },
-    // s0 = @label0: if {
-    //     s1 = i32.const 3
-    //     s1
-    // } else {
-    //     s2 = i32.const 6
-    //     s2
-    // }
     If {
         lhs: Option<Var>,
-        // No label for an if generated from select or br_if.
+        // No label for an if generated from select or br_if 
+        // (where this if block is never the target of a branch).
         label: Option<Label>,
         condition: Var,
-        // Invariant: if and else must either both return value or none
+        // Invariant: if and else must either both return value or not.
         if_body: Body,
         else_body: Option<Body>,
     },
 
-    // br @label0 (s1)
     Br {
         target: Label,
         value: Option<Var>,
     },
-    // br-table @label0, @label1, @label2, default=label@3 (s0)
+    // Simplify: Represent br_if as an if (cond) { br }.
     BrTable {
         idx: Var,
         table: Vec<Label>,
@@ -143,18 +136,15 @@ pub enum Instr {
         value: Option<Var>,
     },
 
-    // return (s1)
     Return {
         value: Option<Var>,
     },
 
-    // s0 = call f1 (s1)
     Call {
         lhs: Option<Var>,
         func: Func,
         args: Vec<Var>,
     },
-    // s2 = call_indirect []->[i32] (s0) (s1, s2, s3...)
     CallIndirect {
         lhs: Option<Var>,
         type_: FunctionType,
@@ -162,24 +152,23 @@ pub enum Instr {
         args: Vec<Var>,
     },
 
-    // don't generate Wimpl Instr for Drop, but remove stack variable
-    // encode Select -> If { lhs : s0, label = fresh(), condition=pop stack, if-branch=vec[pop stack], else-branch=vec[pop-stack], }
+    // Simplify: No instruction for drop, this is just a dead variable.
+    // TODO Remove dead variables recursively.
 
-    // local.set, global.set, local.tee, local.get, global.get
-    // s2 = s1
+    // Simplify: Encode select as result = if (arg0) { arg1 } else { arg2 }.
+
+    // Simplify: Handles all of local.set, global.set, local.tee, local.get, global.get.
     Assign {
         lhs: Var,
         rhs: Var,
     },
 
-    // s1 = i32.load offset=3 align=4 (s0)
     Load {
         lhs: Var,
         op: LoadOp,
         memarg: Memarg,
         addr: Var,
     },
-    // i32.store offset=3 align=4 (s0//addr) (s1//value)
     Store {
         op: StoreOp,
         memarg: Memarg,
@@ -187,24 +176,19 @@ pub enum Instr {
         addr: Var,
     },
 
-    // s1 = memory.size
     MemorySize {
         lhs: Var,
     },
-    // s1 = memory.grow(s0)
     MemoryGrow {
         lhs: Var,
         new_size: Var,
     },
 
-    // s1 = i32.const 3
     Const {
         lhs: Var,
         val: Val,
     },
 
-    // s2 = i32.add(s0, s1)
-    // s1 = f32.neg(s0)
     Numeric {
         lhs: Var,
         op: NumericOp,
@@ -342,6 +326,12 @@ where
     }
 }
 
+// Pretty-prints instructions, including indenting nested blocks. 
+// Comments show examples.
+// Conventions for the text format:
+// - Things in parentheses (x, y) signify runtime arguments.
+// - Everything outside of the parentheses is statically encoded into the instruction.
+// - Curly brances { ... } signify block bodies (i.e., instructions and an optional return variable).
 impl fmt::Display for Instr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(lhs) = self.lhs() {
@@ -352,8 +342,24 @@ impl fmt::Display for Instr {
         match self {
             Unreachable => f.write_str("unreachable")?,
 
+            // s0 = @label0: block {
+            //   s1 = i32.const 3
+            //   s1
+            // }
             Block { lhs: _, label, body } => write!(f, "{}: block {}", label, body)?,
+            // s0 = @label0: loop {
+            //     s1 = i32.const 3
+            //     br @label0 (s1)
+            //     s1
+            // }
             Loop { lhs: _, label, body } => write!(f, "{}: loop {}", label, body)?,
+            // s0 = @label0: if {
+            //     s1 = i32.const 3
+            //     s1
+            // } else {
+            //     s2 = i32.const 6
+            //     s2
+            // }            
             If {
                 lhs: _,
                 condition,
@@ -370,10 +376,12 @@ impl fmt::Display for Instr {
                 }
             }
 
+            // br @label0 (s1)
             Br { target, value } => {
                 write!(f, "br {}", target)?;
                 display_delim(f, value, " (", ")", ", ")?;
             }
+            // br-table @label0, @label1, @label2, default=label@3 (s0)
             BrTable {
                 idx: index,
                 table,
@@ -385,30 +393,37 @@ impl fmt::Display for Instr {
                 write!(f, " default={} ({})", default, index)?;
                 display_delim(f, value, " (", ")", ", ")?;
             }
+
+            // return (s1)
             Return { value } => {
                 f.write_str("return")?;
                 display_delim(f, value, " (", ")", ", ")?;
             },
 
+            // s0 = call f1 (s1)
             Call { lhs: _, func, args } => {
+                // Always print the parentheses, even if `args` is empty.
                 write!(f, "call {} (", func)?;
                 display_delim(f, args, "", "", ", ")?;
                 f.write_str(")")?;
             }
-
+            // s2 = call_indirect [] -> [i32] (s0) (s1, s2, s3...)
             CallIndirect {
                 lhs: _,
                 type_,
                 table_idx: table_index,
                 args,
             } => {
+                // Always print the parentheses, even if `args` is empty.
                 write!(f, "call_indirect {} ({}) (", type_, table_index)?;
                 display_delim(f, args, "", "", ", ")?;
                 f.write_str(")")?;
             }
 
+            // s2 = s1
             Assign { lhs: _, rhs } => write!(f, "{}", rhs)?,
 
+            // s1 = i32.load offset=3 align=4 (s0)
             Load {
                 lhs: _,
                 addr,
@@ -418,13 +433,12 @@ impl fmt::Display for Instr {
                 write!(f, "{}", op)?;
                 if !memarg.is_default(*op) {
                     f.write_str(" ")?;
-                }
-                memarg.fmt(f, *op)?;
-                if !memarg.is_default(*op) {
+                    memarg.fmt(f, *op)?;
                     f.write_str(" ")?;
                 }
                 write!(f, "({})", addr)?;
             }
+            // i32.store offset=3 align=4 (s0//addr) (s1//value)
             Store {
                 value,
                 addr,
@@ -434,18 +448,22 @@ impl fmt::Display for Instr {
                 write!(f, "{}", op)?;
                 if !memarg.is_default(*op) {
                     f.write_str(" ")?;
-                }
-                memarg.fmt(f, *op)?;
-                if !memarg.is_default(*op) {
+                    memarg.fmt(f, *op)?;
                     f.write_str(" ")?;
                 }
                 write!(f, "({}) ({})", addr, value)?;
             }
             
+            // s1 = memory.size
             MemorySize { lhs: _ } => write!(f, "memory.size")?,
+            // s1 = memory.grow(s0)
             MemoryGrow { lhs: _, new_size } => write!(f, "memory.grow({})", new_size)?,
 
+            // s1 = i32.const 3
             Const { lhs: _, val } => write!(f, "{}.const {}", val.to_type(), val)?,
+
+            // s2 = i32.add(s0, s1)
+            // s1 = f32.neg(s0)
             Numeric { lhs: _, op, rhs } => {
                 write!(f, "{}", op)?;
                 display_delim(f, rhs, "(", ")", ", ")?;
