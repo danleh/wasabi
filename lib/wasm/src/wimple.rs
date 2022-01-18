@@ -1,5 +1,5 @@
 use std::{
-    fmt,
+    fmt::{self, Write},
     io::{self, ErrorKind},
     path::Path,
 };
@@ -7,7 +7,7 @@ use std::{
 use logos::{Lexer, Logos};
 use regex::Regex;
 
-use crate::Val;
+use crate::{Val, highlevel::MemoryOp, ValType};
 use crate::{
     highlevel::{self, Function, LoadOp, Module, NumericOp, StoreOp},
     types::types,
@@ -26,10 +26,10 @@ impl fmt::Display for Var {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Var::*;
         match self {
-            Stack(num) => write!(f, "s{}", num),
-            Local(num) => write!(f, "l{}", num),
-            Global(num) => write!(f, "g{}", num),
-            Param(num) => write!(f, "p{}", num),
+            Stack(i) => write!(f, "s{}", i),
+            Local(i) => write!(f, "l{}", i),
+            Global(i) => write!(f, "g{}", i),
+            Param(i) => write!(f, "p{}", i),
         }
     }
 }
@@ -53,30 +53,36 @@ impl fmt::Display for Label {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub struct Block {
+pub struct Body {
     instrs: Vec<Instr>,
     result: Option<Var>,
 }
 
-impl fmt::Display for Block {
+const BLOCK_INDENT: &'static str = "  ";
+
+impl fmt::Display for Body {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let single_line = self.instrs.is_empty();
-        if single_line {
-            if let Some(result) = self.result {
-                writeln!(f, "{{ {} }}", result)
-            } else {
-                f.write_str("{}")
+        // Put each inner instruction and the result on a separate line.
+        let mut inner = String::new();
+        for instr in &self.instrs {
+            writeln!(inner, "{}", instr)?;
+        }
+        if let Some(result) = self.result {
+            writeln!(inner, "{}", result)?;
+        }
+        // Pop-off the last superfluous newline (or do nothing if empty).
+        inner.pop();
+
+        // If there is only a single result without instructions, or only a
+        // single-line instructions (such as br @label), format on one line.
+        match inner.as_ref() {
+            "" => f.write_str("{}"),
+            single_line if single_line.lines().count() == 1 => write!(f, "{{ {} }}", single_line),
+            multi_line => {
+                // Recursively indent the inner blocks.
+                let multi_line = multi_line.replace("\n", &format!("\n{}", BLOCK_INDENT));
+                write!(f, "{{\n{}{}\n}}", BLOCK_INDENT, multi_line)
             }
-        } else {
-            // TODO Indent blocks recursively, needs level.
-            f.write_str("{\n")?;
-            for instr in self.instrs {
-                writeln!(f, "{}", instr)?;
-            }
-            if let Some(result) = self.result {
-                writeln!(f, "{}", result);
-            }
-            f.write_str("\n}")
         }
     }
 }
@@ -95,7 +101,7 @@ pub enum Instr {
     Block {
         lhs: Option<Var>,
         label: Label,
-        body: Block,
+        body: Body,
     },
     // s0 = @label0: loop {
     //     s1 = i32.const 3
@@ -105,7 +111,7 @@ pub enum Instr {
     Loop {
         lhs: Option<Var>,
         label: Label,
-        body: Block,
+        body: Body,
     },
     // s0 = @label0: if {
     //     s1 = i32.const 3
@@ -115,29 +121,26 @@ pub enum Instr {
     //     s2
     // }
     If {
-        //if, if-else, select, br_if
         lhs: Option<Var>,
-        condition: Var,
-        // no label for select or br_if
-        // br_if 3 (s0)
-        // ->
-        // if (s0) { br @label3 }
+        // No label for an if generated from select or br_if.
         label: Option<Label>,
-        // invariant: if and else must either both return value or none
-        if_body: Block,
-        else_body: Option<Block>,
+        condition: Var,
+        // Invariant: if and else must either both return value or none
+        if_body: Body,
+        else_body: Option<Body>,
     },
 
     // br @label0 (s1)
     Br {
         target: Label,
-        values: Vec<Var>,
+        value: Option<Var>,
     },
-    // br-table (s0) @label0, @label1, @label2, default=label@3
+    // br-table @label0, @label1, @label2, default=label@3 (s0)
     BrTable {
-        index: Var,
+        idx: Var,
         table: Vec<Label>,
         default: Label,
+        value: Option<Var>,
     },
 
     // return (s1)
@@ -155,7 +158,7 @@ pub enum Instr {
     CallIndirect {
         lhs: Option<Var>,
         type_: FunctionType,
-        table_index: Var,
+        table_idx: Var,
         args: Vec<Var>,
     },
 
@@ -172,16 +175,16 @@ pub enum Instr {
     // s1 = i32.load offset=3 align=4 (s0)
     Load {
         lhs: Var,
-        addr: Var,
         op: LoadOp,
         memarg: Memarg,
+        addr: Var,
     },
     // i32.store offset=3 align=4 (s0//addr) (s1//value)
     Store {
-        value: Var,
-        addr: Var,
         op: StoreOp,
         memarg: Memarg,
+        value: Var,
+        addr: Var,
     },
 
     // s1 = memory.size
@@ -203,8 +206,8 @@ pub enum Instr {
     // s2 = i32.add(s0, s1)
     // s1 = f32.neg(s0)
     Numeric {
-        op: NumericOp,
         lhs: Var,
+        op: NumericOp,
         rhs: Vec<Var>,
     },
 }
@@ -213,6 +216,8 @@ impl Instr {
     pub fn lhs(&self) -> Option<Var> {
         use Instr::*;
         match self {
+            Unreachable => None,
+
             Block { lhs, .. } => *lhs,
             Loop { lhs, .. } => *lhs,
             If { lhs, .. } => *lhs,
@@ -237,49 +242,49 @@ impl Instr {
         }
     }
 
-    pub fn new(lhs: Vec<Var>, op: highlevel::Instr, rhs: WimpleRhs) -> Self {
-        Instr { lhs, op, rhs }
-    }
+    // pub fn new(lhs: Vec<Var>, op: highlevel::Instr, rhs: WimpleRhs) -> Self {
+    //     Instr { lhs, op, rhs }
+    // }
 
-    pub fn parse_instr(mut lexer: Lexer<WimplTextToken>) -> io::Result<Self> {
-        let mut instr = Instr {
-            lhs: Vec::new(),
-            op: highlevel::Instr::Nop,
-            rhs: WimpleRhs::VarVec(Vec::new()),
-        };
+    // pub fn parse_instr(mut lexer: Lexer<WimplTextToken>) -> io::Result<Self> {
+    //     let mut instr = Instr {
+    //         lhs: Vec::new(),
+    //         op: highlevel::Instr::Nop,
+    //         rhs: WimpleRhs::VarVec(Vec::new()),
+    //     };
 
-        match lexer.next() {
-            Some(WimplTextToken::Variable(i)) => instr.lhs.push(Var(i)),
-            None => {
-                return Err(io::Error::new(
-                    ErrorKind::UnexpectedEof,
-                    "missing Wimpl instruction",
-                ))
-            }
-            Some(WimplTextToken::AlphaNum) => {
-                let start_instr = lexer.span().start;
-                println!("in AlphaNum: start={}", start_instr);
+    //     match lexer.next() {
+    //         Some(WimplTextToken::Variable(i)) => instr.lhs.push(Var(i)),
+    //         None => {
+    //             return Err(io::Error::new(
+    //                 ErrorKind::UnexpectedEof,
+    //                 "missing Wimpl instruction",
+    //             ))
+    //         }
+    //         Some(WimplTextToken::AlphaNum) => {
+    //             let start_instr = lexer.span().start;
+    //             println!("in AlphaNum: start={}", start_instr);
 
-                let mut current = lexer.next().unwrap();
-                while current != WimplTextToken::LParen && current != WimplTextToken::Linebreak {
-                    current = lexer.next().unwrap();
-                }
-                let end_instr = lexer.span().end - 1;
-                println!("in AlphaNum: end={}", end_instr);
+    //             let mut current = lexer.next().unwrap();
+    //             while current != WimplTextToken::LParen && current != WimplTextToken::Linebreak {
+    //                 current = lexer.next().unwrap();
+    //             }
+    //             let end_instr = lexer.span().end - 1;
+    //             println!("in AlphaNum: end={}", end_instr);
 
-                let op_str = &lexer.source()[start_instr..end_instr].trim();
-                println!("in AlphaNum: op_str={:?}", op_str);
+    //             let op_str = &lexer.source()[start_instr..end_instr].trim();
+    //             println!("in AlphaNum: op_str={:?}", op_str);
 
-                instr.op = highlevel::Instr::parse_text(op_str)
-                    .map_err(|_| io::Error::new(ErrorKind::Other, "unknown"))?;
+    //             instr.op = highlevel::Instr::parse_text(op_str)
+    //                 .map_err(|_| io::Error::new(ErrorKind::Other, "unknown"))?;
 
-                // TODO parse argument list
-            }
-            _ => todo!(),
-        }
+    //             // TODO parse argument list
+    //         }
+    //         _ => todo!(),
+    //     }
 
-        Ok(instr)
-    }
+    //     Ok(instr)
+    // }
 
     // pub fn parse_args_list(lexer) -> ... {
     //     expect_token(LParen)
@@ -290,34 +295,40 @@ impl Instr {
     //     return result vec
     // }
 
-    pub fn parse(str: &str) -> io::Result<Vec<Self>> {
-        let mut lexer = WimplTextToken::lexer(str);
-        Ok(vec![Self::parse_instr(lexer)?])
+    // pub fn parse(str: &str) -> io::Result<Vec<Self>> {
+    //     let mut lexer = WimplTextToken::lexer(str);
+    //     Ok(vec![Self::parse_instr(lexer)?])
 
-        // program = instr*
-        // instr = (variable '=')? operator args?
-        // args = '(' (variable ',')* variable ')'
-    }
+    //     // program = instr*
+    //     // instr = (variable '=')? operator args?
+    //     // args = '(' (variable ',')* variable ')'
+    // }
 
-    /// Convenience function to parse Wimpl from a filename.
-    pub fn from_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
-        let str = std::fs::read_to_string(filename)?;
-        Ok(Self::parse(&str)?)
-    }
+    // /// Convenience function to parse Wimpl from a filename.
+    // pub fn from_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
+    //     let str = std::fs::read_to_string(filename)?;
+    //     Ok(Self::parse(&str)?)
+    // }
 }
 
-fn display_list<T: fmt::Display>(
+fn display_delim<T>(
     f: &mut fmt::Formatter<'_>,
-    list: &[T],
+    values: T,
     begin: &str,
     end: &str,
     delim: &str,
-) -> fmt::Result {
-    match list.split_last() {
+) -> fmt::Result
+where
+    T: IntoIterator,
+    T::IntoIter: DoubleEndedIterator,
+    T::Item: fmt::Display
+{
+    let mut iter = values.into_iter();
+    match iter.next_back() {
         None => Ok(()),
-        Some((last, list)) => {
+        Some(last) => {
             f.write_str(begin)?;
-            for item in list {
+            for item in iter {
                 write!(f, "{}{}", item, delim)?;
             }
             write!(f, "{}", last)?;
@@ -336,17 +347,17 @@ impl fmt::Display for Instr {
         match self {
             Unreachable => f.write_str("unreachable")?,
 
-            Block { lhs, label, body } => write!(f, "{}: block {}", label, body)?,
-            Loop { lhs, label, body } => write!(f, "{}: loop {}", label, body)?,
+            Block { lhs: _, label, body } => write!(f, "{}: block {}", label, body)?,
+            Loop { lhs: _, label, body } => write!(f, "{}: loop {}", label, body)?,
             If {
-                lhs,
+                lhs: _,
                 condition,
                 label,
                 if_body,
                 else_body,
             } => {
                 if let Some(label) = label {
-                    write!(f, "{}: ", label);
+                    write!(f, "{}: ", label)?;
                 }
                 write!(f, "if ({}) {}", condition, if_body)?;
                 if let Some(else_branch) = else_body {
@@ -354,62 +365,88 @@ impl fmt::Display for Instr {
                 }
             }
 
-            Br { target, values } => {
+            Br { target, value } => {
                 write!(f, "br {}", target)?;
-                display_list(f, values, "(", ")", ",");
+                display_delim(f, value, " (", ")", ", ")?;
             }
             BrTable {
-                index,
+                idx: index,
                 table,
                 default,
+                value,
             } => {
-                write!(f, "br_table ({})", index)?;
-                display_list(f, table, "", "", ",")?;
-                write!(f, ", default={}", default)?;
+                f.write_str("br_table")?;
+                display_delim(f, table, " ", "", " ")?;
+                write!(f, " default={} ({})", default, index)?;
+                display_delim(f, value, " (", ")", ", ")?;
             }
-            Return { value } => match value {
-                Some(value) => write!(f, "return ({})", value)?,
-                None => write!(f, "return")?,
+            Return { value } => {
+                f.write_str("return")?;
+                display_delim(f, value, " (", ")", ", ")?;
             },
 
-            Call { lhs, func, args } => {
-                write!(f, "call {} ", func)?;
-                display_list(f, args, "(", ")", ",")?;
+            Call { lhs: _, func, args } => {
+                write!(f, "call {} (", func)?;
+                display_delim(f, args, "", "", ", ")?;
+                f.write_str(")")?;
             }
 
             CallIndirect {
-                lhs,
+                lhs: _,
                 type_,
-                table_index,
+                table_idx: table_index,
                 args,
             } => {
-                write!(f, "call_indirect {} ({}) ", type_, table_index)?;
-                display_list(f, args, "(", ")", ",")?;
+                write!(f, "call_indirect {} ({}) (", type_, table_index)?;
+                display_delim(f, args, "", "", ", ")?;
+                f.write_str(")")?;
             }
 
-            Assign { lhs, rhs } => write!(f, "{} = {}", lhs, rhs)?,
+            Assign { lhs: _, rhs } => write!(f, "{}", rhs)?,
 
             Load {
-                lhs,
+                lhs: _,
                 addr,
                 op,
                 memarg,
-            } => write!(f, "{} ({})", op, addr)?,
+            } => {
+                write!(f, "{}", op)?;
+                if !memarg.is_default(*op) {
+                    f.write_str(" ")?;
+                }
+                memarg.fmt(f, *op)?;
+                if !memarg.is_default(*op) {
+                    f.write_str(" ")?;
+                }
+                write!(f, "({})", addr)?;
+            }
             Store {
                 value,
                 addr,
                 op,
                 memarg,
-            } => write!(f, "{} ({}) ({})", op, addr, value)?,
-            MemorySize { lhs } => write!(f, "memory.size")?,
-            MemoryGrow { lhs, new_size } => write!(f, "memory.grow({})", new_size)?,
-            Const { lhs, val } => write!(f, "{}.const {}", val.to_type(), val)?,
-            Numeric { op, lhs, rhs } => {
+            } => {
                 write!(f, "{}", op)?;
-                display_list(f, rhs, "(", ")", ",")?;
+                if !memarg.is_default(*op) {
+                    f.write_str(" ")?;
+                }
+                memarg.fmt(f, *op)?;
+                if !memarg.is_default(*op) {
+                    f.write_str(" ")?;
+                }
+                write!(f, "({}) ({})", addr, value)?;
+            }
+            
+            MemorySize { lhs: _ } => write!(f, "memory.size")?,
+            MemoryGrow { lhs: _, new_size } => write!(f, "memory.grow({})", new_size)?,
+
+            Const { lhs: _, val } => write!(f, "{}.const {}", val.to_type(), val)?,
+            Numeric { lhs: _, op, rhs } => {
+                write!(f, "{}", op)?;
+                display_delim(f, rhs, "(", ")", ", ")?;
             }
         };
-        write!(f, "\n");
+
         Ok(())
     }
 }
@@ -460,189 +497,271 @@ pub enum WimplTextToken {
     Error,
 }
 
-pub fn wimplify(
-    instrs: &[highlevel::Instr],
-    function: &Function,
-    module: &Module,
-) -> Result<Vec<Instr>, String> {
-    let mut var_stack = Vec::new();
-    let mut var_count = 0;
-    let mut result_instrs = Vec::new();
-    let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
+// pub fn wimplify(
+//     instrs: &[highlevel::Instr],
+//     function: &Function,
+//     module: &Module,
+// ) -> Result<Vec<Instr>, String> {
+//     let mut var_stack = Vec::new();
+//     let mut var_count = 0;
+//     let mut result_instrs = Vec::new();
+//     let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
 
-    for (instr, ty) in instrs.iter().zip(tys.into_iter()) {
-        println!("{:?}, {:?}", instr, ty);
-        let n_inputs = ty.inputs.len();
-        let n_results = ty.results.len();
+//     for (instr, ty) in instrs.iter().zip(tys.into_iter()) {
+//         println!("{:?}, {:?}", instr, ty);
+//         let n_inputs = ty.inputs.len();
+//         let n_results = ty.results.len();
 
-        let result_instr = {
-            let mut args = Vec::new();
-            for _ in 0..n_inputs {
-                args.push(var_stack.pop().unwrap());
-            }
+//         let result_instr = {
+//             let mut args = Vec::new();
+//             for _ in 0..n_inputs {
+//                 args.push(var_stack.pop().unwrap());
+//             }
 
-            let mut lhs = Vec::new();
-            for _ in 0..n_results {
-                lhs.push(Var(var_count));
-                var_stack.push(Var(var_count));
-                var_count += 1;
-            }
+//             let mut lhs = Vec::new();
+//             for _ in 0..n_results {
+//                 lhs.push(Var(var_count));
+//                 var_stack.push(Var(var_count));
+//                 var_count += 1;
+//             }
 
-            Instr {
-                lhs: lhs,
-                op: instr.clone(),
-                rhs: WimpleRhs::VarVec(args),
-            }
-        };
-        result_instrs.push(result_instr);
-    }
+//             Instr {
+//                 lhs: lhs,
+//                 op: instr.clone(),
+//                 rhs: WimpleRhs::VarVec(args),
+//             }
+//         };
+//         result_instrs.push(result_instr);
+//     }
 
-    Ok(result_instrs)
-}
+//     Ok(result_instrs)
+// }
 
 #[test]
-fn wimpl_text_syntax() {
-    let parsed = Instr::from_file("tests/wimpl/syntax.wimpl").unwrap();
+fn pretty_print() {
+    // Convenience:
+    use Instr::*;
+    use Var::*;
+    use Val::*;
+    use highlevel::NumericOp::*;
+    use highlevel::StoreOp::*;
+    use highlevel::LoadOp::*;
+    fn test(wimpl: Instr, str: &str) {
+        assert_eq!(wimpl.to_string(), str);
+    }
 
-    let expected = Instr::new(
-        Vec::new(),
-        Const(Val::I32(2)),
-        WimpleRhs::VarVec(Vec::new()),
+    test(Unreachable, "unreachable");
+
+    test(Assign { lhs: Global(0), rhs: Local(0) }, "g0 = l0");
+
+    test(Const { lhs: Stack(0), val: I32(1337) }, "s0 = i32.const 1337");
+    test(Numeric { lhs: Stack(1), op: I32Add, rhs: vec![Stack(2), Stack(3)] }, "s1 = i32.add(s2, s3)");
+
+    test(
+        Load { lhs: Stack(1), op: I32Load, memarg: Memarg::default(I32Load), addr: Stack(0) },
+        "s1 = i32.load(s0)"
     );
-    assert_eq!(parsed[0], expected);
-
-    let expected = Instr::new(
-        vec![Var(0)],
-        Const(Val::I32(3)),
-        WimpleRhs::VarVec(Vec::new()),
+    // Non-default alignment:
+    test(
+        Store { op: I64Store8, value: Stack(1), addr: Stack(2), memarg: Memarg { offset: 0, alignment_exp: 4 } }, 
+        "i64.store8 align=16 (s2) (s1)"
     );
-    assert_eq!(parsed[1], expected);
-}
 
-#[test]
-fn constant_file() {
-    let path = "tests/wimpl/const.wimpl";
-    let expected = Instr::from_file(path).unwrap();
+    test(Br { target: Label(0), value: None }, "br @label0");
+    // With index and value.
+    test(
+        BrTable { idx: Stack(0), table: vec![Label(1), Label(2)], default: Label(0), value: Some(Stack(1)) },
+        "br_table @label1 @label2 default=@label0 (s0) (s1)"
+    );
 
-    let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = &func.code().unwrap().body[0..1];
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    assert_eq!(actual, expected);
-}
-
-#[test]
-fn constant() {
-    let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    // let instrs = func.code().unwrap().body.as_slice();
-    let instrs = &func.code().unwrap().body[0..1];
-    let actual = wimplify(instrs, func, &module).unwrap();
-    //println!("actual {:?}",actual);
-    for ins in &actual {
-        println!("{}", ins);
-    }
-    let expected = vec![Instr {
-        lhs: vec![Var(0)],
-        op: Const(Val::I32(3)),
-        rhs: WimpleRhs::VarVec(Vec::new()),
-    }];
-    assert_eq!(actual, expected);
-}
-
-#[test]
-fn drop() {
-    let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    // let instrs = func.code().unwrap().body.as_slice();
-    let instrs = &func.code().unwrap().body[0..2];
-    let actual = wimplify(instrs, func, &module).unwrap();
-    //println!("actual {:?}",actual);
-    for ins in &actual {
-        println!("{}", ins);
-    }
-    let expected = vec![
-        Instr {
-            lhs: vec![Var(0)],
-            op: Const(Val::I32(3)),
-            rhs: WimpleRhs::VarVec(Vec::new()),
+    // Always print the argument parentheses, even if no arguments passed.
+    test(
+        Call { lhs: None, func: Func(7), args: Vec::new() },
+        "call f7 ()"
+    );
+    test(
+        CallIndirect { 
+            lhs: Some(Stack(1)), 
+            type_: FunctionType::new(&[ValType::I32], &[ValType::I32]), 
+            table_idx: Stack(0),
+            args: vec![Stack(2), Stack(3)]
         },
-        Instr {
-            lhs: Vec::new(),
-            op: Drop,
-            rhs: WimpleRhs::VarVec(vec![Var(0)]),
-        },
-    ];
-    assert_eq!(actual, expected);
+        "s1 = call_indirect [i32] -> [i32] (s0) (s2, s3)"
+    );
+
+    // Single if + br (which is our form of br_if).
+    test(
+        If { lhs: None, condition: Stack(0), label: None, if_body: Body {
+            instrs: vec![Br { target: Label(0), value: None }],
+            result: None,
+        }, else_body: None }, 
+        "if (s0) { br @label0 }"
+    );
+    // Multi-line and nested loop/block.
+    test(
+        Loop { lhs: None, label: Label(1), body: Body { 
+            instrs: vec![
+                Block { lhs: Some(Stack(0)), label: Label(2), body: Body {
+                    instrs: vec![Const { lhs: Stack(1), val: I32(7) }],
+                    result: Some(Stack(1))
+                }},
+                Br { target: Label(1), value: None }
+            ],
+            result: None
+        } },
+        r"@label1: loop {
+  s0 = @label2: block {
+    s1 = i32.const 7
+    s1
+  }
+  br @label1
+}"
+    );
 }
 
-#[test]
-fn add() {
-    let module = Module::from_file("../../tests/inputs/folding/add.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    // let instrs = func.code().unwrap().body.as_slice();
-    let instrs = &func.code().unwrap().body[0..3];
-    let actual = wimplify(instrs, func, &module).unwrap();
-    for ins in &actual {
-        println!("{}", ins);
-    }
-    let expected = vec![
-        Instr::new(
-            vec![Var(0)],
-            Const(Val::I32(3)),
-            WimpleRhs::VarVec(Vec::new()),
-        ),
-        Instr::new(
-            vec![Var(1)],
-            Const(Val::I32(4)),
-            WimpleRhs::VarVec(Vec::new()),
-        ),
-        Instr::new(
-            vec![Var(2)],
-            Numeric(I32Add),
-            WimpleRhs::VarVec(vec![Var(1), Var(0)]),
-        ),
-    ];
-    println!("{:?}", expected);
-    assert_eq!(actual, expected);
-}
+// #[test]
+// fn wimpl_text_syntax() {
+//     let parsed = Instr::from_file("tests/wimpl/syntax.wimpl").unwrap();
 
-#[test]
-fn call_ind() {
-    let module = Module::from_file("../../tests/inputs/folding/call_ind.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    // let instrs = func.code().unwrap().body.as_slice();
-    let instrs = &func.code().unwrap().body[0..2];
-    let actual = wimplify(instrs, func, &module).unwrap();
-    //println!("{:?}",actual);
-    for ins in &actual {
-        println!("{}", ins);
-    }
-    // let expected = vec![FoldedExpr(
-    //     CallIndirect(FunctionType::new(&[], &[]), Idx::from(0)),
-    //     vec![FoldedExpr::new(Const(Val::I32(0)))],
-    // )];
-    // assert_eq!(actual, expected);
-}
+//     let expected = Instr::new(
+//         Vec::new(),
+//         Const(Val::I32(2)),
+//         WimpleRhs::VarVec(Vec::new()),
+//     );
+//     assert_eq!(parsed[0], expected);
 
-#[test]
-fn block_br() {
-    let module = Module::from_file("../../tests/inputs/folding/block-br.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    // let instrs = func.code().unwrap().body.as_slice();
-    let instrs = &func.code().unwrap().body;
-    let actual = wimplify(instrs, func, &module).unwrap();
-    //println!("{:?}",actual);
-    for ins in &actual {
-        println!("{}", ins);
-    }
-    // let expected = vec![FoldedExpr(
-    //     CallIndirect(FunctionType::new(&[], &[]), Idx::from(0)),
-    //     vec![FoldedExpr::new(Const(Val::I32(0)))],
-    // )];
-    // assert_eq!(actual, expected);
-}
+//     let expected = Instr::new(
+//         vec![Var(0)],
+//         Const(Val::I32(3)),
+//         WimpleRhs::VarVec(Vec::new()),
+//     );
+//     assert_eq!(parsed[1], expected);
+// }
+
+// #[test]
+// fn constant_file() {
+//     let path = "tests/wimpl/const.wimpl";
+//     let expected = Instr::from_file(path).unwrap();
+
+//     let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
+//     let func = module.functions().next().unwrap().1;
+//     let instrs = &func.code().unwrap().body[0..1];
+//     let actual = wimplify(instrs, func, &module).unwrap();
+
+//     assert_eq!(actual, expected);
+// }
+
+// #[test]
+// fn constant() {
+//     let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
+//     let func = module.functions().next().unwrap().1;
+//     // let instrs = func.code().unwrap().body.as_slice();
+//     let instrs = &func.code().unwrap().body[0..1];
+//     let actual = wimplify(instrs, func, &module).unwrap();
+//     //println!("actual {:?}",actual);
+//     for ins in &actual {
+//         println!("{}", ins);
+//     }
+//     let expected = vec![Instr {
+//         lhs: vec![Var(0)],
+//         op: Const(Val::I32(3)),
+//         rhs: WimpleRhs::VarVec(Vec::new()),
+//     }];
+//     assert_eq!(actual, expected);
+// }
+
+// #[test]
+// fn drop() {
+//     let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
+//     let func = module.functions().next().unwrap().1;
+//     // let instrs = func.code().unwrap().body.as_slice();
+//     let instrs = &func.code().unwrap().body[0..2];
+//     let actual = wimplify(instrs, func, &module).unwrap();
+//     //println!("actual {:?}",actual);
+//     for ins in &actual {
+//         println!("{}", ins);
+//     }
+//     let expected = vec![
+//         Instr {
+//             lhs: vec![Var(0)],
+//             op: Const(Val::I32(3)),
+//             rhs: WimpleRhs::VarVec(Vec::new()),
+//         },
+//         Instr {
+//             lhs: Vec::new(),
+//             op: Drop,
+//             rhs: WimpleRhs::VarVec(vec![Var(0)]),
+//         },
+//     ];
+//     assert_eq!(actual, expected);
+// }
+
+// #[test]
+// fn add() {
+//     let module = Module::from_file("../../tests/inputs/folding/add.wasm").unwrap();
+//     let func = module.functions().next().unwrap().1;
+//     // let instrs = func.code().unwrap().body.as_slice();
+//     let instrs = &func.code().unwrap().body[0..3];
+//     let actual = wimplify(instrs, func, &module).unwrap();
+//     for ins in &actual {
+//         println!("{}", ins);
+//     }
+//     let expected = vec![
+//         Instr::new(
+//             vec![Var(0)],
+//             Const(Val::I32(3)),
+//             WimpleRhs::VarVec(Vec::new()),
+//         ),
+//         Instr::new(
+//             vec![Var(1)],
+//             Const(Val::I32(4)),
+//             WimpleRhs::VarVec(Vec::new()),
+//         ),
+//         Instr::new(
+//             vec![Var(2)],
+//             Numeric(I32Add),
+//             WimpleRhs::VarVec(vec![Var(1), Var(0)]),
+//         ),
+//     ];
+//     println!("{:?}", expected);
+//     assert_eq!(actual, expected);
+// }
+
+// #[test]
+// fn call_ind() {
+//     let module = Module::from_file("../../tests/inputs/folding/call_ind.wasm").unwrap();
+//     let func = module.functions().next().unwrap().1;
+//     // let instrs = func.code().unwrap().body.as_slice();
+//     let instrs = &func.code().unwrap().body[0..2];
+//     let actual = wimplify(instrs, func, &module).unwrap();
+//     //println!("{:?}",actual);
+//     for ins in &actual {
+//         println!("{}", ins);
+//     }
+//     // let expected = vec![FoldedExpr(
+//     //     CallIndirect(FunctionType::new(&[], &[]), Idx::from(0)),
+//     //     vec![FoldedExpr::new(Const(Val::I32(0)))],
+//     // )];
+//     // assert_eq!(actual, expected);
+// }
+
+// #[test]
+// fn block_br() {
+//     let module = Module::from_file("../../tests/inputs/folding/block-br.wasm").unwrap();
+//     let func = module.functions().next().unwrap().1;
+//     // let instrs = func.code().unwrap().body.as_slice();
+//     let instrs = &func.code().unwrap().body;
+//     let actual = wimplify(instrs, func, &module).unwrap();
+//     //println!("{:?}",actual);
+//     for ins in &actual {
+//         println!("{}", ins);
+//     }
+//     // let expected = vec![FoldedExpr(
+//     //     CallIndirect(FunctionType::new(&[], &[]), Idx::from(0)),
+//     //     vec![FoldedExpr::new(Const(Val::I32(0)))],
+//     // )];
+//     // assert_eq!(actual, expected);
+// }
 
 /*
 #[test]
