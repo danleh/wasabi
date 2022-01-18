@@ -1,4 +1,92 @@
-v3 = i32.const 2 
-v4 = i32.add (v0, v1)  
-v4 = i32.load offset=3 (v0)
+i32.const 2
+v0 = i32.const 3
+v1 = i32.const 7 
+v2 = i32.add (v1, v0)  
 call_indirect [ ] ->[] (v1)
+v3 = i32.load offset=3 (v0)
+
+v1 = if
+    ...
+else
+    ...
+end
+
+lhs = v1 
+op = if-else 
+rhs = vec(
+    v0,
+    vec(l9) 
+    vec(l11)
+)
+
+v3 = loop @label3 {
+    ...
+    call fn5
+    ...
+    br_if 3 @label3 (vcond)
+    v0
+}
+
+v0 = //bool 
+v1 = label3: if (v0) {
+
+    break (v1447) //@label3 
+    v3 = i32.const
+    v3
+}
+
+@label7: loop {
+    block {
+        ...
+        block {
+            br label1
+            br label0 (args)
+        } 
+        @label1 
+
+        br_table @label7 @label0
+    } 
+    @label0: 
+    
+}
+
+v0 = block {
+    br 0
+}
+@l
+v1 = i32.const 3
+
+block
+    br 0
+i32.const 3
+->
+block {
+    br .label0    
+}
+.label0:
+
+
+loop
+    br 0
+->
+loop {
+    .label0:
+    br .label0
+}
+
+
+block [] -> [i32]
+    i32.const 2
+    br 0
+    i32.const 3
+local.set $x
+->
+v0 = .label0: block {
+    v1 = i32.const 2
+    br .label0 (v1)
+    v2 = i32.const 3
+    v2
+}
+l1 = v0
+
+

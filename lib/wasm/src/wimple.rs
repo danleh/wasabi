@@ -3,28 +3,228 @@ use std::{fmt, path::Path, io::{self, ErrorKind}};
 use logos::{Logos, Lexer};
 use regex::Regex;
 
-use crate::{highlevel::{self, Module, Function}, types::types};
+use crate::{highlevel::{self, Module, Function, LoadOp, StoreOp, NumericOp}, types::types, FunctionType, Memarg};
 use crate::highlevel::Instr::*;
 use crate::Val;
 use crate::highlevel::NumericOp::*;
 
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub enum WimpleRhs {
-    InstVec(Vec<Instr>), 
-    VarVec(Vec<Var>)
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub enum Var { 
+    Stack(usize), //s0..n
+    Local(usize), //l0..n
+    Global(usize), //g0..n
+    Param(usize),  //p0..n
+}
+
+impl fmt::Display for Var {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Var::*;
+        match self {
+            Stack(num) => write!(f, "s{}", num),
+            Local(num) => write!(f, "l{}", num),
+            Global(num) => write!(f, "g{}", num),
+            Param(num) => write!(f, "p{}", num),
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub struct Func(usize);
+
+impl fmt::Display for Func {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "f{}", self.0)
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub struct Label(usize);
+
+impl fmt::Display for Label {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "@label{}", self.0)
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub struct Var(usize); 
+pub struct Block {
+    instrs: Vec<Instr>,
+    result: Option<Var>,
+}
+
+impl fmt::Display for Block {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let single_line = self.instrs.is_empty();
+        if single_line {
+            if let Some(result) = self.result {
+                writeln!(f, "{{ {} }}", result)
+            } else {
+                f.write_str("{}")
+            }
+        } else {
+            // TODO Indent blocks recursively, needs level.
+            f.write_str("{\n")?;
+            for instr in self.instrs {
+                writeln!(f, "{}", instr)?;
+            }
+            if let Some(result) = self.result {
+                writeln!(f, "{}", result);
+            }
+            f.write_str("\n}")
+        }
+    }
+}
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub struct Instr { 
-    pub lhs : Vec<Var>,
-    pub op : highlevel::Instr, 
-    pub rhs : WimpleRhs,
-} 
+pub enum Instr {
+    // no nop
 
-impl Instr { 
+    // unreachable
+    Unreachable,
+
+    // s0 = @label0: block {
+    //     s1 = i32.const 3
+    //     s1
+    // }
+    Block { 
+        lhs: Option<Var>,
+        label: Label,
+        body: Block,
+    },
+    // s0 = @label0: loop {
+    //     s1 = i32.const 3
+    //     br @label0 (s1)
+    //     s1
+    // }
+    Loop { 
+        lhs: Option<Var>,
+        label: Label,
+        body: Block,
+    },
+    // s0 = @label0: if {
+    //     s1 = i32.const 3
+    //     s1
+    // } else {
+    //     s2 = i32.const 6
+    //     s2
+    // }
+    If { //if, if-else, select, br_if
+        lhs: Option<Var>, 
+        condition: Var,
+        // no label for select or br_if
+        // br_if 3 (s0)
+        // ->
+        // if (s0) { br @label3 }
+        label: Option<Label>,
+        // invariant: if and else must either both return value or none
+        if_body: Block, 
+        else_body: Option<Block>, 
+    },
+    
+    // br @label0 (s1)
+    Br {
+        target: Label, 
+        values: Vec<Var>,
+    },
+    // br-table (s0) @label0, @label1, @label2, default=label@3
+    BrTable {
+        index: Var, 
+        table: Vec<Label>,
+        default: Label
+    },
+    
+    // return (s1)
+    Return {
+        value: Option<Var>
+    },
+
+    // s0 = call f1 (s1)
+    Call {
+        lhs: Option<Var>,
+        func: Func, 
+        args: Vec<Var>,
+    },
+    // s2 = call_indirect []->[i32] (s0) (s1, s2, s3...)
+    CallIndirect {
+        lhs: Option<Var>,
+        type_: FunctionType,
+        table_index: Var,
+        args: Vec<Var>
+    },
+
+    // don't generate Wimpl Instr for Drop, but remove stack variable
+    // encode Select -> If { lhs : s0, label = fresh(), condition=pop stack, if-branch=vec[pop stack], else-branch=vec[pop-stack], }
+     
+    // local.set, global.set, local.tee, local.get, global.get
+    // s2 = s1
+    Assign {
+        lhs: Var,
+        rhs: Var
+    },
+
+    // s1 = i32.load offset=3 align=4 (s0)
+    Load {
+        lhs: Var,
+        addr: Var,
+        op: LoadOp,
+        memarg: Memarg,
+    },
+    // i32.store offset=3 align=4 (s0//addr) (s1//value)
+    Store {
+        value: Var,
+        addr: Var,
+        op: StoreOp,
+        memarg: Memarg,
+    },
+    
+    // s1 = memory.size
+    MemorySize { lhs: Var },
+    // s1 = memory.grow(s0)
+    MemoryGrow { lhs: Var, new_size: Var },
+
+    // s1 = i32.const 3
+    Const {
+        lhs: Var,
+        val: Val, 
+    },
+
+    // s2 = i32.add(s0, s1)
+    // s1 = f32.neg(s0)
+    Numeric {
+        op: NumericOp,
+        lhs: Var,
+        rhs: Vec<Var>,
+    }
+}
+
+impl Instr {
+    pub fn lhs(&self) -> Option<Var> {
+        use Instr::*;
+        match self {
+            Block { lhs, .. } => *lhs,
+            Loop { lhs, .. } => *lhs,
+            If { lhs, .. } => *lhs,
+
+            Br { .. } => None,
+            BrTable { .. } => None,
+            Return { .. } => None,
+
+            Call { lhs, .. } => *lhs,
+            CallIndirect { lhs, .. } => *lhs,
+
+            Assign { lhs, ..} => Some(*lhs),
+
+            Load { lhs, ..} => Some(*lhs),
+            Store {..} => None,
+            
+            MemorySize { lhs } => Some(*lhs),
+            MemoryGrow { lhs, ..} => Some(*lhs),
+            
+            Const { lhs, .. } => Some(*lhs),
+            Numeric { lhs, .. } => Some(*lhs),
+        }
+    }
+
     pub fn new(lhs: Vec<Var>, op : highlevel::Instr, rhs: WimpleRhs) 
     -> Self {
         Instr {
@@ -81,12 +281,101 @@ impl Instr {
     pub fn parse(str: &str) -> io::Result<Vec<Self>> {
         let mut lexer = WimplTextToken::lexer(str);
         Ok(vec![Self::parse_instr(lexer)?])
+
+        // program = instr*
+        // instr = (variable '=')? operator args? 
+        // args = '(' (variable ',')* variable ')'
     }
 
     /// Convenience function to parse Wimpl from a filename.
     pub fn from_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
         let str = std::fs::read_to_string(filename)?;
         Ok(Self::parse(&str)?)
+    }
+}
+
+fn display_list<T: fmt::Display>(
+    f: &mut fmt::Formatter<'_>,
+    list: &[T],
+    begin: &str,
+    end: &str,
+    delim: &str,
+) -> fmt::Result {
+    match list.split_last() {
+        None => Ok(()),
+        Some((last, list)) => {
+            f.write_str(begin)?;
+            for item in list {
+                write!(f, "{}{}", item, delim)?;
+            }
+            write!(f, "{}", last)?;
+            f.write_str(end)
+        }
+    }
+}
+
+impl fmt::Display for Instr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(lhs) = self.lhs() {
+            write!(f, "{} = ", lhs)?;
+        }
+
+        use Instr::*;
+        match self {
+            Unreachable => f.write_str("unreachable")?,
+
+            Block { lhs, label, body } => write!(f, "{}: block {}", label, body)?,
+            Loop { lhs, label, body } => write!(f, "{}: loop {}", label, body)?,
+            If { lhs, condition, label, if_body, else_body } => {
+                if let Some(label) = label {
+                    write!(f, "{}: ", label);                    
+                }
+                write!(f, "if ({}) {}", condition, if_body)?;
+                if let Some(else_branch) = else_body {
+                    write!(f, "\nelse {}", else_branch)?;
+                }
+            }
+ 
+            Br { target, values } => {
+                write!(f, "br {}", target)?;
+                display_list(f, values, "(", ")", ","); 
+            },
+            BrTable { index, table, default } => {
+                write!(f, "br_table ({})", index)?; 
+                display_list(f, table, "", "", ",")?; 
+                write!(f, ", default={}", default)?; 
+            }
+            Return { value } => {
+                match value {
+                    Some(value) => write!(f, "return ({})", value)?,
+                    None => write!(f, "return")?,
+                }
+            }
+            
+            Call { lhs, func, args } => {
+                write!(f, "call {} ", func)?;
+                display_list(f, args, "(", ")", ",")?; 
+            }
+            
+            CallIndirect { lhs, type_, table_index, args } => {
+                write!(f, "call_indirect {} ({}) ", type_, table_index)?; 
+                display_list(f, args, "(", ")", ",")?;     
+            }
+            
+            Assign { lhs, rhs } => write!(f, "{} = {}", lhs, rhs)?, 
+            
+            Load { lhs, addr, op, memarg } => write!(f, "{} ({})", op, addr)?,
+            Store { value, addr, op, memarg } => write!(f, "{} ({}) ({})", op, addr, value)?,
+            MemorySize { lhs } => write!(f, "memory.size")?,
+            MemoryGrow { lhs, new_size } => write!(f, "memory.grow({})", new_size)?,
+            Const { lhs, val } => write!(f, "{}.const {}", val.to_type(), val)?,
+            Numeric { op, lhs, rhs } => {
+                write!(f, "{}", op)?;
+                display_list(f, rhs, "(", ")", ",")?;
+            },
+        };
+        write!(f, "\n"); 
+        Ok(())
     }
 }
 
@@ -136,42 +425,6 @@ pub enum WimplTextToken {
     Error,
 }
 
-impl fmt::Display for Instr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // handle the LHS 
-        if !self.lhs.is_empty() {
-            write!(f, "v{} = ", self.lhs[0].0)?;
-        } 
-        // op is always printed 
-        write!(f, "{}", self.op)?;
-        // handle the rhs
-        match &self.rhs {
-            WimpleRhs::InstVec(inst_vec) => {
-                write!(f, "{{\n")?; 
-                for inst in inst_vec {
-                    write!(f, "{}", inst); 
-                }
-                write!(f, "\n}}") 
-            },
-            WimpleRhs::VarVec(var_vec) => {
-                if !var_vec.is_empty() {
-                    write!(f, "(")?; 
-                    for (ind, var) in var_vec.iter().enumerate() {
-                        if ind == var_vec.len()-1 {
-                            write!(f, "v{}", var.0)?;
-                        } else {
-                            write!(f, "v{}, ", var.0)?;
-                        }
-                    }
-                    write!(f, ")",)
-                } else {
-                    write!(f, "")
-                }
-            },
-        }     
-    }
-}
-
 pub fn wimplify (
     instrs: &[highlevel::Instr],
     function: &Function,
@@ -212,6 +465,25 @@ pub fn wimplify (
     } 
 
     Ok(result_instrs)
+}
+
+#[test]
+fn wimpl_text_syntax() {
+    let parsed = Instr::from_file("tests/wimpl/syntax.wimpl").unwrap(); 
+
+    let expected = Instr::new(
+        Vec::new(), 
+        Const(Val::I32(2)),
+        WimpleRhs::VarVec(Vec::new())
+    );
+    assert_eq!(parsed[0], expected);
+
+    let expected = Instr::new(
+        vec![Var(0)], 
+        Const(Val::I32(3)),
+        WimpleRhs::VarVec(Vec::new())
+    );
+    assert_eq!(parsed[1], expected);
 }
 
 #[test]
