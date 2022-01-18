@@ -213,6 +213,7 @@ pub enum Instr {
 }
 
 impl Instr {
+    /// Convenience accessor for all instructions that have a LHS.
     pub fn lhs(&self) -> Option<Var> {
         use Instr::*;
         match self {
@@ -311,6 +312,9 @@ impl Instr {
     // }
 }
 
+/// Helper function for `fmt::Display`-ing an arbitrary iterator of `values`,
+/// where each element is separated by `delim` and if the iterator is non-empty
+/// surrounded by `begin` and `end`.
 fn display_delim<T>(
     f: &mut fmt::Formatter<'_>,
     values: T,
@@ -325,6 +329,7 @@ where
 {
     let mut iter = values.into_iter();
     match iter.next_back() {
+        // Empty iterator, don't format anything.
         None => Ok(()),
         Some(last) => {
             f.write_str(begin)?;
