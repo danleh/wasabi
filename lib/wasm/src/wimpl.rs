@@ -914,13 +914,13 @@ mod test {
     use crate::Memarg;
     use crate::Val::*;
     use crate::ValType;
-
     use super::Body;
     use super::Func;
     use super::Instr::{self, *};
     use super::Label;
     use super::Var::{self, *};
 
+    use std::str::FromStr;
     use lazy_static::lazy_static;
 
     lazy_static! {
@@ -1023,7 +1023,7 @@ mod test {
                         result: None,
                     },
                 },
-                "@label0: block { }", ""
+                "@label0: block {}", ""
             ),
             (
                 Block {
@@ -1202,7 +1202,6 @@ mod test {
             .iter()
             .chain(WIMPL_ALTERNATIVE_SYNTAX_TESTCASES.iter());
         for (i, (wimpl, text, msg)) in parse_testcases.enumerate() {
-            use std::str::FromStr;
             let parsed = Instr::from_str(text);
             assert!(
                 parsed.is_ok(),
@@ -1222,8 +1221,38 @@ mod test {
         }
     }
 
-    // TODO roundtrip_parse_pretty for canonical
-    // TODO roundtrip_parse_pretty_parse = parse for all
+    #[test]
+    fn parse_pretty_print_roundtrips() {
+        // For the text inputs in the canonical format, parsing then pretty-printing
+        // the AST should round-trip, i.e., pretty(parse(text)) == text.
+        for (i, (_, text, msg)) in WIMPL_CANONICAL_SYNTAX_TESTCASES.iter().enumerate() {
+            let parsed = Instr::from_str(text).unwrap();
+            let pretty = parsed.to_string();
+            assert_eq!(
+                text,
+                &pretty,
+                "\nleft is input, right is pretty-printed\ntest #{}\n{}",
+                i,
+                msg
+            );
+        }
+
+        // For the text inputs in non-canonical format, first parse and pretty-print
+        // to canonicalize, then parse should be equal to non-canonicalized, i.e.
+        // parse(pretty(parse(text))) == parse(text).
+        for (i, (_, text, msg)) in WIMPL_CANONICAL_SYNTAX_TESTCASES.iter().enumerate() {
+            let parsed = Instr::from_str(text).unwrap();
+            let pretty = parsed.to_string();
+            let parsed_pretty = Instr::from_str(&pretty).unwrap();
+            assert_eq!(
+                parsed,
+                parsed_pretty,
+                "\ntest #{}\n{}",
+                i,
+                msg
+            );
+        }
+    }
 }
 
 // #[test]
