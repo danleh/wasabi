@@ -92,7 +92,7 @@ impl FromStr for Label {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Default)]
 pub struct Body {
     instrs: Vec<Instr>,
     result: Option<Var>,
@@ -124,12 +124,6 @@ impl fmt::Display for Body {
                 write!(f, "{{\n{}{}\n}}", BLOCK_INDENT, multi_line)
             }
         }
-    }
-}
-
-impl Body {
-    pub fn parse(s: &str) -> IResult<&str, Self> {
-        todo!()
     }
 }
 
@@ -307,7 +301,7 @@ impl Instr {
             ws(map_res(alphanumeric1, Var::from_str))(input)
         }
         fn arg_single(input: &str) -> IResult<&str, Var> {
-            ws_begin(delimited(
+            ws(delimited(
                 tag("("),
                 var,
                 tag(")")
@@ -327,7 +321,7 @@ impl Instr {
             )(input)
         }
         fn label(input: &str) -> IResult<&str, Label> {
-            ws(map_res(take_while(|c: char| !c.is_ascii_whitespace()), Label::from_str))(input)
+            ws(map_res(take_while(|c: char| c.is_alphanum() || c == '@'), Label::from_str))(input)
         }
         let func = ws(map_res(alphanumeric1, Func::from_str));
         let func_ty = ws(map_res(take_until("("), FunctionType::from_str));
@@ -338,11 +332,59 @@ impl Instr {
             let op = op.clone();
             ws(map_res(take_until("("), move |s| Memarg::from_str(s, op)))
         }
+        fn body(input: &str) -> IResult<&str, Body> {
+            map(
+            delimited(
+                    ws(tag("{")),
+                    pair(
+                        many0(ws(Instr::parse_nom)),
+                        opt(var)
+                    ),
+                    ws(tag("}")),
+                ),
+                |(instrs, result)| Body { instrs, result }
+            )(input)
+        }
 
         // Each indivudual instruction, assumes without outer whitespace.
         let unreachable = map(tag("unreachable"), |_| Unreachable);
 
-        
+        let block = map(
+            tuple((
+                opt(lhs),
+                label,
+                tag(":"),
+                ws_begin(tag("block")),
+                body
+            )),
+            |(lhs, label, _, _, body)| Block { lhs, label, body }
+        );
+        let loop_ = map(
+            tuple((
+                opt(lhs),
+                label,
+                tag(":"),
+                ws_begin(tag("loop")),
+                body
+            )),
+            |(lhs, label, _, _, body)| Loop { lhs, label, body }
+        );
+        let if_ = map(
+            tuple((
+                opt(lhs),
+                opt(terminated(label, tag(":"))),
+                ws_begin(tag("if")),
+                arg_single,
+                body,
+                opt(
+                    preceded(
+                        ws(tag("else")),
+                        body
+                    )
+                )
+            )),
+            |(lhs, label, _, condition, if_body, else_body)| If { lhs, label, condition, if_body, else_body }
+        );
 
         let br = map(
             preceded(
@@ -445,6 +487,10 @@ impl Instr {
 
         alt((
             unreachable,
+
+            block,
+            loop_,
+            if_,
             
             br,
             br_table,
@@ -1134,6 +1180,105 @@ fn parse_instr() {
             },
         },
         "i64.store8 align=16 (s2) (s1)",
+    );
+
+    test(
+        Block {
+            lhs: None,
+            label: Label(0),
+            body: Body {
+                instrs: vec![],
+                result: None,
+            },
+        },
+        "@label0: block { }"
+    );
+    test_msg(
+        Block {
+            lhs: Some(Stack(1)),
+            label: Label(0),
+            body: Body {
+                instrs: vec![],
+                result: Some(Stack(0)),
+            },
+        },
+        "s1 = @label0: block { s0 }",
+        "no instrs, only result"
+    );
+    test_msg(
+        Block {
+            lhs: None,
+            label: Label(1),
+            body: Body {
+                instrs: vec![Assign { lhs: Stack(1), rhs: Stack(0) }],
+                result: None,
+            },
+        },
+        "@label1: block { s1 = s0 }",
+        "one instruction, no result"
+    );
+    test_msg(
+        Block {
+            lhs: None,
+            label: Label(2),
+            body: Body {
+                instrs: vec![Assign { lhs: Stack(1), rhs: Stack(0) }],
+                result: Some(Stack(1)),
+            },
+        },
+        "@label2: block { s1 = s0 s1 }",
+        "instructions and result, no linebreak"
+    );
+
+    // Single if + br (which is our form of br_if).
+    test(
+        If {
+            lhs: None,
+            condition: Stack(0),
+            label: None,
+            if_body: Body {
+                instrs: vec![Br {
+                    target: Label(0),
+                    value: None,
+                }],
+                result: None,
+            },
+            else_body: None,
+        },
+        "if (s0) { br @label0 }",
+    );
+    test(
+        Loop {
+            lhs: None,
+            label: Label(1),
+            body: Body {
+                instrs: vec![
+                    Block {
+                        lhs: Some(Stack(0)),
+                        label: Label(2),
+                        body: Body {
+                            instrs: vec![Const {
+                                lhs: Stack(1),
+                                val: I32(7),
+                            }],
+                            result: Some(Stack(1)),
+                        },
+                    },
+                    Br {
+                        target: Label(1),
+                        value: None,
+                    },
+                ],
+                result: None,
+            },
+        },
+        r"@label1: loop {
+  s0 = @label2: block {
+    s1 = i32.const 7
+    s1
+  }
+  br @label1
+}",
     );
 
 }
