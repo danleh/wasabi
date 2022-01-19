@@ -717,38 +717,36 @@ pub fn wimplify(
     instrs: &[highlevel::Instr],
     function: &Function,
     module: &Module,
-    label_count: usize, 
+    label_count: usize,
 ) -> Result<Vec<Instr>, String> {
-    
     // Convenience:
     use Instr::*;
     use Var::*;
-    
+
     let mut var_stack = Vec::new();
     let mut var_count = 0;
     let mut result_instrs = Vec::new();
     let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
 
     for (instr, ty) in instrs.iter().zip(tys.into_iter()) {
-    
         println!("{:?}, {:?}", instr, ty);
         let n_inputs = ty.inputs.len();
         let n_results = ty.results.len();
 
-        let lhs : Option<Var>; 
+        let lhs: Option<Var>;
         if n_results == 0 {
-            lhs = None;  
+            lhs = None;
         } else if n_results == 1 {
             lhs = Some(Var::Stack(var_count));
         } else {
-            todo!(); // ERROR! 
+            todo!(); // ERROR!
         }
-        
+
         let mut rhs = Vec::new();
         for _ in 0..n_inputs {
             rhs.push(var_stack.pop().unwrap());
         }
-        
+
         // we can only push the new variable onto the stack once we have popped the required rhs values
         if lhs != None {
             var_stack.push(Var::Stack(var_count));
@@ -758,20 +756,20 @@ pub fn wimplify(
         let result_instr: Option<Instr> = match instr {
             highlevel::Instr::Unreachable => Some(Unreachable),
             highlevel::Instr::Nop => None,
-            
+
             highlevel::Instr::Block(blocktype) => {
-                // collect block body instructions 
-                // FIXME: technically should not be till end since you can have nested blocks 
-                
-                // let mut block_body : Vec<highlevel::Instr> = Vec::new(); 
+                // collect block body instructions
+                // FIXME: technically should not be till end since you can have nested blocks
+
+                // let mut block_body : Vec<highlevel::Instr> = Vec::new();
                 // while instrs[ind] != highlevel::Instr::End && ind != instrs.len()-1{
-                //     block_body.push(instrs[ind].clone()); 
-                //     ind = ind+1; 
+                //     block_body.push(instrs[ind].clone());
+                //     ind = ind+1;
                 // }
                 // println!("{}", ind);
-                // println!("{:?}", block_body); 
-                
-                // let btype = blocktype.0; 
+                // println!("{:?}", block_body);
+
+                // let btype = blocktype.0;
                 // Some(Block{
                 //     lhs,
                 //     label: Label(label_count),
@@ -786,46 +784,44 @@ pub fn wimplify(
                 //     },
                 // })
                 todo!()
-            },
+            }
             highlevel::Instr::Loop(_) => todo!(),
             highlevel::Instr::If(_) => todo!(),
             highlevel::Instr::Else => todo!(),
             highlevel::Instr::End => todo!(),
             highlevel::Instr::Br(_) => todo!(),
-            highlevel::Instr::BrIf(lab) => {
-                Some(If{
-                    lhs,
-                    label: None, 
-                    condition: var_stack.pop().unwrap(),
-                    if_body: Body{ 
-                        instrs: vec![Br{ 
-                                    target: Label(lab.0 as usize), 
-                                    value: None,  
-                                }],
-                        result: None, 
-                    },
-                    else_body: None,
-                })
-            },
+            highlevel::Instr::BrIf(lab) => Some(If {
+                lhs,
+                label: None,
+                condition: var_stack.pop().unwrap(),
+                if_body: Body {
+                    instrs: vec![Br {
+                        target: Label(lab.0 as usize),
+                        value: None,
+                    }],
+                    result: None,
+                },
+                else_body: None,
+            }),
             highlevel::Instr::BrTable { table, default } => todo!(),
             highlevel::Instr::Return => todo!(),
             highlevel::Instr::Call(_) => todo!(),
             highlevel::Instr::CallIndirect(fn_type, index) => {
-                // in call_indirect, 
+                // in call_indirect,
                 // the last variable on the stack is the index value
-                // the rest (till you collect all the needed parameters are arguments  
+                // the rest (till you collect all the needed parameters are arguments
                 // then what is index?? do we need it here???
-                Some(CallIndirect{
-                    lhs, 
+                Some(CallIndirect {
+                    lhs,
                     type_: fn_type.clone(), //do we need to clone??
-                    table_idx: rhs.pop().unwrap(), 
-                    args: rhs, 
+                    table_idx: rhs.pop().unwrap(),
+                    args: rhs,
                 })
-            },
+            }
             highlevel::Instr::Drop => {
-                var_stack.pop(); 
+                var_stack.pop();
                 None
-            },
+            }
             highlevel::Instr::Select => todo!(),
             highlevel::Instr::Local(_, _) => todo!(),
             highlevel::Instr::Global(_, _) => todo!(),
@@ -833,19 +829,16 @@ pub fn wimplify(
             highlevel::Instr::Store(_, _) => todo!(),
             highlevel::Instr::MemorySize(_) => todo!(),
             highlevel::Instr::MemoryGrow(_) => todo!(),
-            highlevel::Instr::Const(val) => { 
+            highlevel::Instr::Const(val) => {
                 if let Some(lhs) = lhs {
-                    Some(Const{
-                        lhs,
-                        val: *val,
-                    })
+                    Some(Const { lhs, val: *val })
                 } else {
                     todo!(); //ERROR
                 }
-            },
+            }
             highlevel::Instr::Numeric(numop) => {
-                if let Some(lhs) = lhs { 
-                    Some(Numeric{
+                if let Some(lhs) = lhs {
+                    Some(Numeric {
                         lhs,
                         op: *numop,
                         rhs,
@@ -853,16 +846,14 @@ pub fn wimplify(
                 } else {
                     todo!() //ERROR
                 }
-            }, 
-        }; 
+            }
+        };
         if let Some(result_instr) = result_instr {
             result_instrs.push(result_instr);
-            
-        } 
+        }
     }
     Ok(result_instrs)
 }
-
 
 // pub fn wimplify(
 //     instrs: &[highlevel::Instr],
@@ -907,6 +898,11 @@ pub fn wimplify(
 #[cfg(test)]
 mod test {
     // Convenience imports:
+    use super::Body;
+    use super::Func;
+    use super::Instr::{self, *};
+    use super::Label;
+    use super::Var::{self, *};
     use crate::highlevel::LoadOp::*;
     use crate::highlevel::NumericOp::*;
     use crate::highlevel::StoreOp::*;
@@ -914,14 +910,9 @@ mod test {
     use crate::Memarg;
     use crate::Val::*;
     use crate::ValType;
-    use super::Body;
-    use super::Func;
-    use super::Instr::{self, *};
-    use super::Label;
-    use super::Var::{self, *};
 
-    use std::str::FromStr;
     use lazy_static::lazy_static;
+    use std::str::FromStr;
 
     lazy_static! {
         /// Pairs of Wimpl AST with concrete syntax, and optionally a comment what is
@@ -1229,11 +1220,9 @@ mod test {
             let parsed = Instr::from_str(text).unwrap();
             let pretty = parsed.to_string();
             assert_eq!(
-                text,
-                &pretty,
+                text, &pretty,
                 "\nleft is input, right is pretty-printed\ntest #{}\n{}",
-                i,
-                msg
+                i, msg
             );
         }
 
@@ -1244,13 +1233,7 @@ mod test {
             let parsed = Instr::from_str(text).unwrap();
             let pretty = parsed.to_string();
             let parsed_pretty = Instr::from_str(&pretty).unwrap();
-            assert_eq!(
-                parsed,
-                parsed_pretty,
-                "\ntest #{}\n{}",
-                i,
-                msg
-            );
+            assert_eq!(parsed, parsed_pretty, "\ntest #{}\n{}", i, msg);
         }
     }
 }
