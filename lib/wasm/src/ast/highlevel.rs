@@ -234,7 +234,7 @@ pub enum StoreOp {
 }
 
 /// Common trait for `LoadOp` and `StoreOp`.
-pub trait MemoryOp : Sized {
+pub trait MemoryOp : Sized + Copy {
     fn to_name(self) -> &'static str;
     fn to_type(self) -> FunctionType;
 

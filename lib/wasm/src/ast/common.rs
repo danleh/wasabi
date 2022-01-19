@@ -359,6 +359,37 @@ impl Memarg {
             (_, false) => write!(f, "offset={} align={}", self.offset, self.alignment()),
         }
     }
+
+    /// Parses Memarg, fills fields with defaults for `op`.
+    pub fn from_str(s: &str, op: impl MemoryOp) -> Result<Self, ()> {
+        let mut result = Memarg::default(op);
+
+        for field in s.split(' ') {
+            // FIXME Allows for the fields to appear multiple times.
+
+            let field = field.trim();
+            if field.is_empty() {
+                continue;
+            }
+            
+            // Wasm text format does not allow a space around the equals sign,
+            // so we can directly match against offset= as a single "token".
+            if let Some(rest) = field.strip_prefix("offset=") {
+                result.offset = rest.parse().map_err(|_| ())?;
+            } else if let Some(rest) = field.strip_prefix("align=") {
+                let align: usize = rest.parse().map_err(|_| ())?;
+                // FIXME Doesn't check that align_exp is in range for u8.
+                // TODO Use usize::log2() once stabilized and TryInto.
+                let align_exp = (align as f64).log2() as u8;
+                result.alignment_exp = align_exp
+            } else {
+                // Invalid Memarg field.
+                return Err(())
+            }
+        }
+
+        Ok(result)
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]

@@ -336,6 +336,9 @@ impl Instr {
         fn op(input: &str) -> IResult<&str, &str> {
             take_while(|c: char| c.is_alphanum() || c == '.' || c == '_')(input)
         }
+        fn memarg<'a>(op: impl MemoryOp + 'static) -> impl FnMut(&'a str) -> IResult<&'a str, Memarg> {
+            ws(map_res(take_until("("), move |s| Memarg::from_str(s, op)))
+        }
 
         // Each indivudual instruction, assumes without outer whitespace.
         let unreachable = map(tag("unreachable"), |_| Unreachable);
@@ -414,12 +417,28 @@ impl Instr {
                 arg_list)),
             |(lhs, op, rhs)| Numeric { lhs, op, rhs }
         );
+        // TODO Write by hand, not with point-free style.
+        // let load = map(
+        //     tuple((
+        //         lhs,
+        //         map_res(op, LoadOp::from_str),
+        //         // FIXME pass op from earlier parser to this.
+        //         memarg(op),
+        //         arg_single)),
+        //     |(lhs, op, memarg, addr)| Load { lhs, op, memarg, addr }
+        // );
+        // let store = map(
+        //     tuple((
+        //         map_res(op, StoreOp::from_str),
+        //         // FIXME pass op from earlier parser to this.
+        //         memarg(op),
+        //         arg_single,
+        //         arg_single)),
+        //     |(op, memarg, addr, value)| Store { op, memarg, addr, value }
+        // );
 
         alt((
             unreachable,
-            
-            memory_size,
-            memory_grow,
             
             br,
             br_table,
@@ -429,6 +448,12 @@ impl Instr {
             call_indirect,
 
             assign,
+
+            // load,
+            // store,
+            
+            memory_size,
+            memory_grow,
 
             const_,
             numeric,
@@ -602,9 +627,9 @@ impl fmt::Display for Instr {
             // s1 = i32.load offset=3 align=4 (s0)
             Load {
                 lhs: _,
-                addr,
                 op,
                 memarg,
+                addr,
             } => {
                 write!(f, "{}", op)?;
                 if !memarg.is_default(*op) {
@@ -616,10 +641,10 @@ impl fmt::Display for Instr {
             }
             // i32.store offset=3 align=4 (s0//addr) (s1//value)
             Store {
-                value,
-                addr,
                 op,
                 memarg,
+                addr,
+                value,
             } => {
                 write!(f, "{}", op)?;
                 if !memarg.is_default(*op) {
