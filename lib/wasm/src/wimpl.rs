@@ -509,7 +509,6 @@ impl Instr {
 
             const_,
             numeric,
-
         ))(input)
     }
 
@@ -918,389 +917,314 @@ pub fn wimplify(
 //     Ok(result_instrs)
 // }
 
-#[test]
-fn pretty_print() {
-    // Convenience:
-    use highlevel::LoadOp::*;
-    use highlevel::NumericOp::*;
-    use highlevel::StoreOp::*;
-    use Instr::*;
-    use Val::*;
-    use Var::*;
-    fn test(wimpl: Instr, str: &str) {
-        assert_eq!(wimpl.to_string(), str);
-    }
+#[cfg(test)]
+mod test {
+    // Convenience imports:
+    use crate::highlevel::LoadOp::*;
+    use crate::highlevel::NumericOp::*;
+    use crate::highlevel::StoreOp::*;
+    use crate::Memarg;
+    use crate::FunctionType;
+    use crate::Val::*;
+    use crate::ValType;
 
-    test(Unreachable, "unreachable");
+    use super::Instr::{self, *};
+    use super::Var::{self, *};
+    use super::Label;
+    use super::Func;
+    use super::Body;
 
-    test(
-        Assign {
-            lhs: Global(0),
-            rhs: Local(0),
-        },
-        "g0 = l0",
-    );
+    use lazy_static::lazy_static;
 
-    test(
-        Const {
-            lhs: Stack(0),
-            val: I32(1337),
-        },
-        "s0 = i32.const 1337",
-    );
-    test(
-        Numeric {
-            lhs: Stack(1),
-            op: I32Add,
-            rhs: vec![Stack(2), Stack(3)],
-        },
-        "s1 = i32.add(s2, s3)",
-    );
-
-    test(
-        Load {
-            lhs: Stack(1),
-            op: I32Load,
-            memarg: Memarg::default(I32Load),
-            addr: Stack(0),
-        },
-        "s1 = i32.load(s0)",
-    );
-    // Non-default alignment:
-    test(
-        Store {
-            op: I64Store8,
-            value: Stack(1),
-            addr: Stack(2),
-            memarg: Memarg {
-                offset: 0,
-                alignment_exp: 4,
-            },
-        },
-        "i64.store8 align=16 (s2) (s1)",
-    );
-
-    test(
-        Br {
-            target: Label(0),
-            value: None,
-        },
-        "br @label0",
-    );
-    // With index and value.
-    test(
-        BrTable {
-            idx: Stack(0),
-            table: vec![Label(1), Label(2)],
-            default: Label(0),
-            value: Some(Stack(1)),
-        },
-        "br_table @label1 @label2 default=@label0 (s0) (s1)",
-    );
-
-    // Always print the argument parentheses, even if no arguments passed.
-    test(
-        Call {
-            lhs: None,
-            func: Func(7),
-            args: Vec::new(),
-        },
-        "call f7 ()",
-    );
-    test(
-        CallIndirect {
-            lhs: Some(Stack(1)),
-            type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
-            table_idx: Stack(0),
-            args: vec![Stack(2), Stack(3)],
-        },
-        "s1 = call_indirect [i32] -> [i32] (s0) (s2, s3)",
-    );
-
-    // Single if + br (which is our form of br_if).
-    test(
-        If {
-            lhs: None,
-            condition: Stack(0),
-            label: None,
-            if_body: Body {
-                instrs: vec![Br {
+    lazy_static! {
+        /// Pairs of Wimpl AST with concrete syntax, and optionally a comment what is
+        /// "special" about this testcase. This is used for testing both parsing and
+        /// pretty-printing of Wimpl, just in different directions.
+        /// 
+        /// For these examples, the concrete syntax is in the "canonical pretty" 
+        /// format, i.e., with "standard" whitespace.
+        static ref WIMPL_CANONICAL_SYNTAX_TESTCASES: Vec<(Instr, &'static str, &'static str)> = vec![
+            (Unreachable, "unreachable", ""),
+            (Return { value: None }, "return", "return without value"),
+            (Return { value: Some(Stack(0)) }, "return (s0)", "with value, with whitespace"),
+            (MemorySize { lhs: Stack(0) }, "s0 = memory.size", "with lhs"),
+            (
+                Assign {
+                    lhs: Global(0),
+                    rhs: Local(0),
+                },
+                "g0 = l0",
+                ""
+            ),
+            (
+                Const {
+                    lhs: Stack(0),
+                    val: I32(1337),
+                },
+                "s0 = i32.const 1337",
+                ""
+            ),
+            (
+                Numeric {
+                    lhs: Stack(1),
+                    op: I32Add,
+                    rhs: vec![Stack(2), Stack(3)],
+                },
+                "s1 = i32.add(s2, s3)",
+                ""
+            ),
+            (
+                Load {
+                    lhs: Stack(1),
+                    op: I32Load,
+                    memarg: Memarg::default(I32Load),
+                    addr: Stack(0),
+                },
+                "s1 = i32.load(s0)",
+                ""
+            ),
+            (
+                Store {
+                    op: I64Store8,
+                    value: Stack(1),
+                    addr: Stack(2),
+                    memarg: Memarg {
+                        offset: 0,
+                        alignment_exp: 4,
+                    },
+                },
+                "i64.store8 align=16 (s2) (s1)",
+                "memory operation with non-default alignment"
+            ),
+            (
+                Br {
                     target: Label(0),
                     value: None,
-                }],
-                result: None,
-            },
-            else_body: None,
-        },
-        "if (s0) { br @label0 }",
-    );
-    // Multi-line and nested loop/block.
-    test(
-        Loop {
-            lhs: None,
-            label: Label(1),
-            body: Body {
-                instrs: vec![
-                    Block {
-                        lhs: Some(Stack(0)),
-                        label: Label(2),
-                        body: Body {
-                            instrs: vec![Const {
-                                lhs: Stack(1),
-                                val: I32(7),
-                            }],
-                            result: Some(Stack(1)),
-                        },
+                },
+                "br @label0",
+                "br without value"
+            ),
+            (Br { target: Label(1), value: Some(Stack(0)) }, "br @label1 (s0)", "br with value"),
+            (
+                BrTable {
+                    idx: Stack(0),
+                    table: vec![Label(1), Label(2)],
+                    default: Label(0),
+                    value: Some(Stack(1)),
+                },
+                "br_table @label1 @label2 default=@label0 (s0) (s1)",
+                "br_table with index argument and passed value"
+            ),
+            (
+                Call {
+                    lhs: None,
+                    func: Func(7),
+                    args: Vec::new(),
+                },
+                "call f7 ()",
+                "call argument list is always printed, even if empty"
+            ),
+            (
+                CallIndirect {
+                    lhs: Some(Stack(1)),
+                    type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
+                    table_idx: Stack(0),
+                    args: vec![Stack(2), Stack(3)],
+                },
+                "s1 = call_indirect [i32] -> [i32] (s0) (s2, s3)",
+                ""
+            ),
+            (
+                Block {
+                    lhs: None,
+                    label: Label(0),
+                    body: Body {
+                        instrs: vec![],
+                        result: None,
                     },
-                    Br {
-                        target: Label(1),
-                        value: None,
+                },
+                "@label0: block { }", ""
+            ),
+            (
+                Block {
+                    lhs: Some(Stack(1)),
+                    label: Label(0),
+                    body: Body {
+                        instrs: vec![],
+                        result: Some(Stack(0)),
                     },
-                ],
-                result: None,
-            },
-        },
-        r"@label1: loop {
+                },
+                "s1 = @label0: block { s0 }",
+                "no block instructions, only a result"
+            ),
+            (
+                Block {
+                    lhs: None,
+                    label: Label(1),
+                    body: Body {
+                        instrs: vec![Assign { lhs: Stack(1), rhs: Stack(0) }],
+                        result: None,
+                    },
+                },
+                "@label1: block { s1 = s0 }",
+                "block with a single instruction, no result; on one line"
+            ),
+            (
+                If {
+                    lhs: None,
+                    condition: Stack(0),
+                    label: None,
+                    if_body: Body {
+                        instrs: vec![Br {
+                            target: Label(0),
+                            value: None,
+                        }],
+                        result: None,
+                    },
+                    else_body: None,
+                },
+                "if (s0) { br @label0 }",
+                "if + br (which is our form of br_if)"
+            ),
+            (
+                Loop {
+                    lhs: None,
+                    label: Label(1),
+                    body: Body {
+                        instrs: vec![
+                            Block {
+                                lhs: Some(Stack(0)),
+                                label: Label(2),
+                                body: Body {
+                                    instrs: vec![Const {
+                                        lhs: Stack(1),
+                                        val: I32(7),
+                                    }],
+                                    result: Some(Stack(1)),
+                                },
+                            },
+                            Br {
+                                target: Label(1),
+                                value: None,
+                            },
+                        ],
+                        result: None,
+                    },
+                },
+    r"@label1: loop {
   s0 = @label2: block {
     s1 = i32.const 7
     s1
   }
   br @label1
 }",
-    );
-}
+            "nested and multi-line loop/block")
+        ];
 
-#[test]
-fn parse_var() {
-    assert_eq!(Ok(Var::Stack(0)), "s0".parse());
-    assert_eq!(Ok(Var::Global(0)), "g0".parse());
-
-    // Negative tests:
-    assert!(" s0 \n ".parse::<Var>().is_err(), "whitespace not allowed");
-    assert!("sABC".parse::<Var>().is_err(), "characters instead of number");
-    assert!("x123".parse::<Var>().is_err(), "invalid variable type");
-}
-
-#[test]
-fn parse_instr() {
-    // Convenience:
-    use highlevel::LoadOp::*;
-    use highlevel::NumericOp::*;
-    use highlevel::StoreOp::*;
-    use Instr::*;
-    use Val::*;
-    use Var::*;
-    fn test(wimpl: Instr, str: &str) {
-        assert_eq!(Ok(wimpl), str.parse(), "\n input: `{}`", str);
-    }
-    fn test_msg(wimpl: Instr, str: &str, msg: &str) {
-        assert_eq!(Ok(wimpl), str.parse(), "\n input: `{}`\n{}", str, msg);
-    }
-
-    test(Unreachable, "unreachable");
-
-    test(Return { value: None }, "return");
-    test_msg(Return { value: Some(Stack(0)) }, "return(s0)", "with arg");
-    test_msg(Return { value: Some(Stack(0)) }, "return (s0)", "with whitespace");
-
-    test_msg(MemorySize { lhs: Stack(0) }, "s0 = memory.size", "with lhs");
-    test_msg(MemoryGrow { lhs: Stack(1), pages: Stack(0) }, "s1 = memory.grow ( s0 )", "with lhs and arg");
-
-    test(Br { target: Label(1), value: Some(Stack(0)) }, "br @label1 (s0)");
-    test(
-        BrTable {
-            idx: Stack(0),
-            table: vec![Label(1), Label(2)],
-            default: Label(0),
-            value: Some(Stack(1)),
-        },
-        "br_table @label1 @label2 default=@label0 (s0) (s1)",
-    );
-
-    test(
-        Call {
-            lhs: None,
-            func: Func(2),
-            args: vec![Stack(2), Stack(3)],
-        },
-        "call f2 ( s2, s3 )",
-    );
-    test(
-        CallIndirect {
-            lhs: Some(Stack(1)),
-            type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
-            table_idx: Stack(0),
-            args: vec![],
-        },
-        "s1 = call_indirect [i32] -> [i32] (s0) ()",
-    );
-
-    test(
-        Assign {
-            lhs: Global(0),
-            rhs: Local(0),
-        },
-        "g0 = l0",
-    );
-
-    test(
-        Const {
-            lhs: Stack(0),
-            val: I32(1337),
-        },
-        "s0 = i32.const 1337",
-    );
-    test(
-        Numeric {
-            lhs: Stack(1),
-            op: I32Add,
-            rhs: vec![Stack(2), Stack(3)],
-        },
-        "s1 = i32.add(s2, s3)",
-    );
-
-    test(
-        Load {
-            lhs: Stack(1),
-            op: I32Load,
-            memarg: Memarg::default(I32Load),
-            addr: Stack(0),
-        },
-        "s1 = i32.load(s0)",
-    );
-    // Non-default alignment:
-    test(
-        Store {
-            op: I64Store8,
-            value: Stack(1),
-            addr: Stack(2),
-            memarg: Memarg {
-                offset: 0,
-                alignment_exp: 4,
-            },
-        },
-        "i64.store8 align=16 (s2) (s1)",
-    );
-
-    test(
-        Block {
-            lhs: None,
-            label: Label(0),
-            body: Body {
-                instrs: vec![],
-                result: None,
-            },
-        },
-        "@label0: block { }"
-    );
-    test_msg(
-        Block {
-            lhs: Some(Stack(1)),
-            label: Label(0),
-            body: Body {
-                instrs: vec![],
-                result: Some(Stack(0)),
-            },
-        },
-        "s1 = @label0: block { s0 }",
-        "no instrs, only result"
-    );
-    test_msg(
-        Block {
-            lhs: None,
-            label: Label(1),
-            body: Body {
-                instrs: vec![Assign { lhs: Stack(1), rhs: Stack(0) }],
-                result: None,
-            },
-        },
-        "@label1: block { s1 = s0 }",
-        "one instruction, no result"
-    );
-    test_msg(
-        Block {
-            lhs: None,
-            label: Label(2),
-            body: Body {
-                instrs: vec![Assign { lhs: Stack(1), rhs: Stack(0) }],
-                result: Some(Stack(1)),
-            },
-        },
-        "@label2: block { s1 = s0 s1 }",
-        "instructions and result, no linebreak"
-    );
-
-    // Single if + br (which is our form of br_if).
-    test(
-        If {
-            lhs: None,
-            condition: Stack(0),
-            label: None,
-            if_body: Body {
-                instrs: vec![Br {
-                    target: Label(0),
-                    value: None,
-                }],
-                result: None,
-            },
-            else_body: None,
-        },
-        "if (s0) { br @label0 }",
-    );
-    test(
-        Loop {
-            lhs: None,
-            label: Label(1),
-            body: Body {
-                instrs: vec![
-                    Block {
-                        lhs: Some(Stack(0)),
-                        label: Label(2),
-                        body: Body {
-                            instrs: vec![Const {
-                                lhs: Stack(1),
-                                val: I32(7),
-                            }],
-                            result: Some(Stack(1)),
-                        },
+        /// The following examples are NOT in the canonical text format, e.g.,
+        /// because they contain too little or too much whitespace.
+        /// They are only used for testing parsing, not pretty-printing.
+        static ref WIMPL_ALTERNATIVE_SYNTAX_TESTCASES: Vec<(Instr, &'static str, &'static str)> = vec![
+            (Return { value: Some(Stack(0)) }, "return(s0)", "no space between op and arguments"),
+            (MemoryGrow { lhs: Stack(1), pages: Stack(0) }, "s1 = memory.grow ( s0 )", "extra space around arguments"),
+            (
+                Call {
+                    lhs: None,
+                    func: Func(2),
+                    args: vec![Stack(2), Stack(3)],
+                },
+                "call f2 ( s2, s3 )",
+                "extra space around call arguments"
+            ),
+            (
+                CallIndirect {
+                    lhs: Some(Stack(1)),
+                    type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
+                    table_idx: Stack(0),
+                    args: vec![],
+                },
+                "s1 = call_indirect [  i32  ] ->[i32] (s0) ()",
+                "non-standard spacing around function type"
+            ),
+            (
+                Numeric {
+                    lhs: Stack(1),
+                    op: I32Add,
+                    rhs: vec![Stack(2), Stack(3)],
+                },
+                "s1 = i32.add (s2,s3)",
+                "space before arguments, no space after comma"
+            ),
+            (
+                Store {
+                    op: I64Store8,
+                    value: Stack(1),
+                    addr: Stack(2),
+                    memarg: Memarg {
+                        offset: 0,
+                        alignment_exp: 4,
                     },
-                    Br {
-                        target: Label(1),
-                        value: None,
+                },
+                "i64.store8 align=16(s2)(s1)",
+                "minimal spacing around arguments"
+            ),
+            (
+                Block {
+                    lhs: None,
+                    label: Label(0),
+                    body: Body {
+                        instrs: vec![],
+                        result: None,
                     },
-                ],
-                result: None,
-            },
-        },
-        r"@label1: loop {
-  s0 = @label2: block {
-    s1 = i32.const 7
-    s1
-  }
-  br @label1
-}",
-    );
+                },
+                "@label0:block{}",
+                "minimal space in block"
+            ),
+            (
+                Block {
+                    lhs: None,
+                    label: Label(2),
+                    body: Body {
+                        instrs: vec![Assign { lhs: Stack(1), rhs: Stack(0) }],
+                        result: Some(Stack(1)),
+                    },
+                },
+                "@label2: block { s1 = s0 s1 }",
+                "no linebreak between block instructions and result"
+            )
+        ];
+    }
+    
+    #[test]
+    fn pretty_print() {
+        for (i, (wimpl, text, msg)) in WIMPL_CANONICAL_SYNTAX_TESTCASES.iter().enumerate() {
+            assert_eq!(&wimpl.to_string(), text, "\ntest #{}\n{}", i, msg);
+        }
+    }
+
+    #[test]
+    fn parse_var() {
+        assert_eq!(Ok(Stack(0)), "s0".parse());
+        assert_eq!(Ok(Global(0)), "g0".parse());
+
+        // Negative tests:
+        assert!(" s0 \n ".parse::<Var>().is_err(), "whitespace not allowed");
+        assert!("sABC".parse::<Var>().is_err(), "characters instead of number");
+        assert!("x123".parse::<Var>().is_err(), "invalid variable type");
+    }
+    
+    #[test]
+    fn parse_instr() {
+        let parse_testcases = WIMPL_CANONICAL_SYNTAX_TESTCASES.iter().chain(WIMPL_ALTERNATIVE_SYNTAX_TESTCASES.iter());
+        for (i, (wimpl, text, msg)) in parse_testcases.enumerate() {
+            use std::str::FromStr;
+            let parsed = Instr::from_str(text);
+            assert!(parsed.is_ok(), "\ntest #{} could not be parsed\ninput: `{}`\n{}", i, text, msg);
+            assert_eq!(&parsed.unwrap(), wimpl, "\ntest #{}\ninput: `{}`\n{}", i, text, msg);
+        }
+    }
 
 }
-
-// #[test]
-// fn wimpl_text_syntax() {
-//     let parsed = Instr::from_file("tests/wimpl/syntax.wimpl").unwrap();
-
-//     let expected = Instr::new(
-//         Vec::new(),
-//         Const(Val::I32(2)),
-//         WimpleRhs::VarVec(Vec::new()),
-//     );
-//     assert_eq!(parsed[0], expected);
-
-//     let expected = Instr::new(
-//         vec![Var(0)],
-//         Const(Val::I32(3)),
-//         WimpleRhs::VarVec(Vec::new()),
-//     );
-//     assert_eq!(parsed[1], expected);
-// }
 
 // #[test]
 // fn constant_file() {

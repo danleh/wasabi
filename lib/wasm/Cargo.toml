@@ -12,6 +12,7 @@ rayon = "1"
 serde = { version = "1", features = ["derive"] }
 ordered-float = "1"
 nom = "7.1.0"
+lazy_static = "1.4.0"
 
 [dev-dependencies]
 test_utilities = { path = "../test_utilities" }
