@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::{fmt, hash};
 use std::convert::TryInto;
 use std::marker::PhantomData;
@@ -80,8 +81,12 @@ impl ValType {
             ValType::F64 => 'F',
         }
     }
+}
 
-    pub fn parse_text(str: &str) -> Result<Self, ()> {
+impl FromStr for ValType {
+    type Err = ();
+
+    fn from_str(str: &str) -> Result<Self, Self::Err> {
         Ok(match str.trim() {
             "i32" => ValType::I32, 
             "i64" => ValType::I64, 
@@ -108,32 +113,6 @@ impl FunctionType {
             results: results.into() 
         }
     }
-
-    pub fn parse_text(str: &str) -> Result<Self, ()> {
-        // Split by the arrow.
-        let mut splitted = str.split("->");
-        let params = splitted.next().ok_or(())?;
-        let results = splitted.next().ok_or(())?;
-        if let None = splitted.next() {
-            // Split individual types by comma, and remove brackets.
-            let params = params
-                .split(&['[', ']', ','][..])
-                .filter(|str| !str.is_empty())
-                .map(ValType::parse_text)
-                .collect::<Result<Vec<_>, _>>()?
-                .into();
-            let results = results
-                .split(&['[', ']', ','][..])
-                .filter(|str| !str.is_empty())
-                .map(ValType::parse_text)
-                .collect::<Result<Vec<_>, _>>()?
-                .into();
-            Ok(FunctionType { params, results })
-        } else {
-            // More than one arrow in the type is invalid.
-            Err(())
-        }
-    }
 }
 
 impl fmt::Display for FunctionType {
@@ -142,12 +121,59 @@ impl fmt::Display for FunctionType {
     }
 }
 
+impl FromStr for FunctionType {
+    type Err = ();
+
+    fn from_str(str: &str) -> Result<Self, Self::Err> {
+        fn trim_filter(s: &str) -> Option<&str> {
+            let s = s.trim();
+            if s.is_empty() {
+                None
+            } else {
+                Some(s)
+            }
+        }
+
+        // Split by the arrow.
+        let mut splitted = str.split("->");
+        let params = splitted.next().ok_or(())?;
+        let results = splitted.next().ok_or(())?;
+        if let None = splitted.next() {
+            // Split individual types by comma, and remove brackets.
+            let params = params
+                .trim()
+                .strip_prefix('[').ok_or(())?
+                .strip_suffix(']').ok_or(())?
+                .split(',')
+                .filter_map(trim_filter)
+                .map(ValType::from_str)
+                .collect::<Result<Vec<_>, _>>()?
+                .into();
+            let results = results
+                .trim()
+                .strip_prefix('[').ok_or(())?
+                .strip_suffix(']').ok_or(())?
+                .split(',')
+                .filter_map(trim_filter)
+                .map(ValType::from_str)
+                .collect::<Result<Vec<_>, _>>()?
+                .into();
+        Ok(FunctionType { params, results })
+        } else {
+            // More than one arrow in the type is invalid.
+            Err(())
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct BlockType(pub Option<ValType>);
 
-impl BlockType {
-    pub fn parse_text(str: &str) -> Result<Self, ()> {
-        let FunctionType { params, results } = FunctionType::parse_text(str)?;
+impl FromStr for BlockType {
+    type Err = ();
+
+    fn from_str(str: &str) -> Result<Self, Self::Err> {
+        let FunctionType { params, results } = FunctionType::from_str(str)?;
         match (&params[..], &results[..]) {
             ([], []) => Ok(BlockType(None)),
             ([], [ty]) => Ok(BlockType(Some(*ty))),

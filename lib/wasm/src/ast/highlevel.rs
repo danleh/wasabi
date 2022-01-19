@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, str::FromStr};
 use std::fmt;
 
 use crate::{BlockType, FunctionType, GlobalType, Idx, Label, Memarg, MemoryType, Mutability, RawCustomSection, TableType, Val, ValType};
@@ -825,9 +825,9 @@ impl Instr {
             "unreachable" => Unreachable,
             "nop" => Nop,
 
-            "block" => Block(BlockType::parse_text(rest)?),
-            "loop" => Loop(BlockType::parse_text(rest)?),
-            "if" => If(BlockType::parse_text(rest)?),
+            "block" => Block(BlockType::from_str(rest)?),
+            "loop" => Loop(BlockType::from_str(rest)?),
+            "if" => If(BlockType::from_str(rest)?),
 
             "else" => Else,
             "end" => End,
@@ -849,7 +849,7 @@ impl Instr {
                 Call(func_idx)
             }
             "call_indirect" => {
-                let ty = FunctionType::parse_text(rest)?;
+                let ty = FunctionType::from_str(rest)?;
                 // For the WebAssembly MVP there is only a single table, so the
                 // table index was not printed. Instead assume 0.
                 let table_idx = 0.into();
