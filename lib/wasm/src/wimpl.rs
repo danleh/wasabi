@@ -4,9 +4,7 @@ use std::{
     path::Path, str::FromStr,
 };
 
-use logos::{Lexer, Logos};
 use nom::{IResult, combinator::{map, map_res, opt}, bytes::complete::{tag, take_till, take_while, take_until, take}, Finish, character::complete::{alphanumeric0, alphanumeric1, multispace0, digit1}, branch::alt, sequence::{delimited, preceded, terminated, separated_pair, pair, tuple}, multi::{many0, separated_list0}, AsChar};
-use regex::Regex;
 
 use crate::{highlevel::MemoryOp, Val, ValType, BlockType};
 use crate::{
@@ -336,31 +334,16 @@ impl Instr {
         fn op(input: &str) -> IResult<&str, &str> {
             take_while(|c: char| c.is_alphanum() || c == '.' || c == '_')(input)
         }
-        fn memarg<'a>(op: impl MemoryOp + 'static) -> impl FnMut(&'a str) -> IResult<&'a str, Memarg> {
+        fn memarg<'a>(op: impl MemoryOp + 'a) -> impl FnMut(&'a str) -> IResult<&'a str, Memarg> {
+            let op = op.clone();
             ws(map_res(take_until("("), move |s| Memarg::from_str(s, op)))
         }
 
         // Each indivudual instruction, assumes without outer whitespace.
         let unreachable = map(tag("unreachable"), |_| Unreachable);
-        let return_ = map(
-            preceded(
-                    tag("return"),
-                    opt(arg_single)),
-            |value| Return { value }
-        );
-        let memory_size = map(
-            terminated(
-                lhs,
-                tag("memory.size")),
-            |lhs| MemorySize { lhs }
-        );
-        let memory_grow = map(
-            separated_pair(
-                lhs,
-                tag("memory.grow"),
-                arg_single),
-            |(lhs, pages)| MemoryGrow { lhs, pages }
-        );
+
+        
+
         let br = map(
             preceded(
                 tag("br"),
@@ -379,6 +362,14 @@ impl Instr {
                     opt(arg_single)))),
             |(table, default, idx, value)| BrTable { table, default, idx, value }
         );
+
+        let return_ = map(
+            preceded(
+                    tag("return"),
+                    opt(arg_single)),
+            |value| Return { value }
+        );
+
         let call = map(
             tuple((
                 opt(lhs),
@@ -396,10 +387,43 @@ impl Instr {
                 arg_list)),
             |(lhs, _, type_, table_idx, args)| CallIndirect { lhs, type_, table_idx, args }
         );
+
         let assign = map(
             pair(lhs, var),
             |(lhs, rhs)| Assign { lhs, rhs }
         );
+
+        // Memarg parsing depends on result of previous LoadOp/StoreOp parsing.
+        // This is easier to write in direct than in point-free style, so we do.
+        fn load(input: &str) -> IResult<&str, Instr> {
+            let (input, lhs) = lhs(input)?;
+            let (input, op) = map_res(op, LoadOp::from_str)(input)?;
+            let (input, memarg) = memarg(op)(input)?;
+            let (input, addr) = arg_single(input)?;
+            Ok((input, Load { lhs, op, memarg, addr }))
+        }
+        fn store(input: &str) -> IResult<&str, Instr> {
+            let (input, op) = map_res(op, StoreOp::from_str)(input)?;
+            let (input, memarg) = memarg(op)(input)?;
+            let (input, addr) = arg_single(input)?;
+            let (input, value) = arg_single(input)?;
+            Ok((input, Store { op, memarg, addr, value }))
+        }
+
+        let memory_size = map(
+            terminated(
+                lhs,
+                tag("memory.size")),
+            |lhs| MemorySize { lhs }
+        );
+        let memory_grow = map(
+            separated_pair(
+                lhs,
+                tag("memory.grow"),
+                arg_single),
+            |(lhs, pages)| MemoryGrow { lhs, pages }
+        );
+
         let const_ = map_res(
             tuple((
                 lhs,
@@ -410,6 +434,7 @@ impl Instr {
             |(lhs, ty, _, number)| 
                 Val::from_str(number, ty).map(|val| Const { lhs, val })
         );
+
         let numeric = map(
             tuple((
                 lhs,
@@ -417,25 +442,6 @@ impl Instr {
                 arg_list)),
             |(lhs, op, rhs)| Numeric { lhs, op, rhs }
         );
-        // TODO Write by hand, not with point-free style.
-        // let load = map(
-        //     tuple((
-        //         lhs,
-        //         map_res(op, LoadOp::from_str),
-        //         // FIXME pass op from earlier parser to this.
-        //         memarg(op),
-        //         arg_single)),
-        //     |(lhs, op, memarg, addr)| Load { lhs, op, memarg, addr }
-        // );
-        // let store = map(
-        //     tuple((
-        //         map_res(op, StoreOp::from_str),
-        //         // FIXME pass op from earlier parser to this.
-        //         memarg(op),
-        //         arg_single,
-        //         arg_single)),
-        //     |(op, memarg, addr, value)| Store { op, memarg, addr, value }
-        // );
 
         alt((
             unreachable,
@@ -449,8 +455,8 @@ impl Instr {
 
             assign,
 
-            // load,
-            // store,
+            load,
+            store,
             
             memory_size,
             memory_grow,

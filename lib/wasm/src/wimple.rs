@@ -4,9 +4,6 @@ use std::{
     path::Path,
 };
 
-use logos::{Lexer, Logos};
-use regex::Regex;
-
 use crate::{highlevel::MemoryOp, Val, ValType, BlockType};
 use crate::{
     highlevel::{self, Function, LoadOp, Module, NumericOp, StoreOp},
@@ -482,58 +479,6 @@ impl fmt::Display for Instr {
     }
 }
 
-/// Tokens of the Wimpl text representation.
-#[derive(Logos, Debug, PartialEq, Eq)]
-pub enum Token {
-    #[token("(")]
-    LParen,
-
-    #[token(")")]
-    RParen,
-
-    #[token("[")]
-    LBracket,
-
-    #[token("]")]
-    RBracket,
-
-    #[token("{")]
-    LBrace,
-
-    #[token("}")]
-    RBrace,
-
-    #[token("->")]
-    Arrow,
-
-    #[token(",")]
-    Comma,
-
-    #[token(":")]
-    Colon,
-
-    #[token("=")]
-    Equals,
-
-    #[token("@")]
-    At,
-
-    #[regex(r"[a-zA-Z0-9_\.]+")]
-    AlphaNum,
-
-    #[token("\n", logos::skip)]
-    Linebreak,
-
-    #[regex(r"\s+", logos::skip)]
-    Whitespace,
-
-    #[regex(r"//.*", logos::skip)]
-    Comment,
-
-    #[error]
-    Error,
-}
-
 pub fn wimplify(
     instrs: &[highlevel::Instr],
     function: &Function,
@@ -875,15 +820,6 @@ fn pretty_print() {
   br @label1
 }",
     );
-}
-
-#[test]
-fn lexing() {
-    let str = std::fs::read_to_string("tests/wimpl/syntax.wimpl").unwrap();
-    let lexer = Token::lexer(&str);
-    for (token, span) in lexer.spanned() {
-        println!("{:3?}  {:10}  {:?}", span.clone(), format!("{:?}", token), &str[span]);
-    }
 }
 
 // #[test]
