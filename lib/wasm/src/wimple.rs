@@ -7,7 +7,7 @@ use std::{
 use logos::{Lexer, Logos};
 use regex::Regex;
 
-use crate::{highlevel::MemoryOp, Val, ValType};
+use crate::{highlevel::MemoryOp, Val, ValType, BlockType};
 use crate::{
     highlevel::{self, Function, LoadOp, Module, NumericOp, StoreOp},
     types::types,
@@ -534,6 +534,157 @@ pub enum Token {
     Error,
 }
 
+pub fn wimplify(
+    instrs: &[highlevel::Instr],
+    function: &Function,
+    module: &Module,
+    label_count: usize, 
+) -> Result<Vec<Instr>, String> {
+    
+    // Convenience:
+    use Instr::*;
+    use Var::*;
+    
+    let mut var_stack = Vec::new();
+    let mut var_count = 0;
+    let mut result_instrs = Vec::new();
+    let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
+
+    for (instr, ty) in instrs.iter().zip(tys.into_iter()) {
+    
+        println!("{:?}, {:?}", instr, ty);
+        let n_inputs = ty.inputs.len();
+        let n_results = ty.results.len();
+
+        let lhs : Option<Var>; 
+        if n_results == 0 {
+            lhs = None;  
+        } else if n_results == 1 {
+            lhs = Some(Var::Stack(var_count));
+        } else {
+            todo!(); // ERROR! 
+        }
+        
+        let mut rhs = Vec::new();
+        for _ in 0..n_inputs {
+            rhs.push(var_stack.pop().unwrap());
+        }
+        
+        // we can only push the new variable onto the stack once we have popped the required rhs values
+        if lhs != None {
+            var_stack.push(Var::Stack(var_count));
+            var_count += 1;
+        }
+
+        let result_instr: Option<Instr> = match instr {
+            highlevel::Instr::Unreachable => Some(Unreachable),
+            highlevel::Instr::Nop => None,
+            
+            highlevel::Instr::Block(blocktype) => {
+                // collect block body instructions 
+                // FIXME: technically should not be till end since you can have nested blocks 
+                
+                // let mut block_body : Vec<highlevel::Instr> = Vec::new(); 
+                // while instrs[ind] != highlevel::Instr::End && ind != instrs.len()-1{
+                //     block_body.push(instrs[ind].clone()); 
+                //     ind = ind+1; 
+                // }
+                // println!("{}", ind);
+                // println!("{:?}", block_body); 
+                
+                // let btype = blocktype.0; 
+                // Some(Block{
+                //     lhs,
+                //     label: Label(label_count),
+                //     body: Body{
+                //         instrs: wimplify(&block_body, function, module, label_count+1)?,
+                //         result: if let Some(_btype) = btype {
+                //             Some(rhs.pop().unwrap())
+                //         } else {
+                //             None
+                //         },
+
+                //     },
+                // })
+                todo!()
+            },
+            highlevel::Instr::Loop(_) => todo!(),
+            highlevel::Instr::If(_) => todo!(),
+            highlevel::Instr::Else => todo!(),
+            highlevel::Instr::End => todo!(),
+            highlevel::Instr::Br(_) => todo!(),
+            highlevel::Instr::BrIf(lab) => {
+                Some(If{
+                    lhs,
+                    label: None, 
+                    condition: var_stack.pop().unwrap(),
+                    if_body: Body{ 
+                        instrs: vec![Br{ 
+                                    target: Label(lab.0 as usize), 
+                                    value: None,  
+                                }],
+                        result: None, 
+                    },
+                    else_body: None,
+                })
+            },
+            highlevel::Instr::BrTable { table, default } => todo!(),
+            highlevel::Instr::Return => todo!(),
+            highlevel::Instr::Call(_) => todo!(),
+            highlevel::Instr::CallIndirect(fn_type, index) => {
+                // in call_indirect, 
+                // the last variable on the stack is the index value
+                // the rest (till you collect all the needed parameters are arguments  
+                // then what is index?? do we need it here???
+                Some(CallIndirect{
+                    lhs, 
+                    type_: fn_type.clone(), //do we need to clone??
+                    table_idx: rhs.pop().unwrap(), 
+                    args: rhs, 
+                })
+            },
+            highlevel::Instr::Drop => {
+                var_stack.pop(); 
+                None
+            },
+            highlevel::Instr::Select => todo!(),
+            highlevel::Instr::Local(_, _) => todo!(),
+            highlevel::Instr::Global(_, _) => todo!(),
+            highlevel::Instr::Load(_, _) => todo!(),
+            highlevel::Instr::Store(_, _) => todo!(),
+            highlevel::Instr::MemorySize(_) => todo!(),
+            highlevel::Instr::MemoryGrow(_) => todo!(),
+            highlevel::Instr::Const(val) => { 
+                if let Some(lhs) = lhs {
+                    Some(Const{
+                        lhs,
+                        val: *val,
+                    })
+                } else {
+                    todo!(); //ERROR
+                }
+            },
+            highlevel::Instr::Numeric(numop) => {
+                if let Some(lhs) = lhs { 
+                    Some(Numeric{
+                        lhs,
+                        op: *numop,
+                        rhs,
+                    })
+                } else {
+                    todo!() //ERROR
+                }
+            }, 
+        }; 
+        if let Some(result_instr) = result_instr {
+            result_instrs.push(result_instr);
+            
+        } 
+    }
+    Ok(result_instrs)
+}
+
+
 // pub fn wimplify(
 //     instrs: &[highlevel::Instr],
 //     function: &Function,
@@ -767,117 +918,119 @@ fn lexing() {
 //     assert_eq!(actual, expected);
 // }
 
-// #[test]
-// fn constant() {
-//     let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
-//     let func = module.functions().next().unwrap().1;
-//     // let instrs = func.code().unwrap().body.as_slice();
-//     let instrs = &func.code().unwrap().body[0..1];
-//     let actual = wimplify(instrs, func, &module).unwrap();
-//     //println!("actual {:?}",actual);
-//     for ins in &actual {
-//         println!("{}", ins);
-//     }
-//     let expected = vec![Instr {
-//         lhs: vec![Var(0)],
-//         op: Const(Val::I32(3)),
-//         rhs: WimpleRhs::VarVec(Vec::new()),
-//     }];
-//     assert_eq!(actual, expected);
-// }
+#[test]
+fn constant() {
+    let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    // let instrs = func.code().unwrap().body.as_slice();
+    let instrs = &func.code().unwrap().body[0..1];
+    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    //println!("actual {:?}",actual);
+    for ins in &actual {
+        println!("{}", ins);
+    }
+    let expected = vec![
+        Instr::Const {
+            lhs: Var::Stack(0), 
+            val: Val::I32(3), 
+        }
+    ];
+    assert_eq!(actual, expected);
+}
 
-// #[test]
-// fn drop() {
-//     let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
-//     let func = module.functions().next().unwrap().1;
-//     // let instrs = func.code().unwrap().body.as_slice();
-//     let instrs = &func.code().unwrap().body[0..2];
-//     let actual = wimplify(instrs, func, &module).unwrap();
-//     //println!("actual {:?}",actual);
-//     for ins in &actual {
-//         println!("{}", ins);
-//     }
-//     let expected = vec![
-//         Instr {
-//             lhs: vec![Var(0)],
-//             op: Const(Val::I32(3)),
-//             rhs: WimpleRhs::VarVec(Vec::new()),
-//         },
-//         Instr {
-//             lhs: Vec::new(),
-//             op: Drop,
-//             rhs: WimpleRhs::VarVec(vec![Var(0)]),
-//         },
-//     ];
-//     assert_eq!(actual, expected);
-// }
+#[test]
+fn drop() {
+    let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    // let instrs = func.code().unwrap().body.as_slice();
+    let instrs = &func.code().unwrap().body[0..2];
+    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    //println!("actual {:?}",actual);
+    for ins in &actual {
+        println!("{}", ins);
+    }
+    let expected = vec![
+        Instr::Const {
+            lhs: Var::Stack(0), 
+            val: Val::I32(3), 
+        }
+    ];
+    assert_eq!(actual, expected);
+}
 
-// #[test]
-// fn add() {
-//     let module = Module::from_file("../../tests/inputs/folding/add.wasm").unwrap();
-//     let func = module.functions().next().unwrap().1;
-//     // let instrs = func.code().unwrap().body.as_slice();
-//     let instrs = &func.code().unwrap().body[0..3];
-//     let actual = wimplify(instrs, func, &module).unwrap();
-//     for ins in &actual {
-//         println!("{}", ins);
-//     }
-//     let expected = vec![
-//         Instr::new(
-//             vec![Var(0)],
-//             Const(Val::I32(3)),
-//             WimpleRhs::VarVec(Vec::new()),
-//         ),
-//         Instr::new(
-//             vec![Var(1)],
-//             Const(Val::I32(4)),
-//             WimpleRhs::VarVec(Vec::new()),
-//         ),
-//         Instr::new(
-//             vec![Var(2)],
-//             Numeric(I32Add),
-//             WimpleRhs::VarVec(vec![Var(1), Var(0)]),
-//         ),
-//     ];
-//     println!("{:?}", expected);
-//     assert_eq!(actual, expected);
-// }
+#[test]
+fn add() {
+    let module = Module::from_file("../../tests/inputs/folding/add.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    // let instrs = func.code().unwrap().body.as_slice();
+    let instrs = &func.code().unwrap().body[0..3];
+    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    for ins in &actual {
+        println!("{}", ins);
+    }
+    let expected = vec![
+        Instr::Const {
+            lhs: Var::Stack(0), 
+            val: Val::I32(3), 
+        },
+        Instr::Const {
+            lhs: Var::Stack(1), 
+            val: Val::I32(4), 
+        }, 
+        Instr::Numeric { 
+            lhs: Var::Stack(2), 
+            op: highlevel::NumericOp::I32Add, 
+            rhs: vec![Var::Stack(1), Var::Stack(0)] 
+        }, 
+    ];
+    println!("{:?}", expected);
+    assert_eq!(actual, expected);
+}
 
-// #[test]
-// fn call_ind() {
-//     let module = Module::from_file("../../tests/inputs/folding/call_ind.wasm").unwrap();
-//     let func = module.functions().next().unwrap().1;
-//     // let instrs = func.code().unwrap().body.as_slice();
-//     let instrs = &func.code().unwrap().body[0..2];
-//     let actual = wimplify(instrs, func, &module).unwrap();
-//     //println!("{:?}",actual);
-//     for ins in &actual {
-//         println!("{}", ins);
-//     }
-//     // let expected = vec![FoldedExpr(
-//     //     CallIndirect(FunctionType::new(&[], &[]), Idx::from(0)),
-//     //     vec![FoldedExpr::new(Const(Val::I32(0)))],
-//     // )];
-//     // assert_eq!(actual, expected);
-// }
+#[test]
+fn call_ind() {
+    let module = Module::from_file("../../tests/inputs/folding/call_ind.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    // let instrs = func.code().unwrap().body.as_slice();
+    let instrs = &func.code().unwrap().body[0..2];
+    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    //println!("{:?}",actual);
+    for ins in &actual {
+        println!("{}", ins);
+    }
+    let expected = vec![
+        Instr::Const {
+            lhs: Var::Stack(0), 
+            val: Val::I32(0), 
+        },
+        Instr::CallIndirect{
+            lhs : None,
+            type_ : FunctionType { params: Box::new([]), results: Box::new([]) }, 
+            table_idx : Var::Stack(0), 
+            args: Vec::new(),   
+        }    
+    ];
+    assert_eq!(actual, expected);
+}
 
-// #[test]
-// fn block_br() {
-//     let module = Module::from_file("../../tests/inputs/folding/block-br.wasm").unwrap();
-//     let func = module.functions().next().unwrap().1;
-//     // let instrs = func.code().unwrap().body.as_slice();
-//     let instrs = &func.code().unwrap().body;
-//     let actual = wimplify(instrs, func, &module).unwrap();
-//     //println!("{:?}",actual);
-//     for ins in &actual {
-//         println!("{}", ins);
-//     }
-//     // let expected = vec![FoldedExpr(
-//     //     CallIndirect(FunctionType::new(&[], &[]), Idx::from(0)),
-//     //     vec![FoldedExpr::new(Const(Val::I32(0)))],
-//     // )];
-//     // assert_eq!(actual, expected);
-// }
+#[test]
+fn block_br() {
+    let module = Module::from_file("../../tests/inputs/folding/block-br.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    // let instrs = func.code().unwrap().body.as_slice();
+    let instrs = &func.code().unwrap().body;
+    
+    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    println!("{:?}",actual);
+    for ins in &actual {
+        println!("{}", ins);
+    }
+    // let expected = vec![FoldedExpr(
+    //     CallIndirect(FunctionType::new(&[], &[]), Idx::from(0)),
+    //     vec![FoldedExpr::new(Const(Val::I32(0)))],
+    // )];
+    // assert_eq!(actual, expected);
+}
 
 /*
 #[test]
