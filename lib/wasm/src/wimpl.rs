@@ -1,10 +1,11 @@
 use std::{
     fmt::{self, Write},
     io::{self, ErrorKind},
-    path::Path,
+    path::Path, str::FromStr,
 };
 
 use logos::{Lexer, Logos};
+use nom::{IResult, combinator::{map, map_res, opt}, bytes::complete::{tag, take_till, take_while}, Finish, character::complete::{alphanumeric0, alphanumeric1, multispace0}, branch::alt, sequence::{delimited, preceded, terminated, separated_pair, pair}};
 use regex::Regex;
 
 use crate::{highlevel::MemoryOp, Val, ValType, BlockType};
@@ -13,6 +14,9 @@ use crate::{
     types::types,
     FunctionType, Memarg,
 };
+
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub struct ParseError;
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum Var {
@@ -34,6 +38,26 @@ impl fmt::Display for Var {
     }
 }
 
+impl FromStr for Var {
+    type Err = ParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // `split_at` can panic, so ensure `s` has at least len >= 1.
+        if s.is_empty() {
+            return Err(ParseError)
+        }
+        let (letter, i) = s.split_at(1);
+        let i = i.parse().map_err(|_| ParseError)?;
+        use Var::*;
+        Ok(match letter {
+            "s" => Stack(i),
+            "l" => Local(i),
+            "g" => Global(i),
+            "p" => Param(i),
+            _ => return Err(ParseError)
+        })
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct Func(usize);
 
@@ -43,12 +67,30 @@ impl fmt::Display for Func {
     }
 }
 
+impl FromStr for Func {
+    type Err = ParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let i = s.strip_prefix("f").ok_or(ParseError)?;
+        let i = i.parse().map_err(|_| ParseError)?;
+        Ok(Func(i))
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct Label(usize);
 
 impl fmt::Display for Label {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "@label{}", self.0)
+    }
+}
+
+impl FromStr for Label {
+    type Err = ParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let i = s.strip_prefix("@label").ok_or(ParseError)?;
+        let i = i.parse().map_err(|_| ParseError)?;
+        Ok(Label(i))
     }
 }
 
@@ -84,6 +126,12 @@ impl fmt::Display for Body {
                 write!(f, "{{\n{}{}\n}}", BLOCK_INDENT, multi_line)
             }
         }
+    }
+}
+
+impl Body {
+    pub fn parse(s: &str) -> IResult<&str, Self> {
+        todo!()
     }
 }
 
@@ -196,6 +244,29 @@ pub enum Instr {
     },
 }
 
+/// A nom parser combinator that takes a parser `inner` and produces a parser that also consumes both leading and 
+/// trailing whitespace, returning the output of `inner`.
+fn ws<'a, F: 'a, O, E: nom::error::ParseError<&'a str>>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
+  where
+  F: FnMut(&'a str) -> IResult<&'a str, O, E>,
+{
+  delimited(
+    multispace0,
+    inner,
+    multispace0
+  )
+}
+
+fn ws_begin<'a, F: 'a, O, E: nom::error::ParseError<&'a str>>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
+  where
+  F: FnMut(&'a str) -> IResult<&'a str, O, E>,
+{
+  preceded(
+    multispace0,
+    inner
+  )
+}
+
 impl Instr {
     /// Convenience accessor for all instructions that have a LHS.
     pub fn lhs(&self) -> Option<Var> {
@@ -226,6 +297,75 @@ impl Instr {
             Numeric { lhs, .. } => Some(*lhs),
         }
     }
+
+    /// Top-level entry into the nom-parser of Wimpl instructions.
+    fn p(input: &str) -> IResult<&str, Instr> {
+        use Instr::*;
+        
+        // Utility parsers, remove whitespace.
+        // NOTE Cannot be closures because type inference makes them FnMut,
+        // which then cannot be re-used multiple times :/
+        fn var(input: &str) -> IResult<&str, Var> {
+            ws(map_res(alphanumeric1, Var::from_str))(input)
+        }
+        fn arg_single(input: &str) -> IResult<&str, Var> {
+            ws_begin(delimited(
+                tag("("),
+                var,
+                tag(")")
+            ))(input)
+        }
+        fn lhs(input: &str) -> IResult<&str, Var> {
+            terminated(
+                var,
+                ws(tag("="))
+            )(input)
+        }
+        fn label(input: &str) -> IResult<&str, Label> {
+            ws(map_res(take_while(|c: char| !c.is_ascii_whitespace()), Label::from_str))(input)
+        }
+
+        // Each indivudual instruction, assumes without outer whitespace.
+        let unreachable = map(tag("unreachable"), |_| Unreachable);
+        let return_ = map(
+            preceded(
+                    tag("return"),
+                    opt(arg_single)),
+            |value| Return { value }
+        );
+        let memory_size = map(
+            terminated(
+                lhs,
+                tag("memory.size")),
+            |lhs| MemorySize { lhs }
+        );
+        let memory_grow = map(
+            separated_pair(
+                lhs,
+                tag("memory.grow"),
+                arg_single),
+            |(lhs, pages)| MemoryGrow { lhs, pages }
+        );
+        let br = map(
+            preceded(
+                tag("br"),
+                pair(
+                        label, 
+                        opt(arg_single))),
+            |(target, value)| Br { target, value }
+        );
+
+        alt((
+            unreachable,
+            return_,
+            memory_size,
+            memory_grow,
+            br
+        ))(input)
+    }
+
+
+
 
     // pub fn new(lhs: Vec<Var>, op: highlevel::Instr, rhs: WimpleRhs) -> Self {
     //     Instr { lhs, op, rhs }
@@ -294,6 +434,18 @@ impl Instr {
     //     let str = std::fs::read_to_string(filename)?;
     //     Ok(Self::parse(&str)?)
     // }
+}
+
+impl FromStr for Instr {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match Instr::p(s).finish() {
+            Ok((_nothing_remaining, instr)) => Ok(instr),
+            // TODO Output byte offset/line/column of parse error.
+            Err(_err) => Err(ParseError),
+        }
+    }
 }
 
 /// Helper function for `fmt::Display`-ing an arbitrary iterator of `values`,
@@ -389,7 +541,7 @@ impl fmt::Display for Instr {
                 write!(f, "br {}", target)?;
                 display_delim(f, value, " (", ")", ", ")?;
             }
-            // br-table @label0, @label1, @label2, default=label@3 (s0)
+            // br-table @label0 @label1 @label2 default=@label3 (s0)
             BrTable {
                 idx: index,
                 table,
@@ -884,6 +1036,35 @@ fn lexing() {
     for (token, span) in lexer.spanned() {
         println!("{:3?}  {:10}  {:?}", span.clone(), format!("{:?}", token), &str[span]);
     }
+}
+
+#[test]
+fn parse_var() {
+    assert_eq!(Ok(Var::Stack(0)), "s0".parse());
+    assert_eq!(Ok(Var::Global(0)), "g0".parse());
+
+    // Negative tests:
+    assert!(" s0 \n ".parse::<Var>().is_err(), "whitespace not allowed");
+    assert!("sABC".parse::<Var>().is_err(), "characters instead of number");
+    assert!("x123".parse::<Var>().is_err(), "invalid variable type");
+}
+
+#[test]
+fn parse_instr() {
+    use Instr::*;
+    use Var::*;
+
+    assert_eq!(Ok(Unreachable), "unreachable".parse());
+
+    assert_eq!(Ok(Return { value: None }), "return".parse());
+    assert_eq!(Ok(Return { value: Some(Stack(0)) }), "return(s0)".parse(), "with arg");
+    assert_eq!(Ok(Return { value: Some(Stack(0)) }), "return (s0)".parse(), "with whitespace");
+
+    assert_eq!(Ok(MemorySize { lhs: Stack(0) }), "s0 = memory.size".parse(), "with lhs");
+    assert_eq!(Ok(MemoryGrow { lhs: Stack(1), pages: Stack(0) }), "s1 = memory.grow ( s0 )".parse(), "with lhs and arg");
+
+    assert_eq!(Ok(Br { target: Label(1), value: Some(Stack(0)) }), "br @label1 (s0)".parse());
+
 }
 
 // #[test]
