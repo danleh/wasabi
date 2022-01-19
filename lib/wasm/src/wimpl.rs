@@ -5,7 +5,7 @@ use std::{
 };
 
 use logos::{Lexer, Logos};
-use nom::{IResult, combinator::{map, map_res, opt}, bytes::complete::{tag, take_till, take_while}, Finish, character::complete::{alphanumeric0, alphanumeric1, multispace0}, branch::alt, sequence::{delimited, preceded, terminated, separated_pair, pair}};
+use nom::{IResult, combinator::{map, map_res, opt}, bytes::complete::{tag, take_till, take_while, take_until, take}, Finish, character::complete::{alphanumeric0, alphanumeric1, multispace0, digit1}, branch::alt, sequence::{delimited, preceded, terminated, separated_pair, pair, tuple}, multi::{many0, separated_list0}, AsChar};
 use regex::Regex;
 
 use crate::{highlevel::MemoryOp, Val, ValType, BlockType};
@@ -299,7 +299,7 @@ impl Instr {
     }
 
     /// Top-level entry into the nom-parser of Wimpl instructions.
-    fn p(input: &str) -> IResult<&str, Instr> {
+    fn parse_nom(input: &str) -> IResult<&str, Instr> {
         use Instr::*;
         
         // Utility parsers, remove whitespace.
@@ -315,6 +315,13 @@ impl Instr {
                 tag(")")
             ))(input)
         }
+        fn arg_list(input: &str) -> IResult<&str, Vec<Var>> {
+            ws_begin(delimited(
+                tag("("),
+                separated_list0(tag(","), var),
+                tag(")")
+            ))(input)
+        }
         fn lhs(input: &str) -> IResult<&str, Var> {
             terminated(
                 var,
@@ -323,6 +330,11 @@ impl Instr {
         }
         fn label(input: &str) -> IResult<&str, Label> {
             ws(map_res(take_while(|c: char| !c.is_ascii_whitespace()), Label::from_str))(input)
+        }
+        let func = ws(map_res(alphanumeric1, Func::from_str));
+        let func_ty = ws(map_res(take_until("("), FunctionType::from_str));
+        fn op(input: &str) -> IResult<&str, &str> {
+            take_while(|c: char| c.is_alphanum() || c == '.' || c == '_')(input)
         }
 
         // Each indivudual instruction, assumes without outer whitespace.
@@ -354,71 +366,75 @@ impl Instr {
                         opt(arg_single))),
             |(target, value)| Br { target, value }
         );
+        let br_table = map(
+            preceded(
+                tag("br_table"),
+                tuple((
+                    many0(label),
+                    preceded(tag("default="), label),
+                    arg_single,
+                    opt(arg_single)))),
+            |(table, default, idx, value)| BrTable { table, default, idx, value }
+        );
+        let call = map(
+            tuple((
+                opt(lhs),
+                tag("call"),
+                func,
+                arg_list)),
+            |(lhs, _, func, args)| Call { lhs, func, args }
+        );
+        let call_indirect = map(
+            tuple((
+                opt(lhs),
+                tag("call_indirect"),
+                ws(func_ty),
+                arg_single,
+                arg_list)),
+            |(lhs, _, type_, table_idx, args)| CallIndirect { lhs, type_, table_idx, args }
+        );
+        let assign = map(
+            pair(lhs, var),
+            |(lhs, rhs)| Assign { lhs, rhs }
+        );
+        let const_ = map_res(
+            tuple((
+                lhs,
+                map_res(take(3usize), ValType::from_str),
+                tag(".const"),
+                // FIXME Doesn't work with floats
+                ws(digit1))),
+            |(lhs, ty, _, number)| 
+                Val::from_str(number, ty).map(|val| Const { lhs, val })
+        );
+        let numeric = map(
+            tuple((
+                lhs,
+                map_res(op, NumericOp::from_str),
+                arg_list)),
+            |(lhs, op, rhs)| Numeric { lhs, op, rhs }
+        );
 
         alt((
             unreachable,
-            return_,
+            
             memory_size,
             memory_grow,
-            br
+            
+            br,
+            br_table,
+            
+            return_,
+            call,
+            call_indirect,
+
+            assign,
+
+            const_,
+            numeric,
+
         ))(input)
     }
-
-
-
-
-    // pub fn new(lhs: Vec<Var>, op: highlevel::Instr, rhs: WimpleRhs) -> Self {
-    //     Instr { lhs, op, rhs }
-    // }
-
-    // pub fn parse_instr(mut lexer: Lexer<WimplTextToken>) -> io::Result<Self> {
-    //     let mut instr = Instr {
-    //         lhs: Vec::new(),
-    //         op: highlevel::Instr::Nop,
-    //         rhs: WimpleRhs::VarVec(Vec::new()),
-    //     };
-
-    //     match lexer.next() {
-    //         Some(WimplTextToken::Variable(i)) => instr.lhs.push(Var(i)),
-    //         None => {
-    //             return Err(io::Error::new(
-    //                 ErrorKind::UnexpectedEof,
-    //                 "missing Wimpl instruction",
-    //             ))
-    //         }
-    //         Some(WimplTextToken::AlphaNum) => {
-    //             let start_instr = lexer.span().start;
-    //             println!("in AlphaNum: start={}", start_instr);
-
-    //             let mut current = lexer.next().unwrap();
-    //             while current != WimplTextToken::LParen && current != WimplTextToken::Linebreak {
-    //                 current = lexer.next().unwrap();
-    //             }
-    //             let end_instr = lexer.span().end - 1;
-    //             println!("in AlphaNum: end={}", end_instr);
-
-    //             let op_str = &lexer.source()[start_instr..end_instr].trim();
-    //             println!("in AlphaNum: op_str={:?}", op_str);
-
-    //             instr.op = highlevel::Instr::parse_text(op_str)
-    //                 .map_err(|_| io::Error::new(ErrorKind::Other, "unknown"))?;
-
-    //             // TODO parse argument list
-    //         }
-    //         _ => todo!(),
-    //     }
-
-    //     Ok(instr)
-    // }
-
-    // pub fn parse_args_list(lexer) -> ... {
-    //     expect_token(LParen)
-    //     while next_token != RParen
-    //         if Comma => Ignore
-    //         if Variable => add to result
-    //         else ERROR
-    //     return result vec
-    // }
 
     // pub fn parse(str: &str) -> io::Result<Vec<Self>> {
     //     let mut lexer = WimplTextToken::lexer(str);
@@ -440,7 +456,7 @@ impl FromStr for Instr {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match Instr::p(s).finish() {
+        match Instr::parse_nom(s).finish() {
             Ok((_nothing_remaining, instr)) => Ok(instr),
             // TODO Output byte offset/line/column of parse error.
             Err(_err) => Err(ParseError),
@@ -632,58 +648,6 @@ impl fmt::Display for Instr {
 
         Ok(())
     }
-}
-
-/// Tokens of the Wimpl text representation.
-#[derive(Logos, Debug, PartialEq, Eq)]
-pub enum Token {
-    #[token("(")]
-    LParen,
-
-    #[token(")")]
-    RParen,
-
-    #[token("[")]
-    LBracket,
-
-    #[token("]")]
-    RBracket,
-
-    #[token("{")]
-    LBrace,
-
-    #[token("}")]
-    RBrace,
-
-    #[token("->")]
-    Arrow,
-
-    #[token(",")]
-    Comma,
-
-    #[token(":")]
-    Colon,
-
-    #[token("=")]
-    Equals,
-
-    #[token("@")]
-    At,
-
-    #[regex(r"[a-zA-Z0-9_\.]+")]
-    AlphaNum,
-
-    #[token("\n", logos::skip)]
-    Linebreak,
-
-    #[regex(r"\s+", logos::skip)]
-    Whitespace,
-
-    #[regex(r"//.*", logos::skip)]
-    Comment,
-
-    #[error]
-    Error,
 }
 
 pub fn wimplify(
@@ -1030,15 +994,6 @@ fn pretty_print() {
 }
 
 #[test]
-fn lexing() {
-    let str = std::fs::read_to_string("tests/wimpl/syntax.wimpl").unwrap();
-    let lexer = Token::lexer(&str);
-    for (token, span) in lexer.spanned() {
-        println!("{:3?}  {:10}  {:?}", span.clone(), format!("{:?}", token), &str[span]);
-    }
-}
-
-#[test]
 fn parse_var() {
     assert_eq!(Ok(Var::Stack(0)), "s0".parse());
     assert_eq!(Ok(Var::Global(0)), "g0".parse());
@@ -1051,19 +1006,104 @@ fn parse_var() {
 
 #[test]
 fn parse_instr() {
+    // Convenience:
+    use highlevel::LoadOp::*;
+    use highlevel::NumericOp::*;
+    use highlevel::StoreOp::*;
     use Instr::*;
+    use Val::*;
     use Var::*;
+    fn test(wimpl: Instr, str: &str) {
+        assert_eq!(Ok(wimpl), str.parse(), "\n input: `{}`", str);
+    }
+    fn test_msg(wimpl: Instr, str: &str, msg: &str) {
+        assert_eq!(Ok(wimpl), str.parse(), "\n input: `{}`\n{}", str, msg);
+    }
 
-    assert_eq!(Ok(Unreachable), "unreachable".parse());
+    test(Unreachable, "unreachable");
 
-    assert_eq!(Ok(Return { value: None }), "return".parse());
-    assert_eq!(Ok(Return { value: Some(Stack(0)) }), "return(s0)".parse(), "with arg");
-    assert_eq!(Ok(Return { value: Some(Stack(0)) }), "return (s0)".parse(), "with whitespace");
+    test(Return { value: None }, "return");
+    test_msg(Return { value: Some(Stack(0)) }, "return(s0)", "with arg");
+    test_msg(Return { value: Some(Stack(0)) }, "return (s0)", "with whitespace");
 
-    assert_eq!(Ok(MemorySize { lhs: Stack(0) }), "s0 = memory.size".parse(), "with lhs");
-    assert_eq!(Ok(MemoryGrow { lhs: Stack(1), pages: Stack(0) }), "s1 = memory.grow ( s0 )".parse(), "with lhs and arg");
+    test_msg(MemorySize { lhs: Stack(0) }, "s0 = memory.size", "with lhs");
+    test_msg(MemoryGrow { lhs: Stack(1), pages: Stack(0) }, "s1 = memory.grow ( s0 )", "with lhs and arg");
 
-    assert_eq!(Ok(Br { target: Label(1), value: Some(Stack(0)) }), "br @label1 (s0)".parse());
+    test(Br { target: Label(1), value: Some(Stack(0)) }, "br @label1 (s0)");
+    test(
+        BrTable {
+            idx: Stack(0),
+            table: vec![Label(1), Label(2)],
+            default: Label(0),
+            value: Some(Stack(1)),
+        },
+        "br_table @label1 @label2 default=@label0 (s0) (s1)",
+    );
+
+    test(
+        Call {
+            lhs: None,
+            func: Func(2),
+            args: vec![Stack(2), Stack(3)],
+        },
+        "call f2 ( s2, s3 )",
+    );
+    test(
+        CallIndirect {
+            lhs: Some(Stack(1)),
+            type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
+            table_idx: Stack(0),
+            args: vec![],
+        },
+        "s1 = call_indirect [i32] -> [i32] (s0) ()",
+    );
+
+    test(
+        Assign {
+            lhs: Global(0),
+            rhs: Local(0),
+        },
+        "g0 = l0",
+    );
+
+    test(
+        Const {
+            lhs: Stack(0),
+            val: I32(1337),
+        },
+        "s0 = i32.const 1337",
+    );
+    test(
+        Numeric {
+            lhs: Stack(1),
+            op: I32Add,
+            rhs: vec![Stack(2), Stack(3)],
+        },
+        "s1 = i32.add(s2, s3)",
+    );
+
+    test(
+        Load {
+            lhs: Stack(1),
+            op: I32Load,
+            memarg: Memarg::default(I32Load),
+            addr: Stack(0),
+        },
+        "s1 = i32.load(s0)",
+    );
+    // Non-default alignment:
+    test(
+        Store {
+            op: I64Store8,
+            value: Stack(1),
+            addr: Stack(2),
+            memarg: Memarg {
+                offset: 0,
+                alignment_exp: 4,
+            },
+        },
+        "i64.store8 align=16 (s2) (s1)",
+    );
 
 }
 
