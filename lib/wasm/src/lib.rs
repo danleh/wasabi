@@ -1,6 +1,5 @@
 // Export AST types directly under crate, without ast prefix.
 mod ast;
-mod wimple;
 pub use crate::ast::*;
 
 // Export WasmBinary trait directly under the crate.
