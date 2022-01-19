@@ -33,7 +33,7 @@ impl Val {
         }
     }
 
-    pub fn parse_text(str: &str, ty: ValType) -> Result<Self, ()> {
+    pub fn from_str(str: &str, ty: ValType) -> Result<Self, ()> {
         Ok(match ty {
             ValType::I32 => Val::I32(str.parse().map_err(|_| ())?),
             ValType::I64 => Val::I64(str.parse().map_err(|_| ())?),
