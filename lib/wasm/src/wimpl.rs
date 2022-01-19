@@ -8,8 +8,8 @@ use std::{
 use nom::{
     branch::alt,
     bytes::complete::{tag, take, take_till, take_until, take_while},
-    character::complete::{alphanumeric0, alphanumeric1, digit1, multispace0},
-    combinator::{map, map_res, opt},
+    character::complete::{alphanumeric0, alphanumeric1, digit1, multispace0, not_line_ending},
+    combinator::{map, map_res, opt, value},
     multi::{many0, separated_list0},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     AsChar, Finish, IResult,
@@ -245,26 +245,6 @@ pub enum Instr {
     },
 }
 
-/// A nom parser combinator that takes a parser `inner` and produces a parser that also consumes both leading and
-/// trailing whitespace, returning the output of `inner`.
-fn ws<'a, F: 'a, O, E: nom::error::ParseError<&'a str>>(
-    inner: F,
-) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
-where
-    F: FnMut(&'a str) -> IResult<&'a str, O, E>,
-{
-    delimited(multispace0, inner, multispace0)
-}
-
-fn ws_begin<'a, F: 'a, O, E: nom::error::ParseError<&'a str>>(
-    inner: F,
-) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
-where
-    F: FnMut(&'a str) -> IResult<&'a str, O, E>,
-{
-    preceded(multispace0, inner)
-}
-
 impl Instr {
     /// Convenience accessor for all instructions that have a LHS.
     pub fn lhs(&self) -> Option<Var> {
@@ -300,46 +280,78 @@ impl Instr {
     fn parse_nom(input: &str) -> IResult<&str, Instr> {
         use Instr::*;
 
-        // Utility parsers, remove whitespace.
-        // NOTE Cannot be closures because type inference makes them FnMut,
+        // Utility parsers, reused in the different instruction parsers below.
+        // NOTE Some cannot be closures because type inference makes them FnMut,
         // which then cannot be re-used multiple times :/
+        // TODO after simplification of ws, check if one can write some as closures again.
+        
+        /// Whitespace and comment parser, which are removed (which is why it returns unit).
+        // All other parsers below only handle internal whitespace, i.e., they
+        // assume initial whitespace is already consumed by the outer parser and
+        // the input directly starts with the first non-whitespace token.
+        fn ws(input: &str) -> IResult<&str, ()> {
+            value(
+                // Return value: always ().
+                (),
+                alt((
+                    multispace0,
+                    // Line comment, i.e., from // until newline.
+                    preceded(tag("//"), not_line_ending)
+                ))
+            )(input)
+        }
+
         fn var(input: &str) -> IResult<&str, Var> {
-            ws(map_res(alphanumeric1, Var::from_str))(input)
+            map_res(alphanumeric1, Var::from_str)(input)
         }
         fn arg_single(input: &str) -> IResult<&str, Var> {
-            ws(delimited(tag("("), var, tag(")")))(input)
+            delimited(pair(tag("("), ws), var, pair(ws, tag(")")))(input)
         }
         fn arg_list(input: &str) -> IResult<&str, Vec<Var>> {
-            ws_begin(delimited(
-                tag("("),
-                separated_list0(tag(","), var),
-                tag(")"),
-            ))(input)
+            delimited(
+                pair(tag("("), ws),
+                separated_list0(tuple((ws, tag(","), ws)), var),
+                pair(ws, tag(")")),
+            )(input)
         }
         fn lhs(input: &str) -> IResult<&str, Var> {
-            terminated(var, ws(tag("=")))(input)
+            // Include trailing whitespace in this parser, since LHS is always 
+            // followed by something else, so we don't need to put ws there.
+            terminated(var, tuple((ws, tag("="), ws)))(input)
         }
         fn label(input: &str) -> IResult<&str, Label> {
-            ws(map_res(
-                take_while(|c: char| c.is_alphanum() || c == '@'),
+            map_res(
+                take_while(|c: char| c == '@' || c.is_alphanum()),
                 Label::from_str,
-            ))(input)
+            )(input)
         }
-        let func = ws(map_res(alphanumeric1, Func::from_str));
-        let func_ty = ws(map_res(take_until("("), FunctionType::from_str));
+        fn label_colon(input: &str) -> IResult<&str, Label> {
+            // Same as with lhs: include trailing whitespace here.
+            terminated(label, tuple((ws, tag(":"), ws)))(input)
+        }
         fn op(input: &str) -> IResult<&str, &str> {
             take_while(|c: char| c.is_alphanum() || c == '.' || c == '_')(input)
         }
+
+        let func = map_res(alphanumeric1, Func::from_str);
+        // HACK For call_indirect, we know nothing besides the argument list is following 
+        // the function type, so consume up to the opening parenthesis.
+        // However, this will fail to recognize comments after the function type!
+        let func_ty = map_res(take_until("("), FunctionType::from_str);
+        
+        // The defaults of a memarg (if not given) depend on the natural alignment
+        // of the memory instruction, hence this higher-order combinator.
         fn memarg<'a>(op: impl MemoryOp + 'a) -> impl FnMut(&'a str) -> IResult<&'a str, Memarg> {
             let op = op.clone();
-            ws(map_res(take_until("("), move |s| Memarg::from_str(s, op)))
+            // Same trick as for function types in call_indirect: Consume until beginning of argument list.
+            map_res(take_until("("), move |s| Memarg::from_str(s, op))
         }
         fn body(input: &str) -> IResult<&str, Body> {
             map(
                 delimited(
-                    ws(tag("{")),
-                    pair(many0(ws(Instr::parse_nom)), opt(var)),
-                    ws(tag("}")),
+                    pair(tag("{"), ws),
+                    separated_pair(separated_list0(ws, Instr::parse_nom), ws, opt(var)),
+                    pair(ws, tag("}")),
                 ),
                 |(instrs, result)| Body { instrs, result },
             )(input)
@@ -349,23 +361,43 @@ impl Instr {
         let unreachable = map(tag("unreachable"), |_| Unreachable);
 
         let block = map(
-            tuple((opt(lhs), label, tag(":"), ws_begin(tag("block")), body)),
-            |(lhs, label, _, _, body)| Block { lhs, label, body },
+            tuple((
+                opt(lhs), 
+                label_colon, 
+                tag("block"), 
+                ws, 
+                body
+            )),
+            |(lhs, label, _, (), body)| Block { lhs, label, body },
         );
         let loop_ = map(
-            tuple((opt(lhs), label, tag(":"), ws_begin(tag("loop")), body)),
-            |(lhs, label, _, _, body)| Loop { lhs, label, body },
+            tuple((
+                opt(lhs), 
+                label_colon, 
+                tag("loop"), 
+                ws, 
+                body
+            )),
+            |(lhs, label, _, (), body)| Loop { lhs, label, body },
         );
         let if_ = map(
             tuple((
                 opt(lhs),
-                opt(terminated(label, tag(":"))),
-                ws_begin(tag("if")),
+                opt(label_colon),
+                tag("if"),
+                ws,
                 arg_single,
+                ws,
                 body,
-                opt(preceded(ws(tag("else")), body)),
+                opt(
+                    preceded(
+                        tuple((ws, tag("else"), ws)), 
+                        body
+                    )
+                ),
             )),
-            |(lhs, label, _, condition, if_body, else_body)| If {
+            |(lhs, label, _, (), condition, (), if_body, else_body)| 
+            If {
                 lhs,
                 label,
                 condition,
@@ -375,20 +407,30 @@ impl Instr {
         );
 
         let br = map(
-            preceded(tag("br"), pair(label, opt(arg_single))),
-            |(target, value)| Br { target, value },
+            tuple((
+                tag("br"),
+                ws, 
+                label,
+                opt(preceded(ws, arg_single))
+            )),
+            |(_, (), target, value)| Br { target, value },
         );
         let br_table = map(
-            preceded(
-                tag("br_table"),
-                tuple((
-                    many0(label),
-                    preceded(tag("default="), label),
-                    arg_single,
-                    opt(arg_single),
-                )),
-            ),
-            |(table, default, idx, value)| BrTable {
+            tuple((
+                tag("br_table"), 
+                ws,
+                separated_list0(ws, label),
+                ws,
+                tag("default"),
+                ws,
+                tag("="),
+                ws,
+                label,
+                ws,
+                arg_single,
+                opt(preceded(ws, arg_single)),
+            )),
+            |(_, (), table, (), _, (), _, (), default, (), idx, value)| BrTable {
                 table,
                 default,
                 idx,
@@ -396,23 +438,34 @@ impl Instr {
             },
         );
 
-        let return_ = map(preceded(tag("return"), opt(arg_single)), |value| Return {
-            value,
-        });
+        let return_ = map(
+            preceded(tag("return"), opt(preceded(ws, arg_single))), 
+            |value| Return { value }
+        );
 
         let call = map(
-            tuple((opt(lhs), tag("call"), func, arg_list)),
-            |(lhs, _, func, args)| Call { lhs, func, args },
+            tuple((
+                opt(lhs),
+                tag("call"),
+                ws,
+                func,
+                ws,
+                arg_list
+            )),
+            |(lhs, _, (), func, (), args)| Call { lhs, func, args },
         );
         let call_indirect = map(
             tuple((
                 opt(lhs),
                 tag("call_indirect"),
-                ws(func_ty),
+                ws,
+                func_ty,
+                ws,
                 arg_single,
+                ws,
                 arg_list,
             )),
-            |(lhs, _, type_, table_idx, args)| CallIndirect {
+            |(lhs, _, (), type_, (), table_idx, (), args)| CallIndirect {
                 lhs,
                 type_,
                 table_idx,
@@ -443,6 +496,7 @@ impl Instr {
             let (input, op) = map_res(op, StoreOp::from_str)(input)?;
             let (input, memarg) = memarg(op)(input)?;
             let (input, addr) = arg_single(input)?;
+            let (input, ()) = ws(input)?;
             let (input, value) = arg_single(input)?;
             Ok((
                 input,
@@ -455,28 +509,41 @@ impl Instr {
             ))
         }
 
-        let memory_size = map(terminated(lhs, tag("memory.size")), |lhs| MemorySize {
-            lhs,
-        });
+        let memory_size = map(
+            terminated(lhs, tag("memory.size")), 
+            |lhs| MemorySize { lhs }
+        );
         let memory_grow = map(
-            separated_pair(lhs, tag("memory.grow"), arg_single),
-            |(lhs, pages)| MemoryGrow { lhs, pages },
+            tuple((
+                lhs,
+                tag("memory.grow"),
+                ws,
+                arg_single
+            )),
+            |(lhs, _, (), pages)| MemoryGrow { lhs, pages },
         );
 
         let const_ = map_res(
             tuple((
                 lhs,
-                map_res(take(3usize), ValType::from_str),
+                map_res(take_until("."), ValType::from_str),
                 tag(".const"),
-                // FIXME Doesn't work with floats
-                ws(digit1),
+                ws,
+                // HACK Accept any non-whitespace character for a number, rest
+                // is done by Val::from_str.
+                take_while(|c: char| !c.is_ascii_whitespace()),
             )),
-            |(lhs, ty, _, number)| Val::from_str(number, ty).map(|val| Const { lhs, val }),
+            |(lhs, ty, _, (), number)| Val::from_str(number, ty).map(|val| Const { lhs, val }),
         );
 
         let numeric = map(
-            tuple((lhs, map_res(op, NumericOp::from_str), arg_list)),
-            |(lhs, op, rhs)| Numeric { lhs, op, rhs },
+            tuple((
+                lhs, 
+                map_res(op, NumericOp::from_str),
+                ws,
+                arg_list
+            )),
+            |(lhs, op, (), rhs)| Numeric { lhs, op, rhs },
         );
 
         alt((
