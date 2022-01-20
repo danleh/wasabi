@@ -767,11 +767,27 @@ impl fmt::Display for Instr {
     }
 }
 
+pub struct State {
+    pub level: usize, 
+    pub label_count: usize, 
+    pub var_count: usize 
+}
+
+impl State {
+    pub fn new () -> Self {
+        State{
+            level: 0,
+            label_count: 0,
+            var_count: 0,
+        }
+    }
+}
+
 pub fn wimplify(
     instrs: &[highlevel::Instr],
     function: &Function,
     module: &Module,
-    label_count: usize,
+    state : State,
 ) -> Result<Vec<Instr>, String> {
     
     // Convenience:
@@ -783,8 +799,13 @@ pub fn wimplify(
     let mut result_instrs = Vec::new();
     let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
 
+    // let mut ind = 0; 
+    // while ind < instrs.len() { 
     for (instr, ty) in instrs.iter().zip(tys.into_iter()) {
-        
+
+        // let instr = instrs[ind]; 
+        // let ty = &tys[ind]; 
+
         let n_inputs = ty.inputs.len();
         let n_results = ty.results.len();
         
@@ -818,6 +839,17 @@ pub fn wimplify(
                 // FIXME: technically should not be till end since you can have nested blocks
 
                 // let mut block_body : Vec<highlevel::Instr> = Vec::new();
+                
+                // while true {
+                //     let curr_instr = instrs[ind]; 
+                //     let curr_results = &tys[ind].results;
+                //     let func_results =  function.type_.results.into_vec(); 
+                //     if instrs[ind] != highlevel::Instr::End && 
+                //         ind != instrs.len()-1 {
+                        
+                //     }
+                // } 
+
                 // while instrs[ind] != highlevel::Instr::End && ind != instrs.len()-1{
                 //     block_body.push(instrs[ind].clone());
                 //     ind = ind+1;
@@ -825,7 +857,7 @@ pub fn wimplify(
                 // println!("{}", ind);
                 // println!("{:?}", block_body); 
                 
-                // let block_body = instrs[ind..ind_]
+                // //let block_body = instrs[ind..ind_]
                  
                 // let btype = blocktype.0; 
                 // Some(Block{
@@ -1069,6 +1101,7 @@ pub fn wimplify(
         if let Some(result_instr) = result_instr {
             result_instrs.push(result_instr);
         }
+        //ind = ind + 1; 
     }
     Ok(result_instrs)
 }
@@ -1446,7 +1479,8 @@ fn constant() {
     let module = Module::from_file("tests/wimpl/const/const.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = &func.code().unwrap().body[0..1];
-    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    let state = State::new(); 
+    let actual = wimplify(instrs, func, &module, state).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1480,7 +1514,8 @@ fn add() {
     let module = Module::from_file("tests/wimpl/add/add.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = &func.code().unwrap().body[0..3];
-    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    let state = State::new(); 
+    let actual = wimplify(instrs, func, &module, state).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1514,7 +1549,8 @@ fn call_ind(){
     let module = Module::from_file("tests/wimpl/call_ind/call_ind.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = &func.code().unwrap().body[0..2];
-    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    let state = State::new(); 
+    let actual = wimplify(instrs, func, &module, state).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1548,7 +1584,8 @@ fn multiple_expr() {
     let module = Module::from_file("tests/wimpl/multiple_expr/multiple_expr.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    let state = State::new(); 
+    let actual = wimplify(instrs, func, &module, state).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1582,7 +1619,8 @@ fn call() {
     let module = Module::from_file("tests/wimpl/call/call.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    let state = State::new(); 
+    let actual = wimplify(instrs, func, &module, state).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1617,7 +1655,8 @@ fn local() {
     let module = Module::from_file("tests/wimpl/local/local.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    let state = State::new(); 
+    let actual = wimplify(instrs, func, &module, state).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1652,7 +1691,8 @@ fn global() {
     let module = Module::from_file("tests/wimpl/global/global.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    let state = State::new(); 
+    let actual = wimplify(instrs, func, &module, state).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1687,7 +1727,8 @@ fn load_store() {
     let module = Module::from_file("tests/wimpl/load_store/load_store.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    let state = State::new(); 
+    let actual = wimplify(instrs, func, &module, state).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1722,7 +1763,8 @@ fn memory() {
     let module = Module::from_file("tests/wimpl/memory/memory.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    let state = State::new(); 
+    let actual = wimplify(instrs, func, &module, state).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1757,7 +1799,8 @@ fn select() {
     let module = Module::from_file("tests/wimpl/select/select.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    let state = State::new(); 
+    let actual = wimplify(instrs, func, &module, state).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1775,7 +1818,8 @@ fn constant_wasm() {
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..1];
-    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    let state = State::new(); 
+    let actual = wimplify(instrs, func, &module, state).unwrap();
     //println!("actual {:?}",actual);
     for ins in &actual {
         println!("{}", ins);
@@ -1793,7 +1837,8 @@ fn drop_wasm() {
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..2];
-    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    let state = State::new(); 
+    let actual = wimplify(instrs, func, &module, state).unwrap();
     //println!("actual {:?}",actual);
     for ins in &actual {
         println!("{}", ins);
@@ -1812,7 +1857,8 @@ fn add_wasm() {
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..3];
-    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    let state = State::new(); 
+    let actual = wimplify(instrs, func, &module, state).unwrap();
     for ins in &actual {
         println!("{}", ins);
     }
@@ -1841,7 +1887,8 @@ fn call_ind_wasm() {
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..2];
-    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    let state = State::new(); 
+    let actual = wimplify(instrs, func, &module, state).unwrap();
     //println!("{:?}",actual);
     for ins in &actual {
         println!("{}", ins);
@@ -1871,7 +1918,8 @@ fn block_br() {
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body;
 
-    let actual = wimplify(instrs, func, &module, 0).unwrap();
+    let state = State::new(); 
+    let actual = wimplify(instrs, func, &module, state).unwrap();
     println!("{:?}", actual);
     for ins in &actual {
         println!("{}", ins);
