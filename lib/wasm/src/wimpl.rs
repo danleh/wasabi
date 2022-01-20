@@ -281,9 +281,10 @@ impl Instr {
         use Instr::*;
 
         // Utility parsers, reused in the different instruction parsers below.
-        // NOTE Some cannot be closures because type inference makes them FnMut,
-        // which then cannot be re-used multiple times :/
-        // TODO after simplification of ws, check if one can write some as closures again.
+        // NOTE They can unfortunately not be written with let + point-free 
+        // style, because type inference makes them FnMut, which then cannot be
+        // re-used multiple times :/. For this reason, most are written as normal
+        // functions with explicit type signatures.
         
         /// Whitespace and comment parser, which are removed (which is why it returns unit).
         // All other parsers below only handle internal whitespace, i.e., they
@@ -291,7 +292,7 @@ impl Instr {
         // the input directly starts with the first non-whitespace token.
         fn ws(input: &str) -> IResult<&str, ()> {
             value(
-                // Return value: always ().
+                // Always return ().
                 (),
                 alt((
                     multispace0,
@@ -357,7 +358,7 @@ impl Instr {
             )(input)
         }
 
-        // Each indivudual instruction, assumes without outer whitespace.
+        // One parser for each instruction, using the utility parsers from above.
         let unreachable = map(tag("unreachable"), |_| Unreachable);
 
         let block = map(
@@ -439,7 +440,10 @@ impl Instr {
         );
 
         let return_ = map(
-            preceded(tag("return"), opt(preceded(ws, arg_single))), 
+            preceded(
+                tag("return"), 
+                opt(preceded(ws, arg_single))
+            ), 
             |value| Return { value }
         );
 
@@ -510,7 +514,10 @@ impl Instr {
         }
 
         let memory_size = map(
-            terminated(lhs, tag("memory.size")), 
+            terminated(
+                lhs, 
+                tag("memory.size")
+            ), 
             |lhs| MemorySize { lhs }
         );
         let memory_grow = map(
