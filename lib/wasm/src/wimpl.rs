@@ -7,10 +7,10 @@ use std::{
 
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take, take_till, take_until, take_while},
-    character::complete::{alphanumeric0, alphanumeric1, digit1, multispace0, not_line_ending},
+    bytes::complete::{tag, take_until, take_while},
+    character::complete::{alphanumeric1, multispace0, not_line_ending},
     combinator::{map, map_res, opt, value},
-    multi::{many0, separated_list0},
+    multi::separated_list0,
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     AsChar, Finish, IResult,
 };
