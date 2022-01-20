@@ -304,10 +304,15 @@ impl<T> Ord for Idx<T> {
 #[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Label(pub u32);
 
+impl Label {
+    pub fn into_inner(self) -> usize { self.0 as usize }
+}
+
 impl Serialize for Label {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.0.serialize(serializer)
     }
+    
 }
 
 /* Code */

@@ -103,7 +103,7 @@ impl FromStr for Label {
 
 #[derive(Debug, Eq, PartialEq, Clone, Default)]
 pub struct Body {
-    instrs: Vec<Instr>,
+    instrs: Option<Vec<Instr>>, //when writing select as if, the bodies will not have any instructions just returns
     result: Option<Var>,
 }
 
@@ -113,8 +113,10 @@ impl fmt::Display for Body {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Put each inner instruction and the result on a separate line.
         let mut inner = String::new();
-        for instr in &self.instrs {
-            writeln!(inner, "{}", instr)?;
+        if let Some(instrs) = &self.instrs {
+            for instr in instrs {
+                writeln!(inner, "{}", instr)?;
+            }
         }
         if let Some(result) = self.result {
             writeln!(inner, "{}", result)?;
@@ -354,7 +356,7 @@ impl Instr {
                     separated_pair(separated_list0(ws, Instr::parse_nom), ws, opt(var)),
                     pair(ws, tag("}")),
                 ),
-                |(instrs, result)| Body { instrs, result },
+                |(instrs, result)| Body { instrs: Some(instrs), result },
             )(input)
         }
 
@@ -818,9 +820,11 @@ pub fn wimplify(
                 //     ind = ind+1;
                 // }
                 // println!("{}", ind);
-                // println!("{:?}", block_body);
-
-                // let btype = blocktype.0;
+                // println!("{:?}", block_body); 
+                
+                // let block_body = instrs[ind..ind_]
+                 
+                // let btype = blocktype.0; 
                 // Some(Block{
                 //     lhs,
                 //     label: Label(label_count),
@@ -840,23 +844,55 @@ pub fn wimplify(
             highlevel::Instr::If(_) => todo!(),
             highlevel::Instr::Else => todo!(),
             highlevel::Instr::End => todo!(),
-            highlevel::Instr::Br(_) => todo!(),
-            highlevel::Instr::BrIf(lab) => Some(If {
-                lhs,
-                label: None,
-                condition: var_stack.pop().unwrap(),
-                if_body: Body {
-                    instrs: vec![Br {
-                        target: Label(lab.0 as usize),
-                        value: None,
-                    }],
-                    result: None,
-                },
-                else_body: None,
-            }),
-            highlevel::Instr::BrTable { table, default } => todo!(),
-            highlevel::Instr::Return => todo!(),
-            highlevel::Instr::Call(_) => todo!(),
+            highlevel::Instr::Br(lab) => {
+                Some(Br{
+                    target: Label(lab.into_inner()),
+                    value: lhs,
+                })
+            },
+            highlevel::Instr::BrIf(lab) => {
+                Some(If{
+                    lhs,
+                    label: None, 
+                    condition: rhs.pop().unwrap(), //var_stack.pop().unwrap(),
+                    if_body: Body{ 
+                        instrs: Some(vec![Br{ 
+                                    target: Label(lab.into_inner()), 
+                                    value: None,  
+                                }]),
+                        result: None, 
+                    },
+                    else_body: None,
+                })
+            },
+
+            highlevel::Instr::BrTable {table, default } => {
+                Some(BrTable{
+                    idx: rhs.pop().unwrap(), //var_stack.pop().unwrap(),
+                    table: table.iter().map(|x| Label(x.0 as usize)).collect(),
+                    default: Label(default.into_inner()),
+                    value: lhs,
+                })
+            },
+
+            highlevel::Instr::Return => {
+                if rhs.len() > 1 { 
+                    todo!() //ERROR: multiple returns not yet allowed 
+                } else {
+                    Some(Return{
+                        value: rhs.first().cloned(), //do we need to clone this??
+                    })
+                }
+            },
+
+            highlevel::Instr::Call(idx) => {
+                Some(Call{
+                    lhs,
+                    func: Func(idx.into_inner()),
+                    args: rhs,
+                })
+            },
+
             highlevel::Instr::CallIndirect(fn_type, index) => {
                 // in call_indirect,
                 // the last variable on the stack is the index value
@@ -868,25 +904,142 @@ pub fn wimplify(
                     table_idx: rhs.pop().unwrap(),
                     args: rhs,
                 })
-            }
+            },
+            
             highlevel::Instr::Drop => {
                 var_stack.pop();
                 None
-            }
-            highlevel::Instr::Select => todo!(),
-            highlevel::Instr::Local(_, _) => todo!(),
-            highlevel::Instr::Global(_, _) => todo!(),
-            highlevel::Instr::Load(_, _) => todo!(),
-            highlevel::Instr::Store(_, _) => todo!(),
-            highlevel::Instr::MemorySize(_) => todo!(),
-            highlevel::Instr::MemoryGrow(_) => todo!(),
-            highlevel::Instr::Const(val) => {
+            },
+            
+            highlevel::Instr::Select => {
+                let arg3 = rhs.pop().unwrap(); 
+                let arg2 = rhs.pop().unwrap();
+                let arg1 = rhs.pop().unwrap();
+                Some(If{
+                    lhs,
+                    label: None,
+                    condition: arg1,
+                    if_body: Body{ instrs: None, result: Some(arg2) },
+                    else_body: Some(Body{ instrs: None, result: Some(arg3) }),
+                })    
+            },
+
+            highlevel::Instr::Local(localop, local_ind) => {
+                // rhs should be exactly one variable since its whatever is on the stack rn that is being consumed 
+                if rhs.len() != 1 {
+                    todo!() // ERROR! 
+                }
+                let rhs = rhs.pop().unwrap();
+                let local_var = Local(local_ind.into_inner());  
+                match localop {
+                    // fetch value from local variable so RHS is local variable 
+                    highlevel::LocalOp::Get => {
+                        Some(Assign{
+                            lhs: rhs,
+                            rhs: local_var,
+                        })        
+                    },
+                    // set local variable so LHS is local variable 
+                    highlevel::LocalOp::Set => {
+                        Some(Assign{
+                            lhs: local_var,
+                            rhs : rhs,
+                        })        
+                    },
+                    // like local set but also return argument -> top of stack 
+                    highlevel::LocalOp::Tee => {
+                        var_stack.push(rhs); 
+                        Some(Assign{
+                            lhs: local_var,
+                            rhs : rhs,
+                        })        
+                    },
+                }               
+            },
+
+            highlevel::Instr::Global(globalop, global_ind) => {
+                // same as above
+                if rhs.len() != 1 {
+                    todo!() // ERROR! 
+                }
+                let rhs = rhs.pop().unwrap();
+                let global_var = Local(global_ind.into_inner());  
+                match globalop {
+                    highlevel::GlobalOp::Get => {
+                        Some(Assign{
+                            lhs: rhs,
+                            rhs: global_var,
+                        })        
+                    },
+                    highlevel::GlobalOp::Set => {
+                        Some(Assign{
+                            lhs: global_var,
+                            rhs : rhs,
+                        })        
+                    },
+                }
+            },
+
+            highlevel::Instr::Load(loadop, memarg) => {
+                //lhs needs to have one variable and so does rhs
+                if lhs == None {
+                    todo!(); //ERROR! 
+                }
+                if rhs.len() != 1 {
+                    todo!(); // ERROR! 
+                }
+                let lhs = lhs.unwrap(); 
+                let rhs = rhs.pop().unwrap();
+                Some(Load{
+                    lhs: lhs,
+                    op: *loadop,
+                    memarg: *memarg,
+                    addr: rhs,
+                })
+            },
+
+            highlevel::Instr::Store(storeop, memarg) => {
+                // two values need to be popped from the stack so len == 2
+                if rhs.len() != 2 {
+                    todo!(); // ERROR! 
+                }
+                Some(Store{
+                    op: *storeop,
+                    memarg: *memarg,
+                    value: rhs.pop().unwrap(),
+                    addr: rhs.pop().unwrap(),
+                })
+            },
+
+            highlevel::Instr::MemorySize(_) => {
+                if let Some(lhs) = lhs {
+                    Some(MemorySize{
+                        lhs,
+                    })    
+                } else {
+                    todo!() // ERROR: lhs has to be a variable
+                }
+            },
+
+            highlevel::Instr::MemoryGrow(ind) => {
+                if let Some(lhs) = lhs {
+                    Some(MemoryGrow{
+                        lhs,
+                        pages: Stack(ind.into_inner()),
+                    })    
+                } else {
+                    todo!() // ERROR: lhs has to be a variable
+                }
+            },
+            
+            highlevel::Instr::Const(val) => { 
                 if let Some(lhs) = lhs {
                     Some(Const { lhs, val: *val })
                 } else {
                     todo!(); //ERROR
                 }
-            }
+            },
+            
             highlevel::Instr::Numeric(numop) => {
                 if let Some(lhs) = lhs {
                     Some(Numeric {
@@ -897,8 +1050,9 @@ pub fn wimplify(
                 } else {
                     todo!() //ERROR
                 }
-            }
-        };
+            }, 
+        }; 
+
         if let Some(result_instr) = result_instr {
             result_instrs.push(result_instr);
         }
@@ -1061,7 +1215,7 @@ mod test {
                     lhs: None,
                     label: Label(0),
                     body: Body {
-                        instrs: vec![],
+                        instrs: Some(vec![]),
                         result: None,
                     },
                 },
@@ -1072,7 +1226,7 @@ mod test {
                     lhs: Some(Stack(1)),
                     label: Label(0),
                     body: Body {
-                        instrs: vec![],
+                        instrs: Some(vec![]),
                         result: Some(Stack(0)),
                     },
                 },
@@ -1084,7 +1238,7 @@ mod test {
                     lhs: None,
                     label: Label(1),
                     body: Body {
-                        instrs: vec![Assign { lhs: Stack(1), rhs: Stack(0) }],
+                        instrs: Some(vec![Assign { lhs: Stack(1), rhs: Stack(0) }]),
                         result: None,
                     },
                 },
@@ -1097,10 +1251,10 @@ mod test {
                     condition: Stack(0),
                     label: None,
                     if_body: Body {
-                        instrs: vec![Br {
+                        instrs: Some(vec![Br {
                             target: Label(0),
                             value: None,
-                        }],
+                        }]),
                         result: None,
                     },
                     else_body: None,
@@ -1113,15 +1267,15 @@ mod test {
                     lhs: None,
                     label: Label(1),
                     body: Body {
-                        instrs: vec![
+                        instrs: Some(vec![
                             Block {
                                 lhs: Some(Stack(0)),
                                 label: Label(2),
                                 body: Body {
-                                    instrs: vec![Const {
+                                    instrs: Some(vec![Const {
                                         lhs: Stack(1),
                                         val: I32(7),
-                                    }],
+                                    }]),
                                     result: Some(Stack(1)),
                                 },
                             },
@@ -1129,7 +1283,7 @@ mod test {
                                 target: Label(1),
                                 value: None,
                             },
-                        ],
+                        ]),
                         result: None,
                     },
                 },
@@ -1195,7 +1349,7 @@ mod test {
                     lhs: None,
                     label: Label(0),
                     body: Body {
-                        instrs: vec![],
+                        instrs: Some(vec![]),
                         result: None,
                     },
                 },
@@ -1207,7 +1361,7 @@ mod test {
                     lhs: None,
                     label: Label(2),
                     body: Body {
-                        instrs: vec![Assign { lhs: Stack(1), rhs: Stack(0) }],
+                        instrs: Some(vec![Assign { lhs: Stack(1), rhs: Stack(0) }]),
                         result: Some(Stack(1)),
                     },
                 },
