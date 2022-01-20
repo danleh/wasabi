@@ -957,14 +957,14 @@ impl Instr {
             Numeric(op) => op.to_name(),
         }
     }
+}
 
-    /// Parses the prefix of `str` to a high-level instruction.
+impl FromStr for Instr {
     // TODO return more elaborate error type than just `()`.
-    pub fn parse_text(str: &str) -> Result<Self, ()> {
+    type Err = ();
+
+    fn from_str(str: &str) -> Result<Self, Self::Err> {
         use Instr::*;
-        use NumericOp::*;
-        use LoadOp::*;
-        use StoreOp::*;
 
         fn parse_idx<T>(str: &str) -> Result<Idx<T>, ()> {
             let int: usize = str.parse().map_err(|_| ())?; 
@@ -972,25 +972,6 @@ impl Instr {
         }
         fn parse_label(str: &str) -> Result<Label, ()> {
             Ok(Label(str.parse().map_err(|_| ())?))
-        }
-
-        fn parse_memarg(str: &str, natural_alignment_exp: u8) -> Result<Memarg, ()> {
-            // Default values for Memarg.
-            let mut offset = 0; 
-            let mut alignment_exp = natural_alignment_exp; 
-
-            let splitted = str.split_whitespace();
-            for tok in splitted {
-                if let Some(rest) = tok.strip_prefix("offset=") {
-                    offset = rest.parse().map_err(|_| ())?;  
-                } else if let Some(rest) = tok.strip_prefix("align=") {
-                    alignment_exp = rest.parse().map_err(|_| ())?;  
-                } else {
-                    return Err(())
-                }
-            }
-
-            Ok(Memarg { offset, alignment_exp })
         }
 
         let (operator, rest) = str.split_once(char::is_whitespace).ok_or(())?;
@@ -1050,11 +1031,11 @@ impl Instr {
             
             op if LoadOp::from_str(op).is_ok() => {
                 let op = LoadOp::from_str(op).unwrap();
-                Load(op, parse_memarg(rest, op.natural_alignment_exp())?)
+                Load(op, Memarg::from_str(rest, op)?)
             },
             op if StoreOp::from_str(op).is_ok() => {
                 let op = StoreOp::from_str(op).unwrap();
-                Store(op, parse_memarg(rest, op.natural_alignment_exp())?)
+                Store(op, Memarg::from_str(rest, op)?)
             },
             
             op if NumericOp::from_str(op).is_ok() => return NumericOp::from_str(op).map(Numeric),
@@ -1456,7 +1437,7 @@ impl<'a> ParamOrLocalRef<'a> {
     pub fn name(self) -> Option<&'a str> {
         match self {
             ParamOrLocalRef::Param(param) => param.name,
-            ParamOrLocalRef::Local(local) => local.name.as_ref().map(String::as_str),
+            ParamOrLocalRef::Local(local) => local.name.as_deref(),
         }
     }
 }
