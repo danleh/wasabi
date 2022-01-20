@@ -1440,7 +1440,7 @@ fn constant_file() {
         println!("{}", instr); 
     }
     
-    let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
+    let module = Module::from_file("tests/wimpl/const.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = &func.code().unwrap().body[0..1];
     let actual = wimplify(instrs, func, &module, 0).unwrap();
@@ -1457,7 +1457,7 @@ fn constant_file() {
 
 #[test]
 fn constant() {
-    let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
+    let module = Module::from_file("tests/wimpl/const.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..1];
@@ -1475,7 +1475,7 @@ fn constant() {
 
 #[test]
 fn drop() {
-    let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
+    let module = Module::from_file("tests/wimpl/const.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..2];
@@ -1493,7 +1493,7 @@ fn drop() {
 
 #[test]
 fn add() {
-    let module = Module::from_file("../../tests/inputs/folding/add.wasm").unwrap();
+    let module = Module::from_file("tests/wimpl/add.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..3];
@@ -1522,7 +1522,7 @@ fn add() {
 
 #[test]
 fn call_ind() {
-    let module = Module::from_file("../../tests/inputs/folding/call_ind.wasm").unwrap();
+    let module = Module::from_file("tests/wimpl/call_ind.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..2];
@@ -1551,7 +1551,7 @@ fn call_ind() {
 
 #[test]
 fn block_br() {
-    let module = Module::from_file("../../tests/inputs/folding/block-br.wasm").unwrap();
+    let module = Module::from_file("tests/wimpl/block-br.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body;
