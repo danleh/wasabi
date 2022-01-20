@@ -1,0 +1,2 @@
+s0 = i32.const 0 
+call_indirect []->[] (s0) ()

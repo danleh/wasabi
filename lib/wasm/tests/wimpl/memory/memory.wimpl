@@ -1,0 +1,2 @@
+s0 = memory.size
+s1 = memory.grow (s0)

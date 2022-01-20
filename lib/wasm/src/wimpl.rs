@@ -773,6 +773,7 @@ pub fn wimplify(
     module: &Module,
     label_count: usize,
 ) -> Result<Vec<Instr>, String> {
+    
     // Convenience:
     use Instr::*;
     use Var::*;
@@ -786,7 +787,7 @@ pub fn wimplify(
         
         let n_inputs = ty.inputs.len();
         let n_results = ty.results.len();
-
+        
         let lhs: Option<Var>;
         if n_results == 0 {
             lhs = None;
@@ -796,6 +797,7 @@ pub fn wimplify(
             todo!(); // ERROR!
         }
 
+        //println!("{} {}", instr, n_inputs); 
         let mut rhs = Vec::new();
         for _ in 0..n_inputs {
             rhs.push(var_stack.pop().unwrap());
@@ -844,7 +846,7 @@ pub fn wimplify(
             highlevel::Instr::Loop(_) => todo!(),
             highlevel::Instr::If(_) => todo!(),
             highlevel::Instr::Else => todo!(),
-            highlevel::Instr::End => todo!(),
+            highlevel::Instr::End => None,
             highlevel::Instr::Br(lab) => {
                 Some(Br{
                     target: Label(lab.into_inner()),
@@ -878,6 +880,7 @@ pub fn wimplify(
 
             highlevel::Instr::Return => {
                 if rhs.len() > 1 { 
+                    println!("am i here"); 
                     todo!() //ERROR: multiple returns not yet allowed 
                 } else {
                     Some(Return{
@@ -908,14 +911,14 @@ pub fn wimplify(
             },
             
             highlevel::Instr::Drop => {
-                var_stack.pop();
+                //var_stack.pop();
                 None
             },
             
             highlevel::Instr::Select => {
-                let arg3 = rhs.pop().unwrap(); 
-                let arg2 = rhs.pop().unwrap();
-                let arg1 = rhs.pop().unwrap();
+                let arg1 = rhs.pop().unwrap(); //cond  //wasm spec pg 71/155
+                let arg2 = rhs.pop().unwrap(); //if  
+                let arg3 = rhs.pop().unwrap(); //else
                 Some(If{
                     lhs,
                     label: None,
@@ -966,7 +969,7 @@ pub fn wimplify(
 
             highlevel::Instr::Global(globalop, global_ind) => {
                 // same as above
-                let global_var = Local(global_ind.into_inner());  
+                let global_var = Global(global_ind.into_inner());  
                 match globalop {
                     highlevel::GlobalOp::Get => {
                         if let Some(lhs) = lhs {
@@ -1421,8 +1424,8 @@ where P: AsRef<Path>, {
 }
 
 #[test]
-fn constant_file() {
-    let path = "tests/wimpl/const.wimpl";
+fn constant() {
+    let path = "tests/wimpl/const/const.wimpl";
     let mut expected = Vec::new(); 
     if let Ok(lines) = read_lines(path) {
         for line in lines {
@@ -1440,7 +1443,7 @@ fn constant_file() {
         println!("{}", instr); 
     }
     
-    let module = Module::from_file("tests/wimpl/const.wasm").unwrap();
+    let module = Module::from_file("tests/wimpl/const/const.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = &func.code().unwrap().body[0..1];
     let actual = wimplify(instrs, func, &module, 0).unwrap();
@@ -1454,9 +1457,320 @@ fn constant_file() {
     assert_eq!(actual, expected);
 }
 
+#[test]
+fn add() {
+    let path = "tests/wimpl/add/add.wimpl";
+    let mut expected = Vec::new(); 
+    if let Ok(lines) = read_lines(path) {
+        for line in lines {
+            if let Ok(line) = line {
+                let result = Instr::parse_nom(&line); 
+                if let Ok(res) = result {
+                    expected.push(res.1);  
+                }
+            }
+        }
+    }
+
+    println!("EXPECTED");  
+    for instr in &expected {
+        println!("{}", instr); 
+    }
+
+    let module = Module::from_file("tests/wimpl/add/add.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = &func.code().unwrap().body[0..3];
+    let actual = wimplify(instrs, func, &module, 0).unwrap();
+
+    println!("\nACTUAL");  
+    for instr in &actual {
+        println!("{}", instr); 
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+}
 
 #[test]
-fn constant() {
+fn call_ind(){   
+    let path = "tests/wimpl/call_ind/call_ind.wimpl";
+    let mut expected = Vec::new(); 
+    if let Ok(lines) = read_lines(path) {
+        for line in lines {
+            if let Ok(line) = line {
+                let result = Instr::parse_nom(&line); 
+                if let Ok(res) = result {
+                    expected.push(res.1);  
+                }
+            }
+        }
+    }
+
+    println!("EXPECTED");  
+    for instr in &expected {
+        println!("{}", instr); 
+    }
+
+    let module = Module::from_file("tests/wimpl/call_ind/call_ind.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = &func.code().unwrap().body[0..2];
+    let actual = wimplify(instrs, func, &module, 0).unwrap();
+
+    println!("\nACTUAL");  
+    for instr in &actual {
+        println!("{}", instr); 
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn multiple_expr() {
+    let path = "tests/wimpl/multiple_expr/multiple_expr.wimpl";
+    let mut expected = Vec::new(); 
+    if let Ok(lines) = read_lines(path) {
+        for line in lines {
+            if let Ok(line) = line {
+                let result = Instr::parse_nom(&line); 
+                if let Ok(res) = result {
+                    expected.push(res.1);  
+                }
+            }
+        }
+    }
+
+    println!("EXPECTED");  
+    for instr in &expected {
+        println!("{}", instr); 
+    }
+
+    let module = Module::from_file("tests/wimpl/multiple_expr/multiple_expr.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module, 0).unwrap();
+
+    println!("\nACTUAL");  
+    for instr in &actual {
+        println!("{}", instr); 
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn call() {
+    let path = "tests/wimpl/call/call.wimpl";
+    let mut expected = Vec::new(); 
+    if let Ok(lines) = read_lines(path) {
+        for line in lines {
+            if let Ok(line) = line {
+                let result = Instr::parse_nom(&line); 
+                if let Ok(res) = result {
+                    expected.push(res.1);  
+                }
+            }
+        }
+    }
+
+    println!("EXPECTED");  
+    for instr in &expected {
+        println!("{}", instr); 
+    }
+
+    let module = Module::from_file("tests/wimpl/call/call.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module, 0).unwrap();
+
+    println!("\nACTUAL");  
+    for instr in &actual {
+        println!("{}", instr); 
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+    
+}
+
+#[test]
+fn local() {
+    let path = "tests/wimpl/local/local.wimpl";
+    let mut expected = Vec::new(); 
+    if let Ok(lines) = read_lines(path) {
+        for line in lines {
+            if let Ok(line) = line {
+                let result = Instr::parse_nom(&line); 
+                if let Ok(res) = result {
+                    expected.push(res.1);  
+                }
+            }
+        }
+    }
+
+    println!("EXPECTED");  
+    for instr in &expected {
+        println!("{}", instr); 
+    }
+
+    let module = Module::from_file("tests/wimpl/local/local.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module, 0).unwrap();
+
+    println!("\nACTUAL");  
+    for instr in &actual {
+        println!("{}", instr); 
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+    
+}
+
+#[test]
+fn global() {
+    let path = "tests/wimpl/global/global.wimpl";
+    let mut expected = Vec::new(); 
+    if let Ok(lines) = read_lines(path) {
+        for line in lines {
+            if let Ok(line) = line {
+                let result = Instr::parse_nom(&line); 
+                if let Ok(res) = result {
+                    expected.push(res.1);  
+                }
+            }
+        }
+    }
+
+    println!("EXPECTED");  
+    for instr in &expected {
+        println!("{}", instr); 
+    }
+
+    let module = Module::from_file("tests/wimpl/global/global.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module, 0).unwrap();
+
+    println!("\nACTUAL");  
+    for instr in &actual {
+        println!("{}", instr); 
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+    
+}
+
+#[test]
+fn load_store() {
+    let path = "tests/wimpl/load_store/load_store.wimpl";
+    let mut expected = Vec::new(); 
+    if let Ok(lines) = read_lines(path) {
+        for line in lines {
+            if let Ok(line) = line {
+                let result = Instr::parse_nom(&line); 
+                if let Ok(res) = result {
+                    expected.push(res.1);  
+                }
+            }
+        }
+    }
+
+    println!("EXPECTED");  
+    for instr in &expected {
+        println!("{}", instr); 
+    }
+
+    let module = Module::from_file("tests/wimpl/load_store/load_store.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module, 0).unwrap();
+
+    println!("\nACTUAL");  
+    for instr in &actual {
+        println!("{}", instr); 
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+    
+}
+
+#[test]
+fn memory() {
+    let path = "tests/wimpl/memory/memory.wimpl";
+    let mut expected = Vec::new(); 
+    if let Ok(lines) = read_lines(path) {
+        for line in lines {
+            if let Ok(line) = line {
+                let result = Instr::parse_nom(&line); 
+                if let Ok(res) = result {
+                    expected.push(res.1);  
+                }
+            }
+        }
+    }
+
+    println!("EXPECTED");  
+    for instr in &expected {
+        println!("{}", instr); 
+    }
+
+    let module = Module::from_file("tests/wimpl/memory/memory.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module, 0).unwrap();
+
+    println!("\nACTUAL");  
+    for instr in &actual {
+        println!("{}", instr); 
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+    
+}
+
+#[test]
+fn select() {
+    let path = "tests/wimpl/select/select.wimpl";
+    let mut expected = Vec::new(); 
+    if let Ok(lines) = read_lines(path) {
+        for line in lines {
+            if let Ok(line) = line {
+                let result = Instr::parse_nom(&line); 
+                if let Ok(res) = result {
+                    expected.push(res.1);  
+                }
+            }
+        }
+    }
+
+    println!("EXPECTED");  
+    for instr in &expected {
+        println!("{}", instr); 
+    }
+
+    let module = Module::from_file("tests/wimpl/select/select.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module, 0).unwrap();
+
+    println!("\nACTUAL");  
+    for instr in &actual {
+        println!("{}", instr); 
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+    
+}
+
+#[test]
+fn constant_wasm() {
     let module = Module::from_file("tests/wimpl/const.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
@@ -1474,7 +1788,7 @@ fn constant() {
 }
 
 #[test]
-fn drop() {
+fn drop_wasm() {
     let module = Module::from_file("tests/wimpl/const.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
@@ -1491,8 +1805,9 @@ fn drop() {
     assert_eq!(actual, expected);
 }
 
+
 #[test]
-fn add() {
+fn add_wasm() {
     let module = Module::from_file("tests/wimpl/add.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
@@ -1521,7 +1836,7 @@ fn add() {
 }
 
 #[test]
-fn call_ind() {
+fn call_ind_wasm() {
     let module = Module::from_file("tests/wimpl/call_ind.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
@@ -1568,36 +1883,5 @@ fn block_br() {
     // assert_eq!(actual, expected);
 }
 
-/*
-#[test]
-fn multiple_expr() {
-    let module = Module::from_file("../../tests/inputs/folding/multiple.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    // let instrs = &func.code().unwrap().body[0..2];
-    let actual = wimplify(instrs, func, &module).unwrap();
-    let expected = vec![
-        FoldedExpr(
-            Numeric(I32Add),
-            vec![
-                FoldedExpr::new(Const(Val::I32(0))),
-                FoldedExpr::new(Const(Val::I32(1))),
-            ],
-        ),
-        FoldedExpr(
-            Drop,
-            vec![FoldedExpr(
-                Numeric(I32Add),
-                vec![
-                    FoldedExpr::new(Const(Val::I32(2))),
-                    FoldedExpr::new(Const(Val::I32(3))),
-                ],
-            )],
-        ),
-        FoldedExpr::new(Drop),
-    ];
-    println!("{}", actual.iter().map(|e| format!("{}", e)).collect::<Vec<_>>().join("\n"));
-    assert_eq!(actual, expected);
-}
 
-*/
+
