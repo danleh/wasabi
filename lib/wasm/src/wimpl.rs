@@ -281,11 +281,11 @@ impl Instr {
         use Instr::*;
 
         // Utility parsers, reused in the different instruction parsers below.
-        // NOTE They can unfortunately not be written with let + point-free 
+        // NOTE They can unfortunately not be written with let + point-free
         // style, because type inference makes them FnMut, which then cannot be
         // re-used multiple times :/. For this reason, most are written as normal
         // functions with explicit type signatures.
-        
+
         /// Whitespace and comment parser, which are removed (which is why it returns unit).
         // All other parsers below only handle internal whitespace, i.e., they
         // assume initial whitespace is already consumed by the outer parser and
@@ -297,8 +297,8 @@ impl Instr {
                 alt((
                     multispace0,
                     // Line comment, i.e., from // until newline.
-                    preceded(tag("//"), not_line_ending)
-                ))
+                    preceded(tag("//"), not_line_ending),
+                )),
             )(input)
         }
 
@@ -316,7 +316,7 @@ impl Instr {
             )(input)
         }
         fn lhs(input: &str) -> IResult<&str, Var> {
-            // Include trailing whitespace in this parser, since LHS is always 
+            // Include trailing whitespace in this parser, since LHS is always
             // followed by something else, so we don't need to put ws there.
             terminated(var, tuple((ws, tag("="), ws)))(input)
         }
@@ -335,11 +335,11 @@ impl Instr {
         }
 
         let func = map_res(alphanumeric1, Func::from_str);
-        // HACK For call_indirect, we know nothing besides the argument list is following 
+        // HACK For call_indirect, we know nothing besides the argument list is following
         // the function type, so consume up to the opening parenthesis.
         // However, this will fail to recognize comments after the function type!
         let func_ty = map_res(take_until("("), FunctionType::from_str);
-        
+
         // The defaults of a memarg (if not given) depend on the natural alignment
         // of the memory instruction, hence this higher-order combinator.
         fn memarg<'a>(op: impl MemoryOp + 'a) -> impl FnMut(&'a str) -> IResult<&'a str, Memarg> {
@@ -362,23 +362,11 @@ impl Instr {
         let unreachable = map(tag("unreachable"), |_| Unreachable);
 
         let block = map(
-            tuple((
-                opt(lhs), 
-                label_colon, 
-                tag("block"), 
-                ws, 
-                body
-            )),
+            tuple((opt(lhs), label_colon, tag("block"), ws, body)),
             |(lhs, label, _, (), body)| Block { lhs, label, body },
         );
         let loop_ = map(
-            tuple((
-                opt(lhs), 
-                label_colon, 
-                tag("loop"), 
-                ws, 
-                body
-            )),
+            tuple((opt(lhs), label_colon, tag("loop"), ws, body)),
             |(lhs, label, _, (), body)| Loop { lhs, label, body },
         );
         let if_ = map(
@@ -390,15 +378,9 @@ impl Instr {
                 arg_single,
                 ws,
                 body,
-                opt(
-                    preceded(
-                        tuple((ws, tag("else"), ws)), 
-                        body
-                    )
-                ),
+                opt(preceded(tuple((ws, tag("else"), ws)), body)),
             )),
-            |(lhs, label, _, (), condition, (), if_body, else_body)| 
-            If {
+            |(lhs, label, _, (), condition, (), if_body, else_body)| If {
                 lhs,
                 label,
                 condition,
@@ -408,17 +390,12 @@ impl Instr {
         );
 
         let br = map(
-            tuple((
-                tag("br"),
-                ws, 
-                label,
-                opt(preceded(ws, arg_single))
-            )),
+            tuple((tag("br"), ws, label, opt(preceded(ws, arg_single)))),
             |(_, (), target, value)| Br { target, value },
         );
         let br_table = map(
             tuple((
-                tag("br_table"), 
+                tag("br_table"),
                 ws,
                 separated_list0(ws, label),
                 ws,
