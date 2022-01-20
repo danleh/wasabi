@@ -1,8 +1,9 @@
 use std::{
     fmt::{self, Write},
-    io::{self, ErrorKind},
+    io::{self, ErrorKind, BufRead},
     path::Path,
     str::FromStr,
+    fs::File, 
 };
 
 use nom::{
@@ -782,7 +783,7 @@ pub fn wimplify(
     let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
 
     for (instr, ty) in instrs.iter().zip(tys.into_iter()) {
-        println!("{:?}, {:?}", instr, ty);
+        
         let n_inputs = ty.inputs.len();
         let n_results = ty.results.len();
 
@@ -869,7 +870,7 @@ pub fn wimplify(
             highlevel::Instr::BrTable {table, default } => {
                 Some(BrTable{
                     idx: rhs.pop().unwrap(), //var_stack.pop().unwrap(),
-                    table: table.iter().map(|x| Label(x.0 as usize)).collect(),
+                    table: table.iter().map(|x| Label(x.into_inner())).collect(),
                     default: Label(default.into_inner()),
                     value: lhs,
                 })
@@ -925,33 +926,39 @@ pub fn wimplify(
             },
 
             highlevel::Instr::Local(localop, local_ind) => {
-                // rhs should be exactly one variable since its whatever is on the stack rn that is being consumed 
-                if rhs.len() != 1 {
-                    todo!() // ERROR! 
-                }
-                let rhs = rhs.pop().unwrap();
                 let local_var = Local(local_ind.into_inner());  
                 match localop {
                     // fetch value from local variable so RHS is local variable 
                     highlevel::LocalOp::Get => {
-                        Some(Assign{
-                            lhs: rhs,
-                            rhs: local_var,
-                        })        
+                        if let Some(lhs) = lhs {
+                            Some(Assign{
+                                lhs,
+                                rhs: local_var,
+                            })
+                        } else {
+                            todo!() // ERROR: LHS should not be None 
+                        }                                
                     },
                     // set local variable so LHS is local variable 
                     highlevel::LocalOp::Set => {
+                        if rhs.len() != 1 {
+                            todo!() // ERROR! 
+                        }        
                         Some(Assign{
                             lhs: local_var,
-                            rhs : rhs,
+                            rhs : rhs.pop().unwrap(),
                         })        
                     },
                     // like local set but also return argument -> top of stack 
                     highlevel::LocalOp::Tee => {
+                        if rhs.len() != 1 {
+                            todo!() // ERROR! 
+                        }
+                        let rhs = rhs.pop().unwrap(); 
                         var_stack.push(rhs); 
                         Some(Assign{
                             lhs: local_var,
-                            rhs : rhs,
+                            rhs,
                         })        
                     },
                 }               
@@ -959,22 +966,25 @@ pub fn wimplify(
 
             highlevel::Instr::Global(globalop, global_ind) => {
                 // same as above
-                if rhs.len() != 1 {
-                    todo!() // ERROR! 
-                }
-                let rhs = rhs.pop().unwrap();
                 let global_var = Local(global_ind.into_inner());  
                 match globalop {
                     highlevel::GlobalOp::Get => {
-                        Some(Assign{
-                            lhs: rhs,
-                            rhs: global_var,
-                        })        
+                        if let Some(lhs) = lhs {
+                            Some(Assign{
+                                lhs,
+                                rhs: global_var,
+                            })            
+                        } else {
+                            todo!() // ERROR 
+                        }
                     },
                     highlevel::GlobalOp::Set => {
+                        if rhs.len() != 1 {
+                            todo!() // ERROR! 
+                        }
                         Some(Assign{
                             lhs: global_var,
-                            rhs : rhs,
+                            rhs : rhs.pop().unwrap(),
                         })        
                     },
                 }
@@ -1059,46 +1069,6 @@ pub fn wimplify(
     }
     Ok(result_instrs)
 }
-
-// pub fn wimplify(
-//     instrs: &[highlevel::Instr],
-//     function: &Function,
-//     module: &Module,
-// ) -> Result<Vec<Instr>, String> {
-//     let mut var_stack = Vec::new();
-//     let mut var_count = 0;
-//     let mut result_instrs = Vec::new();
-//     let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
-
-//     for (instr, ty) in instrs.iter().zip(tys.into_iter()) {
-//         println!("{:?}, {:?}", instr, ty);
-//         let n_inputs = ty.inputs.len();
-//         let n_results = ty.results.len();
-
-//         let result_instr = {
-//             let mut args = Vec::new();
-//             for _ in 0..n_inputs {
-//                 args.push(var_stack.pop().unwrap());
-//             }
-
-//             let mut lhs = Vec::new();
-//             for _ in 0..n_results {
-//                 lhs.push(Var(var_count));
-//                 var_stack.push(Var(var_count));
-//                 var_count += 1;
-//             }
-
-//             Instr {
-//                 lhs: lhs,
-//                 op: instr.clone(),
-//                 rhs: WimpleRhs::VarVec(args),
-//             }
-//         };
-//         result_instrs.push(result_instr);
-//     }
-
-//     Ok(result_instrs)
-// }
 
 #[cfg(test)]
 mod test {
@@ -1443,18 +1413,47 @@ mod test {
     }
 }
 
-// #[test]
-// fn constant_file() {
-//     let path = "tests/wimpl/const.wimpl";
-//     let expected = Instr::from_file(path).unwrap();
 
-//     let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
-//     let func = module.functions().next().unwrap().1;
-//     let instrs = &func.code().unwrap().body[0..1];
-//     let actual = wimplify(instrs, func, &module).unwrap();
+fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
+where P: AsRef<Path>, {
+    let file = File::open(filename)?;
+    Ok(io::BufReader::new(file).lines())
+}
 
-//     assert_eq!(actual, expected);
-// }
+#[test]
+fn constant_file() {
+    let path = "tests/wimpl/const.wimpl";
+    let mut expected = Vec::new(); 
+    if let Ok(lines) = read_lines(path) {
+        for line in lines {
+            if let Ok(line) = line {
+                let result = Instr::parse_nom(&line); 
+                if let Ok(res) = result {
+                    expected.push(res.1);  
+                }
+            }
+        }
+    }
+
+    println!("EXPECTED");  
+    for instr in &expected {
+        println!("{}", instr); 
+    }
+    
+    let module = Module::from_file("../../tests/inputs/folding/const.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = &func.code().unwrap().body[0..1];
+    let actual = wimplify(instrs, func, &module, 0).unwrap();
+
+    println!("\nACTUAL");  
+    for instr in &actual {
+        println!("{}", instr); 
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+}
+
 
 #[test]
 fn constant() {
