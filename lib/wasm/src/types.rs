@@ -229,7 +229,7 @@ pub enum BlockInstr {
     Loop,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InstructionType {
     pub inputs: Vec<Option<ValType>>,
     pub results: Vec<Option<ValType>>,

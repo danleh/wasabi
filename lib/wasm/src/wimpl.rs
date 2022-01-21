@@ -3,7 +3,7 @@ use std::{
     io::{self, ErrorKind, BufRead},
     path::Path,
     str::FromStr,
-    fs::File, 
+    fs::File, collections::VecDeque, iter::FromIterator, 
 };
 
 use nom::{
@@ -767,8 +767,8 @@ impl fmt::Display for Instr {
     }
 }
 
+
 pub struct State {
-    pub level: usize, 
     pub label_count: usize, 
     pub var_count: usize, 
     pub var_stack: Vec<Var>, 
@@ -777,7 +777,6 @@ pub struct State {
 impl State {
     pub fn new () -> Self {
         State{
-            level: 0,
             label_count: 0,
             var_count: 0,
             var_stack: Vec::new(), 
@@ -785,14 +784,18 @@ impl State {
     }
 }
 
-pub fn wimplify_single_instr (
-    instr: &highlevel::Instr,
-    ty: InstructionType,  
-    mut state: State
-) -> Result<(Option<Instr>, State), String> {
+pub fn wimplify_helper (
+    mut instrs: VecDeque<&highlevel::Instr>,
+    mut tys: VecDeque<InstructionType>, 
+    mut result_instrs: Vec<Instr>,  
+    mut state: State,
+) -> Result<(Vec<Instr>, State, VecDeque<&highlevel::Instr>), String> {
     
     use Var::*; 
     use Instr::*; 
+
+    let instr = instrs.pop_front().unwrap(); 
+    let ty = tys.pop_front().unwrap();  
 
     let n_inputs = ty.inputs.len();
     let n_results = ty.results.len();
@@ -806,73 +809,57 @@ pub fn wimplify_single_instr (
         //Err("cannot return more than one value in wasm1.0"); //ERROR
     }
 
-    //println!("{} {}", instr, n_inputs); 
-    let mut rhs = Vec::new();
+    let mut rhs = Vec::new();    
     for _ in 0..n_inputs {
         rhs.push(state.var_stack.pop().unwrap());
     }
-
-    // we can only push the new variable onto the stack once we have popped the required rhs values
-    if lhs != None {
-        state.var_stack.push(Var::Stack(state.var_count));
-        state.var_count += 1;
-    }
-
+        
     let result_instr: Option<Instr> = match instr {
+        
         highlevel::Instr::Unreachable => Some(Unreachable),
         highlevel::Instr::Nop => None,
 
         highlevel::Instr::Block(blocktype) => {
-            // collect block body instructions
-            // FIXME: technically should not be till end since you can have nested blocks
+            let curr_label_count = state.label_count; 
+            state.label_count += 1; 
+            let result = wimplify_helper(instrs.clone(), tys.clone(), Vec::new(), state).unwrap();
+            let block_body = result.0; 
 
-            // let mut block_body : Vec<highlevel::Instr> = Vec::new();
+            state = result.1;
+            instrs = result.2;         
             
-            // while true {
-            //     let curr_instr = instrs[ind]; 
-            //     let curr_results = &tys[ind].results;
-            //     let func_results =  function.type_.results.into_vec(); 
-            //     if instrs[ind] != highlevel::Instr::End && 
-            //         ind != instrs.len()-1 {
-                    
-            //     }
-            // } 
+            let btype = blocktype.0; 
+            Some(Block{
+                lhs,
+                label: Label(curr_label_count),
+                body: Body{
+                    instrs: Some(block_body),
+                    result:   
+                    if let Some(_btype) = btype {
+                        Some(state.var_stack.pop().unwrap())
+                    } else {
+                        None
+                    },
 
-            // while instrs[ind] != highlevel::Instr::End && ind != instrs.len()-1{
-            //     block_body.push(instrs[ind].clone());
-            //     ind = ind+1;
-            // }
-            // println!("{}", ind);
-            // println!("{:?}", block_body); 
-            
-            // //let block_body = instrs[ind..ind_]
-                
-            // let btype = blocktype.0; 
-            // Some(Block{
-            //     lhs,
-            //     label: Label(label_count),
-            //     body: Body{
-            //         instrs: wimplify(&block_body, function, module, label_count+1)?,
-            //         result: if let Some(_btype) = btype {
-            //             Some(rhs.pop().unwrap())
-            //         } else {
-            //             None
-            //         },
-
-            //     },
-            // })
-            todo!()
+                },
+            })
         }
+
         highlevel::Instr::Loop(_) => todo!(),
         highlevel::Instr::If(_) => todo!(),
         highlevel::Instr::Else => todo!(),
-        highlevel::Instr::End => None,
+        
+        highlevel::Instr::End => {
+            return Ok((result_instrs, state, instrs)); 
+        },
+
         highlevel::Instr::Br(lab) => {
             Some(Br{
                 target: Label(lab.into_inner()),
                 value: lhs,
             })
         },
+        
         highlevel::Instr::BrIf(lab) => {
             Some(If{
                 lhs,
@@ -1085,7 +1072,19 @@ pub fn wimplify_single_instr (
             }
         }, 
     };
-    Ok((result_instr, state))
+    if let Some(result_instr) = result_instr {
+        result_instrs.push(result_instr);
+    } 
+
+    if instrs.is_empty() {
+        Ok((result_instrs, state, instrs))
+    } else {
+        if lhs != None {
+            state.var_stack.push(Var::Stack(state.var_count));
+            state.var_count += 1;
+        }
+        wimplify_helper(instrs, tys, result_instrs, state)
+    }
 } 
 
 pub fn wimplify(
@@ -1093,22 +1092,14 @@ pub fn wimplify(
     function: &Function,
     module: &Module,
 ) -> Result<Vec<Instr>, String> {
-    
-    let mut state = State::new();
-
-    let mut result_instrs = Vec::new();
-    
+   
     let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
 
-    for (instr, ty) in instrs.iter().zip(tys.into_iter()) {
+    let instrs = VecDeque::from_iter(instrs);
+    let tys = VecDeque::from_iter(tys); 
+    let result = wimplify_helper(instrs, tys, Vec::new(), State::new()).unwrap(); 
+    let result_instrs = result.0; 
 
-        let result = wimplify_single_instr(instr, ty, state); 
-        let res = result.unwrap(); //not idiomatic??
-        if let Some(result_instr) = res.0 {
-            result_instrs.push(result_instr); 
-        } 
-        state = res.1;  
-    }
     Ok(result_instrs)
 }
 
@@ -1809,6 +1800,41 @@ fn select() {
 }
 
 #[test]
+fn block() {
+    let path = "tests/wimpl/block/block.wimpl";
+    let mut expected = Vec::new(); 
+    if let Ok(lines) = read_lines(path) {
+        for line in lines {
+            if let Ok(line) = line {
+                let result = Instr::parse_nom(&line); 
+                if let Ok(res) = result {
+                    expected.push(res.1);  
+                }
+            }
+        }
+    }
+
+    println!("EXPECTED");  
+    for instr in &expected {
+        println!("{}", instr); 
+    }
+
+    let module = Module::from_file("tests/wimpl/block/block.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module).unwrap();
+
+    println!("\nACTUAL");  
+    for instr in &actual {
+        println!("{}", instr); 
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+    
+}
+
+#[test]
 fn constant_wasm() {
     let module = Module::from_file("tests/wimpl/const.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
@@ -1921,6 +1947,4 @@ fn block_br() {
     // )];
     // assert_eq!(actual, expected);
 }
-
-
 
