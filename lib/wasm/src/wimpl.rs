@@ -622,7 +622,7 @@ impl Instr {
     }
 
     /// Convenience function to parse Wimpl from a filename.
-    pub fn parse_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
+    pub fn from_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
         let str = std::fs::read_to_string(filename)?;
         Self::parse_multiple(&str).map_err(|e| io::Error::new(ErrorKind::Other, e))
     }
@@ -1498,33 +1498,15 @@ mod test {
 
     #[test]
     fn parse_file() {
-        let instrs = Instr::parse_file("tests/wimpl/syntax.wimpl");
+        let instrs = Instr::from_file("tests/wimpl/syntax.wimpl");
         assert!(instrs.is_ok());
     }
-}
-
-fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
-where
-    P: AsRef<Path>,
-{
-    let file = File::open(filename)?;
-    Ok(io::BufReader::new(file).lines())
 }
 
 #[test]
 fn constant() {
     let path = "tests/wimpl/const/const.wimpl";
-    let mut expected = Vec::new();
-    if let Ok(lines) = read_lines(path) {
-        for line in lines {
-            if let Ok(line) = line {
-                let result = Instr::from_str(line.trim());
-                if let Ok(res) = result {
-                    expected.push(res);
-                }
-            }
-        }
-    }
+    let expected = Instr::from_file(path).unwrap();
 
     println!("EXPECTED");
     for instr in &expected {
@@ -1548,17 +1530,7 @@ fn constant() {
 #[test]
 fn add() {
     let path = "tests/wimpl/add/add.wimpl";
-    let mut expected = Vec::new();
-    if let Ok(lines) = read_lines(path) {
-        for line in lines {
-            if let Ok(line) = line {
-                let result = Instr::parse_nom(&line);
-                if let Ok(res) = result {
-                    expected.push(res.1);
-                }
-            }
-        }
-    }
+    let expected = Instr::from_file(path).unwrap();
 
     println!("EXPECTED");
     for instr in &expected {
@@ -1582,17 +1554,7 @@ fn add() {
 #[test]
 fn call_ind() {
     let path = "tests/wimpl/call_ind/call_ind.wimpl";
-    let mut expected = Vec::new();
-    if let Ok(lines) = read_lines(path) {
-        for line in lines {
-            if let Ok(line) = line {
-                let result = Instr::parse_nom(&line);
-                if let Ok(res) = result {
-                    expected.push(res.1);
-                }
-            }
-        }
-    }
+    let expected = Instr::from_file(path).unwrap();
 
     println!("EXPECTED");
     for instr in &expected {
@@ -1616,17 +1578,7 @@ fn call_ind() {
 #[test]
 fn multiple_expr() {
     let path = "tests/wimpl/multiple_expr/multiple_expr.wimpl";
-    let mut expected = Vec::new();
-    if let Ok(lines) = read_lines(path) {
-        for line in lines {
-            if let Ok(line) = line {
-                let result = Instr::parse_nom(&line);
-                if let Ok(res) = result {
-                    expected.push(res.1);
-                }
-            }
-        }
-    }
+    let expected = Instr::from_file(path).unwrap();
 
     println!("EXPECTED");
     for instr in &expected {
@@ -1650,17 +1602,7 @@ fn multiple_expr() {
 #[test]
 fn call() {
     let path = "tests/wimpl/call/call.wimpl";
-    let mut expected = Vec::new();
-    if let Ok(lines) = read_lines(path) {
-        for line in lines {
-            if let Ok(line) = line {
-                let result = Instr::parse_nom(&line);
-                if let Ok(res) = result {
-                    expected.push(res.1);
-                }
-            }
-        }
-    }
+    let expected = Instr::from_file(path).unwrap();
 
     println!("EXPECTED");
     for instr in &expected {
@@ -1684,17 +1626,7 @@ fn call() {
 #[test]
 fn local() {
     let path = "tests/wimpl/local/local.wimpl";
-    let mut expected = Vec::new();
-    if let Ok(lines) = read_lines(path) {
-        for line in lines {
-            if let Ok(line) = line {
-                let result = Instr::parse_nom(&line);
-                if let Ok(res) = result {
-                    expected.push(res.1);
-                }
-            }
-        }
-    }
+    let expected = Instr::from_file(path).unwrap();
 
     println!("EXPECTED");
     for instr in &expected {
@@ -1718,17 +1650,7 @@ fn local() {
 #[test]
 fn global() {
     let path = "tests/wimpl/global/global.wimpl";
-    let mut expected = Vec::new();
-    if let Ok(lines) = read_lines(path) {
-        for line in lines {
-            if let Ok(line) = line {
-                let result = Instr::parse_nom(&line);
-                if let Ok(res) = result {
-                    expected.push(res.1);
-                }
-            }
-        }
-    }
+    let expected = Instr::from_file(path).unwrap();
 
     println!("EXPECTED");
     for instr in &expected {
@@ -1752,17 +1674,7 @@ fn global() {
 #[test]
 fn load_store() {
     let path = "tests/wimpl/load_store/load_store.wimpl";
-    let mut expected = Vec::new();
-    if let Ok(lines) = read_lines(path) {
-        for line in lines {
-            if let Ok(line) = line {
-                let result = Instr::parse_nom(&line);
-                if let Ok(res) = result {
-                    expected.push(res.1);
-                }
-            }
-        }
-    }
+    let expected = Instr::from_file(path).unwrap();
 
     println!("EXPECTED");
     for instr in &expected {
@@ -1786,17 +1698,7 @@ fn load_store() {
 #[test]
 fn memory() {
     let path = "tests/wimpl/memory/memory.wimpl";
-    let mut expected = Vec::new();
-    if let Ok(lines) = read_lines(path) {
-        for line in lines {
-            if let Ok(line) = line {
-                let result = Instr::parse_nom(&line);
-                if let Ok(res) = result {
-                    expected.push(res.1);
-                }
-            }
-        }
-    }
+    let expected = Instr::from_file(path).unwrap();
 
     println!("EXPECTED");
     for instr in &expected {
@@ -1820,17 +1722,7 @@ fn memory() {
 #[test]
 fn select() {
     let path = "tests/wimpl/select/select.wimpl";
-    let mut expected = Vec::new();
-    if let Ok(lines) = read_lines(path) {
-        for line in lines {
-            if let Ok(line) = line {
-                let result = Instr::parse_nom(&line);
-                if let Ok(res) = result {
-                    expected.push(res.1);
-                }
-            }
-        }
-    }
+    let expected = Instr::from_file(path).unwrap();
 
     println!("EXPECTED");
     for instr in &expected {
@@ -1854,17 +1746,7 @@ fn select() {
 #[test]
 fn block() {
     let path = "tests/wimpl/block/block.wimpl";
-    let mut expected = Vec::new();
-    if let Ok(lines) = read_lines(path) {
-        for line in lines {
-            if let Ok(line) = line {
-                let result = Instr::parse_nom(&line);
-                if let Ok(res) = result {
-                    expected.push(res.1);
-                }
-            }
-        }
-    }
+    let expected = Instr::from_file(path).unwrap();
 
     println!("EXPECTED");
     for instr in &expected {
