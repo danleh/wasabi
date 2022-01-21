@@ -26,9 +26,6 @@ use crate::{
 };
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub struct ParseError;
-
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum Var {
     Stack(usize),
     Local(usize),
@@ -49,21 +46,21 @@ impl fmt::Display for Var {
 }
 
 impl FromStr for Var {
-    type Err = ParseError;
+    type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // `split_at` can panic, so ensure `s` has at least len >= 1.
         if s.is_empty() {
-            return Err(ParseError);
+            return Err(());
         }
         let (letter, i) = s.split_at(1);
-        let i = i.parse().map_err(|_| ParseError)?;
+        let i = i.parse().map_err(|_| ())?;
         use Var::*;
         Ok(match letter {
             "s" => Stack(i),
             "l" => Local(i),
             "g" => Global(i),
             "p" => Param(i),
-            _ => return Err(ParseError),
+            _ => return Err(()),
         })
     }
 }
@@ -78,10 +75,10 @@ impl fmt::Display for Func {
 }
 
 impl FromStr for Func {
-    type Err = ParseError;
+    type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let i = s.strip_prefix("f").ok_or(ParseError)?;
-        let i = i.parse().map_err(|_| ParseError)?;
+        let i = s.strip_prefix("f").ok_or(())?;
+        let i = i.parse().map_err(|_| ())?;
         Ok(Func(i))
     }
 }
@@ -96,10 +93,10 @@ impl fmt::Display for Label {
 }
 
 impl FromStr for Label {
-    type Err = ParseError;
+    type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let i = s.strip_prefix("@label").ok_or(ParseError)?;
-        let i = i.parse().map_err(|_| ParseError)?;
+        let i = s.strip_prefix("@label").ok_or(())?;
+        let i = i.parse().map_err(|_| ())?;
         Ok(Label(i))
     }
 }
@@ -551,13 +548,13 @@ impl Instr {
 }
 
 impl FromStr for Instr {
-    type Err = ParseError;
+    type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match Instr::parse_nom(s).finish() {
             Ok((_nothing_remaining, instr)) => Ok(instr),
             // TODO Output byte offset/line/column of parse error.
-            Err(_err) => Err(ParseError),
+            Err(_err) => Err(()),
         }
     }
 }
