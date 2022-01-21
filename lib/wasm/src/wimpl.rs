@@ -862,20 +862,11 @@ macro_rules! wimpls {
 pub(crate) use wimpl;
 pub(crate) use wimpls;
 
+#[derive(Default)]
 pub struct State {
     pub label_count: usize,
     pub var_count: usize,
     pub var_stack: Vec<Var>,
-}
-
-impl State {
-    pub fn new() -> Self {
-        State {
-            label_count: 0,
-            var_count: 0,
-            var_stack: Vec::new(),
-        }
-    }
 }
 
 pub fn wimplify_helper(
@@ -1103,7 +1094,7 @@ pub fn wimplify_helper(
             let lhs = lhs.unwrap();
             let rhs = rhs.pop().unwrap();
             Some(Load {
-                lhs: lhs,
+                lhs,
                 op: *loadop,
                 memarg: *memarg,
                 addr: rhs,
@@ -1186,7 +1177,7 @@ pub fn wimplify(
 
     let instrs = VecDeque::from_iter(instrs);
     let tys = VecDeque::from_iter(tys);
-    let result = wimplify_helper(instrs, tys, Vec::new(), State::new()).unwrap();
+    let result = wimplify_helper(instrs, tys, Vec::new(), State::default()).unwrap();
     let result_instrs = result.0;
 
     Ok(result_instrs)
@@ -1558,14 +1549,14 @@ mod test {
                 s5 = i32.const 3
                 br @label2 (s5)
             }
+            l0 = g0
         };
     }
 }
 
 #[test]
 fn constant() {
-    let path = "tests/wimpl/const/const.wimpl";
-    let expected = Instr::from_file(path).unwrap();
+    let expected = wimpls!(s0 = i32.const 3);
 
     println!("EXPECTED");
     for instr in &expected {
