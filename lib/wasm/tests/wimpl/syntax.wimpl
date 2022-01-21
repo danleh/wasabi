@@ -1,92 +1,41 @@
-i32.const 2
-v0 = i32.const 3
-v1 = i32.const 7 
-v2 = i32.add (v1, v0)  
-call_indirect [ ] ->[] (v1)
-v3 = i32.load offset=3 (v0)
+// Line comments are supported.
 
-v1 = if
-    ...
-else
-    ...
-end
+// Variables begin with either s, g, l, or p; nothing else.
+s0 = i32.const 1
+g0 = f32.const 1.1
+l0 = i64.const 42
+p0 = f64.const .1
+// invalid:
+// v1 = i32.const 7 
+// x = i32.const 7
 
-lhs = v1 
-op = if-else 
-rhs = vec(
-    v0,
-    vec(l9) 
-    vec(l11)
-)
+// Instructions take runtime arguments in parentheses.
+s1 = i32.ne(s0)
+s2 = i32.add (s0, s1)
 
-v3 = loop @label3 {
-    ...
-    call fn5
-    ...
-    br_if 3 @label3 (vcond)
-    v0
+// Calls always need the argument parentheses.
+call f1 ()
+
+// Instruction "immediates", i.e., arguments that are statically encoded
+// into the instruction come before the argument.
+s3 = i32.load offset=3 (s0)
+call_indirect [ ] ->[] (s1) ()
+
+// Blocks are explicitly labeled.
+@label0: block {}
+// Such that branches can target them.
+@label1: block { br @label1 }
+// Blocks can also have LHS.
+s4 = @label2: loop {
+    s5 = i32.const 3
+    br @label2 (s5)
 }
 
-v0 = //bool 
-v1 = label3: if (v0) {
-
-    break (v1447) //@label3 
-    v3 = i32.const
-    v3
+// Another example...
+g0 = @label0: block {
+    s6 = i32.const 2
+    br @label0 (s6)
+    s7 = i32.const 3
+    s7
 }
-
-@label7: loop {
-    block {
-        ...
-        block {
-            br label1
-            br label0 (args)
-        } 
-        @label1 
-
-        br_table @label7 @label0
-    } 
-    @label0: 
-    
-}
-
-v0 = block {
-    br 0
-}
-@l
-v1 = i32.const 3
-
-block
-    br 0
-i32.const 3
-->
-block {
-    br .label0    
-}
-.label0:
-
-
-loop
-    br 0
-->
-loop {
-    .label0:
-    br .label0
-}
-
-
-block [] -> [i32]
-    i32.const 2
-    br 0
-    i32.const 3
-local.set $x
-->
-v0 = .label0: block {
-    v1 = i32.const 2
-    br .label0 (v1)
-    v2 = i32.const 3
-    v2
-}
-l1 = v0
-
-
+l1 = g0
