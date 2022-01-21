@@ -864,7 +864,7 @@ pub(crate) use wimpls;
 #[derive(Default)]
 pub struct State {
     pub label_count: usize,
-    pub var_count: usize,
+    pub stack_var_count: usize,
     pub var_stack: Vec<Var>,
 }
 
@@ -883,12 +883,12 @@ fn wimplify_helper(
     let n_results = ty.results.len();
     let mut result_instrs = Vec::new();
 
-    let lhs = if n_results == 0 {
+    let mut lhs = if n_results == 0 {
         None
     } else if n_results == 1 {
         match instr {
             highlevel::Instr::Local(highlevel::LocalOp::Tee,_) => None, //tee lhs is the argument itself, ie, rhs which is handled in the match arm for it below
-            _ => Some(Var::Stack(state.var_count)) 
+            _ => Some(Var::Stack(state.stack_var_count)) 
         }
     } else {
         return Err("cannot return more than one value in wasm1.0".into())
@@ -908,15 +908,17 @@ fn wimplify_helper(
             state.label_count += 1;
             let block_body = wimplify_helper(instrs, tys, state).unwrap();
             
+            // the variable returned by the block, if any is on top of the stack 
+            // and was pushed there by the end instruction 
+            lhs = state.var_stack.pop(); 
             let btype = blocktype.0;
-            //println!(" LHS {:?}", lhs);
+            
             Some(Block {
-                lhs,
+                lhs, 
                 label: Label(curr_label_count),
                 body: Body {
                     instrs: block_body,
                     result: if let Some(_btype) = btype {
-                        //println!("blocktype {:?}", blocktype);
                         Some(state.var_stack.pop().unwrap())
                     } else {
                         None
@@ -930,6 +932,11 @@ fn wimplify_helper(
         highlevel::Instr::Else => todo!(),
 
         highlevel::Instr::End => {
+            // if end has a return, push it to the stack since 
+            // the enclosing function will have to pop it back out
+            if let Some(lhs) = lhs {
+                state.var_stack.push(lhs); 
+            }
             return Ok(result_instrs);
         }
 
@@ -1163,9 +1170,9 @@ fn wimplify_helper(
 
     if !instrs.is_empty() {
         if let Some(lhs) = lhs { 
-            state.var_stack.push(Var::Stack(state.var_count));
+            state.var_stack.push(Var::Stack(state.stack_var_count));
             if let Stack(_) = lhs {
-                state.var_count += 1;
+                state.stack_var_count += 1;
             }
         }
         let res = wimplify_helper(instrs, tys, state).unwrap();
