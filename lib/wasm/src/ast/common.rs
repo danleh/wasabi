@@ -319,7 +319,6 @@ impl Serialize for Label {
 
 #[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Memarg {
-    pub offset: u32,
     /// The alignment of load/stores is just a hint for the VM that says "the effective address of
     /// this load/store should be aligned to <alignment>".
     /// However, if that hint is wrong and the actual address is not aligned, the load/store still
@@ -337,6 +336,10 @@ pub struct Memarg {
     /// See https://webassembly.github.io/spec/core/syntax/instructions.html#memory-instructions
     /// and https://webassembly.github.io/spec/core/text/instructions.html#memory-instructions.
     pub alignment_exp: u8,
+
+    // NOTE offset field must come after alignment, because that's how it is
+    // layed out in the binary format. Field order is important!
+    pub offset: u32,
 }
 
 impl Memarg {
