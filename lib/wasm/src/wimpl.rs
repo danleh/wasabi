@@ -16,7 +16,7 @@ use nom::{
     AsChar, Finish, IResult,
 };
 
-use crate::{highlevel::MemoryOp, BlockType, Val, ValType};
+use crate::{highlevel::MemoryOp, BlockType, Val, ValType, types::InstructionType};
 use crate::{
     highlevel::{self, Function, LoadOp, Module, NumericOp, StoreOp},
     types::types,
@@ -770,7 +770,8 @@ impl fmt::Display for Instr {
 pub struct State {
     pub level: usize, 
     pub label_count: usize, 
-    pub var_count: usize 
+    pub var_count: usize, 
+    pub var_stack: Vec<Var>, 
 }
 
 impl State {
@@ -779,329 +780,334 @@ impl State {
             level: 0,
             label_count: 0,
             var_count: 0,
+            var_stack: Vec::new(), 
         }
     }
 }
+
+pub fn wimplify_single_instr (
+    instr: &highlevel::Instr,
+    ty: InstructionType,  
+    mut state: State
+) -> Result<(Option<Instr>, State), String> {
+    
+    use Var::*; 
+    use Instr::*; 
+
+    let n_inputs = ty.inputs.len();
+    let n_results = ty.results.len();
+    
+    let mut lhs: Option<Var> = None;
+    if n_results == 0 {
+        lhs = None;
+    } else if n_results == 1 {
+        lhs = Some(Var::Stack(state.var_count));
+    } else {
+        //Err("cannot return more than one value in wasm1.0"); //ERROR
+    }
+
+    //println!("{} {}", instr, n_inputs); 
+    let mut rhs = Vec::new();
+    for _ in 0..n_inputs {
+        rhs.push(state.var_stack.pop().unwrap());
+    }
+
+    // we can only push the new variable onto the stack once we have popped the required rhs values
+    if lhs != None {
+        state.var_stack.push(Var::Stack(state.var_count));
+        state.var_count += 1;
+    }
+
+    let result_instr: Option<Instr> = match instr {
+        highlevel::Instr::Unreachable => Some(Unreachable),
+        highlevel::Instr::Nop => None,
+
+        highlevel::Instr::Block(blocktype) => {
+            // collect block body instructions
+            // FIXME: technically should not be till end since you can have nested blocks
+
+            // let mut block_body : Vec<highlevel::Instr> = Vec::new();
+            
+            // while true {
+            //     let curr_instr = instrs[ind]; 
+            //     let curr_results = &tys[ind].results;
+            //     let func_results =  function.type_.results.into_vec(); 
+            //     if instrs[ind] != highlevel::Instr::End && 
+            //         ind != instrs.len()-1 {
+                    
+            //     }
+            // } 
+
+            // while instrs[ind] != highlevel::Instr::End && ind != instrs.len()-1{
+            //     block_body.push(instrs[ind].clone());
+            //     ind = ind+1;
+            // }
+            // println!("{}", ind);
+            // println!("{:?}", block_body); 
+            
+            // //let block_body = instrs[ind..ind_]
+                
+            // let btype = blocktype.0; 
+            // Some(Block{
+            //     lhs,
+            //     label: Label(label_count),
+            //     body: Body{
+            //         instrs: wimplify(&block_body, function, module, label_count+1)?,
+            //         result: if let Some(_btype) = btype {
+            //             Some(rhs.pop().unwrap())
+            //         } else {
+            //             None
+            //         },
+
+            //     },
+            // })
+            todo!()
+        }
+        highlevel::Instr::Loop(_) => todo!(),
+        highlevel::Instr::If(_) => todo!(),
+        highlevel::Instr::Else => todo!(),
+        highlevel::Instr::End => None,
+        highlevel::Instr::Br(lab) => {
+            Some(Br{
+                target: Label(lab.into_inner()),
+                value: lhs,
+            })
+        },
+        highlevel::Instr::BrIf(lab) => {
+            Some(If{
+                lhs,
+                label: None, 
+                condition: rhs.pop().unwrap(), //var_stack.pop().unwrap(),
+                if_body: Body{ 
+                    instrs: Some(vec![Br{ 
+                                target: Label(lab.into_inner()), 
+                                value: None,  
+                            }]),
+                    result: None, 
+                },
+                else_body: None,
+            })
+        },
+
+        highlevel::Instr::BrTable {table, default } => {
+            Some(BrTable{
+                idx: rhs.pop().unwrap(), //var_stack.pop().unwrap(),
+                table: table.iter().map(|x| Label(x.into_inner())).collect(),
+                default: Label(default.into_inner()),
+                value: lhs,
+            })
+        },
+
+        highlevel::Instr::Return => {
+            if rhs.len() > 1 { 
+                println!("am i here"); 
+                todo!() //ERROR: multiple returns not yet allowed 
+            } else {
+                Some(Return{
+                    value: rhs.first().cloned(), //do we need to clone this??
+                })
+            }
+        },
+
+        highlevel::Instr::Call(idx) => {
+            Some(Call{
+                lhs,
+                func: Func(idx.into_inner()),
+                args: rhs,
+            })
+        },
+
+        highlevel::Instr::CallIndirect(fn_type, index) => {
+            // in call_indirect,
+            // the last variable on the stack is the index value
+            // the rest (till you collect all the needed parameters are arguments
+            // then what is index?? do we need it here???
+            Some(CallIndirect {
+                lhs,
+                type_: fn_type.clone(), //do we need to clone??
+                table_idx: rhs.pop().unwrap(),
+                args: rhs,
+            })
+        },
+        
+        highlevel::Instr::Drop => {
+            //var_stack.pop();
+            None
+        },
+        
+        highlevel::Instr::Select => {
+            let arg1 = rhs.pop().unwrap(); //cond  //wasm spec pg 71/155
+            let arg2 = rhs.pop().unwrap(); //if  
+            let arg3 = rhs.pop().unwrap(); //else
+            Some(If{
+                lhs,
+                label: None,
+                condition: arg1,
+                if_body: Body{ instrs: None, result: Some(arg2) },
+                else_body: Some(Body{ instrs: None, result: Some(arg3) }),
+            })    
+        },
+
+        highlevel::Instr::Local(localop, local_ind) => {
+            let local_var = Local(local_ind.into_inner());  
+            match localop {
+                // fetch value from local variable so RHS is local variable 
+                highlevel::LocalOp::Get => {
+                    if let Some(lhs) = lhs {
+                        Some(Assign{
+                            lhs,
+                            rhs: local_var,
+                        })
+                    } else {
+                        todo!() // ERROR: LHS should not be None 
+                    }                                
+                },
+                // set local variable so LHS is local variable 
+                highlevel::LocalOp::Set => {
+                    if rhs.len() != 1 {
+                        todo!() // ERROR! 
+                    }        
+                    Some(Assign{
+                        lhs: local_var,
+                        rhs : rhs.pop().unwrap(),
+                    })        
+                },
+                // like local set but also return argument -> top of stack 
+                highlevel::LocalOp::Tee => {
+                    if rhs.len() != 1 {
+                        todo!() // ERROR! 
+                    }
+                    let rhs = rhs.pop().unwrap(); 
+                    state.var_stack.push(rhs); 
+                    Some(Assign{
+                        lhs: local_var,
+                        rhs,
+                    })        
+                },
+            }               
+        },
+
+        highlevel::Instr::Global(globalop, global_ind) => {
+            // same as above
+            let global_var = Global(global_ind.into_inner());  
+            match globalop {
+                highlevel::GlobalOp::Get => {
+                    if let Some(lhs) = lhs {
+                        Some(Assign{
+                            lhs,
+                            rhs: global_var,
+                        })            
+                    } else {
+                        todo!() // ERROR 
+                    }
+                },
+                highlevel::GlobalOp::Set => {
+                    if rhs.len() != 1 {
+                        todo!() // ERROR! 
+                    }
+                    Some(Assign{
+                        lhs: global_var,
+                        rhs : rhs.pop().unwrap(),
+                    })        
+                },
+            }
+        },
+
+        highlevel::Instr::Load(loadop, memarg) => {
+            //lhs needs to have one variable and so does rhs
+            if lhs == None {
+                todo!(); //ERROR! 
+            }
+            if rhs.len() != 1 {
+                todo!(); // ERROR! 
+            }
+            let lhs = lhs.unwrap(); 
+            let rhs = rhs.pop().unwrap();
+            Some(Load{
+                lhs: lhs,
+                op: *loadop,
+                memarg: *memarg,
+                addr: rhs,
+            })
+        },
+
+        highlevel::Instr::Store(storeop, memarg) => {
+            // two values need to be popped from the stack so len == 2
+            if rhs.len() != 2 {
+                todo!(); // ERROR! 
+            }
+            Some(Store{
+                op: *storeop,
+                memarg: *memarg,
+                value: rhs.pop().unwrap(),
+                addr: rhs.pop().unwrap(),
+            })
+        },
+
+        highlevel::Instr::MemorySize(_) => {
+            if let Some(lhs) = lhs {
+                Some(MemorySize{
+                    lhs,
+                })    
+            } else {
+                todo!() // ERROR: lhs has to be a variable
+            }
+        },
+
+        highlevel::Instr::MemoryGrow(ind) => {
+            if let Some(lhs) = lhs {
+                Some(MemoryGrow{
+                    lhs,
+                    pages: Stack(ind.into_inner()),
+                })    
+            } else {
+                todo!() // ERROR: lhs has to be a variable
+            }
+        },
+        
+        highlevel::Instr::Const(val) => { 
+            if let Some(lhs) = lhs {
+                Some(Const { lhs, val: *val })
+            } else {
+                todo!(); //ERROR
+            }
+        },
+        
+        highlevel::Instr::Numeric(numop) => {
+            if let Some(lhs) = lhs {
+                Some(Numeric {
+                    lhs,
+                    op: *numop,
+                    rhs,
+                })
+            } else {
+                todo!() //ERROR
+            }
+        }, 
+    };
+    Ok((result_instr, state))
+} 
 
 pub fn wimplify(
     instrs: &[highlevel::Instr],
     function: &Function,
     module: &Module,
-    state : State,
 ) -> Result<Vec<Instr>, String> {
     
-    // Convenience:
-    use Instr::*;
-    use Var::*;
+    let mut state = State::new();
 
-    let mut var_stack = Vec::new();
-    let mut var_count = 0;
     let mut result_instrs = Vec::new();
+    
     let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
 
-    // let mut ind = 0; 
-    // while ind < instrs.len() { 
     for (instr, ty) in instrs.iter().zip(tys.into_iter()) {
 
-        // let instr = instrs[ind]; 
-        // let ty = &tys[ind]; 
-
-        let n_inputs = ty.inputs.len();
-        let n_results = ty.results.len();
-        
-        let lhs: Option<Var>;
-        if n_results == 0 {
-            lhs = None;
-        } else if n_results == 1 {
-            lhs = Some(Var::Stack(var_count));
-        } else {
-            todo!(); // ERROR!
-        }
-
-        //println!("{} {}", instr, n_inputs); 
-        let mut rhs = Vec::new();
-        for _ in 0..n_inputs {
-            rhs.push(var_stack.pop().unwrap());
-        }
-
-        // we can only push the new variable onto the stack once we have popped the required rhs values
-        if lhs != None {
-            var_stack.push(Var::Stack(var_count));
-            var_count += 1;
-        }
-
-        let result_instr: Option<Instr> = match instr {
-            highlevel::Instr::Unreachable => Some(Unreachable),
-            highlevel::Instr::Nop => None,
-
-            highlevel::Instr::Block(blocktype) => {
-                // collect block body instructions
-                // FIXME: technically should not be till end since you can have nested blocks
-
-                // let mut block_body : Vec<highlevel::Instr> = Vec::new();
-                
-                // while true {
-                //     let curr_instr = instrs[ind]; 
-                //     let curr_results = &tys[ind].results;
-                //     let func_results =  function.type_.results.into_vec(); 
-                //     if instrs[ind] != highlevel::Instr::End && 
-                //         ind != instrs.len()-1 {
-                        
-                //     }
-                // } 
-
-                // while instrs[ind] != highlevel::Instr::End && ind != instrs.len()-1{
-                //     block_body.push(instrs[ind].clone());
-                //     ind = ind+1;
-                // }
-                // println!("{}", ind);
-                // println!("{:?}", block_body); 
-                
-                // //let block_body = instrs[ind..ind_]
-                 
-                // let btype = blocktype.0; 
-                // Some(Block{
-                //     lhs,
-                //     label: Label(label_count),
-                //     body: Body{
-                //         instrs: wimplify(&block_body, function, module, label_count+1)?,
-                //         result: if let Some(_btype) = btype {
-                //             Some(rhs.pop().unwrap())
-                //         } else {
-                //             None
-                //         },
-
-                //     },
-                // })
-                todo!()
-            }
-            highlevel::Instr::Loop(_) => todo!(),
-            highlevel::Instr::If(_) => todo!(),
-            highlevel::Instr::Else => todo!(),
-            highlevel::Instr::End => None,
-            highlevel::Instr::Br(lab) => {
-                Some(Br{
-                    target: Label(lab.into_inner()),
-                    value: lhs,
-                })
-            },
-            highlevel::Instr::BrIf(lab) => {
-                Some(If{
-                    lhs,
-                    label: None, 
-                    condition: rhs.pop().unwrap(), //var_stack.pop().unwrap(),
-                    if_body: Body{ 
-                        instrs: Some(vec![Br{ 
-                                    target: Label(lab.into_inner()), 
-                                    value: None,  
-                                }]),
-                        result: None, 
-                    },
-                    else_body: None,
-                })
-            },
-
-            highlevel::Instr::BrTable {table, default } => {
-                Some(BrTable{
-                    idx: rhs.pop().unwrap(), //var_stack.pop().unwrap(),
-                    table: table.iter().map(|x| Label(x.into_inner())).collect(),
-                    default: Label(default.into_inner()),
-                    value: lhs,
-                })
-            },
-
-            highlevel::Instr::Return => {
-                if rhs.len() > 1 { 
-                    println!("am i here"); 
-                    todo!() //ERROR: multiple returns not yet allowed 
-                } else {
-                    Some(Return{
-                        value: rhs.first().cloned(), //do we need to clone this??
-                    })
-                }
-            },
-
-            highlevel::Instr::Call(idx) => {
-                Some(Call{
-                    lhs,
-                    func: Func(idx.into_inner()),
-                    args: rhs,
-                })
-            },
-
-            highlevel::Instr::CallIndirect(fn_type, index) => {
-                // in call_indirect,
-                // the last variable on the stack is the index value
-                // the rest (till you collect all the needed parameters are arguments
-                // then what is index?? do we need it here???
-                Some(CallIndirect {
-                    lhs,
-                    type_: fn_type.clone(), //do we need to clone??
-                    table_idx: rhs.pop().unwrap(),
-                    args: rhs,
-                })
-            },
-            
-            highlevel::Instr::Drop => {
-                //var_stack.pop();
-                None
-            },
-            
-            highlevel::Instr::Select => {
-                let arg1 = rhs.pop().unwrap(); //cond  //wasm spec pg 71/155
-                let arg2 = rhs.pop().unwrap(); //if  
-                let arg3 = rhs.pop().unwrap(); //else
-                Some(If{
-                    lhs,
-                    label: None,
-                    condition: arg1,
-                    if_body: Body{ instrs: None, result: Some(arg2) },
-                    else_body: Some(Body{ instrs: None, result: Some(arg3) }),
-                })    
-            },
-
-            highlevel::Instr::Local(localop, local_ind) => {
-                let local_var = Local(local_ind.into_inner());  
-                match localop {
-                    // fetch value from local variable so RHS is local variable 
-                    highlevel::LocalOp::Get => {
-                        if let Some(lhs) = lhs {
-                            Some(Assign{
-                                lhs,
-                                rhs: local_var,
-                            })
-                        } else {
-                            todo!() // ERROR: LHS should not be None 
-                        }                                
-                    },
-                    // set local variable so LHS is local variable 
-                    highlevel::LocalOp::Set => {
-                        if rhs.len() != 1 {
-                            todo!() // ERROR! 
-                        }        
-                        Some(Assign{
-                            lhs: local_var,
-                            rhs : rhs.pop().unwrap(),
-                        })        
-                    },
-                    // like local set but also return argument -> top of stack 
-                    highlevel::LocalOp::Tee => {
-                        if rhs.len() != 1 {
-                            todo!() // ERROR! 
-                        }
-                        let rhs = rhs.pop().unwrap(); 
-                        var_stack.push(rhs); 
-                        Some(Assign{
-                            lhs: local_var,
-                            rhs,
-                        })        
-                    },
-                }               
-            },
-
-            highlevel::Instr::Global(globalop, global_ind) => {
-                // same as above
-                let global_var = Global(global_ind.into_inner());  
-                match globalop {
-                    highlevel::GlobalOp::Get => {
-                        if let Some(lhs) = lhs {
-                            Some(Assign{
-                                lhs,
-                                rhs: global_var,
-                            })            
-                        } else {
-                            todo!() // ERROR 
-                        }
-                    },
-                    highlevel::GlobalOp::Set => {
-                        if rhs.len() != 1 {
-                            todo!() // ERROR! 
-                        }
-                        Some(Assign{
-                            lhs: global_var,
-                            rhs : rhs.pop().unwrap(),
-                        })        
-                    },
-                }
-            },
-
-            highlevel::Instr::Load(loadop, memarg) => {
-                //lhs needs to have one variable and so does rhs
-                if lhs == None {
-                    todo!(); //ERROR! 
-                }
-                if rhs.len() != 1 {
-                    todo!(); // ERROR! 
-                }
-                let lhs = lhs.unwrap(); 
-                let rhs = rhs.pop().unwrap();
-                Some(Load{
-                    lhs: lhs,
-                    op: *loadop,
-                    memarg: *memarg,
-                    addr: rhs,
-                })
-            },
-
-            highlevel::Instr::Store(storeop, memarg) => {
-                // two values need to be popped from the stack so len == 2
-                if rhs.len() != 2 {
-                    todo!(); // ERROR! 
-                }
-                Some(Store{
-                    op: *storeop,
-                    memarg: *memarg,
-                    value: rhs.pop().unwrap(),
-                    addr: rhs.pop().unwrap(),
-                })
-            },
-
-            highlevel::Instr::MemorySize(_) => {
-                if let Some(lhs) = lhs {
-                    Some(MemorySize{
-                        lhs,
-                    })    
-                } else {
-                    todo!() // ERROR: lhs has to be a variable
-                }
-            },
-
-            highlevel::Instr::MemoryGrow(ind) => {
-                if let Some(lhs) = lhs {
-                    Some(MemoryGrow{
-                        lhs,
-                        pages: Stack(ind.into_inner()),
-                    })    
-                } else {
-                    todo!() // ERROR: lhs has to be a variable
-                }
-            },
-            
-            highlevel::Instr::Const(val) => { 
-                if let Some(lhs) = lhs {
-                    Some(Const { lhs, val: *val })
-                } else {
-                    todo!(); //ERROR
-                }
-            },
-            
-            highlevel::Instr::Numeric(numop) => {
-                if let Some(lhs) = lhs {
-                    Some(Numeric {
-                        lhs,
-                        op: *numop,
-                        rhs,
-                    })
-                } else {
-                    todo!() //ERROR
-                }
-            }, 
-        }; 
-
-        if let Some(result_instr) = result_instr {
-            result_instrs.push(result_instr);
-        }
-        //ind = ind + 1; 
+        let result = wimplify_single_instr(instr, ty, state); 
+        let res = result.unwrap(); //not idiomatic??
+        if let Some(result_instr) = res.0 {
+            result_instrs.push(result_instr); 
+        } 
+        state = res.1;  
     }
     Ok(result_instrs)
 }
@@ -1479,8 +1485,7 @@ fn constant() {
     let module = Module::from_file("tests/wimpl/const/const.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = &func.code().unwrap().body[0..1];
-    let state = State::new(); 
-    let actual = wimplify(instrs, func, &module, state).unwrap();
+    let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1514,8 +1519,7 @@ fn add() {
     let module = Module::from_file("tests/wimpl/add/add.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = &func.code().unwrap().body[0..3];
-    let state = State::new(); 
-    let actual = wimplify(instrs, func, &module, state).unwrap();
+    let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1549,8 +1553,7 @@ fn call_ind(){
     let module = Module::from_file("tests/wimpl/call_ind/call_ind.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = &func.code().unwrap().body[0..2];
-    let state = State::new(); 
-    let actual = wimplify(instrs, func, &module, state).unwrap();
+    let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1584,8 +1587,7 @@ fn multiple_expr() {
     let module = Module::from_file("tests/wimpl/multiple_expr/multiple_expr.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
-    let state = State::new(); 
-    let actual = wimplify(instrs, func, &module, state).unwrap();
+    let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1619,8 +1621,7 @@ fn call() {
     let module = Module::from_file("tests/wimpl/call/call.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
-    let state = State::new(); 
-    let actual = wimplify(instrs, func, &module, state).unwrap();
+    let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1655,8 +1656,7 @@ fn local() {
     let module = Module::from_file("tests/wimpl/local/local.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
-    let state = State::new(); 
-    let actual = wimplify(instrs, func, &module, state).unwrap();
+    let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1691,8 +1691,7 @@ fn global() {
     let module = Module::from_file("tests/wimpl/global/global.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
-    let state = State::new(); 
-    let actual = wimplify(instrs, func, &module, state).unwrap();
+    let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1727,8 +1726,7 @@ fn load_store() {
     let module = Module::from_file("tests/wimpl/load_store/load_store.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
-    let state = State::new(); 
-    let actual = wimplify(instrs, func, &module, state).unwrap();
+    let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1763,8 +1761,7 @@ fn memory() {
     let module = Module::from_file("tests/wimpl/memory/memory.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
-    let state = State::new(); 
-    let actual = wimplify(instrs, func, &module, state).unwrap();
+    let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1799,8 +1796,7 @@ fn select() {
     let module = Module::from_file("tests/wimpl/select/select.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
-    let state = State::new(); 
-    let actual = wimplify(instrs, func, &module, state).unwrap();
+    let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");  
     for instr in &actual {
@@ -1818,8 +1814,7 @@ fn constant_wasm() {
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..1];
-    let state = State::new(); 
-    let actual = wimplify(instrs, func, &module, state).unwrap();
+    let actual = wimplify(instrs, func, &module).unwrap();
     //println!("actual {:?}",actual);
     for ins in &actual {
         println!("{}", ins);
@@ -1837,8 +1832,7 @@ fn drop_wasm() {
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..2];
-    let state = State::new(); 
-    let actual = wimplify(instrs, func, &module, state).unwrap();
+    let actual = wimplify(instrs, func, &module).unwrap();
     //println!("actual {:?}",actual);
     for ins in &actual {
         println!("{}", ins);
@@ -1857,8 +1851,7 @@ fn add_wasm() {
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..3];
-    let state = State::new(); 
-    let actual = wimplify(instrs, func, &module, state).unwrap();
+    let actual = wimplify(instrs, func, &module).unwrap();
     for ins in &actual {
         println!("{}", ins);
     }
@@ -1887,8 +1880,7 @@ fn call_ind_wasm() {
     let func = module.functions().next().unwrap().1;
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..2];
-    let state = State::new(); 
-    let actual = wimplify(instrs, func, &module, state).unwrap();
+    let actual = wimplify(instrs, func, &module).unwrap();
     //println!("{:?}",actual);
     for ins in &actual {
         println!("{}", ins);
@@ -1918,8 +1910,7 @@ fn block_br() {
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body;
 
-    let state = State::new(); 
-    let actual = wimplify(instrs, func, &module, state).unwrap();
+    let actual = wimplify(instrs, func, &module).unwrap();
     println!("{:?}", actual);
     for ins in &actual {
         println!("{}", ins);
