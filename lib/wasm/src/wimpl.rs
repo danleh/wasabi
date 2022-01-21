@@ -10,11 +10,11 @@ use std::{
 
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_until, take_while},
-    character::complete::{alphanumeric1, multispace0, not_line_ending},
-    combinator::{map, map_res, opt, value},
-    multi::separated_list0,
-    sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
+    bytes::complete::{tag, take_until, take_while, take_while1},
+    character::complete::{alphanumeric1, multispace1, not_line_ending},
+    combinator::{all_consuming, map, map_res, opt, value},
+    multi::{many0, separated_list0},
+    sequence::{delimited, pair, preceded, terminated, tuple},
     AsChar, Finish, IResult,
 };
 
@@ -49,7 +49,7 @@ impl FromStr for Var {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // `split_at` can panic, so ensure `s` has at least len >= 1.
+        // `split_at` can panic, so ensure `s` has at least one byte.
         if s.is_empty() {
             return Err(());
         }
@@ -142,9 +142,6 @@ impl fmt::Display for Body {
         }
     }
 }
-
-/// Type abbreviation for internal nom parser result.
-type NomResult<'input, O> = IResult<&'input str, O>;
 
 /// Wimpl instructions make the following major changes over high-level Wasm:
 /// - Remove the evaluation/operand stack completely, every instruction takes
@@ -255,6 +252,91 @@ pub enum Instr {
     },
 }
 
+/// User-facing error for parsing the Wimpl text format.
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct ParseError {
+    /// Line number in the full input where the error occurred (1-indexed).
+    line: usize,
+
+    /// Byte offset inside the line where the error occurred (0-indexed).
+    column: usize,
+
+    /// Erroneous input line text.
+    input_line: String,
+}
+
+impl std::error::Error for ParseError {}
+
+// Conversion from nom error to my own.
+impl ParseError {
+    fn from<'input>(error: nom::error::Error<&'input str>, full_input: &'input str) -> Self {
+        let full_input_ptr = full_input.as_ptr() as usize;
+        let error_input_ptr = error.input.as_ptr() as usize;
+        let error_offset = error_input_ptr - full_input_ptr;
+
+        for (line, input_line) in full_input.lines().enumerate() {
+            let line_start_offset = input_line.as_ptr() as usize - full_input.as_ptr() as usize;
+            let line_end_offset = line_start_offset + input_line.len();
+            if error_offset >= line_start_offset && error_offset < line_end_offset {
+                let line = line + 1;
+                let column = error_offset - line_start_offset;
+                let input_line = input_line.to_string();
+                return Self {
+                    line,
+                    column,
+                    input_line,
+                };
+            }
+        }
+        unreachable!()
+    }
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "parse error in line {}, column {}:",
+            self.line, self.column
+        )?;
+        let line_header = format!("\nline {}: ", self.line);
+        writeln!(f, "{}{}", line_header, self.input_line)?;
+        let indent = " ".repeat(line_header.len() + self.column - 1);
+        write!(f, "{}^ error starts around here or later", indent)
+    }
+}
+
+/// Type abbreviation for internal nom parser result.
+type NomResult<'input, O> = IResult<&'input str, O>;
+
+/// Whitespace and comment parser, both of which are removed (which is why it returns unit).
+fn ws(input: &str) -> NomResult<()> {
+    value(
+        (),
+        // NOTE `many0` may never wrap an inner parser that potentially matches
+        // the empty word. Because of this, use `multispace1`.
+        many0(alt((
+            multispace1,
+            // Line comment, i.e., from // until newline.
+            preceded(tag("//"), not_line_ending),
+        ))),
+    )(input)
+}
+
+/// Adapt nom parser such that it returns a standard Rust `Result`.
+fn adapt_nom_parser<'input, O>(
+    parser: impl Fn(&'input str) -> NomResult<'input, O>,
+    input: &'input str,
+) -> Result<O, ParseError> {
+    match all_consuming(parser)(input).finish() {
+        Ok(("", instr)) => Ok(instr),
+        Ok(_) => unreachable!(
+            "successful parse should hould have consumed full input because of all_consuming()"
+        ),
+        Err(err) => Err(ParseError::from(err, input)),
+    }
+}
+
 impl Instr {
     /// Convenience accessor for all instructions that have a LHS.
     pub fn lhs(&self) -> Option<Var> {
@@ -286,31 +368,26 @@ impl Instr {
         }
     }
 
-    /// Top-level entry into the nom-parser of Wimpl instructions.
-    fn parse_nom(input: &str) -> NomResult<Instr> {
+    /// Parse multiple instructions, with possibly preceding and trailing whitespace.
+    fn parse_nom_multiple_ws(input: &str) -> NomResult<Vec<Instr>> {
+        preceded(ws, many0(terminated(Instr::parse_nom_single, ws)))(input)
+    }
+
+    /// Parse a single instruction, without surrounding whitespace.
+    /// Main entry point into the nom-based parser.
+    fn parse_nom_single(input: &str) -> NomResult<Instr> {
         use Instr::*;
 
         // Utility parsers, reused in the different instruction parsers below.
-        // NOTE They can unfortunately not be written with let + point-free
+        //
+        // They all assume only "internal" whitespace, i.e., they assume initial
+        // whitespace is already consumed by the outer parser and the input
+        // directly starts with the first non-whitespace token.
+        //
+        // They can unfortunately not be written with let + point-free
         // style, because type inference makes them FnMut, which then cannot be
         // re-used multiple times :/. For this reason, most are written as normal
         // functions with explicit type signatures.
-
-        /// Whitespace and comment parser, which are removed (which is why it returns unit).
-        // All other parsers below only handle internal whitespace, i.e., they
-        // assume initial whitespace is already consumed by the outer parser and
-        // the input directly starts with the first non-whitespace token.
-        fn ws(input: &str) -> NomResult<()> {
-            value(
-                // Always return ().
-                (),
-                alt((
-                    multispace0,
-                    // Line comment, i.e., from // until newline.
-                    preceded(tag("//"), not_line_ending),
-                )),
-            )(input)
-        }
 
         fn var(input: &str) -> NomResult<Var> {
             map_res(alphanumeric1, Var::from_str)(input)
@@ -349,6 +426,9 @@ impl Instr {
         // the function type, so consume up to the opening parenthesis.
         // However, this will fail to recognize comments after the function type!
         let func_ty = map_res(take_until("("), FunctionType::from_str);
+        // HACK Accept any non-whitespace character for the integer/float
+        // immediate, the rest of the parsing is done by Val::from_str.
+        let number = take_while1(|c: char| !c.is_ascii_whitespace());
 
         // The defaults of a memarg (if not given) depend on the natural alignment
         // of the memory instruction, hence this higher-order combinator.
@@ -359,9 +439,9 @@ impl Instr {
         fn body(input: &str) -> NomResult<Body> {
             map(
                 delimited(
-                    pair(tag("{"), ws),
-                    separated_pair(separated_list0(ws, Instr::parse_nom), ws, opt(var)),
-                    pair(ws, tag("}")),
+                    tag("{"),
+                    pair(Instr::parse_nom_multiple_ws, opt(terminated(var, ws))),
+                    tag("}"),
                 ),
                 |(instrs, result)| Body {
                     instrs: Some(instrs),
@@ -371,6 +451,7 @@ impl Instr {
         }
 
         // One parser for each instruction, using the utility parsers from above.
+
         let unreachable = map(tag("unreachable"), |_| Unreachable);
 
         let block = map(
@@ -506,9 +587,7 @@ impl Instr {
                 map_res(take_until("."), ValType::from_str),
                 tag(".const"),
                 ws,
-                // HACK Accept any non-whitespace character for a number, rest
-                // is done by Val::from_str.
-                take_while(|c: char| !c.is_ascii_whitespace()),
+                number,
             )),
             |(lhs, ty, _, (), number)| Val::from_str(number, ty).map(|val| Const { lhs, val }),
         );
@@ -538,31 +617,23 @@ impl Instr {
         ))(input)
     }
 
-    // pub fn parse(str: &str) -> io::Result<Vec<Self>> {
-    //     let mut lexer = WimplTextToken::lexer(str);
-    //     Ok(vec![Self::parse_instr(lexer)?])
+    pub fn parse_multiple(input: &str) -> Result<Vec<Self>, ParseError> {
+        adapt_nom_parser(Self::parse_nom_multiple_ws, input)
+    }
 
-    //     // program = instr*
-    //     // instr = (variable '=')? operator args?
-    //     // args = '(' (variable ',')* variable ')'
-    // }
-
-    // /// Convenience function to parse Wimpl from a filename.
-    // pub fn from_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
-    //     let str = std::fs::read_to_string(filename)?;
-    //     Ok(Self::parse(&str)?)
-    // }
+    /// Convenience function to parse Wimpl from a filename.
+    pub fn parse_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
+        let str = std::fs::read_to_string(filename)?;
+        Self::parse_multiple(&str).map_err(|e| io::Error::new(ErrorKind::Other, e))
+    }
 }
 
+/// Adapt nom parser for use with Rust `parse()` / `from_str`.
 impl FromStr for Instr {
-    type Err = ();
+    type Err = ParseError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match Instr::parse_nom(s).finish() {
-            Ok((_nothing_remaining, instr)) => Ok(instr),
-            // TODO Output byte offset/line/column of parse error.
-            Err(_err) => Err(()),
-        }
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        adapt_nom_parser(Self::parse_nom_single, input)
     }
 }
 
@@ -582,6 +653,7 @@ where
     T::Item: fmt::Display,
 {
     let mut iter = values.into_iter();
+    // Get last element:
     match iter.next_back() {
         // Empty iterator, don't format anything.
         None => Ok(()),
@@ -1366,12 +1438,18 @@ mod test {
         assert_eq!(Ok(Global(0)), "g0".parse());
 
         // Negative tests:
-        assert!(" s0 \n ".parse::<Var>().is_err(), "whitespace not allowed");
+        assert!(
+            " s0 \n ".parse::<Var>().is_err(),
+            "whitespace is not allowed"
+        );
         assert!(
             "sABC".parse::<Var>().is_err(),
             "characters instead of number"
         );
-        assert!("x123".parse::<Var>().is_err(), "invalid variable type");
+        assert!(
+            "x123".parse::<Var>().is_err(),
+            "invalid variable type/prefix"
+        );
     }
 
     #[test]
@@ -1381,21 +1459,15 @@ mod test {
             .chain(WIMPL_ALTERNATIVE_SYNTAX_TESTCASES.iter());
         for (i, (wimpl, text, msg)) in parse_testcases.enumerate() {
             let parsed = Instr::from_str(text);
-            assert!(
-                parsed.is_ok(),
-                "\ntest #{} could not be parsed\ninput: `{}`\n{}",
-                i,
-                text,
-                msg
-            );
-            assert_eq!(
-                &parsed.unwrap(),
-                wimpl,
-                "\ntest #{}\ninput: `{}`\n{}",
-                i,
-                text,
-                msg
-            );
+            match parsed {
+                Err(err) => panic!(
+                    "\ntest #{} could not be parsed\ninput: `{}`\nerr: `{}`\n{}",
+                    i, text, err, msg
+                ),
+                Ok(parsed) => {
+                    assert_eq!(&parsed, wimpl, "\ntest #{}\ninput: `{}`\n{}", i, text, msg)
+                }
+            };
         }
     }
 
@@ -1423,6 +1495,12 @@ mod test {
             assert_eq!(parsed, parsed_pretty, "\ntest #{}\n{}", i, msg);
         }
     }
+
+    #[test]
+    fn parse_file() {
+        let instrs = Instr::parse_file("tests/wimpl/syntax.wimpl");
+        assert!(instrs.is_ok());
+    }
 }
 
 fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
@@ -1440,9 +1518,9 @@ fn constant() {
     if let Ok(lines) = read_lines(path) {
         for line in lines {
             if let Ok(line) = line {
-                let result = Instr::parse_nom(&line);
+                let result = Instr::from_str(line.trim());
                 if let Ok(res) = result {
-                    expected.push(res.1);
+                    expected.push(res);
                 }
             }
         }
