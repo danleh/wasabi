@@ -617,14 +617,14 @@ impl Instr {
         ))(input)
     }
 
-    pub fn parse_multiple(input: &str) -> Result<Vec<Self>, ParseError> {
+    pub fn from_str_multiple(input: &str) -> Result<Vec<Self>, ParseError> {
         adapt_nom_parser(Self::parse_nom_multiple_ws, input)
     }
 
     /// Convenience function to parse Wimpl from a filename.
     pub fn from_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
         let str = std::fs::read_to_string(filename)?;
-        Self::parse_multiple(&str).map_err(|e| io::Error::new(ErrorKind::Other, e))
+        Self::from_str_multiple(&str).map_err(|e| io::Error::new(ErrorKind::Other, e))
     }
 }
 
@@ -823,6 +823,44 @@ impl fmt::Display for Instr {
         Ok(())
     }
 }
+
+macro_rules! wimpl {
+    ($($tokens:tt)+) => {
+        {
+            let mut instrs = wimpls!($($tokens)+);
+            match (instrs.pop(), instrs.is_empty()) {
+                (Some(instr), true) => instr,
+                _ => panic!("The wimpl! macro accepts only a single instruction, use wimpls! instead.")
+            }
+        }
+    }
+}
+
+/// Convenience macro to write Wimpl instructions in Rust.
+macro_rules! wimpls {
+    ($($tokens:tt)*) => {
+        {
+            let input_str = std::stringify!($($tokens)*)
+                // std::stringify somehow re-wraps the input tokens to 80 columns.
+                // Replace those inserted newlines, also to make the following easier.
+                .replace("\n", " ")
+                // HACK Because the input `tokens` are tokenized by rustc's 
+                // lexer, it inserts whitespace sometimes where Wimpl/Wasm 
+                // syntax doesn't accept it. Fix those cases here.
+                .replace("offset = ", "offset=")
+                .replace("align = ", "align=")
+                .replace("@ label", "@label");
+            match Instr::from_str_multiple(&input_str) {
+                Ok(instrs) => instrs,
+                Err(err) => panic!("Invalid Wimpl instriction(s).\n{}\n(Note: whitespace might be different from your input.)", err)
+            }
+        }
+    }
+}
+
+// Export macros.
+pub(crate) use wimpl;
+pub(crate) use wimpls;
 
 pub struct State {
     pub label_count: usize,
@@ -1162,6 +1200,7 @@ mod test {
     use super::Instr::{self, *};
     use super::Label;
     use super::Var::{self, *};
+    use super::{wimpl, wimpls};
     use crate::highlevel::LoadOp::*;
     use crate::highlevel::NumericOp::*;
     use crate::highlevel::StoreOp::*;
@@ -1500,6 +1539,22 @@ mod test {
     fn parse_file() {
         let instrs = Instr::from_file("tests/wimpl/syntax.wimpl");
         assert!(instrs.is_ok());
+    }
+
+    #[test]
+    fn macros() {
+        let _ = wimpl!(g0 = f32.const 1.1);
+        let _ = wimpl!(s2 = i32.add (s0, s1));
+        let _ = wimpl!(s3 = i32.load offset=3 (s0));
+        let _ = wimpl!(call_indirect [ ] ->[] (s1) ());
+        let _ = wimpl!(@label0: block {});
+        let _ = wimpls! {};
+        let _ = wimpls! {
+            s4 = @label2: loop {
+                s5 = i32.const 3
+                br @label2 (s5)
+            }
+        };
     }
 }
 
