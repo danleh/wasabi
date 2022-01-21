@@ -47,6 +47,7 @@ impl fmt::Display for Var {
 
 impl FromStr for Var {
     type Err = ();
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // `split_at` can panic, so ensure `s` has at least len >= 1.
         if s.is_empty() {
@@ -76,8 +77,9 @@ impl fmt::Display for Func {
 
 impl FromStr for Func {
     type Err = ();
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let i = s.strip_prefix("f").ok_or(())?;
+        let i = s.strip_prefix('f').ok_or(())?;
         let i = i.parse().map_err(|_| ())?;
         Ok(Func(i))
     }
@@ -94,6 +96,7 @@ impl fmt::Display for Label {
 
 impl FromStr for Label {
     type Err = ();
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let i = s.strip_prefix("@label").ok_or(())?;
         let i = i.parse().map_err(|_| ())?;
@@ -103,11 +106,13 @@ impl FromStr for Label {
 
 #[derive(Debug, Eq, PartialEq, Clone, Default)]
 pub struct Body {
-    instrs: Option<Vec<Instr>>, //when writing select as if, the bodies will not have any instructions just returns
+    // When writing select as if, the bodies will not have any instructions just returns
+    // FIXME Then could we not use an empty vec?
+    instrs: Option<Vec<Instr>>,
     result: Option<Var>,
 }
 
-const BLOCK_INDENT: &'static str = "  ";
+const BLOCK_INDENT: &str = "  ";
 
 impl fmt::Display for Body {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -348,7 +353,6 @@ impl Instr {
         // The defaults of a memarg (if not given) depend on the natural alignment
         // of the memory instruction, hence this higher-order combinator.
         fn memarg<'a>(op: impl MemoryOp + 'a) -> impl FnMut(&'a str) -> NomResult<'a, Memarg> {
-            let op = op.clone();
             // Same trick as for function types in call_indirect: Consume until beginning of argument list.
             map_res(take_until("("), move |s| Memarg::from_str(s, op))
         }
