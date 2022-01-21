@@ -393,7 +393,7 @@ pub fn types(
                     state.push_val(ty);
                     InstructionType {
                         inputs: vec![Some(ValType::I32), ty, ty],
-                        results: Vec::new(),
+                        results: vec![ty],
                     }
                 }
 
