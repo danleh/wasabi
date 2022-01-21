@@ -108,7 +108,7 @@ impl FromStr for Label {
 pub struct Body {
     // When writing select as if, the bodies will not have any instructions just returns
     // FIXME Then could we not use an empty vec?
-    instrs: Option<Vec<Instr>>,
+    instrs: Vec<Instr>,
     result: Option<Var>,
 }
 
@@ -118,10 +118,8 @@ impl fmt::Display for Body {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Put each inner instruction and the result on a separate line.
         let mut inner = String::new();
-        if let Some(instrs) = &self.instrs {
-            for instr in instrs {
+        for instr in &self.instrs {
                 writeln!(inner, "{}", instr)?;
-            }
         }
         if let Some(result) = self.result {
             writeln!(inner, "{}", result)?;
@@ -444,7 +442,7 @@ impl Instr {
                     tag("}"),
                 ),
                 |(instrs, result)| Body {
-                    instrs: Some(instrs),
+                    instrs,
                     result,
                 },
             )(input)
@@ -717,6 +715,7 @@ impl fmt::Display for Instr {
                 if_body,
                 else_body,
             } => {
+                //println!("{:?}", self);
                 if let Some(label) = label {
                     write!(f, "{}: ", label)?;
                 }
@@ -869,12 +868,11 @@ pub struct State {
     pub var_stack: Vec<Var>,
 }
 
-pub fn wimplify_helper(
-    mut instrs: VecDeque<&highlevel::Instr>,
-    mut tys: VecDeque<InstructionType>,
-    mut result_instrs: Vec<Instr>,
-    mut state: State,
-) -> Result<(Vec<Instr>, State, VecDeque<&highlevel::Instr>), String> {
+fn wimplify_helper(
+    instrs: &mut VecDeque<&highlevel::Instr>,
+    tys: &mut VecDeque<InstructionType>,
+    state: &mut State,
+) -> Result<Vec<Instr>, String> {
     use Instr::*;
     use Var::*;
 
@@ -883,19 +881,22 @@ pub fn wimplify_helper(
 
     let n_inputs = ty.inputs.len();
     let n_results = ty.results.len();
+    let mut result_instrs = Vec::new();
 
-    let mut lhs: Option<Var> = None;
-    if n_results == 0 {
-        lhs = None;
+    let lhs = if n_results == 0 {
+        None
     } else if n_results == 1 {
-        lhs = Some(Var::Stack(state.var_count));
+        match instr {
+            highlevel::Instr::Local(highlevel::LocalOp::Tee,_) => None, //tee lhs is the argument itself, ie, rhs which is handled in the match arm for it below
+            _ => Some(Var::Stack(state.var_count)) 
+        }
     } else {
-        //Err("cannot return more than one value in wasm1.0"); //ERROR
-    }
+        return Err("cannot return more than one value in wasm1.0".into())
+    };
 
     let mut rhs = Vec::new();
     for _ in 0..n_inputs {
-        rhs.push(state.var_stack.pop().unwrap());
+        rhs.push(state.var_stack.pop().expect("type correct wasm programs should not have empty stack"));
     }
 
     let result_instr: Option<Instr> = match instr {
@@ -905,19 +906,17 @@ pub fn wimplify_helper(
         highlevel::Instr::Block(blocktype) => {
             let curr_label_count = state.label_count;
             state.label_count += 1;
-            let result = wimplify_helper(instrs.clone(), tys.clone(), Vec::new(), state).unwrap();
-            let block_body = result.0;
-
-            state = result.1;
-            instrs = result.2;
-
+            let block_body = wimplify_helper(instrs, tys, state).unwrap();
+            
             let btype = blocktype.0;
+            //println!(" LHS {:?}", lhs);
             Some(Block {
                 lhs,
                 label: Label(curr_label_count),
                 body: Body {
-                    instrs: Some(block_body),
+                    instrs: block_body,
                     result: if let Some(_btype) = btype {
+                        //println!("blocktype {:?}", blocktype);
                         Some(state.var_stack.pop().unwrap())
                     } else {
                         None
@@ -931,24 +930,24 @@ pub fn wimplify_helper(
         highlevel::Instr::Else => todo!(),
 
         highlevel::Instr::End => {
-            return Ok((result_instrs, state, instrs));
+            return Ok(result_instrs);
         }
 
         highlevel::Instr::Br(lab) => Some(Br {
-            target: Label(lab.into_inner()),
-            value: lhs,
+            target: Label(lab.into_inner()), //FIXME: wasm's relative labels -> absolute labels
+            value: rhs.pop(), //variable returned with the br
         }),
 
         highlevel::Instr::BrIf(lab) => {
             Some(If {
                 lhs,
                 label: None,
-                condition: rhs.pop().unwrap(), //var_stack.pop().unwrap(),
+                condition: rhs.pop().unwrap(), //TODO: vector -> option -> var : write function
                 if_body: Body {
-                    instrs: Some(vec![Br {
-                        target: Label(lab.into_inner()),
-                        value: None,
-                    }]),
+                    instrs: vec![Br {
+                        target: Label(lab.into_inner()), //FIXME
+                        value: rhs.pop(), //variable returned with br if any 
+                    }],
                     result: None,
                 },
                 else_body: None,
@@ -960,32 +959,31 @@ pub fn wimplify_helper(
                 idx: rhs.pop().unwrap(), //var_stack.pop().unwrap(),
                 table: table.iter().map(|x| Label(x.into_inner())).collect(),
                 default: Label(default.into_inner()),
-                value: lhs,
+                value: rhs.pop(), //variable returned with brtable if any
             })
         }
 
         highlevel::Instr::Return => {
             if rhs.len() > 1 {
-                println!("am i here");
                 todo!() //ERROR: multiple returns not yet allowed
             } else {
                 Some(Return {
-                    value: rhs.first().cloned(), //do we need to clone this??
+                    value: rhs.pop(),//first().cloned(), //do we need to clone this??
                 })
             }
         }
 
         highlevel::Instr::Call(idx) => Some(Call {
             lhs,
-            func: Func(idx.into_inner()),
+            func: Func(idx.into_inner()), 
             args: rhs,
         }),
 
         highlevel::Instr::CallIndirect(fn_type, index) => {
+            assert_eq!(index.into_inner(), 0, "wasm mvp must always have a single table"); 
             // in call_indirect,
             // the last variable on the stack is the index value
             // the rest (till you collect all the needed parameters are arguments
-            // then what is index?? do we need it here???
             Some(CallIndirect {
                 lhs,
                 type_: fn_type.clone(), //do we need to clone??
@@ -995,29 +993,31 @@ pub fn wimplify_helper(
         }
 
         highlevel::Instr::Drop => {
-            //var_stack.pop();
             None
         }
 
-        highlevel::Instr::Select => {
-            let arg1 = rhs.pop().unwrap(); //cond  //wasm spec pg 71/155
+        highlevel::Instr::Select => { 
+            //rhs is in the right order so 
+            //rhs = [cond, if, else]
+            let arg3 = rhs.pop().unwrap(); //else  //wasm spec pg 71/155
             let arg2 = rhs.pop().unwrap(); //if
-            let arg3 = rhs.pop().unwrap(); //else
+            let arg1 = rhs.pop().unwrap(); //cond
             Some(If {
                 lhs,
                 label: None,
                 condition: arg1,
                 if_body: Body {
-                    instrs: None,
+                    instrs: Vec::new(),
                     result: Some(arg2),
                 },
                 else_body: Some(Body {
-                    instrs: None,
+                    instrs: Vec::new(),
                     result: Some(arg3),
                 }),
             })
         }
 
+        //TODO: flatten double match
         highlevel::Instr::Local(localop, local_ind) => {
             let local_var = Local(local_ind.into_inner());
             match localop {
@@ -1044,11 +1044,12 @@ pub fn wimplify_helper(
                 }
                 // like local set but also return argument -> top of stack
                 highlevel::LocalOp::Tee => {
+                    //println!("lhs is {:?}, ty is {:?}", lhs, ty);
                     if rhs.len() != 1 {
                         todo!() // ERROR!
                     }
                     let rhs = rhs.pop().unwrap();
-                    state.var_stack.push(rhs);
+                    state.var_stack.push(rhs); //check on this
                     Some(Assign {
                         lhs: local_var,
                         rhs,
@@ -1086,10 +1087,10 @@ pub fn wimplify_helper(
         highlevel::Instr::Load(loadop, memarg) => {
             //lhs needs to have one variable and so does rhs
             if lhs == None {
-                todo!(); //ERROR!
+                panic!("Every load produces a value"); //ERROR!
             }
             if rhs.len() != 1 {
-                todo!(); // ERROR!
+                panic!("Every load consumes a value"); // ERROR!
             }
             let lhs = lhs.unwrap();
             let rhs = rhs.pop().unwrap();
@@ -1106,6 +1107,7 @@ pub fn wimplify_helper(
             if rhs.len() != 2 {
                 todo!(); // ERROR!
             }
+            //println!("{:?}", );
             Some(Store {
                 op: *storeop,
                 memarg: *memarg,
@@ -1123,10 +1125,11 @@ pub fn wimplify_helper(
         }
 
         highlevel::Instr::MemoryGrow(ind) => {
+            assert_eq!(ind.into_inner(), 0, "wasm mvp only has single memory");
             if let Some(lhs) = lhs {
                 Some(MemoryGrow {
                     lhs,
-                    pages: Stack(ind.into_inner()),
+                    pages: rhs.pop().unwrap(), 
                 })
             } else {
                 todo!() // ERROR: lhs has to be a variable
@@ -1153,19 +1156,24 @@ pub fn wimplify_helper(
             }
         }
     };
+
     if let Some(result_instr) = result_instr {
         result_instrs.push(result_instr);
     }
 
-    if instrs.is_empty() {
-        Ok((result_instrs, state, instrs))
-    } else {
-        if lhs != None {
+    if !instrs.is_empty() {
+        if let Some(lhs) = lhs { 
             state.var_stack.push(Var::Stack(state.var_count));
-            state.var_count += 1;
+            if let Stack(_) = lhs {
+                state.var_count += 1;
+            }
         }
-        wimplify_helper(instrs, tys, result_instrs, state)
+        let res = wimplify_helper(instrs, tys, state).unwrap();
+        for inst in res {
+            result_instrs.push(inst); 
+        }
     }
+    Ok(result_instrs)
 }
 
 pub fn wimplify(
@@ -1175,10 +1183,9 @@ pub fn wimplify(
 ) -> Result<Vec<Instr>, String> {
     let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
 
-    let instrs = VecDeque::from_iter(instrs);
-    let tys = VecDeque::from_iter(tys);
-    let result = wimplify_helper(instrs, tys, Vec::new(), State::default()).unwrap();
-    let result_instrs = result.0;
+    let mut instrs = VecDeque::from_iter(instrs); //pass in iterator instead of vecdeque
+    let mut tys = VecDeque::from_iter(tys);
+    let result_instrs = wimplify_helper(&mut instrs, &mut tys, &mut State::default()).unwrap();
 
     Ok(result_instrs)
 }
@@ -1299,7 +1306,7 @@ mod test {
                     lhs: None,
                     label: Label(0),
                     body: Body {
-                        instrs: Some(vec![]),
+                        instrs: vec![],
                         result: None,
                     },
                 },
@@ -1310,7 +1317,7 @@ mod test {
                     lhs: Some(Stack(1)),
                     label: Label(0),
                     body: Body {
-                        instrs: Some(vec![]),
+                        instrs: vec![],
                         result: Some(Stack(0)),
                     },
                 },
@@ -1322,7 +1329,7 @@ mod test {
                     lhs: None,
                     label: Label(1),
                     body: Body {
-                        instrs: Some(vec![Assign { lhs: Stack(1), rhs: Stack(0) }]),
+                        instrs: vec![Assign { lhs: Stack(1), rhs: Stack(0) }],
                         result: None,
                     },
                 },
@@ -1335,10 +1342,10 @@ mod test {
                     condition: Stack(0),
                     label: None,
                     if_body: Body {
-                        instrs: Some(vec![Br {
+                        instrs: vec![Br {
                             target: Label(0),
                             value: None,
-                        }]),
+                        }],
                         result: None,
                     },
                     else_body: None,
@@ -1351,15 +1358,15 @@ mod test {
                     lhs: None,
                     label: Label(1),
                     body: Body {
-                        instrs: Some(vec![
+                        instrs: vec![
                             Block {
                                 lhs: Some(Stack(0)),
                                 label: Label(2),
                                 body: Body {
-                                    instrs: Some(vec![Const {
+                                    instrs: vec![Const {
                                         lhs: Stack(1),
                                         val: I32(7),
-                                    }]),
+                                    }],
                                     result: Some(Stack(1)),
                                 },
                             },
@@ -1367,7 +1374,7 @@ mod test {
                                 target: Label(1),
                                 value: None,
                             },
-                        ]),
+                        ],
                         result: None,
                     },
                 },
@@ -1433,7 +1440,7 @@ mod test {
                     lhs: None,
                     label: Label(0),
                     body: Body {
-                        instrs: Some(vec![]),
+                        instrs: vec![],
                         result: None,
                     },
                 },
@@ -1445,7 +1452,7 @@ mod test {
                     lhs: None,
                     label: Label(2),
                     body: Body {
-                        instrs: Some(vec![Assign { lhs: Stack(1), rhs: Stack(0) }]),
+                        instrs: vec![Assign { lhs: Stack(1), rhs: Stack(0) }],
                         result: Some(Stack(1)),
                     },
                 },
@@ -1732,6 +1739,31 @@ fn load_store() {
     }
 
     let module = Module::from_file("tests/wimpl/load_store/load_store.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    println!("{:?}", instrs); 
+    let actual = wimplify(instrs, func, &module).unwrap();
+
+    println!("\nACTUAL");
+    for instr in &actual {
+        println!("{}", instr);
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn load_store_qs() {
+    let path = "tests/wimpl/qs1/qs1.wimpl";
+    let expected = Instr::from_file(path).unwrap();
+
+    println!("EXPECTED");
+    for instr in &expected {
+        println!("{}", instr);
+    }
+
+    let module = Module::from_file("tests/wimpl/qs1/qs1.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
