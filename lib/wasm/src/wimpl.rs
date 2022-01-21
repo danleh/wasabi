@@ -138,6 +138,9 @@ impl fmt::Display for Body {
     }
 }
 
+/// Type abbreviation for internal nom parser result.
+type NomResult<'input, O> = IResult<&'input str, O>;
+
 /// Wimpl instructions make the following major changes over high-level Wasm:
 /// - Remove the evaluation/operand stack completely, every instruction takes
 /// explicit arguments and optionally produces a (in the Wasm MVP) single LHS.
@@ -279,7 +282,7 @@ impl Instr {
     }
 
     /// Top-level entry into the nom-parser of Wimpl instructions.
-    fn parse_nom(input: &str) -> IResult<&str, Instr> {
+    fn parse_nom(input: &str) -> NomResult<Instr> {
         use Instr::*;
 
         // Utility parsers, reused in the different instruction parsers below.
@@ -292,7 +295,7 @@ impl Instr {
         // All other parsers below only handle internal whitespace, i.e., they
         // assume initial whitespace is already consumed by the outer parser and
         // the input directly starts with the first non-whitespace token.
-        fn ws(input: &str) -> IResult<&str, ()> {
+        fn ws(input: &str) -> NomResult<()> {
             value(
                 // Always return ().
                 (),
@@ -304,35 +307,35 @@ impl Instr {
             )(input)
         }
 
-        fn var(input: &str) -> IResult<&str, Var> {
+        fn var(input: &str) -> NomResult<Var> {
             map_res(alphanumeric1, Var::from_str)(input)
         }
-        fn arg_single(input: &str) -> IResult<&str, Var> {
+        fn arg_single(input: &str) -> NomResult<Var> {
             delimited(pair(tag("("), ws), var, pair(ws, tag(")")))(input)
         }
-        fn arg_list(input: &str) -> IResult<&str, Vec<Var>> {
+        fn arg_list(input: &str) -> NomResult<Vec<Var>> {
             delimited(
                 pair(tag("("), ws),
                 separated_list0(tuple((ws, tag(","), ws)), var),
                 pair(ws, tag(")")),
             )(input)
         }
-        fn lhs(input: &str) -> IResult<&str, Var> {
+        fn lhs(input: &str) -> NomResult<Var> {
             // Include trailing whitespace in this parser, since LHS is always
             // followed by something else, so we don't need to put ws there.
             terminated(var, tuple((ws, tag("="), ws)))(input)
         }
-        fn label(input: &str) -> IResult<&str, Label> {
+        fn label(input: &str) -> NomResult<Label> {
             map_res(
                 take_while(|c: char| c == '@' || c.is_alphanum()),
                 Label::from_str,
             )(input)
         }
-        fn label_colon(input: &str) -> IResult<&str, Label> {
+        fn label_colon(input: &str) -> NomResult<Label> {
             // Same as with lhs: include trailing whitespace here.
             terminated(label, tuple((ws, tag(":"), ws)))(input)
         }
-        fn op(input: &str) -> IResult<&str, &str> {
+        fn op(input: &str) -> NomResult<&str> {
             take_while(|c: char| c.is_alphanum() || c == '.' || c == '_')(input)
         }
 
@@ -344,12 +347,12 @@ impl Instr {
 
         // The defaults of a memarg (if not given) depend on the natural alignment
         // of the memory instruction, hence this higher-order combinator.
-        fn memarg<'a>(op: impl MemoryOp + 'a) -> impl FnMut(&'a str) -> IResult<&'a str, Memarg> {
+        fn memarg<'a>(op: impl MemoryOp + 'a) -> impl FnMut(&'a str) -> NomResult<'a, Memarg> {
             let op = op.clone();
             // Same trick as for function types in call_indirect: Consume until beginning of argument list.
             map_res(take_until("("), move |s| Memarg::from_str(s, op))
         }
-        fn body(input: &str) -> IResult<&str, Body> {
+        fn body(input: &str) -> NomResult<Body> {
             map(
                 delimited(
                     pair(tag("{"), ws),
@@ -453,7 +456,7 @@ impl Instr {
 
         // Memarg parsing depends on result of previous LoadOp/StoreOp parsing.
         // This is easier to write in direct than in point-free style, so we do.
-        fn load(input: &str) -> IResult<&str, Instr> {
+        fn load(input: &str) -> NomResult<Instr> {
             let (input, lhs) = lhs(input)?;
             let (input, op) = map_res(op, LoadOp::from_str)(input)?;
             let (input, memarg) = memarg(op)(input)?;
@@ -468,7 +471,7 @@ impl Instr {
                 },
             ))
         }
-        fn store(input: &str) -> IResult<&str, Instr> {
+        fn store(input: &str) -> NomResult<Instr> {
             let (input, op) = map_res(op, StoreOp::from_str)(input)?;
             let (input, memarg) = memarg(op)(input)?;
             let (input, addr) = arg_single(input)?;
