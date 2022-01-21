@@ -1545,9 +1545,13 @@ mod test {
     fn macros() {
         let _ = wimpl!(g0 = f32.const 1.1);
         let _ = wimpl!(s2 = i32.add (s0, s1));
-        let _ = wimpl!(s3 = i32.load offset=3 (s0));
         let _ = wimpl!(call_indirect [ ] ->[] (s1) ());
+
+        // Tricky, because rustc lexes these tokens differently than we need to.
+        let _ = wimpl!(s3 = i32.load offset=3 (s0));
         let _ = wimpl!(@label0: block {});
+
+        // Multiple instructions:
         let _ = wimpls! {};
         let _ = wimpls! {
             s4 = @label2: loop {
