@@ -1,9 +1,11 @@
 use std::{
+    collections::VecDeque,
     fmt::{self, Write},
-    io::{self, ErrorKind, BufRead},
+    fs::File,
+    io::{self, BufRead, ErrorKind},
+    iter::FromIterator,
     path::Path,
     str::FromStr,
-    fs::File, collections::VecDeque, iter::FromIterator, 
 };
 
 use nom::{
@@ -16,7 +18,7 @@ use nom::{
     AsChar, Finish, IResult,
 };
 
-use crate::{highlevel::MemoryOp, BlockType, Val, ValType, types::InstructionType};
+use crate::{highlevel::MemoryOp, types::InstructionType, BlockType, Val, ValType};
 use crate::{
     highlevel::{self, Function, LoadOp, Module, NumericOp, StoreOp},
     types::types,
@@ -357,7 +359,10 @@ impl Instr {
                     separated_pair(separated_list0(ws, Instr::parse_nom), ws, opt(var)),
                     pair(ws, tag("}")),
                 ),
-                |(instrs, result)| Body { instrs: Some(instrs), result },
+                |(instrs, result)| Body {
+                    instrs: Some(instrs),
+                    result,
+                },
             )(input)
         }
 
@@ -420,22 +425,12 @@ impl Instr {
         );
 
         let return_ = map(
-            preceded(
-                tag("return"), 
-                opt(preceded(ws, arg_single))
-            ), 
-            |value| Return { value }
+            preceded(tag("return"), opt(preceded(ws, arg_single))),
+            |value| Return { value },
         );
 
         let call = map(
-            tuple((
-                opt(lhs),
-                tag("call"),
-                ws,
-                func,
-                ws,
-                arg_list
-            )),
+            tuple((opt(lhs), tag("call"), ws, func, ws, arg_list)),
             |(lhs, _, (), func, (), args)| Call { lhs, func, args },
         );
         let call_indirect = map(
@@ -493,20 +488,11 @@ impl Instr {
             ))
         }
 
-        let memory_size = map(
-            terminated(
-                lhs, 
-                tag("memory.size")
-            ), 
-            |lhs| MemorySize { lhs }
-        );
+        let memory_size = map(terminated(lhs, tag("memory.size")), |lhs| MemorySize {
+            lhs,
+        });
         let memory_grow = map(
-            tuple((
-                lhs,
-                tag("memory.grow"),
-                ws,
-                arg_single
-            )),
+            tuple((lhs, tag("memory.grow"), ws, arg_single)),
             |(lhs, _, (), pages)| MemoryGrow { lhs, pages },
         );
 
@@ -524,12 +510,7 @@ impl Instr {
         );
 
         let numeric = map(
-            tuple((
-                lhs, 
-                map_res(op, NumericOp::from_str),
-                ws,
-                arg_list
-            )),
+            tuple((lhs, map_res(op, NumericOp::from_str), ws, arg_list)),
             |(lhs, op, (), rhs)| Numeric { lhs, op, rhs },
         );
 
@@ -767,39 +748,37 @@ impl fmt::Display for Instr {
     }
 }
 
-
 pub struct State {
-    pub label_count: usize, 
-    pub var_count: usize, 
-    pub var_stack: Vec<Var>, 
+    pub label_count: usize,
+    pub var_count: usize,
+    pub var_stack: Vec<Var>,
 }
 
 impl State {
-    pub fn new () -> Self {
-        State{
+    pub fn new() -> Self {
+        State {
             label_count: 0,
             var_count: 0,
-            var_stack: Vec::new(), 
+            var_stack: Vec::new(),
         }
     }
 }
 
-pub fn wimplify_helper (
+pub fn wimplify_helper(
     mut instrs: VecDeque<&highlevel::Instr>,
-    mut tys: VecDeque<InstructionType>, 
-    mut result_instrs: Vec<Instr>,  
+    mut tys: VecDeque<InstructionType>,
+    mut result_instrs: Vec<Instr>,
     mut state: State,
 ) -> Result<(Vec<Instr>, State, VecDeque<&highlevel::Instr>), String> {
-    
-    use Var::*; 
-    use Instr::*; 
+    use Instr::*;
+    use Var::*;
 
-    let instr = instrs.pop_front().unwrap(); 
-    let ty = tys.pop_front().unwrap();  
+    let instr = instrs.pop_front().unwrap();
+    let ty = tys.pop_front().unwrap();
 
     let n_inputs = ty.inputs.len();
     let n_results = ty.results.len();
-    
+
     let mut lhs: Option<Var> = None;
     if n_results == 0 {
         lhs = None;
@@ -809,38 +788,35 @@ pub fn wimplify_helper (
         //Err("cannot return more than one value in wasm1.0"); //ERROR
     }
 
-    let mut rhs = Vec::new();    
+    let mut rhs = Vec::new();
     for _ in 0..n_inputs {
         rhs.push(state.var_stack.pop().unwrap());
     }
-        
+
     let result_instr: Option<Instr> = match instr {
-        
         highlevel::Instr::Unreachable => Some(Unreachable),
         highlevel::Instr::Nop => None,
 
         highlevel::Instr::Block(blocktype) => {
-            let curr_label_count = state.label_count; 
-            state.label_count += 1; 
+            let curr_label_count = state.label_count;
+            state.label_count += 1;
             let result = wimplify_helper(instrs.clone(), tys.clone(), Vec::new(), state).unwrap();
-            let block_body = result.0; 
+            let block_body = result.0;
 
             state = result.1;
-            instrs = result.2;         
-            
-            let btype = blocktype.0; 
-            Some(Block{
+            instrs = result.2;
+
+            let btype = blocktype.0;
+            Some(Block {
                 lhs,
                 label: Label(curr_label_count),
-                body: Body{
+                body: Body {
                     instrs: Some(block_body),
-                    result:   
-                    if let Some(_btype) = btype {
+                    result: if let Some(_btype) = btype {
                         Some(state.var_stack.pop().unwrap())
                     } else {
                         None
                     },
-
                 },
             })
         }
@@ -848,61 +824,57 @@ pub fn wimplify_helper (
         highlevel::Instr::Loop(_) => todo!(),
         highlevel::Instr::If(_) => todo!(),
         highlevel::Instr::Else => todo!(),
-        
-        highlevel::Instr::End => {
-            return Ok((result_instrs, state, instrs)); 
-        },
 
-        highlevel::Instr::Br(lab) => {
-            Some(Br{
-                target: Label(lab.into_inner()),
-                value: lhs,
-            })
-        },
-        
+        highlevel::Instr::End => {
+            return Ok((result_instrs, state, instrs));
+        }
+
+        highlevel::Instr::Br(lab) => Some(Br {
+            target: Label(lab.into_inner()),
+            value: lhs,
+        }),
+
         highlevel::Instr::BrIf(lab) => {
-            Some(If{
+            Some(If {
                 lhs,
-                label: None, 
+                label: None,
                 condition: rhs.pop().unwrap(), //var_stack.pop().unwrap(),
-                if_body: Body{ 
-                    instrs: Some(vec![Br{ 
-                                target: Label(lab.into_inner()), 
-                                value: None,  
-                            }]),
-                    result: None, 
+                if_body: Body {
+                    instrs: Some(vec![Br {
+                        target: Label(lab.into_inner()),
+                        value: None,
+                    }]),
+                    result: None,
                 },
                 else_body: None,
             })
-        },
+        }
 
-        highlevel::Instr::BrTable {table, default } => {
-            Some(BrTable{
+        highlevel::Instr::BrTable { table, default } => {
+            Some(BrTable {
                 idx: rhs.pop().unwrap(), //var_stack.pop().unwrap(),
                 table: table.iter().map(|x| Label(x.into_inner())).collect(),
                 default: Label(default.into_inner()),
                 value: lhs,
             })
-        },
+        }
 
         highlevel::Instr::Return => {
-            if rhs.len() > 1 { 
-                println!("am i here"); 
-                todo!() //ERROR: multiple returns not yet allowed 
+            if rhs.len() > 1 {
+                println!("am i here");
+                todo!() //ERROR: multiple returns not yet allowed
             } else {
-                Some(Return{
+                Some(Return {
                     value: rhs.first().cloned(), //do we need to clone this??
                 })
             }
-        },
+        }
 
-        highlevel::Instr::Call(idx) => {
-            Some(Call{
-                lhs,
-                func: Func(idx.into_inner()),
-                args: rhs,
-            })
-        },
+        highlevel::Instr::Call(idx) => Some(Call {
+            lhs,
+            func: Func(idx.into_inner()),
+            args: rhs,
+        }),
 
         highlevel::Instr::CallIndirect(fn_type, index) => {
             // in call_indirect,
@@ -915,151 +887,155 @@ pub fn wimplify_helper (
                 table_idx: rhs.pop().unwrap(),
                 args: rhs,
             })
-        },
-        
+        }
+
         highlevel::Instr::Drop => {
             //var_stack.pop();
             None
-        },
-        
+        }
+
         highlevel::Instr::Select => {
             let arg1 = rhs.pop().unwrap(); //cond  //wasm spec pg 71/155
-            let arg2 = rhs.pop().unwrap(); //if  
+            let arg2 = rhs.pop().unwrap(); //if
             let arg3 = rhs.pop().unwrap(); //else
-            Some(If{
+            Some(If {
                 lhs,
                 label: None,
                 condition: arg1,
-                if_body: Body{ instrs: None, result: Some(arg2) },
-                else_body: Some(Body{ instrs: None, result: Some(arg3) }),
-            })    
-        },
+                if_body: Body {
+                    instrs: None,
+                    result: Some(arg2),
+                },
+                else_body: Some(Body {
+                    instrs: None,
+                    result: Some(arg3),
+                }),
+            })
+        }
 
         highlevel::Instr::Local(localop, local_ind) => {
-            let local_var = Local(local_ind.into_inner());  
+            let local_var = Local(local_ind.into_inner());
             match localop {
-                // fetch value from local variable so RHS is local variable 
+                // fetch value from local variable so RHS is local variable
                 highlevel::LocalOp::Get => {
                     if let Some(lhs) = lhs {
-                        Some(Assign{
+                        Some(Assign {
                             lhs,
                             rhs: local_var,
                         })
                     } else {
-                        todo!() // ERROR: LHS should not be None 
-                    }                                
-                },
-                // set local variable so LHS is local variable 
+                        todo!() // ERROR: LHS should not be None
+                    }
+                }
+                // set local variable so LHS is local variable
                 highlevel::LocalOp::Set => {
                     if rhs.len() != 1 {
-                        todo!() // ERROR! 
-                    }        
-                    Some(Assign{
+                        todo!() // ERROR!
+                    }
+                    Some(Assign {
                         lhs: local_var,
-                        rhs : rhs.pop().unwrap(),
-                    })        
-                },
-                // like local set but also return argument -> top of stack 
+                        rhs: rhs.pop().unwrap(),
+                    })
+                }
+                // like local set but also return argument -> top of stack
                 highlevel::LocalOp::Tee => {
                     if rhs.len() != 1 {
-                        todo!() // ERROR! 
+                        todo!() // ERROR!
                     }
-                    let rhs = rhs.pop().unwrap(); 
-                    state.var_stack.push(rhs); 
-                    Some(Assign{
+                    let rhs = rhs.pop().unwrap();
+                    state.var_stack.push(rhs);
+                    Some(Assign {
                         lhs: local_var,
                         rhs,
-                    })        
-                },
-            }               
-        },
+                    })
+                }
+            }
+        }
 
         highlevel::Instr::Global(globalop, global_ind) => {
             // same as above
-            let global_var = Global(global_ind.into_inner());  
+            let global_var = Global(global_ind.into_inner());
             match globalop {
                 highlevel::GlobalOp::Get => {
                     if let Some(lhs) = lhs {
-                        Some(Assign{
+                        Some(Assign {
                             lhs,
                             rhs: global_var,
-                        })            
+                        })
                     } else {
-                        todo!() // ERROR 
+                        todo!() // ERROR
                     }
-                },
+                }
                 highlevel::GlobalOp::Set => {
                     if rhs.len() != 1 {
-                        todo!() // ERROR! 
+                        todo!() // ERROR!
                     }
-                    Some(Assign{
+                    Some(Assign {
                         lhs: global_var,
-                        rhs : rhs.pop().unwrap(),
-                    })        
-                },
+                        rhs: rhs.pop().unwrap(),
+                    })
+                }
             }
-        },
+        }
 
         highlevel::Instr::Load(loadop, memarg) => {
             //lhs needs to have one variable and so does rhs
             if lhs == None {
-                todo!(); //ERROR! 
+                todo!(); //ERROR!
             }
             if rhs.len() != 1 {
-                todo!(); // ERROR! 
+                todo!(); // ERROR!
             }
-            let lhs = lhs.unwrap(); 
+            let lhs = lhs.unwrap();
             let rhs = rhs.pop().unwrap();
-            Some(Load{
+            Some(Load {
                 lhs: lhs,
                 op: *loadop,
                 memarg: *memarg,
                 addr: rhs,
             })
-        },
+        }
 
         highlevel::Instr::Store(storeop, memarg) => {
             // two values need to be popped from the stack so len == 2
             if rhs.len() != 2 {
-                todo!(); // ERROR! 
+                todo!(); // ERROR!
             }
-            Some(Store{
+            Some(Store {
                 op: *storeop,
                 memarg: *memarg,
                 value: rhs.pop().unwrap(),
                 addr: rhs.pop().unwrap(),
             })
-        },
+        }
 
         highlevel::Instr::MemorySize(_) => {
             if let Some(lhs) = lhs {
-                Some(MemorySize{
-                    lhs,
-                })    
+                Some(MemorySize { lhs })
             } else {
                 todo!() // ERROR: lhs has to be a variable
             }
-        },
+        }
 
         highlevel::Instr::MemoryGrow(ind) => {
             if let Some(lhs) = lhs {
-                Some(MemoryGrow{
+                Some(MemoryGrow {
                     lhs,
                     pages: Stack(ind.into_inner()),
-                })    
+                })
             } else {
                 todo!() // ERROR: lhs has to be a variable
             }
-        },
-        
-        highlevel::Instr::Const(val) => { 
+        }
+
+        highlevel::Instr::Const(val) => {
             if let Some(lhs) = lhs {
                 Some(Const { lhs, val: *val })
             } else {
                 todo!(); //ERROR
             }
-        },
-        
+        }
+
         highlevel::Instr::Numeric(numop) => {
             if let Some(lhs) = lhs {
                 Some(Numeric {
@@ -1070,11 +1046,11 @@ pub fn wimplify_helper (
             } else {
                 todo!() //ERROR
             }
-        }, 
+        }
     };
     if let Some(result_instr) = result_instr {
         result_instrs.push(result_instr);
-    } 
+    }
 
     if instrs.is_empty() {
         Ok((result_instrs, state, instrs))
@@ -1085,20 +1061,19 @@ pub fn wimplify_helper (
         }
         wimplify_helper(instrs, tys, result_instrs, state)
     }
-} 
+}
 
 pub fn wimplify(
     instrs: &[highlevel::Instr],
     function: &Function,
     module: &Module,
 ) -> Result<Vec<Instr>, String> {
-   
     let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
 
     let instrs = VecDeque::from_iter(instrs);
-    let tys = VecDeque::from_iter(tys); 
-    let result = wimplify_helper(instrs, tys, Vec::new(), State::new()).unwrap(); 
-    let result_instrs = result.0; 
+    let tys = VecDeque::from_iter(tys);
+    let result = wimplify_helper(instrs, tys, Vec::new(), State::new()).unwrap();
+    let result_instrs = result.0;
 
     Ok(result_instrs)
 }
@@ -1446,9 +1421,10 @@ mod test {
     }
 }
 
-
 fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
-where P: AsRef<Path>, {
+where
+    P: AsRef<Path>,
+{
     let file = File::open(filename)?;
     Ok(io::BufReader::new(file).lines())
 }
@@ -1456,31 +1432,31 @@ where P: AsRef<Path>, {
 #[test]
 fn constant() {
     let path = "tests/wimpl/const/const.wimpl";
-    let mut expected = Vec::new(); 
+    let mut expected = Vec::new();
     if let Ok(lines) = read_lines(path) {
         for line in lines {
             if let Ok(line) = line {
-                let result = Instr::parse_nom(&line); 
+                let result = Instr::parse_nom(&line);
                 if let Ok(res) = result {
-                    expected.push(res.1);  
+                    expected.push(res.1);
                 }
             }
         }
     }
 
-    println!("EXPECTED");  
+    println!("EXPECTED");
     for instr in &expected {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
-    
+
     let module = Module::from_file("tests/wimpl/const/const.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = &func.code().unwrap().body[0..1];
     let actual = wimplify(instrs, func, &module).unwrap();
 
-    println!("\nACTUAL");  
+    println!("\nACTUAL");
     for instr in &actual {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
     println!();
 
@@ -1490,21 +1466,21 @@ fn constant() {
 #[test]
 fn add() {
     let path = "tests/wimpl/add/add.wimpl";
-    let mut expected = Vec::new(); 
+    let mut expected = Vec::new();
     if let Ok(lines) = read_lines(path) {
         for line in lines {
             if let Ok(line) = line {
-                let result = Instr::parse_nom(&line); 
+                let result = Instr::parse_nom(&line);
                 if let Ok(res) = result {
-                    expected.push(res.1);  
+                    expected.push(res.1);
                 }
             }
         }
     }
 
-    println!("EXPECTED");  
+    println!("EXPECTED");
     for instr in &expected {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
 
     let module = Module::from_file("tests/wimpl/add/add.wasm").unwrap();
@@ -1512,9 +1488,9 @@ fn add() {
     let instrs = &func.code().unwrap().body[0..3];
     let actual = wimplify(instrs, func, &module).unwrap();
 
-    println!("\nACTUAL");  
+    println!("\nACTUAL");
     for instr in &actual {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
     println!();
 
@@ -1522,23 +1498,23 @@ fn add() {
 }
 
 #[test]
-fn call_ind(){   
+fn call_ind() {
     let path = "tests/wimpl/call_ind/call_ind.wimpl";
-    let mut expected = Vec::new(); 
+    let mut expected = Vec::new();
     if let Ok(lines) = read_lines(path) {
         for line in lines {
             if let Ok(line) = line {
-                let result = Instr::parse_nom(&line); 
+                let result = Instr::parse_nom(&line);
                 if let Ok(res) = result {
-                    expected.push(res.1);  
+                    expected.push(res.1);
                 }
             }
         }
     }
 
-    println!("EXPECTED");  
+    println!("EXPECTED");
     for instr in &expected {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
 
     let module = Module::from_file("tests/wimpl/call_ind/call_ind.wasm").unwrap();
@@ -1546,9 +1522,9 @@ fn call_ind(){
     let instrs = &func.code().unwrap().body[0..2];
     let actual = wimplify(instrs, func, &module).unwrap();
 
-    println!("\nACTUAL");  
+    println!("\nACTUAL");
     for instr in &actual {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
     println!();
 
@@ -1558,21 +1534,21 @@ fn call_ind(){
 #[test]
 fn multiple_expr() {
     let path = "tests/wimpl/multiple_expr/multiple_expr.wimpl";
-    let mut expected = Vec::new(); 
+    let mut expected = Vec::new();
     if let Ok(lines) = read_lines(path) {
         for line in lines {
             if let Ok(line) = line {
-                let result = Instr::parse_nom(&line); 
+                let result = Instr::parse_nom(&line);
                 if let Ok(res) = result {
-                    expected.push(res.1);  
+                    expected.push(res.1);
                 }
             }
         }
     }
 
-    println!("EXPECTED");  
+    println!("EXPECTED");
     for instr in &expected {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
 
     let module = Module::from_file("tests/wimpl/multiple_expr/multiple_expr.wasm").unwrap();
@@ -1580,9 +1556,9 @@ fn multiple_expr() {
     let instrs = func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
 
-    println!("\nACTUAL");  
+    println!("\nACTUAL");
     for instr in &actual {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
     println!();
 
@@ -1592,21 +1568,21 @@ fn multiple_expr() {
 #[test]
 fn call() {
     let path = "tests/wimpl/call/call.wimpl";
-    let mut expected = Vec::new(); 
+    let mut expected = Vec::new();
     if let Ok(lines) = read_lines(path) {
         for line in lines {
             if let Ok(line) = line {
-                let result = Instr::parse_nom(&line); 
+                let result = Instr::parse_nom(&line);
                 if let Ok(res) = result {
-                    expected.push(res.1);  
+                    expected.push(res.1);
                 }
             }
         }
     }
 
-    println!("EXPECTED");  
+    println!("EXPECTED");
     for instr in &expected {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
 
     let module = Module::from_file("tests/wimpl/call/call.wasm").unwrap();
@@ -1614,34 +1590,33 @@ fn call() {
     let instrs = func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
 
-    println!("\nACTUAL");  
+    println!("\nACTUAL");
     for instr in &actual {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
     println!();
 
     assert_eq!(actual, expected);
-    
 }
 
 #[test]
 fn local() {
     let path = "tests/wimpl/local/local.wimpl";
-    let mut expected = Vec::new(); 
+    let mut expected = Vec::new();
     if let Ok(lines) = read_lines(path) {
         for line in lines {
             if let Ok(line) = line {
-                let result = Instr::parse_nom(&line); 
+                let result = Instr::parse_nom(&line);
                 if let Ok(res) = result {
-                    expected.push(res.1);  
+                    expected.push(res.1);
                 }
             }
         }
     }
 
-    println!("EXPECTED");  
+    println!("EXPECTED");
     for instr in &expected {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
 
     let module = Module::from_file("tests/wimpl/local/local.wasm").unwrap();
@@ -1649,34 +1624,33 @@ fn local() {
     let instrs = func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
 
-    println!("\nACTUAL");  
+    println!("\nACTUAL");
     for instr in &actual {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
     println!();
 
     assert_eq!(actual, expected);
-    
 }
 
 #[test]
 fn global() {
     let path = "tests/wimpl/global/global.wimpl";
-    let mut expected = Vec::new(); 
+    let mut expected = Vec::new();
     if let Ok(lines) = read_lines(path) {
         for line in lines {
             if let Ok(line) = line {
-                let result = Instr::parse_nom(&line); 
+                let result = Instr::parse_nom(&line);
                 if let Ok(res) = result {
-                    expected.push(res.1);  
+                    expected.push(res.1);
                 }
             }
         }
     }
 
-    println!("EXPECTED");  
+    println!("EXPECTED");
     for instr in &expected {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
 
     let module = Module::from_file("tests/wimpl/global/global.wasm").unwrap();
@@ -1684,34 +1658,33 @@ fn global() {
     let instrs = func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
 
-    println!("\nACTUAL");  
+    println!("\nACTUAL");
     for instr in &actual {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
     println!();
 
     assert_eq!(actual, expected);
-    
 }
 
 #[test]
 fn load_store() {
     let path = "tests/wimpl/load_store/load_store.wimpl";
-    let mut expected = Vec::new(); 
+    let mut expected = Vec::new();
     if let Ok(lines) = read_lines(path) {
         for line in lines {
             if let Ok(line) = line {
-                let result = Instr::parse_nom(&line); 
+                let result = Instr::parse_nom(&line);
                 if let Ok(res) = result {
-                    expected.push(res.1);  
+                    expected.push(res.1);
                 }
             }
         }
     }
 
-    println!("EXPECTED");  
+    println!("EXPECTED");
     for instr in &expected {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
 
     let module = Module::from_file("tests/wimpl/load_store/load_store.wasm").unwrap();
@@ -1719,34 +1692,33 @@ fn load_store() {
     let instrs = func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
 
-    println!("\nACTUAL");  
+    println!("\nACTUAL");
     for instr in &actual {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
     println!();
 
     assert_eq!(actual, expected);
-    
 }
 
 #[test]
 fn memory() {
     let path = "tests/wimpl/memory/memory.wimpl";
-    let mut expected = Vec::new(); 
+    let mut expected = Vec::new();
     if let Ok(lines) = read_lines(path) {
         for line in lines {
             if let Ok(line) = line {
-                let result = Instr::parse_nom(&line); 
+                let result = Instr::parse_nom(&line);
                 if let Ok(res) = result {
-                    expected.push(res.1);  
+                    expected.push(res.1);
                 }
             }
         }
     }
 
-    println!("EXPECTED");  
+    println!("EXPECTED");
     for instr in &expected {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
 
     let module = Module::from_file("tests/wimpl/memory/memory.wasm").unwrap();
@@ -1754,34 +1726,33 @@ fn memory() {
     let instrs = func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
 
-    println!("\nACTUAL");  
+    println!("\nACTUAL");
     for instr in &actual {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
     println!();
 
     assert_eq!(actual, expected);
-    
 }
 
 #[test]
 fn select() {
     let path = "tests/wimpl/select/select.wimpl";
-    let mut expected = Vec::new(); 
+    let mut expected = Vec::new();
     if let Ok(lines) = read_lines(path) {
         for line in lines {
             if let Ok(line) = line {
-                let result = Instr::parse_nom(&line); 
+                let result = Instr::parse_nom(&line);
                 if let Ok(res) = result {
-                    expected.push(res.1);  
+                    expected.push(res.1);
                 }
             }
         }
     }
 
-    println!("EXPECTED");  
+    println!("EXPECTED");
     for instr in &expected {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
 
     let module = Module::from_file("tests/wimpl/select/select.wasm").unwrap();
@@ -1789,34 +1760,33 @@ fn select() {
     let instrs = func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
 
-    println!("\nACTUAL");  
+    println!("\nACTUAL");
     for instr in &actual {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
     println!();
 
     assert_eq!(actual, expected);
-    
 }
 
 #[test]
 fn block() {
     let path = "tests/wimpl/block/block.wimpl";
-    let mut expected = Vec::new(); 
+    let mut expected = Vec::new();
     if let Ok(lines) = read_lines(path) {
         for line in lines {
             if let Ok(line) = line {
-                let result = Instr::parse_nom(&line); 
+                let result = Instr::parse_nom(&line);
                 if let Ok(res) = result {
-                    expected.push(res.1);  
+                    expected.push(res.1);
                 }
             }
         }
     }
 
-    println!("EXPECTED");  
+    println!("EXPECTED");
     for instr in &expected {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
 
     let module = Module::from_file("tests/wimpl/block/block.wasm").unwrap();
@@ -1824,14 +1794,13 @@ fn block() {
     let instrs = func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
 
-    println!("\nACTUAL");  
+    println!("\nACTUAL");
     for instr in &actual {
-        println!("{}", instr); 
+        println!("{}", instr);
     }
     println!();
 
     assert_eq!(actual, expected);
-    
 }
 
 #[test]
@@ -1869,7 +1838,6 @@ fn drop_wasm() {
     }];
     assert_eq!(actual, expected);
 }
-
 
 #[test]
 fn add_wasm() {
@@ -1947,4 +1915,3 @@ fn block_br() {
     // )];
     // assert_eq!(actual, expected);
 }
-
