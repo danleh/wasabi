@@ -721,7 +721,7 @@ impl fmt::Display for Instr {
                 }
                 write!(f, "if ({}) {}", condition, if_body)?;
                 if let Some(else_branch) = else_body {
-                    write!(f, "\nelse {}", else_branch)?;
+                    write!(f, " else {}", else_branch)?;
                 }
             }
 
