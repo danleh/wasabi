@@ -868,6 +868,18 @@ pub struct State {
     pub var_stack: Vec<Var>,
 }
 
+fn panic_if_size_lt (vec : &Vec<Var>, size : usize, error: &str) {
+    if vec.len() < size { 
+        panic!("hi"); 
+    }; 
+}
+
+fn panic_if_size_gt (vec : &Vec<Var>, size : usize, error: &str) {
+    if vec.len() > size { 
+        panic!("hi"); 
+    }; 
+}
+
 fn wimplify_helper(
     instrs: &mut VecDeque<&highlevel::Instr>,
     tys: &mut VecDeque<InstructionType>,
@@ -891,7 +903,7 @@ fn wimplify_helper(
             _ => Some(Var::Stack(state.stack_var_count)) 
         }
     } else {
-        return Err("cannot return more than one value in wasm1.0".into())
+        panic!("cannot return more than one value in wasm1.0")
     };
 
     let mut rhs = Vec::new();
@@ -910,19 +922,19 @@ fn wimplify_helper(
             
             // the variable returned by the block, if any is on top of the stack 
             // and was pushed there by the end instruction 
-            lhs = state.var_stack.pop(); 
-            let btype = blocktype.0;
+            let mut result = None; 
+            if let Some(_btype) = blocktype.0 {
+                panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
+                lhs = state.var_stack.pop();
+                result = Some(state.var_stack.pop().unwrap());             
+            }
             
             Some(Block {
                 lhs, 
                 label: Label(curr_label_count),
                 body: Body {
                     instrs: block_body,
-                    result: if let Some(_btype) = btype {
-                        Some(state.var_stack.pop().unwrap())
-                    } else {
-                        None
-                    },
+                    result,
                 },
             })
         }
@@ -940,19 +952,26 @@ fn wimplify_helper(
             return Ok(result_instrs);
         }
 
-        highlevel::Instr::Br(lab) => Some(Br {
-            target: Label(lab.into_inner()), //FIXME: wasm's relative labels -> absolute labels
-            value: rhs.pop(), //variable returned with the br
-        }),
+        highlevel::Instr::Br(_lab) => {
+            // FIXME: resolve relative labels in wasm into absolute labels in wimpl
+            let target = Label(0); 
+            Some(Br {
+                target,
+                value: rhs.pop(), //variable returned with the br
+            })
+        },
 
-        highlevel::Instr::BrIf(lab) => {
+        highlevel::Instr::BrIf(_lab) => {
+            //FIXME labels 
+            panic_if_size_lt(&rhs, 1, "if required a conditional statement"); 
+            let target = Label(0); 
             Some(If {
                 lhs,
                 label: None,
-                condition: rhs.pop().unwrap(), //TODO: vector -> option -> var : write function
+                condition: rhs.pop().unwrap(), 
                 if_body: Body {
                     instrs: vec![Br {
-                        target: Label(lab.into_inner()), //FIXME
+                        target, 
                         value: rhs.pop(), //variable returned with br if any 
                     }],
                     result: None,
@@ -961,9 +980,10 @@ fn wimplify_helper(
             })
         }
 
-        highlevel::Instr::BrTable { table, default } => {
+        highlevel::Instr::BrTable { table, default } => { 
+            panic_if_size_lt(&rhs, 1, "br_table requires a condition"); 
             Some(BrTable {
-                idx: rhs.pop().unwrap(), //var_stack.pop().unwrap(),
+                idx: rhs.pop().unwrap(), 
                 table: table.iter().map(|x| Label(x.into_inner())).collect(),
                 default: Label(default.into_inner()),
                 value: rhs.pop(), //variable returned with brtable if any
@@ -971,13 +991,10 @@ fn wimplify_helper(
         }
 
         highlevel::Instr::Return => {
-            if rhs.len() > 1 {
-                todo!() //ERROR: multiple returns not yet allowed
-            } else {
-                Some(Return {
-                    value: rhs.pop(),//first().cloned(), //do we need to clone this??
-                })
-            }
+            panic_if_size_gt(&rhs, 1, "multiple returns not yet allowed");
+            Some(Return {
+                value: rhs.pop(),
+            })
         }
 
         highlevel::Instr::Call(idx) => Some(Call {
@@ -991,21 +1008,21 @@ fn wimplify_helper(
             // in call_indirect,
             // the last variable on the stack is the index value
             // the rest (till you collect all the needed parameters are arguments
+            panic_if_size_lt(&rhs, 1, "call_indirect requires an index"); 
             Some(CallIndirect {
                 lhs,
-                type_: fn_type.clone(), //do we need to clone??
+                type_: fn_type.clone(), 
                 table_idx: rhs.pop().unwrap(),
                 args: rhs,
             })
         }
 
-        highlevel::Instr::Drop => {
-            None
-        }
+        highlevel::Instr::Drop => None, 
 
         highlevel::Instr::Select => { 
             //rhs is in the right order so 
             //rhs = [cond, if, else]
+            panic_if_size_lt(&rhs, 3, "select requires that there is a condition and two other values on the stack"); 
             let arg3 = rhs.pop().unwrap(); //else  //wasm spec pg 71/155
             let arg2 = rhs.pop().unwrap(); //if
             let arg1 = rhs.pop().unwrap(); //cond
@@ -1036,14 +1053,12 @@ fn wimplify_helper(
                             rhs: local_var,
                         })
                     } else {
-                        todo!() // ERROR: LHS should not be None
+                        panic!("local.get requires a local variable to save a value into");
                     }
                 }
                 // set local variable so LHS is local variable
                 highlevel::LocalOp::Set => {
-                    if rhs.len() != 1 {
-                        todo!() // ERROR!
-                    }
+                    panic_if_size_lt(&rhs, 1, "local.set expects a value on the stack"); 
                     Some(Assign {
                         lhs: local_var,
                         rhs: rhs.pop().unwrap(),
@@ -1051,12 +1066,9 @@ fn wimplify_helper(
                 }
                 // like local set but also return argument -> top of stack
                 highlevel::LocalOp::Tee => {
-                    //println!("lhs is {:?}, ty is {:?}", lhs, ty);
-                    if rhs.len() != 1 {
-                        todo!() // ERROR!
-                    }
+                    panic_if_size_lt(&rhs, 1, "local.tee expects a value on the stack"); 
                     let rhs = rhs.pop().unwrap();
-                    state.var_stack.push(rhs); //check on this
+                    state.var_stack.push(rhs); 
                     Some(Assign {
                         lhs: local_var,
                         rhs,
@@ -1076,13 +1088,11 @@ fn wimplify_helper(
                             rhs: global_var,
                         })
                     } else {
-                        todo!() // ERROR
+                        panic!("global.get requires a local variable to save a value into");
                     }
                 }
                 highlevel::GlobalOp::Set => {
-                    if rhs.len() != 1 {
-                        todo!() // ERROR!
-                    }
+                    panic_if_size_lt(&rhs, 1, "global.set expects a value on the stack"); 
                     Some(Assign {
                         lhs: global_var,
                         rhs: rhs.pop().unwrap(),
@@ -1094,10 +1104,10 @@ fn wimplify_helper(
         highlevel::Instr::Load(loadop, memarg) => {
             //lhs needs to have one variable and so does rhs
             if lhs == None {
-                panic!("Every load produces a value"); //ERROR!
+                panic!("Every load produces a value"); 
             }
             if rhs.len() != 1 {
-                panic!("Every load consumes a value"); // ERROR!
+                panic!("Every load consumes a value"); 
             }
             let lhs = lhs.unwrap();
             let rhs = rhs.pop().unwrap();
@@ -1110,11 +1120,7 @@ fn wimplify_helper(
         }
 
         highlevel::Instr::Store(storeop, memarg) => {
-            // two values need to be popped from the stack so len == 2
-            if rhs.len() != 2 {
-                todo!(); // ERROR!
-            }
-            //println!("{:?}", );
+            panic_if_size_lt(&rhs, 2, "store consumes two values from the stack"); 
             Some(Store {
                 op: *storeop,
                 memarg: *memarg,
@@ -1127,19 +1133,20 @@ fn wimplify_helper(
             if let Some(lhs) = lhs {
                 Some(MemorySize { lhs })
             } else {
-                todo!() // ERROR: lhs has to be a variable
+                panic!("memory size has to produce a value"); 
             }
         }
 
         highlevel::Instr::MemoryGrow(ind) => {
             assert_eq!(ind.into_inner(), 0, "wasm mvp only has single memory");
+            panic_if_size_lt(&rhs, 1, "memory_grow has to consume a value from stack"); 
             if let Some(lhs) = lhs {
                 Some(MemoryGrow {
                     lhs,
                     pages: rhs.pop().unwrap(), 
                 })
             } else {
-                todo!() // ERROR: lhs has to be a variable
+                panic!("memory grow has to produce a value"); 
             }
         }
 
@@ -1147,7 +1154,7 @@ fn wimplify_helper(
             if let Some(lhs) = lhs {
                 Some(Const { lhs, val: *val })
             } else {
-                todo!(); //ERROR
+                panic!("const has to produce a value "); 
             }
         }
 
@@ -1159,7 +1166,7 @@ fn wimplify_helper(
                     rhs,
                 })
             } else {
-                todo!() //ERROR
+                panic!("numeric op has to produce a value "); 
             }
         }
     };
