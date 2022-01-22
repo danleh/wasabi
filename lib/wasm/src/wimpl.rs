@@ -912,7 +912,9 @@ fn wimplify_helper(
     }
 
     let result_instr: Option<Instr> = match instr {
+
         highlevel::Instr::Unreachable => Some(Unreachable),
+
         highlevel::Instr::Nop => None,
 
         highlevel::Instr::Block(blocktype) => {
@@ -939,9 +941,77 @@ fn wimplify_helper(
             })
         }
 
-        highlevel::Instr::Loop(_) => todo!(),
-        highlevel::Instr::If(_) => todo!(),
-        highlevel::Instr::Else => todo!(),
+        highlevel::Instr::Loop(blocktype) => {
+            let curr_label_count = state.label_count;
+            state.label_count += 1;
+            let loop_body = wimplify_helper(instrs, tys, state).unwrap();
+            
+            // the variable returned by the block, if any is on top of the stack 
+            // and was pushed there by the end instruction 
+            let mut result = None; 
+            if let Some(_btype) = blocktype.0 {
+                panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
+                lhs = state.var_stack.pop();
+                result = Some(state.var_stack.pop().unwrap());             
+            }
+            
+            Some(Loop {
+                lhs, 
+                label: Label(curr_label_count),
+                body: Body {
+                    instrs: loop_body,
+                    result,
+                },
+            })
+        },
+
+        highlevel::Instr::If(blocktype) => {
+            panic_if_size_lt(&rhs, 1, "if consumes one value from stack as condition"); 
+
+            let curr_label_count = state.label_count;
+            state.label_count += 1;
+
+            let if_body = wimplify_helper(instrs, tys, state).unwrap();            
+            let mut if_return = None;
+            if let Some(_btype) = blocktype.0 {
+                panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
+                lhs = state.var_stack.pop();
+                if_return = Some(state.var_stack.pop().unwrap());             
+            }
+
+            // the lhs produced in else is actually the same as in the if branch
+            // hence, throw away the variable and decrement the stack variable counter
+            let else_body = wimplify_helper(instrs, tys, state).unwrap(); 
+            let mut else_return = None;
+            if let Some(_btype) = blocktype.0 {
+                panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
+                let _ = state.var_stack.pop();
+                else_return = Some(state.var_stack.pop().unwrap());             
+                state.stack_var_count -= 1; 
+            }
+
+            // validation that if-body and else-body have the same number of returns
+            // type checking validation already done 
+            match (if_return, else_return) {
+                (None, Some(_)) | (Some(_), None) => {
+                    panic!("if and else branch should either both return a value or None");
+                },
+                (None, None) | (Some(_), Some(_)) => (),
+            }; 
+
+            Some(If{
+                lhs,
+                label: Some(Label(curr_label_count)),
+                condition: rhs.pop().unwrap(),
+                if_body: Body { instrs: if_body, result: if_return },
+                else_body: Some(Body{ instrs: else_body, result: else_return}),
+            })
+            
+        },
+
+        highlevel::Instr::Else => {
+            panic!("else found outside an if branch")
+        },
 
         highlevel::Instr::End => {
             // if end has a return, push it to the stack since 
