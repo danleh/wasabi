@@ -891,6 +891,8 @@ fn wimplify_helper(
     let instr = instrs.pop_front().unwrap();
     let ty = tys.pop_front().unwrap();
 
+    println!("{} {:?}", instr, ty);
+
     let n_inputs = ty.inputs.len();
     let n_results = ty.results.len();
     let mut result_instrs = Vec::new();
@@ -1910,8 +1912,8 @@ fn select() {
 }
 
 #[test]
-fn block() {
-    let path = "tests/wimpl/block/block.wimpl";
+fn block_nested() {
+    let path = "tests/wimpl/block_nested/block.wimpl";
     let expected = Instr::from_file(path).unwrap();
 
     println!("EXPECTED");
@@ -1919,7 +1921,35 @@ fn block() {
         println!("{}", instr);
     }
 
-    let module = Module::from_file("tests/wimpl/block/block.wasm").unwrap();
+    println!("here");
+    let module = Module::from_file("tests/wimpl/block_nested/block.wasm").unwrap();
+    println!("here");
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module).unwrap();
+
+    println!("\nACTUAL");
+    for instr in &actual {
+        println!("{}", instr);
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn block_param() {
+    let path = "tests/wimpl/block_param/block.wimpl";
+    let expected = Instr::from_file(path).unwrap();
+
+    println!("EXPECTED");
+    for instr in &expected {
+        println!("{}", instr);
+    }
+
+    println!("here");
+    let module = Module::from_file("tests/wimpl/block_param/block.wasm").unwrap();
+    println!("here");
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
