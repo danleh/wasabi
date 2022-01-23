@@ -12,6 +12,8 @@ pub use crate::binary::DecodeState;
 mod error;
 pub use crate::error::{Error, ErrorKind};
 
+mod extensions;
+
 #[cfg(test)]
 mod tests;
 
