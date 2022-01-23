@@ -257,7 +257,7 @@ pub fn parse_module_with_offsets<R: io::Read>(
                             let table = module
                                 .tables
                                 .get_mut(u32_to_usize(table_index))
-                                .ok_or(IndexError::<Table>(table_index.into()))?;
+                                .ok_or_else(|| IndexError::<Table>(table_index.into()))?;
 
                             // TODO I am not sure this is correct.
                             if table.type_.0 != elem_type {
@@ -1364,7 +1364,7 @@ impl Types {
             .ok_or("missing type section")?
             .get(u32_to_usize(idx))
             .cloned()
-            .ok_or(IndexError::<FunctionType>(idx.into()))?)
+            .ok_or_else(|| IndexError::<FunctionType>(idx.into()))?)
     }
 }
 
