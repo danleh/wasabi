@@ -94,7 +94,7 @@ pub fn parse_module_with_offsets<R: io::Read>(
                             ))
                         }
                         ImportSectionEntryType::Global(ty) => module.globals.push(
-                            Global::new_imported(convert_global_ty(ty), import_module, import_name),
+                            Global::new_imported(convert_global_ty(ty)?, import_module, import_name),
                         ),
                         ImportSectionEntryType::Table(ty) => module.tables.push(
                             Table::new_imported(convert_table_ty(ty)?, import_module, import_name),
@@ -165,7 +165,7 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 module.globals.reserve(u32_to_usize(count));
                 for _ in 0..count {
                     let global = reader.read()?;
-                    let type_ = convert_global_ty(global.ty);
+                    let type_ = convert_global_ty(global.ty)?;
 
                     // Most initialization expressions have just a constant and the end instruction.
                     let mut init = Vec::with_capacity(2);
@@ -244,7 +244,7 @@ pub fn parse_module_with_offsets<R: io::Read>(
                         use wasmparser::ElementItem;
                         items.push(match item {
                             ElementItem::Func(idx) => idx.into(),
-                            ElementItem::Expr(_) => todo!(),
+                            ElementItem::Expr(_) => Err(UnsupportedError(WasmExtension::ReferenceTypes))?,
                         });
                     }
 
@@ -502,7 +502,7 @@ fn parse_body(
     for local in body.get_locals_reader()? {
         let (count, type_) = local?;
         for _ in 0..count {
-            locals.push(Local::new(convert_ty(type_)));
+            locals.push(Local::new(convert_ty(type_)?));
         }
     }
 
@@ -1147,16 +1147,14 @@ fn convert_table_ty(ty: wasmparser::TableType) -> Result<TableType, UnsupportedE
 fn convert_elem_ty(ty: wasmparser::Type) -> Result<ElemType, UnsupportedError> {
     use wasmparser::Type::*;
     match ty {
-        I32 => todo!(),
-        I64 => todo!(),
-        F32 => todo!(),
-        F64 => todo!(),
-        V128 => todo!(),
+        // TODO replace panic with custom error
+        I32 | I64 | F32 | F64 => panic!("only reftypes, not value types are allowed as element types"),
+        V128 => panic!("only reftypes, not value types are allowed as element types"),
         FuncRef => Ok(ElemType::Anyfunc),
-        ExternRef => todo!(),
-        ExnRef => todo!(),
-        Func => todo!(),
-        EmptyBlockType => unreachable!("table elements should have no block type"),
+        ExternRef => Err(UnsupportedError(WasmExtension::ReferenceTypes)),
+        ExnRef => Err(UnsupportedError(WasmExtension::ExceptionHandling)),
+        Func => panic!("only reftypes, not function types are allowed as element types"),
+        EmptyBlockType => panic!("only reftypes, not block types are allowed as element types"),
     }
 }
 
@@ -1164,54 +1162,52 @@ fn convert_block_ty(ty: wasmparser::TypeOrFuncType) -> Result<BlockType, Unsuppo
     use wasmparser::TypeOrFuncType::*;
     match ty {
         Type(wasmparser::Type::EmptyBlockType) => Ok(BlockType(None)),
-        Type(ty) => Ok(BlockType(Some(convert_ty(ty)))),
-        FuncType(_) => todo!(),
+        Type(ty) => Ok(BlockType(Some(convert_ty(ty)?))),
+        FuncType(_) => Err(UnsupportedError(WasmExtension::MultiValue)),
     }
 }
 
-fn convert_func_ty(ty: wasmparser::FuncType) -> FunctionType {
-    FunctionType {
-        params: ty
-            .params
+fn convert_func_ty(ty: wasmparser::FuncType) -> Result<FunctionType, UnsupportedError> {
+    fn convert_tys(tys: &[wasmparser::Type]) -> Result<Box<[ValType]>, UnsupportedError> {
+        let vec: Vec<ValType> = tys
             .iter()
             .cloned()
             .map(convert_ty)
-            .collect::<Vec<_>>()
-            .into(),
-        results: ty
-            .returns
-            .iter()
-            .cloned()
-            .map(convert_ty)
-            .collect::<Vec<_>>()
-            .into(),
+            .collect::<Result<_, _>>()?;
+        Ok(vec.into())
     }
+
+    Ok(FunctionType {
+        params: convert_tys(&ty.params)?,
+        results: convert_tys(&ty.returns)?,
+    })
 }
 
-fn convert_global_ty(ty: wasmparser::GlobalType) -> GlobalType {
-    GlobalType(
-        convert_ty(ty.content_type),
+fn convert_global_ty(ty: wasmparser::GlobalType) -> Result<GlobalType, UnsupportedError> {
+    Ok(GlobalType(
+        convert_ty(ty.content_type)?,
         if ty.mutable {
             Mutability::Mut
         } else {
             Mutability::Const
         },
-    )
+    ))
 }
 
-fn convert_ty(ty: wasmparser::Type) -> ValType {
+fn convert_ty(ty: wasmparser::Type) -> Result<ValType, UnsupportedError> {
     use wasmparser::Type;
     match ty {
-        Type::I32 => ValType::I32,
-        Type::I64 => ValType::I64,
-        Type::F32 => ValType::F32,
-        Type::F64 => ValType::F64,
-        Type::V128 => todo!(),
-        Type::FuncRef => todo!(),
-        Type::ExternRef => todo!(),
-        Type::ExnRef => todo!(),
-        Type::Func => todo!(),
-        Type::EmptyBlockType => unreachable!("this function should only be called with generic types, for block types this should already be covered"),
+        Type::I32 => Ok(ValType::I32),
+        Type::I64 => Ok(ValType::I64),
+        Type::F32 => Ok(ValType::F32),
+        Type::F64 => Ok(ValType::F64),
+        Type::V128 => Err(UnsupportedError(WasmExtension::Simd)),
+        Type::FuncRef => Err(UnsupportedError(WasmExtension::ReferenceTypes)),
+        Type::ExternRef => Err(UnsupportedError(WasmExtension::ReferenceTypes)),
+        Type::ExnRef => Err(UnsupportedError(WasmExtension::ExceptionHandling)),
+        // TODO replace with custom error
+        Type::Func => panic!("function types are not a valid value type"),
+        Type::EmptyBlockType => panic!("block types are not a valid value type"),
     }
 }
 
@@ -1340,22 +1336,25 @@ impl Types {
     }
 
     /// Next state, where the number of type entries is known, but nothing filled yet.
-    pub fn set_capacity(&mut self, count: u32) -> Result<(), &'static str> {
+    // TODO use own parseerror, not Box dyn Error.
+    pub fn set_capacity(&mut self, count: u32) -> Result<(), Box<dyn std::error::Error>> {
         let prev_state = self.0.replace(Vec::with_capacity(u32_to_usize(count)));
         match prev_state {
-            Some(_) => Err("duplicate type section"),
+            Some(_) => Err("duplicate type section".into()),
             None => Ok(()),
         }
     }
 
-    pub fn add(&mut self, ty: wasmparser::FuncType) -> Result<(), &'static str> {
+    // TODO use own parseerror, not Box dyn Error.
+    pub fn add(&mut self, ty: wasmparser::FuncType) -> Result<(), Box<dyn std::error::Error>> {
         self.0
             .as_mut()
             .ok_or("missing type section")?
-            .push(convert_func_ty(ty));
+            .push(convert_func_ty(ty)?);
         Ok(())
     }
 
+    // TODO use own parseerror, not Box dyn Error.
     pub fn get(&self, idx: u32) -> Result<FunctionType, Box<dyn std::error::Error>> {
         Ok(self
             .0

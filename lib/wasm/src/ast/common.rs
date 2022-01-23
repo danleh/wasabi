@@ -110,6 +110,7 @@ impl fmt::Display for BlockType {
 #[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct TableType(pub ElemType, pub Limits);
 
+// TODO remove once low-level parser is replaced by wasmparser.
 #[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ElemType {
     // only value in WASM version 1
@@ -117,6 +118,7 @@ pub enum ElemType {
     Anyfunc,
 }
 
+// TODO replace with just limits
 #[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MemoryType(pub Limits);
 
