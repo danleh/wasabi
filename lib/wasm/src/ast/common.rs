@@ -75,7 +75,10 @@ impl ValType {
 
 #[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]
 #[tag = 0x60]
-// TODO rename to FuncType
+// TODO implement interning, i.e., use basically Arc<(Vec, Vec)> to share all equal function types.
+// TODO would then also need to add params() and results() accessors
+// downside: no longer mutable, but right now isn't anyway, and also just not frequently that you
+// modify an existing function type.
 pub struct FunctionType {
     // Use Box instead of Vec to save the capacity field (smaller size of the struct), since
     // funtion types are immutable anyway (i.e., no dynamic adding/removing of input/result types).
@@ -111,6 +114,7 @@ impl fmt::Display for BlockType {
 pub struct TableType(pub ElemType, pub Limits);
 
 // TODO remove once low-level parser is replaced by wasmparser.
+// TODO or rename Anyref to Funcref
 #[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ElemType {
     // only value in WASM version 1

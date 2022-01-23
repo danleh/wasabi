@@ -22,6 +22,8 @@ pub struct Module {
 
     pub functions: Vec<Function>,
     pub globals: Vec<Global>,
+
+    // TODO make these options to ensure there is only a single one of each
     pub tables: Vec<Table>,
     pub memories: Vec<Memory>,
 
@@ -79,6 +81,7 @@ pub struct Memory {
     pub export: Vec<String>,
 }
 
+// TODO rename: Body, and CodeOrImport -> BodyOrImport
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Code {
     pub locals: Vec<Local>,
