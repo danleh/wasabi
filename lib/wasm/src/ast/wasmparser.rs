@@ -1,5 +1,4 @@
 use std::convert::TryInto;
-use std::io;
 
 use ordered_float::OrderedFloat;
 use rayon::prelude::*;
@@ -100,7 +99,7 @@ pub fn parse_module_with_offsets(bytes: &[u8]) -> Result<(Module, Offsets, Vec<P
     // State during module parsing.
     let mut types = Types::none();
     let mut imported_function_count = 0;
-    let mut current_code_idx = 0;
+    let mut current_code_index = 0;
     let mut section_offsets = Vec::with_capacity(16);
     let mut function_offsets = Vec::new();
     // Put the function bodies in their own vector, such that parallel processing of the
@@ -373,7 +372,7 @@ pub fn parse_module_with_offsets(bytes: &[u8]) -> Result<(Module, Offsets, Vec<P
                         let item = items_reader.read()?;
                         use wasmparser::ElementItem;
                         items.push(match item {
-                            ElementItem::Func(idx) => idx.into(),
+                            ElementItem::Func(index) => index.into(),
                             ElementItem::Expr(_) => Err(ParseIssue::unsupported(item_offset, WasmExtension::ReferenceTypes))?,
                         });
 
@@ -589,15 +588,15 @@ pub fn parse_module_with_offsets(bytes: &[u8]) -> Result<(Module, Offsets, Vec<P
                 function_bodies = Vec::with_capacity(u32_to_usize(count));
             }
             Payload::CodeSectionEntry(body) => {
-                let func_idx = imported_function_count + current_code_idx;
+                let func_index = imported_function_count + current_code_index;
 
-                function_offsets.push((func_idx.into(), body.range().start));
+                function_offsets.push((func_index.into(), body.range().start));
 
-                function_bodies.push((func_idx, body));
+                function_bodies.push((func_index, body));
 
-                current_code_idx += 1;
+                current_code_index += 1;
 
-                let last_code_entry = current_code_idx == code_entries_count;
+                let last_code_entry = current_code_index == code_entries_count;
                 if last_code_entry {
                     // Parse and convert to high-level instructions in parallel.
                     let function_bodies: Vec<_> = function_bodies
@@ -607,11 +606,11 @@ pub fn parse_module_with_offsets(bytes: &[u8]) -> Result<(Module, Offsets, Vec<P
                         })
                         .collect();
                     // Attach the converted function bodies to the function definitions (not parallel).
-                    for (func_idx, offset, code) in function_bodies {
+                    for (func_index, offset, code) in function_bodies {
                         let function = module
                             .functions
-                            .get_mut(u32_to_usize(func_idx))
-                            .ok_or(ParseIssue::index(offset, func_idx, "function"))?;
+                            .get_mut(u32_to_usize(func_index))
+                            .ok_or(ParseIssue::index(offset, func_index, "function"))?;
                         function.code = ImportOrPresent::Present(code?);
                     }
                 }
@@ -1394,15 +1393,15 @@ impl Types {
             .push(ty);
     }
 
-    pub fn get(&self, idx: u32, idx_offset: usize) -> Result<FunctionType, ParseError> {
+    pub fn get(&self, index: u32, index_offset: usize) -> Result<FunctionType, ParseError> {
         Ok(self
             .0
             .as_deref()
             // No type section == empty type vector.
             .unwrap_or(&[])
-            .get(u32_to_usize(idx))
+            .get(u32_to_usize(index))
             .cloned()
-            .ok_or(ParseIssue::index(idx_offset, idx, "type"))?)
+            .ok_or(ParseIssue::index(index_offset, index, "type"))?)
     }
 }
 
