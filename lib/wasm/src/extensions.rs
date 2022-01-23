@@ -15,6 +15,7 @@ pub enum WasmExtension {
     ThreadsAtomics,
     Memory64,
     ExceptionHandling,
+    ExtendedNameSection,
     TailCalls,
     TypeImports,
     MultiMemory,
@@ -30,12 +31,12 @@ impl WasmExtension {
             MultiValue => "multiple return/result values",
             ReferenceTypes => "reference types",
             BulkMemoryOperations => "bulk memory operations",
-
             Simd => "SIMD",
 
             ThreadsAtomics => "threads and atomics",
             Memory64 => "64-bit memory",
             ExceptionHandling => "exception handling",
+            ExtendedNameSection => "extended name section",
             TailCalls => "tail calls",
             TypeImports => "type imports",
             MultiMemory => "multiple memories",
@@ -52,12 +53,12 @@ impl WasmExtension {
             MultiValue => r"https://github.com/WebAssembly/multi-value",
             ReferenceTypes => r"https://github.com/WebAssembly/reference-types",
             BulkMemoryOperations => r"https://github.com/WebAssembly/bulk-memory-operations",
-
             Simd => r"https://github.com/WebAssembly/simd",
 
             ThreadsAtomics => r"https://github.com/WebAssembly/threads",
             Memory64 => r"https://github.com/WebAssembly/memory64",
             ExceptionHandling => r"https://github.com/WebAssembly/exception-handling",
+            ExtendedNameSection => r"https://github.com/WebAssembly/extended-name-section",
             TailCalls => r"https://github.com/WebAssembly/tail-call",
             TypeImports => r"https://github.com/WebAssembly/proposal-type-imports",
             MultiMemory => r"https://github.com/WebAssembly/multi-memory",
