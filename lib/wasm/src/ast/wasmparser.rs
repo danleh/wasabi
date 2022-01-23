@@ -1,5 +1,4 @@
 use std::convert::TryInto;
-use std::fmt;
 use std::io;
 
 use ordered_float::OrderedFloat;
@@ -8,26 +7,92 @@ use wasmparser::{
     ImportSectionEntryType, NameSectionReader, Naming, Parser, Payload, SectionReader, TypeDef,
 };
 
+use crate::extensions::WasmExtension;
 use crate::highlevel::{
     Code, Data, Element, Function, Global, GlobalOp, ImportOrPresent, Instr, LoadOp, Local,
     LocalOp, Memory, Module, NumericOp, StoreOp, Table,
 };
 use crate::lowlevel::{CustomSection, NameSection, Offsets, Section, SectionOffset, WithSize};
 use crate::{
-    BlockType, ElemType, FunctionType, GlobalType, Idx, Label, Limits, Memarg, MemoryType,
+    BlockType, ElemType, FunctionType, GlobalType, Label, Limits, Memarg, MemoryType,
     Mutability, RawCustomSection, TableType, Val, ValType,
 };
 
-pub fn parse_module_with_offsets<R: io::Read>(
-    mut reader: R,
-    // TODO once all "benign"/correct cases work, implement proper typed error.
-) -> Result<(Module, Offsets), Box<dyn std::error::Error>> {
-    // This reads the whole file into a vector first, so it's not streaming in the sense of
-    // "can start analysis before all bytes are received", but it is stream in the sense of
-    // "not necessary to parse a section fully before going to the next section" (although
-    // this is purely because of wasmparser's event-driven design.)
-    let mut buf = Vec::new();
-    reader.read_to_end(&mut buf)?;
+use self::error::{ParseError, ParseIssue};
+
+mod error {
+    use std::io;
+
+    use super::WasmExtension;
+
+    #[derive(Debug, thiserror::Error)]
+    #[error(transparent)]
+    pub struct ParseError(
+        // Put the actual error behind a box, to keep the size of this down to a single pointer.
+        Box<ParseIssue>
+    );
+
+    /// Used both for warnings (recoverable, i.e., parsing can continue afterwards) and errors
+    /// (not recoverable, i.e., parsing stops and does not return an AST).
+    #[derive(Debug, thiserror::Error)]
+    pub enum ParseIssue {
+        #[error("parse error at offset 0x{:x}: {}", .0.offset(), .0.message())]
+        Wasmparser(#[from] wasmparser::BinaryReaderError),
+
+        #[error("parse error at offset 0x{:x}: {}", offset, message)]
+        Message {
+            offset: usize,
+            message: &'static str
+        },
+
+        #[error("index out of bounds at offset 0x{:x}: invalid {} index {}", offset, index_space, index)]
+        Index {
+            offset: usize,
+            index: u32,
+            index_space: &'static str,
+        },
+
+        #[error("unsupported WebAssembly extension at offset 0x{:x}: {} (see also the repository at {})", offset, extension.name(), extension.url())]
+        Unsupported {
+            offset: usize,
+            extension: WasmExtension
+        },
+
+        #[error(transparent)]
+        Io(#[from] io::Error)
+    }
+
+    // Allow conversion of everything that can be converted into a `ParseIssue` also into the
+    // `ParseError` wrapper directly.
+    impl<T> From<T> for ParseError 
+    where T : Into<ParseIssue>
+    {
+        fn from(err: T) -> Self {
+            ParseError(Box::new(err.into()))
+        }
+    }
+
+    // Convenience constructors.
+    impl ParseIssue {
+        pub fn message(offset: usize, message: &'static str) -> Self {
+            ParseIssue::Message { offset, message }
+        }
+
+        pub fn index(offset: usize, index: u32, index_space: &'static str) -> Self {
+            ParseIssue::Index { offset, index, index_space }
+        }
+
+        pub fn unsupported(offset: usize, extension: WasmExtension) -> Self {
+            ParseIssue::Unsupported { offset, extension }
+        }
+    }
+}
+
+// The streaming API of wasmparser is a bit cumbersome, so implement reading from fully
+// resident bytes first. For an example of streaming parsing see:
+// https://docs.rs/wasmparser/latest/wasmparser/struct.Parser.html#examples
+pub fn parse_module_with_offsets(bytes: &[u8]) -> Result<(Module, Offsets, Vec<ParseIssue>), ParseError> {
+    let mut warnings = Vec::new();
 
     // The final module to return.
     let mut module = Module::default();
@@ -43,8 +108,7 @@ pub fn parse_module_with_offsets<R: io::Read>(
     let mut function_bodies = Vec::new();
     let mut code_entries_count = 0;
 
-    let offset = 0;
-    for payload in Parser::new(offset).parse_all(&buf) {
+    for payload in Parser::new(0).parse_all(&bytes) {
         match payload? {
             Payload::Version { .. } => {
                 // The version number is checked by wasmparser to always be 1.
@@ -56,196 +120,264 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 let discriminant = std::mem::discriminant(&Section::Type(Default::default()));
                 // This is the offset AFTER the section tag and size in bytes,
                 // but BEFORE the number of elements in the section.
-                section_offsets.push((discriminant, reader.range().start));
+                let offset = reader.range().start;
+                section_offsets.push((discriminant, offset));
 
-                let count = reader.get_count();
-                types.set_capacity(count)?;
-                for _ in 0..count {
-                    let ty = reader.read()?;
-                    match ty {
-                        TypeDef::Func(ty) => types.add(ty)?,
+                types.new_type_section(reader.get_count(), offset)?;
+
+                let mut type_offset = reader.original_position();
+                for _ in 0..reader.get_count() {
+                    let type_ = reader.read()?;
+                    match type_ {
+                        TypeDef::Func(ty) => {
+                            let ty = convert_func_ty(ty, type_offset)?;
+                            types.add(ty)
+                        },
                         TypeDef::Instance(_) | TypeDef::Module(_) => {
-                            Err(UnsupportedError(WasmExtension::ModuleLinking))?
+                            Err(ParseIssue::unsupported(type_offset, WasmExtension::ModuleLinking))?
                         }
                     }
+
+                    type_offset = reader.original_position();
                 }
             }
             Payload::ImportSection(mut reader) => {
+                // FIXME section order without discriminant
                 let discriminant = std::mem::discriminant(&Section::Import(Default::default()));
                 section_offsets.push((discriminant, reader.range().start));
 
-                let count = reader.get_count();
-                for _ in 0..count {
+                let mut import_offset = reader.original_position();
+                for _ in 0..reader.get_count() {
                     let import = reader.read()?;
 
                     let import_module = import.module.to_string();
                     let import_name = import
                         .field
-                        .ok_or(UnsupportedError(WasmExtension::ModuleLinking))?
+                        // The second import string was made optional in this extension, but we don't support it.
+                        .ok_or(ParseIssue::unsupported(import_offset, WasmExtension::ModuleLinking))?
                         .to_string();
 
                     match import.ty {
-                        ImportSectionEntryType::Function(ty_i) => {
+                        ImportSectionEntryType::Function(ty_index) => {
                             imported_function_count += 1;
                             module.functions.push(Function::new_imported(
-                                types.get(ty_i)?,
+                                // The `import_offset` is not actually the offset of the type index,
+                                // but wasmparser doesn't offer a way to get the latter.
+                                // This slightly misattributes potential errors, namely to the beginning of the import.
+                                types.get(ty_index, import_offset)?,
                                 import_module,
                                 import_name,
                             ))
                         }
                         ImportSectionEntryType::Global(ty) => module.globals.push(
-                            Global::new_imported(convert_global_ty(ty)?, import_module, import_name),
+                            // Same issue regarding `import_offset`.
+                            Global::new_imported(convert_global_ty(ty, import_offset)?, import_module, import_name),
                         ),
                         ImportSectionEntryType::Table(ty) => module.tables.push(
-                            Table::new_imported(convert_table_ty(ty)?, import_module, import_name),
+                            // Same issue regarding `import_offset`.
+                            Table::new_imported(convert_table_ty(ty, import_offset)?, import_module, import_name),
                         ),
                         ImportSectionEntryType::Memory(ty) => {
+                            // Same issue regarding `import_offset`.
                             module.memories.push(Memory::new_imported(
-                                convert_memory_ty(ty)?,
+                                convert_memory_ty(ty, import_offset)?,
                                 import_module,
                                 import_name,
                             ))
                         }
                         ImportSectionEntryType::Tag(_) => {
-                            Err(UnsupportedError(WasmExtension::ExceptionHandling))?
+                            // Same issue regarding `import_offset`.
+                            Err(ParseIssue::unsupported(import_offset, WasmExtension::ExceptionHandling))?
                         }
                         ImportSectionEntryType::Module(_) | ImportSectionEntryType::Instance(_) => {
-                            Err(UnsupportedError(WasmExtension::ModuleLinking))?
+                            // Same issue regarding `import_offset`.
+                            Err(ParseIssue::unsupported(import_offset, WasmExtension::ModuleLinking))?
                         }
                     }
+
+                    import_offset = reader.original_position();
                 }
             }
-            Payload::AliasSection(_) => Err(UnsupportedError(WasmExtension::ModuleLinking))?,
-            Payload::InstanceSection(_) => Err(UnsupportedError(WasmExtension::ModuleLinking))?,
+            Payload::AliasSection(reader) => Err(ParseIssue::unsupported(reader.range().start, WasmExtension::ModuleLinking))?,
+            Payload::InstanceSection(reader) => Err(ParseIssue::unsupported(reader.range().start, WasmExtension::ModuleLinking))?,
             Payload::FunctionSection(mut reader) => {
+                // FIXME section order without discriminant
                 let discriminant = std::mem::discriminant(&Section::Function(Default::default()));
                 section_offsets.push((discriminant, reader.range().start));
 
                 let count = reader.get_count();
                 module.functions.reserve(u32_to_usize(count));
-                for _ in 0..count {
-                    let ty_i = reader.read()?;
-                    let type_ = types.get(ty_i)?;
+
+                let mut offset = reader.original_position();
+                for _ in 0..reader.get_count() {
+                    let type_index = reader.read()?;
+                    let type_ = types.get(type_index, offset)?;
                     // Fill in the code of the function later with the code section.
                     module.functions.push(Function::new(type_, Code::new()));
+
+                    offset = reader.original_position();
                 }
             }
             Payload::TableSection(mut reader) => {
+                // FIXME section order without discriminant
                 let discriminant = std::mem::discriminant(&Section::Table(Default::default()));
                 section_offsets.push((discriminant, reader.range().start));
 
                 let count = reader.get_count();
                 module.tables.reserve(u32_to_usize(count));
-                for _ in 0..count {
-                    let type_ = reader.read()?;
-                    let type_ = convert_table_ty(type_)?;
-                    // Fill in the elements of the table later with the elem section.
-                    module.tables.push(Table::new(type_));
+
+                let mut offset = reader.original_position();
+                for _ in 0..reader.get_count() {
+                    let table_ty = reader.read()?;
+                    let table_ty = convert_table_ty(table_ty, offset)?;
+                    // Fill in the elements of the table later with the element section.
+                    module.tables.push(Table::new(table_ty));
+
+                    offset = reader.original_position();
                 }
             }
             Payload::MemorySection(mut reader) => {
+                // FIXME section order without discriminant
                 let discriminant = std::mem::discriminant(&Section::Memory(Default::default()));
                 section_offsets.push((discriminant, reader.range().start));
 
                 let count = reader.get_count();
                 module.memories.reserve(u32_to_usize(count));
-                for _ in 0..count {
-                    let type_ = reader.read()?;
-                    let type_ = convert_memory_ty(type_)?;
+
+                let mut offset = reader.original_position();
+                for _ in 0..reader.get_count() {
+                    let memory_ty = reader.read()?;
+                    let memory_ty = convert_memory_ty(memory_ty, offset)?;
                     // Fill in the data of the memory later with the data section.
-                    module.memories.push(Memory::new(type_));
+                    module.memories.push(Memory::new(memory_ty));
+
+                    offset = reader.original_position();
                 }
             }
-            Payload::TagSection(_) => Err(UnsupportedError(WasmExtension::ExceptionHandling))?,
+            Payload::TagSection(reader) => Err(ParseIssue::unsupported(reader.range().start, WasmExtension::ExceptionHandling))?,
             Payload::GlobalSection(mut reader) => {
+                // FIXME section order without discriminant
                 let discriminant = std::mem::discriminant(&Section::Global(Default::default()));
                 section_offsets.push((discriminant, reader.range().start));
 
                 let count = reader.get_count();
                 module.globals.reserve(u32_to_usize(count));
-                for _ in 0..count {
+
+                let mut offset = reader.original_position();
+                for _ in 0..reader.get_count() {
                     let global = reader.read()?;
-                    let type_ = convert_global_ty(global.ty)?;
+                    let type_ = convert_global_ty(global.ty, offset)?;
 
                     // Most initialization expressions have just a constant and the end instruction.
                     let mut init = Vec::with_capacity(2);
                     for op in global.init_expr.get_operators_reader() {
-                        init.push(convert_instr(op?, &types)?)
+                        // The `offset` will be slightly off, because it points to the beginning of the
+                        // whole global entry, not the initialization expression.
+                        init.push(convert_instr(op?, &types, offset)?)
                     }
 
-                    module.globals.push(Global::new(type_, init))
+                    module.globals.push(Global::new(type_, init));
+
+                    offset = reader.original_position();
                 }
             }
             Payload::ExportSection(mut reader) => {
+                // FIXME section order without discriminant
                 let discriminant = std::mem::discriminant(&Section::Export(Default::default()));
                 section_offsets.push((discriminant, reader.range().start));
 
-                let count = reader.get_count();
-                for _ in 0..count {
+                let mut export_offset = reader.original_position();
+                for _ in 0..reader.get_count() {
                     let export = reader.read()?;
+
                     let name = export.field.to_string();
-                    let idx = u32_to_usize(export.index);
+                    let index_u32 = export.index;
+                    let index = u32_to_usize(export.index);
+                    
                     use wasmparser::ExternalKind;
                     match export.kind {
                         ExternalKind::Function => module
                             .functions
-                            .get_mut(idx)
-                            .ok_or(IndexError::<Function>(idx.into()))?
+                            .get_mut(index)
+                            // The `export_offset` is not actually the offset of the function index,
+                            // but wasmparser doesn't offer a way to get the latter.
+                            // This slightly misattributes potential errors, namely to the beginning of the export.
+                            .ok_or(ParseIssue::index(export_offset, index_u32, "function"))?
                             .export
                             .push(name),
                         ExternalKind::Table => module
                             .tables
-                            .get_mut(idx)
-                            .ok_or(IndexError::<Table>(idx.into()))?
+                            .get_mut(index)
+                            // Same issue regarding `export_offset`.
+                            .ok_or(ParseIssue::index(export_offset, index_u32, "table"))?
                             .export
                             .push(name),
                         ExternalKind::Memory => module
                             .memories
-                            .get_mut(idx)
-                            .ok_or(IndexError::<Memory>(idx.into()))?
+                            .get_mut(index)
+                            // Same issue regarding `export_offset`.
+                            .ok_or(ParseIssue::index(export_offset, index_u32, "memory"))?
                             .export
                             .push(name),
                         ExternalKind::Global => module
                             .globals
-                            .get_mut(idx)
-                            .ok_or(IndexError::<Global>(idx.into()))?
+                            .get_mut(index)
+                            // Same issue regarding `export_offset`.
+                            .ok_or(ParseIssue::index(export_offset, index_u32, "global"))?
                             .export
                             .push(name),
                         ExternalKind::Tag => {
-                            Err(UnsupportedError(WasmExtension::ExceptionHandling))?
+                            // Same issue regarding `export_offset`.
+                            Err(ParseIssue::unsupported(export_offset, WasmExtension::ExceptionHandling))?
                         }
-                        ExternalKind::Type => Err(UnsupportedError(WasmExtension::TypeImports))?,
+                        ExternalKind::Type => {
+                            // Same issue regarding `export_offset`.
+                            Err(ParseIssue::unsupported(export_offset, WasmExtension::TypeImports))?
+                        },
                         ExternalKind::Module | ExternalKind::Instance => {
-                            Err(UnsupportedError(WasmExtension::ModuleLinking))?
+                            // Same issue regarding `export_offset`.
+                            Err(ParseIssue::unsupported(export_offset, WasmExtension::ModuleLinking))?
                         }
-                    }
+                    };
+
+                    export_offset = reader.original_position();
                 }
             }
             Payload::StartSection { func, range } => {
+                // FIXME section order without discriminant
                 let discriminant =
                     std::mem::discriminant(&Section::Start(WithSize(SectionOffset(0u32.into()))));
                 section_offsets.push((discriminant, range.start));
 
-                module.start = Some(func.into())
+                let prev_start = std::mem::replace(&mut module.start, Some(func.into()));
+                if let Some(_) = prev_start {
+                    Err(ParseIssue::message(range.start, "duplicate start section"))?
+                }
             }
             Payload::ElementSection(mut reader) => {
+                // FIXME section order without discriminant
                 let discriminant = std::mem::discriminant(&Section::Element(Default::default()));
                 section_offsets.push((discriminant, reader.range().start));
 
-                let count = reader.get_count();
-                for _ in 0..count {
+                let mut element_offset = reader.original_position();
+                for _ in 0..reader.get_count() {
                     let element = reader.read()?;
-                    let elem_type = convert_elem_ty(element.ty)?;
+                    let element_ty = convert_elem_ty(element.ty, element_offset)?;
 
-                    let items_reader = element.items.get_items_reader()?;
-                    let mut items = Vec::with_capacity(u32_to_usize(items_reader.get_count()));
-                    for item in items_reader {
-                        let item = item?;
+                    let mut items_reader = element.items.get_items_reader()?;
+                    let items_count = u32_to_usize(items_reader.get_count());
+                    let mut items = Vec::with_capacity(items_count);
+
+                    let mut item_offset = items_reader.original_position();
+                    for _ in 0..items_count {
+                        let item = items_reader.read()?;
                         use wasmparser::ElementItem;
                         items.push(match item {
                             ElementItem::Func(idx) => idx.into(),
-                            ElementItem::Expr(_) => Err(UnsupportedError(WasmExtension::ReferenceTypes))?,
+                            ElementItem::Expr(_) => Err(ParseIssue::unsupported(item_offset, WasmExtension::ReferenceTypes))?,
                         });
+
+                        item_offset = items_reader.original_position();
                     }
 
                     use wasmparser::ElementKind;
@@ -257,42 +389,45 @@ pub fn parse_module_with_offsets<R: io::Read>(
                             let table = module
                                 .tables
                                 .get_mut(u32_to_usize(table_index))
-                                .ok_or_else(|| IndexError::<Table>(table_index.into()))?;
+                                .ok_or(ParseIssue::index(element_offset, table_index, "table"))?;
 
-                            // TODO I am not sure this is correct.
-                            if table.type_.0 != elem_type {
-                                Err("type error: table and element not fitting together")?
+                            if table.type_.0 != element_ty {
+                                Err(ParseIssue::message(element_offset, "table and element type do not match"))?
                             }
 
                             // Most offset expressions are just a constant and the end instruction.
-                            let mut offset = Vec::with_capacity(2);
-                            for op in init_expr.get_operators_reader() {
-                                offset.push(convert_instr(op?, &types)?)
+                            let mut offset_expr = Vec::with_capacity(2);
+                            for op_offset in init_expr.get_operators_reader().into_iter_with_offsets() {
+                                let (op, offset) = op_offset?;
+                                offset_expr.push(convert_instr(op, &types, offset)?)
                             }
 
                             table.elements.push(Element {
-                                offset,
+                                offset: offset_expr,
                                 functions: items,
                             })
                         }
                         ElementKind::Passive => {
-                            Err(UnsupportedError(WasmExtension::BulkMemoryOperations))?
+                            Err(ParseIssue::unsupported(element_offset, WasmExtension::BulkMemoryOperations))?
                         }
                         ElementKind::Declared => {
-                            Err(UnsupportedError(WasmExtension::ReferenceTypes))?
+                            Err(ParseIssue::unsupported(element_offset, WasmExtension::ReferenceTypes))?
                         }
                     }
+
+                    element_offset = reader.original_position();
                 }
             }
-            Payload::DataCountSection { count: _, range: _ } => {
-                Err(UnsupportedError(WasmExtension::BulkMemoryOperations))?
+            Payload::DataCountSection { count: _, range } => {
+                Err(ParseIssue::unsupported(range.start, WasmExtension::BulkMemoryOperations))?
             }
             Payload::DataSection(mut reader) => {
+                // FIXME section order without discriminant
                 let discriminant = std::mem::discriminant(&Section::Data(Default::default()));
                 section_offsets.push((discriminant, reader.range().start));
 
-                let count = reader.get_count();
-                for _ in 0..count {
+                let mut data_offset = reader.original_position();
+                for _ in 0..reader.get_count() {
                     let data = reader.read()?;
 
                     use wasmparser::DataKind;
@@ -304,23 +439,26 @@ pub fn parse_module_with_offsets<R: io::Read>(
                             let memory = module
                                 .memories
                                 .get_mut(u32_to_usize(memory_index))
-                                .ok_or(IndexError::<Memory>(memory_index.into()))?;
+                                .ok_or(ParseIssue::index(data_offset, memory_index, "memory"))?;
 
                             // Most offset expressions are just a constant and the end instruction.
-                            let mut offset = Vec::with_capacity(2);
-                            for op in init_expr.get_operators_reader() {
-                                offset.push(convert_instr(op?, &types)?)
+                            let mut offset_expr = Vec::with_capacity(2);
+                            for op_offset in init_expr.get_operators_reader().into_iter_with_offsets() {
+                                let (op, offset) = op_offset?;
+                                offset_expr.push(convert_instr(op, &types, offset)?)
                             }
 
                             memory.data.push(Data {
-                                offset,
+                                offset: offset_expr,
                                 bytes: data.data.to_vec(),
                             })
                         }
                         DataKind::Passive => {
-                            Err(UnsupportedError(WasmExtension::BulkMemoryOperations))?
+                            Err(ParseIssue::unsupported(data_offset, WasmExtension::BulkMemoryOperations))?
                         }
                     }
+
+                    data_offset = reader.original_position();
                 }
             }
             Payload::CustomSection {
@@ -329,71 +467,83 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 data,
                 range,
             } => {
+                // FIXME section order without discriminant
                 let discriminant =
                     std::mem::discriminant(&Section::Custom(CustomSection::Name(NameSection {
                         subsections: Vec::new(),
                     })));
                 section_offsets.push((discriminant, range.start));
 
-                // TODO if name section cannot be parsed, do not error but warn and save as bytes
+                // If parts of the name section cannot be parsed, do not error but only collect warnings and continue.
 
-                let reader = NameSectionReader::new(data, data_offset)?;
-                for name_subsection in reader {
-                    let name_subsection = name_subsection?;
+                let mut reader = NameSectionReader::new(data, data_offset)?;
+                // TODO don't use ? anywhere here
+                // TODO record warning but continue parsing
+                while !reader.eof() {
+                    let offset = reader.original_position();
+                    let name_subsection = reader.read()?;
                     use wasmparser::Name;
                     match name_subsection {
                         Name::Module(name) => {
                             let prev = module.name.replace(name.get_name()?.to_string());
                             if let Some(_) = prev {
-                                Err("duplicate module name")?
+                                warnings.push(ParseIssue::message(offset, "duplicate module name"))
                             }
                         }
                         Name::Function(name_map) => {
                             let mut name_map = name_map.get_map()?;
                             for _ in 0..name_map.get_count() {
-                                let Naming { index, name } = name_map.read()?;
+                                let offset = name_map.original_position();
+
+                                let Naming { index: function_index, name } = name_map.read()?;
                                 module
                                     .functions
-                                    .get_mut(u32_to_usize(index))
-                                    .ok_or(IndexError::<Function>(index.into()))?
+                                    .get_mut(u32_to_usize(function_index))
+                                    .ok_or(ParseIssue::index(offset, function_index, "function"))?
                                     .name = Some(name.to_string());
                             }
                         }
                         Name::Local(indirect_name_map) => {
                             let mut indirect_name_map = indirect_name_map.get_indirect_map()?;
                             for _ in 0..indirect_name_map.get_indirect_count() {
+                                let offset = indirect_name_map.original_position();
+                                
                                 let indirect_naming = indirect_name_map.read()?;
-
-                                let function_idx = indirect_naming.indirect_index;
+                                let function_index = indirect_naming.indirect_index;
                                 let function = module
                                     .functions
-                                    .get_mut(u32_to_usize(function_idx))
-                                    .ok_or(IndexError::<Function>(function_idx.into()))?;
+                                    .get_mut(u32_to_usize(function_index))
+                                    .ok_or(ParseIssue::index(offset, function_index, "function"))?;
 
                                 let mut name_map = indirect_naming.get_map()?;
                                 for _ in 0..name_map.get_count() {
+                                    // FIXME param_or_local_name_mut might panic due to index error
+                                    // TODO refactor param_or_local_name
+                                    // let offset = name_map.original_position();
+
                                     let Naming {
-                                        index: local_idx,
+                                        index: local_index,
                                         name,
                                     } = name_map.read()?;
-                                    *function.param_or_local_name_mut(local_idx.into()) =
+                                    *function.param_or_local_name_mut(local_index.into()) =
                                         Some(name.to_string());
                                 }
                             }
                         }
-                        // TODO
                         Name::Label(_)
                         | Name::Type(_)
                         | Name::Table(_)
                         | Name::Memory(_)
                         | Name::Global(_)
                         | Name::Element(_)
-                        | Name::Data(_)
+                        | Name::Data(_) => {
+                            warnings.push(ParseIssue::unsupported(offset, WasmExtension::ExtendedNameSection))
+                        }
                         | Name::Unknown {
                             ty: _,
                             data: _,
                             range: _,
-                        } => println!("todo: name section parsing/conversion"),
+                        } => warnings.push(ParseIssue::message(offset, "unknown name subsection")),
                     }
                 }
             }
@@ -412,6 +562,7 @@ pub fn parse_module_with_offsets<R: io::Read>(
                         .cloned(),
                 };
 
+                // FIXME section order without discriminant
                 let discriminant = std::mem::discriminant(&Section::Custom(CustomSection::Raw(
                     RawCustomSection {
                         name: "".into(),
@@ -428,6 +579,7 @@ pub fn parse_module_with_offsets<R: io::Read>(
                 range,
                 size: _,
             } => {
+                // FIXME section order without discriminant
                 let discriminant = std::mem::discriminant(&Section::Code(Default::default()));
                 section_offsets.push((discriminant, range.start));
 
@@ -447,37 +599,37 @@ pub fn parse_module_with_offsets<R: io::Read>(
 
                 let last_code_entry = current_code_idx == code_entries_count;
                 if last_code_entry {
-                    // Parse and convert to high-levl instructions in parallel.
+                    // Parse and convert to high-level instructions in parallel.
                     let function_bodies: Vec<_> = function_bodies
                         .par_drain(..)
                         .map(|(i, body)| {
-                            // FIXME ugly hack to get error Send + Sync.
-                            (i, parse_body(body, &types).map_err(|e| e.to_string()))
+                            (i, body.range().start, parse_body(body, &types))
                         })
                         .collect();
-                    for (func_idx, code) in function_bodies {
+                    // Attach the converted function bodies to the function definitions (not parallel).
+                    for (func_idx, offset, code) in function_bodies {
                         let function = module
                             .functions
                             .get_mut(u32_to_usize(func_idx))
-                            .ok_or(IndexError::<Function>(func_idx.into()))?;
+                            .ok_or(ParseIssue::index(offset, func_idx, "function"))?;
                         function.code = ImportOrPresent::Present(code?);
                     }
                 }
             }
             Payload::ModuleSectionStart {
                 count: _,
-                range: _,
+                range,
                 size: _,
-            } => Err(UnsupportedError(WasmExtension::ModuleLinking))?,
+            } => Err(ParseIssue::unsupported(range.start, WasmExtension::ModuleLinking))?,
             Payload::ModuleSectionEntry {
                 parser: _,
-                range: _,
-            } => Err(UnsupportedError(WasmExtension::ModuleLinking))?,
+                range,
+            } => Err(ParseIssue::unsupported(range.start, WasmExtension::ModuleLinking))?,
             Payload::UnknownSection {
                 id: _,
                 contents: _,
-                range: _,
-            } => Err("unknown section")?,
+                range,
+            } => Err(ParseIssue::message(range.start, "unknown section"))?,
             Payload::End => {
                 // I don't understand what this end marker is for?
                 // If the module ended (i.e., the input buffer is exhausted),
@@ -491,19 +643,19 @@ pub fn parse_module_with_offsets<R: io::Read>(
         functions_code: function_offsets,
     };
 
-    Ok((module, offsets))
+    Ok((module, offsets, warnings))
 }
 
-fn parse_body(
-    body: wasmparser::FunctionBody,
-    types: &Types,
-) -> Result<Code, Box<dyn std::error::Error>> {
+fn parse_body(body: wasmparser::FunctionBody, types: &Types) -> Result<Code, ParseError> {
     let mut locals = Vec::new();
-    for local in body.get_locals_reader()? {
-        let (count, type_) = local?;
+    let mut locals_reader = body.get_locals_reader()?;
+    let mut offset = locals_reader.original_position();
+    for _ in 0..locals_reader.get_count() {
+        let (count, type_) = locals_reader.read()?;
         for _ in 0..count {
-            locals.push(Local::new(convert_ty(type_)?));
+            locals.push(Local::new(convert_val_ty(type_, offset)?));
         }
+        offset = locals_reader.original_position();
     }
 
     // There is roughly one instruction per byte, so reserve space for
@@ -511,8 +663,9 @@ fn parse_body(
     let body_byte_size = body.range().end - body.range().start;
     let mut instrs = Vec::with_capacity(body_byte_size);
 
-    for op in body.get_operators_reader()? {
-        instrs.push(convert_instr(op?, &types)?);
+    for op_offset in body.get_operators_reader()?.into_iter_with_offsets() {
+        let (op, offset) = op_offset?;
+        instrs.push(convert_instr(op, &types, offset)?);
     }
 
     Ok(Code {
@@ -521,20 +674,20 @@ fn parse_body(
     })
 }
 
-#[allow(unused)]
 fn convert_instr(
     op: wasmparser::Operator,
     types: &Types,
-) -> Result<Instr, Box<dyn std::error::Error>> {
+    offset: usize,
+) -> Result<Instr, ParseError> {
     use crate::highlevel::Instr::*;
     use wasmparser::Operator as wp;
     Ok(match op {
         wp::Unreachable => Unreachable,
         wp::Nop => Nop,
 
-        wp::Block { ty } => Block(convert_block_ty(ty)?),
-        wp::Loop { ty } => Loop(convert_block_ty(ty)?),
-        wp::If { ty } => If(convert_block_ty(ty)?),
+        wp::Block { ty } => Block(convert_block_ty(ty, offset+1)?),
+        wp::Loop { ty } => Loop(convert_block_ty(ty, offset+1)?),
+        wp::If { ty } => If(convert_block_ty(ty, offset+1)?),
         wp::Else => Else,
         wp::End => End,
 
@@ -544,7 +697,7 @@ fn convert_instr(
         | wp::Throw { index: _ }
         | wp::Rethrow { relative_depth: _ }
         | wp::Delegate { relative_depth: _ } => {
-            Err(UnsupportedError(WasmExtension::ExceptionHandling))?
+            Err(ParseIssue::unsupported(offset, WasmExtension::ExceptionHandling))?
         }
 
         wp::Br { relative_depth } => Br(Label(relative_depth)),
@@ -564,19 +717,22 @@ fn convert_instr(
         wp::Return => Return,
         wp::Call { function_index } => Call(function_index.into()),
         wp::CallIndirect { index, table_index } => {
-            CallIndirect(types.get(index)?, table_index.into())
+            if table_index != 0 {
+                Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?
+            }
+            CallIndirect(types.get(index, offset+1)?, 0usize.into())
         }
 
         wp::ReturnCall { function_index: _ }
         | wp::ReturnCallIndirect {
             index: _,
             table_index: _,
-        } => Err(UnsupportedError(WasmExtension::TailCalls))?,
+        } => Err(ParseIssue::unsupported(offset, WasmExtension::TailCalls))?,
 
         wp::Drop => Drop,
         wp::Select => Select,
 
-        wp::TypedSelect { ty } => Err(UnsupportedError(WasmExtension::ReferenceTypes))?,
+        wp::TypedSelect { ty: _ } => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
 
         wp::LocalGet { local_index } => Local(LocalOp::Get, local_index.into()),
         wp::LocalSet { local_index } => Local(LocalOp::Set, local_index.into()),
@@ -584,30 +740,30 @@ fn convert_instr(
         wp::GlobalGet { global_index } => Global(GlobalOp::Get, global_index.into()),
         wp::GlobalSet { global_index } => Global(GlobalOp::Set, global_index.into()),
 
-        wp::I32Load { memarg } => Load(LoadOp::I32Load, convert_memarg(memarg)?),
-        wp::I64Load { memarg } => Load(LoadOp::I64Load, convert_memarg(memarg)?),
-        wp::F32Load { memarg } => Load(LoadOp::F32Load, convert_memarg(memarg)?),
-        wp::F64Load { memarg } => Load(LoadOp::F64Load, convert_memarg(memarg)?),
-        wp::I32Load8S { memarg } => Load(LoadOp::I32Load8S, convert_memarg(memarg)?),
-        wp::I32Load8U { memarg } => Load(LoadOp::I32Load8U, convert_memarg(memarg)?),
-        wp::I32Load16S { memarg } => Load(LoadOp::I32Load16S, convert_memarg(memarg)?),
-        wp::I32Load16U { memarg } => Load(LoadOp::I32Load16U, convert_memarg(memarg)?),
-        wp::I64Load8S { memarg } => Load(LoadOp::I64Load8S, convert_memarg(memarg)?),
-        wp::I64Load8U { memarg } => Load(LoadOp::I64Load8U, convert_memarg(memarg)?),
-        wp::I64Load16S { memarg } => Load(LoadOp::I64Load16S, convert_memarg(memarg)?),
-        wp::I64Load16U { memarg } => Load(LoadOp::I64Load16U, convert_memarg(memarg)?),
-        wp::I64Load32S { memarg } => Load(LoadOp::I64Load32S, convert_memarg(memarg)?),
-        wp::I64Load32U { memarg } => Load(LoadOp::I64Load32U, convert_memarg(memarg)?),
+        wp::I32Load { memarg } => Load(LoadOp::I32Load, convert_memarg(memarg, offset+1)?),
+        wp::I64Load { memarg } => Load(LoadOp::I64Load, convert_memarg(memarg, offset+1)?),
+        wp::F32Load { memarg } => Load(LoadOp::F32Load, convert_memarg(memarg, offset+1)?),
+        wp::F64Load { memarg } => Load(LoadOp::F64Load, convert_memarg(memarg, offset+1)?),
+        wp::I32Load8S { memarg } => Load(LoadOp::I32Load8S, convert_memarg(memarg, offset+1)?),
+        wp::I32Load8U { memarg } => Load(LoadOp::I32Load8U, convert_memarg(memarg, offset+1)?),
+        wp::I32Load16S { memarg } => Load(LoadOp::I32Load16S, convert_memarg(memarg, offset+1)?),
+        wp::I32Load16U { memarg } => Load(LoadOp::I32Load16U, convert_memarg(memarg, offset+1)?),
+        wp::I64Load8S { memarg } => Load(LoadOp::I64Load8S, convert_memarg(memarg, offset+1)?),
+        wp::I64Load8U { memarg } => Load(LoadOp::I64Load8U, convert_memarg(memarg, offset+1)?),
+        wp::I64Load16S { memarg } => Load(LoadOp::I64Load16S, convert_memarg(memarg, offset+1)?),
+        wp::I64Load16U { memarg } => Load(LoadOp::I64Load16U, convert_memarg(memarg, offset+1)?),
+        wp::I64Load32S { memarg } => Load(LoadOp::I64Load32S, convert_memarg(memarg, offset+1)?),
+        wp::I64Load32U { memarg } => Load(LoadOp::I64Load32U, convert_memarg(memarg, offset+1)?),
 
-        wp::I32Store { memarg } => Store(StoreOp::I32Store, convert_memarg(memarg)?),
-        wp::I64Store { memarg } => Store(StoreOp::I64Store, convert_memarg(memarg)?),
-        wp::F32Store { memarg } => Store(StoreOp::F32Store, convert_memarg(memarg)?),
-        wp::F64Store { memarg } => Store(StoreOp::F64Store, convert_memarg(memarg)?),
-        wp::I32Store8 { memarg } => Store(StoreOp::I32Store8, convert_memarg(memarg)?),
-        wp::I32Store16 { memarg } => Store(StoreOp::I32Store16, convert_memarg(memarg)?),
-        wp::I64Store8 { memarg } => Store(StoreOp::I64Store8, convert_memarg(memarg)?),
-        wp::I64Store16 { memarg } => Store(StoreOp::I64Store16, convert_memarg(memarg)?),
-        wp::I64Store32 { memarg } => Store(StoreOp::I64Store32, convert_memarg(memarg)?),
+        wp::I32Store { memarg } => Store(StoreOp::I32Store, convert_memarg(memarg, offset+1)?),
+        wp::I64Store { memarg } => Store(StoreOp::I64Store, convert_memarg(memarg, offset+1)?),
+        wp::F32Store { memarg } => Store(StoreOp::F32Store, convert_memarg(memarg, offset+1)?),
+        wp::F64Store { memarg } => Store(StoreOp::F64Store, convert_memarg(memarg, offset+1)?),
+        wp::I32Store8 { memarg } => Store(StoreOp::I32Store8, convert_memarg(memarg, offset+1)?),
+        wp::I32Store16 { memarg } => Store(StoreOp::I32Store16, convert_memarg(memarg, offset+1)?),
+        wp::I64Store8 { memarg } => Store(StoreOp::I64Store8, convert_memarg(memarg, offset+1)?),
+        wp::I64Store16 { memarg } => Store(StoreOp::I64Store16, convert_memarg(memarg, offset+1)?),
+        wp::I64Store32 { memarg } => Store(StoreOp::I64Store32, convert_memarg(memarg, offset+1)?),
 
         // This is not well documented in wasmparser: `mem_byte` and `mem` essentially contain
         // the same information, it's just that mem_byte is the original (single) byte that was
@@ -616,13 +772,13 @@ fn convert_instr(
         // above 255, so ignore `mem_byte` here.
         wp::MemorySize { mem, mem_byte: _ } => {
             if mem != 0 {
-                Err(UnsupportedError(WasmExtension::MultiMemory))?
+                Err(ParseIssue::unsupported(offset, WasmExtension::MultiMemory))?
             }
             MemorySize(0u32.into())
         }
         wp::MemoryGrow { mem, mem_byte: _ } => {
             if mem != 0 {
-                Err(UnsupportedError(WasmExtension::MultiMemory))?
+                Err(ParseIssue::unsupported(offset, WasmExtension::MultiMemory))?
             }
             MemoryGrow(0u32.into())
         }
@@ -633,7 +789,7 @@ fn convert_instr(
         wp::F64Const { value } => Const(Val::F64(OrderedFloat(f64::from_bits(value.bits())))),
 
         wp::RefNull { ty: _ } | wp::RefIsNull | wp::RefFunc { function_index: _ } => {
-            Err(UnsupportedError(WasmExtension::ReferenceTypes))?
+            Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?
         }
 
         wp::I32Eqz => Numeric(NumericOp::I32Eqz),
@@ -764,7 +920,7 @@ fn convert_instr(
         | wp::I32Extend16S
         | wp::I64Extend8S
         | wp::I64Extend16S
-        | wp::I64Extend32S => Err(UnsupportedError(WasmExtension::SignExtensionOps))?,
+        | wp::I64Extend32S => Err(ParseIssue::unsupported(offset, WasmExtension::SignExtensionOps))?,
 
         wp::I32TruncSatF32S
         | wp::I32TruncSatF32U
@@ -773,7 +929,7 @@ fn convert_instr(
         | wp::I64TruncSatF32S
         | wp::I64TruncSatF32U
         | wp::I64TruncSatF64S
-        | wp::I64TruncSatF64U => Err(UnsupportedError(WasmExtension::NontrappingFloatToInt))?,
+        | wp::I64TruncSatF64U => Err(ParseIssue::unsupported(offset, WasmExtension::NontrappingFloatToInt))?,
 
         wp::MemoryInit { segment: _, mem: _ }
         | wp::DataDrop { segment: _ }
@@ -787,14 +943,14 @@ fn convert_instr(
         | wp::TableCopy {
             dst_table: _,
             src_table: _,
-        } => Err(UnsupportedError(WasmExtension::BulkMemoryOperations))?,
+        } => Err(ParseIssue::unsupported(offset, WasmExtension::BulkMemoryOperations))?,
 
-        wp::TableFill { table: _ } => Err(UnsupportedError(WasmExtension::ReferenceTypes))?,
+        wp::TableFill { table: _ } => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
 
         wp::TableGet { table: _ }
         | wp::TableSet { table: _ }
         | wp::TableGrow { table: _ }
-        | wp::TableSize { table: _ } => Err(UnsupportedError(WasmExtension::ReferenceTypes))?,
+        | wp::TableSize { table: _ } => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
 
         wp::MemoryAtomicNotify { memarg: _ }
         | wp::MemoryAtomicWait32 { memarg: _ }
@@ -863,7 +1019,7 @@ fn convert_instr(
         | wp::I64AtomicRmw8CmpxchgU { memarg: _ }
         | wp::I64AtomicRmw16CmpxchgU { memarg: _ }
         | wp::I64AtomicRmw32CmpxchgU { memarg: _ } => {
-            Err(UnsupportedError(WasmExtension::ThreadsAtomics))?
+            Err(ParseIssue::unsupported(offset, WasmExtension::ThreadsAtomics))?
         }
 
         wp::V128Load { memarg: _ }
@@ -1101,42 +1257,42 @@ fn convert_instr(
         | wp::F64x2ConvertLowI32x4S
         | wp::F64x2ConvertLowI32x4U
         | wp::F32x4DemoteF64x2Zero
-        | wp::F64x2PromoteLowF32x4 => Err(UnsupportedError(WasmExtension::Simd))?,
+        | wp::F64x2PromoteLowF32x4 => Err(ParseIssue::unsupported(offset, WasmExtension::Simd))?,
     })
 }
 
-fn convert_memarg(memarg: wasmparser::MemoryImmediate) -> Result<Memarg, UnsupportedError> {
+fn convert_memarg(memarg: wasmparser::MemoryImmediate, parser_offset: usize) -> Result<Memarg, ParseError> {
+    if memarg.memory != 0 {
+        Err(ParseIssue::unsupported(parser_offset, WasmExtension::MultiMemory))?
+    }
     let offset: u32 = memarg
         .offset
         .try_into()
-        .map_err(|_| UnsupportedError(WasmExtension::Memory64))?;
-    if memarg.memory != 0 {
-        Err(UnsupportedError(WasmExtension::MultiMemory))?
-    }
+        .map_err(|_| ParseIssue::unsupported(parser_offset, WasmExtension::Memory64))?;
     Ok(Memarg {
         alignment_exp: memarg.align,
         offset,
     })
 }
 
-fn convert_memory_ty(ty: wasmparser::MemoryType) -> Result<MemoryType, UnsupportedError> {
+fn convert_memory_ty(ty: wasmparser::MemoryType, offset: usize) -> Result<MemoryType, ParseError> {
     if ty.memory64 {
-        Err(UnsupportedError(WasmExtension::Memory64))?
+        Err(ParseIssue::unsupported(offset, WasmExtension::Memory64))?
     }
     Ok(MemoryType(Limits {
         initial_size: ty
             .initial
             .try_into()
-            .expect("guaranteed by wasmparser if !memory64"),
+            .expect("guaranteed u32 by wasmparser if !memory64"),
         max_size: ty
             .maximum
-            .map(|u| u.try_into().expect("guaranteed by wasmparser if !memory64")),
+            .map(|u| u.try_into().expect("guaranteed u32 by wasmparser if !memory64")),
     }))
 }
 
-fn convert_table_ty(ty: wasmparser::TableType) -> Result<TableType, UnsupportedError> {
+fn convert_table_ty(ty: wasmparser::TableType, offset: usize) -> Result<TableType, ParseError> {
     Ok(TableType(
-        convert_elem_ty(ty.element_type)?,
+        convert_elem_ty(ty.element_type, offset)?,
         Limits {
             initial_size: ty.initial,
             max_size: ty.maximum,
@@ -1144,38 +1300,39 @@ fn convert_table_ty(ty: wasmparser::TableType) -> Result<TableType, UnsupportedE
     ))
 }
 
-fn convert_elem_ty(ty: wasmparser::Type) -> Result<ElemType, UnsupportedError> {
+fn convert_elem_ty(ty: wasmparser::Type, offset: usize) -> Result<ElemType, ParseError> {
     use wasmparser::Type::*;
     match ty {
-        // TODO replace panic with custom error
-        I32 | I64 | F32 | F64 => panic!("only reftypes, not value types are allowed as element types"),
-        V128 => panic!("only reftypes, not value types are allowed as element types"),
+        I32 | I64 | F32 | F64 => Err(ParseIssue::message(offset, "only reftypes, not value types are allowed as table elements"))?,
+        V128 => Err(ParseIssue::message(offset, "only reftypes, not value types are allowed as table elements"))?,
         FuncRef => Ok(ElemType::Anyfunc),
-        ExternRef => Err(UnsupportedError(WasmExtension::ReferenceTypes)),
-        ExnRef => Err(UnsupportedError(WasmExtension::ExceptionHandling)),
-        Func => panic!("only reftypes, not function types are allowed as element types"),
-        EmptyBlockType => panic!("only reftypes, not block types are allowed as element types"),
+        ExternRef => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
+        ExnRef => Err(ParseIssue::unsupported(offset, WasmExtension::ExceptionHandling))?,
+        Func => Err(ParseIssue::message(offset, "only reftypes, not function types are allowed as table elements"))?,
+        EmptyBlockType => Err(ParseIssue::message(offset, "only reftypes, not block types are allowed as table elements"))?,
     }
 }
 
-fn convert_block_ty(ty: wasmparser::TypeOrFuncType) -> Result<BlockType, UnsupportedError> {
+fn convert_block_ty(ty: wasmparser::TypeOrFuncType, offset: usize) -> Result<BlockType, ParseError> {
     use wasmparser::TypeOrFuncType::*;
     match ty {
         Type(wasmparser::Type::EmptyBlockType) => Ok(BlockType(None)),
-        Type(ty) => Ok(BlockType(Some(convert_ty(ty)?))),
-        FuncType(_) => Err(UnsupportedError(WasmExtension::MultiValue)),
+        Type(ty) => Ok(BlockType(Some(convert_val_ty(ty, offset)?))),
+        FuncType(_) => Err(ParseIssue::unsupported(offset, WasmExtension::MultiValue))?,
     }
 }
 
-fn convert_func_ty(ty: wasmparser::FuncType) -> Result<FunctionType, UnsupportedError> {
-    fn convert_tys(tys: &[wasmparser::Type]) -> Result<Box<[ValType]>, UnsupportedError> {
+fn convert_func_ty(ty: wasmparser::FuncType, offset: usize) -> Result<FunctionType, ParseError> {
+    let convert_tys = |tys: &[wasmparser::Type]| -> Result<Box<[ValType]>, ParseError> {
         let vec: Vec<ValType> = tys
             .iter()
             .cloned()
-            .map(convert_ty)
+            // The `offset` for error reporting is not exactly correct, because it marks the start
+            // of the function type, not the individual wrong parameter/result type.
+            .map(|ty| convert_val_ty(ty, offset))
             .collect::<Result<_, _>>()?;
         Ok(vec.into())
-    }
+    };
 
     Ok(FunctionType {
         params: convert_tys(&ty.params)?,
@@ -1183,9 +1340,9 @@ fn convert_func_ty(ty: wasmparser::FuncType) -> Result<FunctionType, Unsupported
     })
 }
 
-fn convert_global_ty(ty: wasmparser::GlobalType) -> Result<GlobalType, UnsupportedError> {
+fn convert_global_ty(ty: wasmparser::GlobalType, offset: usize) -> Result<GlobalType, ParseError> {
     Ok(GlobalType(
-        convert_ty(ty.content_type)?,
+        convert_val_ty(ty.content_type, offset)?,
         if ty.mutable {
             Mutability::Mut
         } else {
@@ -1194,139 +1351,25 @@ fn convert_global_ty(ty: wasmparser::GlobalType) -> Result<GlobalType, Unsupport
     ))
 }
 
-fn convert_ty(ty: wasmparser::Type) -> Result<ValType, UnsupportedError> {
+fn convert_val_ty(ty: wasmparser::Type, offset: usize) -> Result<ValType, ParseError> {
     use wasmparser::Type;
     match ty {
         Type::I32 => Ok(ValType::I32),
         Type::I64 => Ok(ValType::I64),
         Type::F32 => Ok(ValType::F32),
         Type::F64 => Ok(ValType::F64),
-        Type::V128 => Err(UnsupportedError(WasmExtension::Simd)),
-        Type::FuncRef => Err(UnsupportedError(WasmExtension::ReferenceTypes)),
-        Type::ExternRef => Err(UnsupportedError(WasmExtension::ReferenceTypes)),
-        Type::ExnRef => Err(UnsupportedError(WasmExtension::ExceptionHandling)),
-        // TODO replace with custom error
-        Type::Func => panic!("function types are not a valid value type"),
-        Type::EmptyBlockType => panic!("block types are not a valid value type"),
-    }
-}
-
-// impl<T> AddErrInfo<T> for Result<T, BinaryReaderError> {
-//     fn add_err_info<GrammarElement>(self: Result<T, BinaryReaderError>, offset: usize) -> Result<T, Error> {
-//         self.map_err(|err|
-//             Error::with_source::<GrammarElement, _>(offset, ErrorKind::Leb128, err))
-//     }
-// }
-
-#[derive(Debug)]
-struct IndexError<T>(Idx<T>);
-
-impl<T: fmt::Debug> std::error::Error for IndexError<T> {}
-
-impl<T> fmt::Display for IndexError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let type_name = std::any::type_name::<T>().split("::").last().unwrap();
-        writeln!(
-            f,
-            "{} index out of bounds: {}",
-            type_name,
-            self.0.into_inner()
-        )
-    }
-}
-
-// TODO higher level error type that contains:
-//     offset: usize,
-
-#[derive(Debug)]
-struct UnsupportedError(WasmExtension);
-
-impl std::error::Error for UnsupportedError {}
-
-impl fmt::Display for UnsupportedError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(
-            f,
-            "This module uses a WebAssembly extension we don't support yet: {}\n\
-            See {} for more information about the extension.",
-            self.0.name(),
-            self.0.url(),
-        )
-    }
-}
-
-/// See https://webassembly.org/roadmap/ and https://github.com/WebAssembly/proposals.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum WasmExtension {
-    // Extensions that are already standardized and merged into WebAssembly 1.1:
-    NontrappingFloatToInt,
-    SignExtensionOps,
-    MultiValue,
-    ReferenceTypes,
-    BulkMemoryOperations,
-
-    // Standardized, but not yet merged into the core spec (as of 2021-10):
-    Simd,
-
-    // In rough decreasing order of stability (i.e., increasing order of
-    // breaking changes):
-    ThreadsAtomics,
-    Memory64,
-    ExceptionHandling,
-    TailCalls,
-    TypeImports,
-    MultiMemory,
-    ModuleLinking,
-}
-
-impl WasmExtension {
-    pub fn name(self) -> &'static str {
-        use WasmExtension::*;
-        match self {
-            NontrappingFloatToInt => "non-trapping float-to-int conversions",
-            SignExtensionOps => "sign-extension operators",
-            MultiValue => "multiple return/result values",
-            ReferenceTypes => "reference types",
-            BulkMemoryOperations => "bulk memory operations",
-
-            Simd => "SIMD",
-
-            ThreadsAtomics => "threads and atomics",
-            Memory64 => "64-bit memory",
-            ExceptionHandling => "exception handling",
-            TailCalls => "tail calls",
-            TypeImports => "type imports",
-            MultiMemory => "multiple memories",
-            ModuleLinking => "module linking",
-        }
-    }
-
-    #[rustfmt::skip]
-    pub fn url(self) -> &'static str {
-        use WasmExtension::*;
-        match self {
-            NontrappingFloatToInt => r"https://github.com/WebAssembly/nontrapping-float-to-int-conversions",
-            SignExtensionOps => r"https://github.com/WebAssembly/sign-extension-ops",
-            MultiValue => r"https://github.com/WebAssembly/multi-value",
-            ReferenceTypes => r"https://github.com/WebAssembly/reference-types",
-            BulkMemoryOperations => r"https://github.com/WebAssembly/bulk-memory-operations",
-
-            Simd => r"https://github.com/WebAssembly/simd",
-
-            ThreadsAtomics => r"https://github.com/WebAssembly/threads",
-            Memory64 => r"https://github.com/WebAssembly/memory64",
-            ExceptionHandling => r"https://github.com/WebAssembly/exception-handling",
-            TailCalls => r"https://github.com/WebAssembly/tail-call",
-            TypeImports => r"https://github.com/WebAssembly/proposal-type-imports",
-            MultiMemory => r"https://github.com/WebAssembly/multi-memory",
-            ModuleLinking => r"https://github.com/WebAssembly/module-linking",
-        }
+        Type::V128 => Err(ParseIssue::unsupported(offset, WasmExtension::Simd))?,
+        Type::FuncRef => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
+        Type::ExternRef => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
+        Type::ExnRef => Err(ParseIssue::unsupported(offset, WasmExtension::ExceptionHandling))?,
+        Type::Func => Err(ParseIssue::message(offset, "function types are not a valid value type"))?,
+        Type::EmptyBlockType => Err(ParseIssue::message(offset, "block types are not a valid value type"))?,
     }
 }
 
 // Wrapper for type map, to offer some convenience like:
 // - u32 indices (which we get from wasmparser) instead of usize (which Vec expects)
-// - checking that type section was present and type index is occupied
+// - checking that type section exists only a single time and type index is valid
 struct Types(Option<Vec<FunctionType>>);
 
 impl Types {
@@ -1336,37 +1379,33 @@ impl Types {
     }
 
     /// Next state, where the number of type entries is known, but nothing filled yet.
-    // TODO use own parseerror, not Box dyn Error.
-    pub fn set_capacity(&mut self, count: u32) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn new_type_section(&mut self, count: u32, type_section_offset: usize) -> Result<(), ParseError> {
         let prev_state = self.0.replace(Vec::with_capacity(u32_to_usize(count)));
         match prev_state {
-            Some(_) => Err("duplicate type section".into()),
+            Some(_) => Err(ParseIssue::message(type_section_offset, "duplicate type section"))?,
             None => Ok(()),
         }
     }
 
-    // TODO use own parseerror, not Box dyn Error.
-    pub fn add(&mut self, ty: wasmparser::FuncType) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn add(&mut self, ty: FunctionType) {
         self.0
             .as_mut()
-            .ok_or("missing type section")?
-            .push(convert_func_ty(ty)?);
-        Ok(())
+            .expect("type section should be present, we are in the process of parsing it")
+            .push(ty);
     }
 
-    // TODO use own parseerror, not Box dyn Error.
-    pub fn get(&self, idx: u32) -> Result<FunctionType, Box<dyn std::error::Error>> {
+    pub fn get(&self, idx: u32, idx_offset: usize) -> Result<FunctionType, ParseError> {
         Ok(self
             .0
-            .as_ref()
-            // TODO typed error
-            .ok_or("missing type section")?
+            .as_deref()
+            // No type section == empty type vector.
+            .unwrap_or(&[])
             .get(u32_to_usize(idx))
             .cloned()
-            .ok_or_else(|| IndexError::<FunctionType>(idx.into()))?)
+            .ok_or(ParseIssue::index(idx_offset, idx, "type"))?)
     }
 }
 
 fn u32_to_usize(u: u32) -> usize {
-    u.try_into().expect("u32 to usize should always succeed")
+    u.try_into().expect("u32 to usize always succeeds")
 }

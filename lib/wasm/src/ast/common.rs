@@ -76,6 +76,7 @@ impl ValType {
 #[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]
 #[tag = 0x60]
 // TODO implement interning, i.e., use basically Arc<(Vec, Vec)> to share all equal function types.
+// or use crate https://crates.io/crates/internment
 // TODO would then also need to add params() and results() accessors
 // downside: no longer mutable, but right now isn't anyway, and also just not frequently that you
 // modify an existing function type.

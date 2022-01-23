@@ -12,6 +12,7 @@ rayon = "1.5.1"
 serde = { version = "1", features = ["derive"] }
 ordered-float = "1"
 wasmparser = "0.81"
+thiserror = "1.0.30"
 
 [dev-dependencies]
 test_utilities = { path = "../test_utilities" }
