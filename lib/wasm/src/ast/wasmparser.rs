@@ -27,7 +27,7 @@ mod error {
     #[derive(Debug, thiserror::Error)]
     #[error(transparent)]
     pub struct ParseError(
-        // Put the actual error behind a box, to keep the size of this down to a single pointer.
+        // Put the actual error behind a box, to keep the size down to a single pointer.
         Box<ParseIssue>
     );
 
@@ -87,8 +87,9 @@ mod error {
     }
 }
 
-// The streaming API of wasmparser is a bit cumbersome, so implement reading from fully
-// resident bytes first. For an example of streaming parsing see:
+// The streaming API of wasmparser is a bit cumbersome, so implement reading 
+// from bytes fully resident in memory first. 
+// TODO Add a second API from streaming sources, i.e., `io::Read` like here:
 // https://docs.rs/wasmparser/latest/wasmparser/struct.Parser.html#examples
 pub fn parse_module_with_offsets(bytes: &[u8]) -> Result<(Module, Offsets, Vec<ParseIssue>), ParseError> {
     let mut warnings = Vec::new();
