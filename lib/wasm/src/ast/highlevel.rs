@@ -159,6 +159,7 @@ pub enum Instr {
 
     Return,
     Call(Idx<Function>),
+    // TODO remove table index, because we can only handle Idx=0 anyway.
     CallIndirect(FunctionType, Idx<Table>),
 
     Drop,
@@ -170,7 +171,7 @@ pub enum Instr {
     Load(LoadOp, Memarg),
     Store(StoreOp, Memarg),
 
-    /// TODO remove memory index, because we can only handle Idx=0 anyway.
+    // TODO remove memory index, because we can only handle Idx=0 anyway.
     MemorySize(Idx<Memory>),
     MemoryGrow(Idx<Memory>),
 
