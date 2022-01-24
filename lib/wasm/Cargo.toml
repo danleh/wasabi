@@ -22,3 +22,7 @@ criterion = "0.3"
 [[bench]]
 name = "parser"
 harness = false
+
+[profile.release]
+overflow-checks = true
+lto = true
