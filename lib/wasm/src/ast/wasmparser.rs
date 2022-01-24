@@ -467,85 +467,107 @@ pub fn parse_module_with_offsets(bytes: &[u8]) -> Result<(Module, Offsets, Vec<P
                 data,
                 range,
             } => {
-                // FIXME section order without discriminant
-                let discriminant =
-                    std::mem::discriminant(&Section::Custom(CustomSection::Name(NameSection {
-                        subsections: Vec::new(),
-                    })));
-                section_offsets.push((discriminant, range.start));
-
-                // If parts of the name section cannot be parsed, do not error but only collect warnings and continue.
-
-                let mut reader = NameSectionReader::new(data, data_offset)?;
-                // TODO don't use ? anywhere here
-                // TODO record warning but continue parsing
-                while !reader.eof() {
-                    let offset = reader.original_position();
-                    let name_subsection = reader.read()?;
-                    use wasmparser::Name;
-                    match name_subsection {
-                        Name::Module(name) => {
-                            let prev = module.name.replace(name.get_name()?.to_string());
-                            if let Some(_) = prev {
-                                warnings.push(ParseIssue::message(offset, "duplicate module name"))
-                            }
-                        }
-                        Name::Function(name_map) => {
-                            let mut name_map = name_map.get_map()?;
-                            for _ in 0..name_map.get_count() {
-                                let offset = name_map.original_position();
-
-                                let Naming { index: function_index, name } = name_map.read()?;
-                                module
-                                    .functions
-                                    .get_mut(u32_to_usize(function_index))
-                                    .ok_or(ParseIssue::index(offset, function_index, "function"))?
-                                    .name = Some(name.to_string());
-                            }
-                        }
-                        Name::Local(indirect_name_map) => {
-                            let mut indirect_name_map = indirect_name_map.get_indirect_map()?;
-                            for _ in 0..indirect_name_map.get_indirect_count() {
-                                let offset = indirect_name_map.original_position();
-                                
-                                let indirect_naming = indirect_name_map.read()?;
-                                let function_index = indirect_naming.indirect_index;
-                                let function = module
-                                    .functions
-                                    .get_mut(u32_to_usize(function_index))
-                                    .ok_or(ParseIssue::index(offset, function_index, "function"))?;
-
-                                let mut name_map = indirect_naming.get_map()?;
-                                for _ in 0..name_map.get_count() {
-                                    // FIXME param_or_local_name_mut might panic due to index error
-                                    // TODO refactor param_or_local_name
-                                    // let offset = name_map.original_position();
-
-                                    let Naming {
-                                        index: local_index,
-                                        name,
-                                    } = name_map.read()?;
-                                    *function.param_or_local_name_mut(local_index.into()) =
-                                        Some(name.to_string());
+                // If parts of the name section cannot be parsed, collect the issue as a warning and abort parsing the
+                // name section, but produce an AST for the rest of the module.
+                // To make it possible to use the `?` operator, wrap this into a closure.
+                let mut name_parsing = || -> Result<(), ParseIssue> {
+                    let mut reader = NameSectionReader::new(data, data_offset)?;
+                    while !reader.eof() {
+                        let offset = reader.original_position();
+                        let name_subsection = reader.read()?;
+                        use wasmparser::Name;
+                        match name_subsection {
+                            Name::Module(name) => {
+                                let prev = module.name.replace(name.get_name()?.to_string());
+                                if let Some(_) = prev {
+                                    warnings.push(ParseIssue::message(offset, "duplicate module name"))
                                 }
                             }
+                            Name::Function(name_map) => {
+                                let mut name_map = name_map.get_map()?;
+                                for _ in 0..name_map.get_count() {
+                                    let offset = name_map.original_position();
+    
+                                    let Naming { index: function_index, name } = name_map.read()?;
+                                    module
+                                        .functions
+                                        .get_mut(u32_to_usize(function_index))
+                                        .ok_or(ParseIssue::index(offset, function_index, "function"))?
+                                        .name = Some(name.to_string());
+                                }
+                            }
+                            Name::Local(indirect_name_map) => {
+                                let mut indirect_name_map = indirect_name_map.get_indirect_map()?;
+                                for _ in 0..indirect_name_map.get_indirect_count() {
+                                    let offset = indirect_name_map.original_position();
+                                    
+                                    let indirect_naming = indirect_name_map.read()?;
+                                    let function_index = indirect_naming.indirect_index;
+                                    let function = module
+                                        .functions
+                                        .get_mut(u32_to_usize(function_index))
+                                        .ok_or(ParseIssue::index(offset, function_index, "function"))?;
+    
+                                    let mut name_map = indirect_naming.get_map()?;
+                                    for _ in 0..name_map.get_count() {
+                                        // FIXME param_or_local_name_mut might panic due to index error
+                                        // TODO refactor param_or_local_name
+                                        // let offset = name_map.original_position();
+    
+                                        let Naming {
+                                            index: local_index,
+                                            name,
+                                        } = name_map.read()?;
+                                        *function.param_or_local_name_mut(local_index.into()) =
+                                            Some(name.to_string());
+                                    }
+                                }
+                            }
+                            Name::Label(_)
+                            | Name::Type(_)
+                            | Name::Table(_)
+                            | Name::Memory(_)
+                            | Name::Global(_)
+                            | Name::Element(_)
+                            | Name::Data(_) => {
+                                warnings.push(ParseIssue::unsupported(offset, WasmExtension::ExtendedNameSection))
+                            }
+                            | Name::Unknown {
+                                ty: _,
+                                data: _,
+                                range: _,
+                            } => warnings.push(ParseIssue::message(offset, "unknown name subsection")),
                         }
-                        Name::Label(_)
-                        | Name::Type(_)
-                        | Name::Table(_)
-                        | Name::Memory(_)
-                        | Name::Global(_)
-                        | Name::Element(_)
-                        | Name::Data(_) => {
-                            warnings.push(ParseIssue::unsupported(offset, WasmExtension::ExtendedNameSection))
-                        }
-                        | Name::Unknown {
-                            ty: _,
-                            data: _,
-                            range: _,
-                        } => warnings.push(ParseIssue::message(offset, "unknown name subsection")),
                     }
-                }
+
+                    Ok(())
+                };
+
+                // FIXME section order without discriminant
+                let discriminant = if let Err(name_parsing_aborted) = name_parsing() {
+                    // Add the warning that stopped parsing the name section as the final warning.
+                    warnings.push(name_parsing_aborted);
+
+                    // Add (unsuccessfully parsed) name section as raw custom section instead.
+                    let raw_custom_section = RawCustomSection {
+                        name: "name".to_string(),
+                        content: data.to_vec(),
+                        after: section_offsets
+                            .last()
+                            .map(|(section, _offset)| section)
+                            .cloned(),
+                    };
+                    let discriminant = std::mem::discriminant(&Section::Custom(CustomSection::Raw(RawCustomSection { name: "".to_string(), content: vec![], after: None})));
+                    module.custom_sections.push(raw_custom_section);
+                    discriminant
+                } else {
+                    std::mem::discriminant(&Section::Custom(CustomSection::Name(NameSection {
+                        subsections: Vec::new(),
+                    })))
+                };
+
+                // FIXME section order without discriminant
+                section_offsets.push((discriminant, range.start));
             }
             Payload::CustomSection {
                 name,
