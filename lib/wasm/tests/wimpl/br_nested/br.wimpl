@@ -1,0 +1,4 @@
+@label0: block {
+@label1: block { br @label0 } 
+@label2: block { br @label2 }
+}

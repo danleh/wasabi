@@ -866,6 +866,7 @@ pub struct State {
     pub label_count: usize,
     pub stack_var_count: usize,
     pub var_stack: Vec<Var>,
+    pub label_stack: Vec<usize>, 
 }
 
 fn panic_if_size_lt (vec : &Vec<Var>, size : usize, error: &str) {
@@ -891,7 +892,7 @@ fn wimplify_helper(
     let instr = instrs.pop_front().unwrap();
     let ty = tys.pop_front().unwrap();
 
-    println!("{} {:?}", instr, ty);
+    println!("{}, {:?}", instr, ty); 
 
     let n_inputs = ty.inputs.len();
     let n_results = ty.results.len();
@@ -920,8 +921,11 @@ fn wimplify_helper(
         highlevel::Instr::Nop => None,
 
         highlevel::Instr::Block(blocktype) => {
+            
             let curr_label_count = state.label_count;
             state.label_count += 1;
+            state.label_stack.push(curr_label_count); 
+
             let block_body = wimplify_helper(instrs, tys, state).unwrap();
             
             // the variable returned by the block, if any is on top of the stack 
@@ -932,7 +936,7 @@ fn wimplify_helper(
                 lhs = state.var_stack.pop();
                 result = Some(state.var_stack.pop().unwrap());             
             }
-            
+
             Some(Block {
                 lhs, 
                 label: Label(curr_label_count),
@@ -946,6 +950,8 @@ fn wimplify_helper(
         highlevel::Instr::Loop(blocktype) => {
             let curr_label_count = state.label_count;
             state.label_count += 1;
+            state.label_stack.push(curr_label_count); 
+
             let loop_body = wimplify_helper(instrs, tys, state).unwrap();
             
             // the variable returned by the block, if any is on top of the stack 
@@ -956,7 +962,7 @@ fn wimplify_helper(
                 lhs = state.var_stack.pop();
                 result = Some(state.var_stack.pop().unwrap());             
             }
-            
+
             Some(Loop {
                 lhs, 
                 label: Label(curr_label_count),
@@ -972,6 +978,7 @@ fn wimplify_helper(
 
             let curr_label_count = state.label_count;
             state.label_count += 1;
+            state.label_stack.push(curr_label_count); 
 
             let if_body = wimplify_helper(instrs, tys, state).unwrap();            
             let mut if_return = None;
@@ -1018,18 +1025,28 @@ fn wimplify_helper(
         highlevel::Instr::End => {
             // if end has a return, push it to the stack since 
             // the enclosing function will have to pop it back out
+            state.label_stack.pop(); 
             if let Some(lhs) = lhs {
                 state.var_stack.push(lhs); 
             }
             return Ok(result_instrs);
         }
 
-        highlevel::Instr::Br(_lab) => {
-            // FIXME: resolve relative labels in wasm into absolute labels in wimpl
-            let target = Label(0); 
+        highlevel::Instr::Br(lab) => {                        
+            println!("{:?}", state.label_stack);
+            println!("{}", state.label_stack.len()-lab.into_inner()-1);
+            let target = Label(state.label_stack[state.label_stack.len()-lab.into_inner()-1]); 
+            
+            // pop the return but then push it back in (if any) 
+            // because the stack remains unchanged by br  
+            let value = rhs.pop(); 
+            if let Some(val) = value {
+                state.var_stack.push(val); 
+            } 
+
             Some(Br {
                 target,
-                value: rhs.pop(), //variable returned with the br
+                value, //variable returned with the br
             })
         },
 
@@ -1921,9 +1938,7 @@ fn block_nested() {
         println!("{}", instr);
     }
 
-    println!("here");
     let module = Module::from_file("tests/wimpl/block_nested/block.wasm").unwrap();
-    println!("here");
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
@@ -1938,8 +1953,8 @@ fn block_nested() {
 }
 
 #[test]
-fn block_param() {
-    let path = "tests/wimpl/block_param/block.wimpl";
+fn br_simple() {
+    let path = "tests/wimpl/br_simple/br.wimpl";
     let expected = Instr::from_file(path).unwrap();
 
     println!("EXPECTED");
@@ -1947,9 +1962,55 @@ fn block_param() {
         println!("{}", instr);
     }
 
-    println!("here");
-    let module = Module::from_file("tests/wimpl/block_param/block.wasm").unwrap();
-    println!("here");
+    let module = Module::from_file("tests/wimpl/br_simple/br.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module).unwrap();
+
+    println!("\nACTUAL");
+    for instr in &actual {
+        println!("{}", instr);
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn br_nested_simple() {
+    let path = "tests/wimpl/br_nested_simple/br.wimpl";
+    let expected = Instr::from_file(path).unwrap();
+
+    println!("EXPECTED");
+    for instr in &expected {
+        println!("{}", instr);
+    }
+
+    let module = Module::from_file("tests/wimpl/br_nested_simple/br.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module).unwrap();
+
+    println!("\nACTUAL");
+    for instr in &actual {
+        println!("{}", instr);
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn br_nested() {
+    let path = "tests/wimpl/br_nested/br.wimpl";
+    let expected = Instr::from_file(path).unwrap();
+
+    println!("EXPECTED");
+    for instr in &expected {
+        println!("{}", instr);
+    }
+
+    let module = Module::from_file("tests/wimpl/br_nested/br.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
