@@ -621,6 +621,19 @@ pub fn parse_module_with_offsets(bytes: &[u8]) -> Result<(Module, Offsets, Vec<P
 
                 let last_code_entry = current_code_index == code_entries_count;
                 if last_code_entry {
+                    // Unfortunately, this parallel decoding of function bodies is horrendously slow on Windows 10
+                    // with a Ryzen 5950X, i.e., with two threads it's already 30% slower than single threaded (!)
+                    // and with 32 threads it is 2.7x (!) the runtime of single threaded. There is some contention
+                    // going on, but it's not yet clear why/what:
+                    // a) On the very same machine, under Ubuntu in a VM, it runs faster multi-threaded -> some OS specific
+                    // issue, e.g., memory allocator, thread creation etc? Note that most of the time in the parallel
+                    // version is spent in ntoskrnl.exe under Windows.
+                    // b) False sharing, because the Ryzen 5950X has larger L2/L3 cache lines than e.g., my laptop
+                    // Intel Core i7-7500U chip, where there is no slowdown!? I tried copying the function body
+                    // bytes and the iterators to have share-nothing, but that improved for the Ryzen only from 2.7x to
+                    // roughly 2.4x slowdown.
+                    // Since it works fine under Linux, I'll leave it like it is right now.
+
                     // Parse and convert to high-level instructions in parallel.
                     let function_bodies: Vec<_> = function_bodies
                         .par_drain(..)
