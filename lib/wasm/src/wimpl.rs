@@ -892,13 +892,27 @@ macro_rules! wimpls {
 pub(crate) use wimpl;
 pub(crate) use wimpls;
 
-#[derive(Default)]
 pub struct State {
     pub label_count: usize,
     pub stack_var_count: usize,
     pub var_stack: Vec<Var>,
     pub label_stack: Vec<usize>, 
     pub else_taken: bool, 
+    pub PARAM_LEN: usize, 
+}
+
+impl State {
+    fn new (param_len: usize) -> Self {
+        State {
+            label_count: 0,
+            stack_var_count: 0,
+            var_stack: Vec::new(),
+            label_stack: Vec::new(),
+            else_taken: false,
+            PARAM_LEN: param_len,  
+        }
+    }
+
 }
 
 fn panic_if_size_lt (vec : &[Var], size : usize, error: &str) {
@@ -918,6 +932,7 @@ fn wimplify_instrs(
     tys: &mut VecDeque<InstructionType>,
     state: &mut State,
 ) -> Result<Vec<Instr>, String> {
+    
     use Instr::*;
     use Var::*;
 
@@ -969,6 +984,7 @@ fn wimplify_instrs(
                 var_stack: Vec::new(),
                 label_stack: state.label_stack.clone(),
                 else_taken: false,
+                PARAM_LEN: state.PARAM_LEN, 
             }; 
 
             let block_body = wimplify_instrs(instrs, tys, &mut block_state).unwrap();
@@ -1216,64 +1232,75 @@ fn wimplify_instrs(
             })
         }
 
-        //TODO: flatten double match
-        highlevel::Instr::Local(localop, local_ind) => {
-            let local_var = Local(local_ind.into_inner());
-            match localop {
-                // fetch value from local variable so RHS is local variable
-                highlevel::LocalOp::Get => {
-                    if let Some(lhs) = lhs {
-                        Some(Assign {
-                            lhs,
-                            rhs: local_var,
-                        })
-                    } else {
-                        panic!("local.get requires a local variable to save a value into");
-                    }
-                }
-                // set local variable so LHS is local variable
-                highlevel::LocalOp::Set => {
-                    panic_if_size_lt(&rhs, 1, "local.set expects a value on the stack"); 
-                    Some(Assign {
-                        lhs: local_var,
-                        rhs: rhs.pop().unwrap(),
-                    })
-                }
-                // like local set but also return argument -> top of stack
-                highlevel::LocalOp::Tee => {
-                    panic_if_size_lt(&rhs, 1, "local.tee expects a value on the stack"); 
-                    let rhs = rhs.pop().unwrap();
-                    state.var_stack.push(rhs); 
-                    Some(Assign {
-                        lhs: local_var,
-                        rhs,
-                    })
-                }
+        highlevel::Instr::Local(highlevel::LocalOp::Get, local_ind) => {
+            let ind = local_ind.into_inner(); 
+            let local_var = if ind > state.PARAM_LEN - 1 {
+                Local(local_ind.into_inner()-state.PARAM_LEN)
+            } else {
+                Param(ind)
+            }; 
+
+            if let Some(lhs) = lhs {
+                Some(Assign {
+                    lhs,
+                    rhs: local_var,
+                })
+            } else {
+                panic!("local.get requires a local variable to save a value into");
             }
         }
 
-        highlevel::Instr::Global(globalop, global_ind) => {
-            // same as above
+        highlevel::Instr::Local(highlevel::LocalOp::Set, local_ind) => {
+            let ind = local_ind.into_inner(); 
+            let local_var = if ind > state.PARAM_LEN - 1 {
+                Local(local_ind.into_inner()-state.PARAM_LEN)
+            } else {
+                Param(ind)
+            };
+            
+            panic_if_size_lt(&rhs, 1, "local.set expects a value on the stack"); 
+            Some(Assign {
+                lhs: local_var,
+                rhs: rhs.pop().unwrap(),
+            })            
+        }
+
+        highlevel::Instr::Local(highlevel::LocalOp::Tee, local_ind) => {
+            let ind = local_ind.into_inner(); 
+            let local_var = if ind > state.PARAM_LEN - 1 {
+                Local(local_ind.into_inner()-state.PARAM_LEN)
+            } else {
+                Param(ind)
+            };
+            
+            panic_if_size_lt(&rhs, 1, "local.tee expects a value on the stack"); 
+            let rhs = rhs.pop().unwrap();
+            state.var_stack.push(rhs); 
+            Some(Assign {
+                lhs: local_var,
+                rhs,
+            })
+        }
+
+        highlevel::Instr::Global(highlevel::GlobalOp::Get, global_ind) => {
             let global_var = Global(global_ind.into_inner());
-            match globalop {
-                highlevel::GlobalOp::Get => {
-                    if let Some(lhs) = lhs {
-                        Some(Assign {
-                            lhs,
-                            rhs: global_var,
-                        })
-                    } else {
-                        panic!("global.get requires a local variable to save a value into");
-                    }
-                }
-                highlevel::GlobalOp::Set => {
-                    panic_if_size_lt(&rhs, 1, "global.set expects a value on the stack"); 
-                    Some(Assign {
-                        lhs: global_var,
-                        rhs: rhs.pop().unwrap(),
-                    })
-                }
+            if let Some(lhs) = lhs {
+                Some(Assign {
+                    lhs,
+                    rhs: global_var,
+                })
+            } else {
+                panic!("global.get requires a local variable to save a value into");
             }
+        }
+
+        highlevel::Instr::Global(highlevel::GlobalOp::Set, global_ind) => {
+            let global_var = Global(global_ind.into_inner());
+            panic_if_size_lt(&rhs, 1, "global.set expects a value on the stack"); 
+            Some(Assign {
+                lhs: global_var,
+                rhs: rhs.pop().unwrap(),
+            })
         }
 
         highlevel::Instr::Load(loadop, memarg) => {
@@ -1375,19 +1402,17 @@ pub fn wimplify(
     module: &Module,
 ) -> Result<Function, String> {
 
-    use FunctionName::*; 
-
     let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
     let mut instrs = VecDeque::from_iter(instrs); //pass in iterator instead of vecdeque
     let mut tys = VecDeque::from_iter(tys);
-    let result_instrs = wimplify_instrs(&mut instrs, &mut tys, &mut State::default()).unwrap();
+    let result_instrs = wimplify_instrs(&mut instrs, &mut tys, &mut State::new(function.type_.params.len())).unwrap();
     
     let name = if let Some(name) = &function.name {
-        Name(name.clone())
+        FunctionName::Name(name.clone())
     } else {
         unsafe{
             FN_COUNTER += 1;    
-            Generic(Func(FN_COUNTER as usize))
+            FunctionName::Generic(Func(FN_COUNTER as usize))
         }
     }; 
 
@@ -1781,7 +1806,6 @@ fn test (path_wimpl: &str, path_wasm: &str) {
 
     let module = Module::from_file(path_wasm).unwrap();
     let func = module.functions().next().unwrap().1;
-    println!("{:?}", func); 
     let instrs = &func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
 

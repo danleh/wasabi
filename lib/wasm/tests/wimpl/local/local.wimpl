@@ -1,6 +1,15 @@
-s0 = l0
-s1 = l1
+s0 = p0
+s1 = p1
 s2 = i32.add(s0, s1) 
-l0 = s2
-s3 = i32.const 3
-l1 = s3
+p0 = s2
+s3 = i32.const 30
+p1 = s3
+s4 = i32.const 31 
+l0 = s4
+s5 = i32.const 42
+l1 = s5
+s6 = l0
+s7 = i32.add(s3, s6)
+s8 = p0 
+s9 = i32.add(s7, s8) 
+
