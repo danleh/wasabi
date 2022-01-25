@@ -1,8 +1,7 @@
 use std::{
     collections::VecDeque,
     fmt::{self, Write},
-    fs::File,
-    io::{self, BufRead, ErrorKind},
+    io::{self, ErrorKind},
     iter::FromIterator,
     path::Path,
     str::FromStr,
@@ -18,12 +17,20 @@ use nom::{
     AsChar, Finish, IResult,
 };
 
-use crate::{highlevel::MemoryOp, types::InstructionType, BlockType, Val, ValType};
+use crate::{highlevel::MemoryOp, types::InstructionType, Val, ValType};
 use crate::{
-    highlevel::{self, Function, LoadOp, Module, NumericOp, StoreOp},
+    highlevel::{self, LoadOp, Module, NumericOp, StoreOp},
     types::types,
     FunctionType, Memarg,
 };
+
+pub struct Function {
+    pub type_: FunctionType,
+    pub instrs: Vec<Instr>,
+    //pub export: Vec<String>,
+    //pub name: Option<String>,
+    //pub param_names: Vec<Option<String>>,
+}
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum Var {
@@ -1329,7 +1336,7 @@ fn wimplify_helper(
 
 pub fn wimplify(
     instrs: &[highlevel::Instr],
-    function: &Function,
+    function: &highlevel::Function,
     module: &Module,
 ) -> Result<Vec<Instr>, String> {
     let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
