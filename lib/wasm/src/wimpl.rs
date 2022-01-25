@@ -24,12 +24,23 @@ use crate::{
     FunctionType, Memarg,
 };
 
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Function {
     pub type_: FunctionType,
     pub instrs: Vec<Instr>,
     //pub export: Vec<String>,
-    //pub name: Option<String>,
+    pub name: String,
     //pub param_names: Vec<Option<String>>,
+}
+
+impl fmt::Display for Function {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "func f{} {} {{\n  ", self.name, self.type_); 
+        for instr in &self.instrs {
+            write!(f, "{}", instr); 
+        }
+        write!(f, "\n}}")        
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
@@ -889,7 +900,7 @@ fn panic_if_size_gt (vec : &Vec<Var>, size : usize, error: &str) {
     }; 
 }
 
-fn wimplify_helper(
+fn wimplify_instrs(
     instrs: &mut VecDeque<&highlevel::Instr>,
     tys: &mut VecDeque<InstructionType>,
     state: &mut State,
@@ -942,7 +953,7 @@ fn wimplify_helper(
                 else_taken: false,
             }; 
 
-            let block_body = wimplify_helper(instrs, tys, &mut block_state).unwrap();
+            let block_body = wimplify_instrs(instrs, tys, &mut block_state).unwrap();
             
             // the variable returned by the block, if any is on top of the stack 
             // and was pushed there by the end instruction 
@@ -971,7 +982,7 @@ fn wimplify_helper(
             state.label_count += 1;
             state.label_stack.push(curr_label_count); 
 
-            let loop_body = wimplify_helper(instrs, tys, state).unwrap();
+            let loop_body = wimplify_instrs(instrs, tys, state).unwrap();
             
             // the variable returned by the block, if any is on top of the stack 
             // and was pushed there by the end instruction 
@@ -999,7 +1010,7 @@ fn wimplify_helper(
             state.label_count += 1;
             state.label_stack.push(curr_label_count); 
 
-            let if_body = wimplify_helper(instrs, tys, state).unwrap();            
+            let if_body = wimplify_instrs(instrs, tys, state).unwrap();            
             let mut if_return = None;
             if let Some(_btype) = blocktype.0 {
                 panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
@@ -1014,7 +1025,7 @@ fn wimplify_helper(
 
                 // the lhs produced in else is actually the same as in the if branch
                 // hence, throw away the variable and decrement the stack variable counter
-                let else_body = wimplify_helper(instrs, tys, state).unwrap(); 
+                let else_body = wimplify_instrs(instrs, tys, state).unwrap(); 
                 let mut else_return = None;
                 if let Some(_btype) = blocktype.0 {
                     panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
@@ -1326,7 +1337,7 @@ fn wimplify_helper(
                 state.stack_var_count += 1;
             }
         }
-        let res = wimplify_helper(instrs, tys, state).unwrap();
+        let res = wimplify_instrs(instrs, tys, state).unwrap();
         for inst in res {
             result_instrs.push(inst); 
         }
@@ -1334,18 +1345,33 @@ fn wimplify_helper(
     Ok(result_instrs)
 }
 
+static mut FN_COUNTER : usize = 0; 
+
 pub fn wimplify(
     instrs: &[highlevel::Instr],
     function: &highlevel::Function,
     module: &Module,
-) -> Result<Vec<Instr>, String> {
-    let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
+) -> Result<Function, String> {
 
+    let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
     let mut instrs = VecDeque::from_iter(instrs); //pass in iterator instead of vecdeque
     let mut tys = VecDeque::from_iter(tys);
-    let result_instrs = wimplify_helper(&mut instrs, &mut tys, &mut State::default()).unwrap();
+    let result_instrs = wimplify_instrs(&mut instrs, &mut tys, &mut State::default()).unwrap();
+    
+    let name = if let Some(name) = &function.name {
+        name.clone()
+    } else {
+        unsafe{
+            FN_COUNTER += 1;    
+            FN_COUNTER.to_string()
+        }
+    }; 
 
-    Ok(result_instrs)
+    Ok(Function{
+        type_: function.type_.clone(),
+        instrs: result_instrs,
+        name,
+    })
 }
 
 #[cfg(test)]
@@ -1734,12 +1760,9 @@ fn constant() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -1758,12 +1781,9 @@ fn add() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -1782,12 +1802,9 @@ fn call_ind() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -1806,12 +1823,9 @@ fn multiple_expr() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -1830,12 +1844,9 @@ fn call() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -1854,12 +1865,9 @@ fn local() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -1878,12 +1886,9 @@ fn global() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -1903,12 +1908,9 @@ fn load_store() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -1927,12 +1929,9 @@ fn load_store_qs() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -1951,12 +1950,9 @@ fn memory() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -1975,12 +1971,9 @@ fn select() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -1999,12 +1992,9 @@ fn block_nested() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -2023,16 +2013,13 @@ fn br_simple() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
-fn br_nested_simple() {
+fn br_nested_simple() {  
     let path = "tests/wimpl/br_nested_simple/br.wimpl";
     let expected = Instr::from_file(path).unwrap();
 
@@ -2047,12 +2034,9 @@ fn br_nested_simple() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -2071,12 +2055,9 @@ fn br_nested() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -2095,12 +2076,9 @@ fn br_triple_nested() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -2119,12 +2097,9 @@ fn br_if() { //does br_if have an lhs ??
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -2143,12 +2118,9 @@ fn br_if_2() {
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -2167,12 +2139,9 @@ fn br_table() { //br_table's type for inputs is wrong!
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -2191,12 +2160,9 @@ fn if_() { //br_table's type for inputs is wrong!
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -2215,12 +2181,9 @@ fn if_else() { //br_table's type for inputs is wrong!
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
-    for instr in &actual {
-        println!("{}", instr);
-    }
-    println!();
+    println!("{}", actual);
 
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -2231,14 +2194,14 @@ fn constant_wasm() {
     let instrs = &func.code().unwrap().body[0..1];
     let actual = wimplify(instrs, func, &module).unwrap();
     //println!("actual {:?}",actual);
-    for ins in &actual {
+    for ins in &actual.instrs {
         println!("{}", ins);
     }
     let expected = vec![Instr::Const {
         lhs: Var::Stack(0),
         val: Val::I32(3),
     }];
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -2249,14 +2212,14 @@ fn drop_wasm() {
     let instrs = &func.code().unwrap().body[0..2];
     let actual = wimplify(instrs, func, &module).unwrap();
     //println!("actual {:?}",actual);
-    for ins in &actual {
+    for ins in &actual.instrs {
         println!("{}", ins);
     }
     let expected = vec![Instr::Const {
         lhs: Var::Stack(0),
         val: Val::I32(3),
     }];
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -2266,7 +2229,7 @@ fn add_wasm() {
     // let instrs = func.code().unwrap().body.as_slice();
     let instrs = &func.code().unwrap().body[0..3];
     let actual = wimplify(instrs, func, &module).unwrap();
-    for ins in &actual {
+    for ins in &actual.instrs {
         println!("{}", ins);
     }
     let expected = vec![
@@ -2285,7 +2248,7 @@ fn add_wasm() {
         },
     ];
     println!("{:?}", expected);
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -2296,7 +2259,7 @@ fn call_ind_wasm() {
     let instrs = &func.code().unwrap().body[0..2];
     let actual = wimplify(instrs, func, &module).unwrap();
     //println!("{:?}",actual);
-    for ins in &actual {
+    for ins in &actual.instrs {
         println!("{}", ins);
     }
     let expected = vec![
@@ -2314,7 +2277,7 @@ fn call_ind_wasm() {
             args: Vec::new(),
         },
     ];
-    assert_eq!(actual, expected);
+    assert_eq!(actual.instrs, expected);
 }
 
 #[test]
@@ -2325,13 +2288,13 @@ fn block_br() {
     let instrs = &func.code().unwrap().body;
 
     let actual = wimplify(instrs, func, &module).unwrap();
-    println!("{:?}", actual);
-    for ins in &actual {
+    //println!("{:?}", actual);
+    for ins in &actual.instrs {
         println!("{}", ins);
     }
     // let expected = vec![FoldedExpr(
     //     CallIndirect(FunctionType::new(&[], &[]), Idx::from(0)),
     //     vec![FoldedExpr::new(Const(Val::I32(0)))],
     // )];
-    // assert_eq!(actual, expected);
+    // assert_eq!(actual.instrs, expected);
 }
