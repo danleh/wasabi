@@ -892,7 +892,7 @@ fn wimplify_helper(
     let instr = instrs.pop_front().unwrap();
     let ty = tys.pop_front().unwrap();
 
-    //println!("{}, {:?}, {:?}", instr, ty, state.var_stack); 
+    println!("{}, {:?}, {:?}", instr, ty, state.var_stack); 
 
     let n_inputs = ty.inputs.len();
     let n_results = ty.results.len();
@@ -1060,11 +1060,14 @@ fn wimplify_helper(
         },
 
         highlevel::Instr::BrIf(lab) => {
+            //println!("{:?}", rhs);
+            //println!("{:?}", n_inputs); 
             panic_if_size_lt(&rhs, 1, "if required a conditional statement"); 
             
             let target = Label(state.label_stack[state.label_stack.len()-lab.into_inner()-1]); 
             
-            let condition = rhs.pop().unwrap();
+            let condition = rhs.pop().unwrap(); 
+            
             // pop the return but then push it back in (if any) 
             // because the stack remains unchanged by br  
             let value = rhs.pop(); 
@@ -1088,11 +1091,20 @@ fn wimplify_helper(
         }
 
         highlevel::Instr::BrTable { table, default } => { 
+            //println!("{:?}", rhs); 
             panic_if_size_lt(&rhs, 1, "br_table requires a condition"); 
+            
+            let mut lab_table = Vec::new();
+            for lab in table {
+                lab_table.push(Label(state.label_stack[state.label_stack.len()-lab.into_inner()-1])); 
+            }
+
+            let default = Label(state.label_stack[state.label_stack.len()-default.into_inner()-1]);
+            
             Some(BrTable {
                 idx: rhs.pop().unwrap(), 
-                table: table.iter().map(|x| Label(x.into_inner())).collect(),
-                default: Label(default.into_inner()),
+                table: lab_table,
+                default,
                 value: rhs.pop(), //variable returned with brtable if any
             })
         }
@@ -2043,7 +2055,31 @@ fn br_nested() {
 }
 
 #[test]
-fn br_if() {
+fn br_triple_nested() {
+    let path = "tests/wimpl/br_triple_nested/br.wimpl";
+    let expected = Instr::from_file(path).unwrap();
+
+    println!("EXPECTED");
+    for instr in &expected {
+        println!("{}", instr);
+    }
+
+    let module = Module::from_file("tests/wimpl/br_triple_nested/br.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module).unwrap();
+
+    println!("\nACTUAL");
+    for instr in &actual {
+        println!("{}", instr);
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn br_if() { //does br_if have an lhs ?? 
     let path = "tests/wimpl/br_if/br_if.wimpl";
     let expected = Instr::from_file(path).unwrap();
 
@@ -2053,6 +2089,54 @@ fn br_if() {
     }
 
     let module = Module::from_file("tests/wimpl/br_if/br_if.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module).unwrap();
+
+    println!("\nACTUAL");
+    for instr in &actual {
+        println!("{}", instr);
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn br_if_2() {
+    let path = "tests/wimpl/br_if_2/br_if.wimpl";
+    let expected = Instr::from_file(path).unwrap();
+
+    println!("EXPECTED");
+    for instr in &expected {
+        println!("{}", instr);
+    }
+
+    let module = Module::from_file("tests/wimpl/br_if_2/br_if.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module).unwrap();
+
+    println!("\nACTUAL");
+    for instr in &actual {
+        println!("{}", instr);
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn br_table() { //br_table's type for inputs is wrong! 
+    let path = "tests/wimpl/br_table/br_table.wimpl";
+    let expected = Instr::from_file(path).unwrap();
+
+    println!("EXPECTED");
+    for instr in &expected {
+        println!("{}", instr);
+    }
+
+    let module = Module::from_file("tests/wimpl/br_table/br_table.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();

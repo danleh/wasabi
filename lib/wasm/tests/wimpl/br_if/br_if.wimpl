@@ -1,4 +1,6 @@
-@label0: block {
-s0 = i32.const 0 
-if (s0) { br @label0 }
+s3 = @label0: block {
+s0 = i32.const 42 
+s1 = i32.const 0 
+s2 = if (s1) { br @label0 }
+s2
 }
