@@ -1,2 +1,2 @@
 s1 = i32.const 1 
-br_table (s1) default=0 
+br_table default=@label0 (s1) 

@@ -1,12 +1,13 @@
 (module
     (func $1
-        block (result i32) ;;@label0 
-            i32.const 42	;; [s0]
+        block (result i32) 
+            i32.const 42	
             block 			
-				i32.const 0 	;;[s0, s1] 
-				br 1 			;;[s0, s1] 	
+				i32.const 0 
+				br 1 		
 			end 
-        end					;; [s1]
+        end					
         drop         
     )
 )
+

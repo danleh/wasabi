@@ -1,4 +1,4 @@
-@label0: block {
+ @label0: block {
 s0 = l0 
 s1 = i32.eqz s0 
 s2 = if (s1) { br @label0 } 

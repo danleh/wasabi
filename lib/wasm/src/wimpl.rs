@@ -27,7 +27,7 @@ use crate::{
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Function {
     pub type_: FunctionType,
-    pub instrs: Vec<Instr>,
+    pub instrs: Vec<Instr>, //Body FIXME
     //pub export: Vec<String>,
     pub name: String,
     //pub param_names: Vec<Option<String>>,
@@ -35,7 +35,7 @@ pub struct Function {
 
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "func f{} {} {{\n  ", self.name, self.type_); 
+        write!(f, "func f{} {} {{\n", self.name, self.type_); 
         for instr in &self.instrs {
             write!(f, "{}", instr); 
         }
@@ -888,15 +888,15 @@ pub struct State {
     pub else_taken: bool, 
 }
 
-fn panic_if_size_lt (vec : &Vec<Var>, size : usize, error: &str) {
+fn panic_if_size_lt (vec : &[Var], size : usize, error: &str) {
     if vec.len() < size { 
-        panic!("hi"); 
+        panic!("{}", error); 
     }; 
 }
 
-fn panic_if_size_gt (vec : &Vec<Var>, size : usize, error: &str) {
+fn panic_if_size_gt (vec : &[Var], size : usize, error: &str) {
     if vec.len() > size { 
-        panic!("hi"); 
+        panic!("{}", error); 
     }; 
 }
 
@@ -911,7 +911,7 @@ fn wimplify_instrs(
     let instr = instrs.pop_front().unwrap();
     let ty = tys.pop_front().unwrap();
 
-    println!("{}, {:?}, {:?}", instr, ty, state.var_stack); 
+    //println!("{}, {:?}, {:?}", instr, ty, state.var_stack); 
 
     let n_inputs = ty.inputs.len();
     let n_results = ty.results.len();
@@ -978,12 +978,15 @@ fn wimplify_instrs(
         }
 
         highlevel::Instr::Loop(blocktype) => {
+            
             let curr_label_count = state.label_count;
             state.label_count += 1;
             state.label_stack.push(curr_label_count); 
 
             let loop_body = wimplify_instrs(instrs, tys, state).unwrap();
-            
+            // end of loop -> check this
+            //FIXME
+
             // the variable returned by the block, if any is on top of the stack 
             // and was pushed there by the end instruction 
             let mut result = None; 
@@ -1018,7 +1021,6 @@ fn wimplify_instrs(
                 if_return = Some(state.var_stack.pop().unwrap());             
             }
 
-            
             if state.else_taken {
                 
                 state.else_taken = false; 
@@ -1086,7 +1088,7 @@ fn wimplify_instrs(
                 // value to be returned is already in rhs
                 // push it back on the stack
                 value = rhs.pop(); 
-                state.var_stack.push(value.unwrap());  
+                state.var_stack.push(value.unwrap()); //hacky and wrong FIXME  
             }
             
             Some(Br {
@@ -1175,6 +1177,7 @@ fn wimplify_instrs(
         highlevel::Instr::Drop => None, 
 
         highlevel::Instr::Select => { 
+            //FIXME: create rhs using rsplit_at 
             //rhs is in the right order so 
             //rhs = [cond, if, else]
             panic_if_size_lt(&rhs, 3, "select requires that there is a condition and two other values on the stack"); 
@@ -1745,445 +1748,127 @@ mod test {
     }
 }
 
-#[test]
-fn constant() {
-    let expected = wimpls!(s0 = i32.const 3);
-
+fn test (path_wimpl: &str, path_wasm: &str) {
+    let expected = Instr::from_file(path_wimpl).unwrap();
     println!("EXPECTED");
     for instr in &expected {
         println!("{}", instr);
     }
 
-    let module = Module::from_file("tests/wimpl/const/const.wasm").unwrap();
+    let module = Module::from_file(path_wasm).unwrap();
     let func = module.functions().next().unwrap().1;
-    let instrs = &func.code().unwrap().body[0..1];
+    let instrs = &func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
 
     println!("\nACTUAL");
     println!("{}", actual);
 
     assert_eq!(actual.instrs, expected);
+}
+
+#[test]
+fn constant() {
+    test("tests/wimpl/const/const.wimpl", "tests/wimpl/const/const.wasm"); 
 }
 
 #[test]
 fn add() {
-    let path = "tests/wimpl/add/add.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/add/add.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = &func.code().unwrap().body[0..3];
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/add/add.wimpl", "tests/wimpl/add/add.wasm");
 }
 
 #[test]
 fn call_ind() {
-    let path = "tests/wimpl/call_ind/call_ind.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/call_ind/call_ind.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = &func.code().unwrap().body[0..2];
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/call_ind/call_ind.wimpl", "tests/wimpl/call_ind/call_ind.wasm");
 }
 
 #[test]
 fn multiple_expr() {
-    let path = "tests/wimpl/multiple_expr/multiple_expr.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/multiple_expr/multiple_expr.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/multiple_expr/multiple_expr.wimpl", "tests/wimpl/multiple_expr/multiple_expr.wasm");
 }
 
 #[test]
 fn call() {
-    let path = "tests/wimpl/call/call.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/call/call.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/call/call.wimpl","tests/wimpl/call/call.wasm");
 }
 
 #[test]
 fn local() {
-    let path = "tests/wimpl/local/local.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/local/local.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/local/local.wimpl", "tests/wimpl/local/local.wasm");
 }
 
 #[test]
 fn global() {
-    let path = "tests/wimpl/global/global.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/global/global.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/global/global.wimpl", "tests/wimpl/global/global.wasm");
 }
 
 #[test]
 fn load_store() {
-    let path = "tests/wimpl/load_store/load_store.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/load_store/load_store.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    println!("{:?}", instrs); 
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/load_store/load_store.wimpl", "tests/wimpl/load_store/load_store.wasm"); 
 }
 
 #[test]
 fn load_store_qs() {
-    let path = "tests/wimpl/qs1/qs1.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/qs1/qs1.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/qs1/qs1.wimpl", "tests/wimpl/qs1/qs1.wasm");
 }
 
 #[test]
 fn memory() {
-    let path = "tests/wimpl/memory/memory.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/memory/memory.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/memory/memory.wimpl", "tests/wimpl/memory/memory.wasm");
 }
 
 #[test]
 fn select() {
-    let path = "tests/wimpl/select/select.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/select/select.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/select/select.wimpl", "tests/wimpl/select/select.wasm");
 }
 
 #[test]
 fn block_nested() {
-    let path = "tests/wimpl/block_nested/block.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/block_nested/block.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/block_nested/block.wimpl", "tests/wimpl/block_nested/block.wasm");
 }
 
 #[test]
 fn br_simple() {
-    let path = "tests/wimpl/br_simple/br.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/br_simple/br.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/br_simple/br.wimpl", "tests/wimpl/br_simple/br.wasm");
 }
 
 #[test]
 fn br_nested_simple() {  
-    let path = "tests/wimpl/br_nested_simple/br.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/br_nested_simple/br.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/br_nested_simple/br.wimpl", "tests/wimpl/br_nested_simple/br.wasm");
 }
 
 #[test]
 fn br_nested() {
-    let path = "tests/wimpl/br_nested/br.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/br_nested/br.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/br_nested/br.wimpl", "tests/wimpl/br_nested/br.wasm");
 }
 
 #[test]
 fn br_triple_nested() {
-    let path = "tests/wimpl/br_triple_nested/br.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/br_triple_nested/br.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/br_triple_nested/br.wimpl", "tests/wimpl/br_triple_nested/br.wasm");
 }
 
 #[test]
-fn br_if() { //does br_if have an lhs ?? 
-    let path = "tests/wimpl/br_if/br_if.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/br_if/br_if.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+fn br_if() {  
+    test("tests/wimpl/br_if/br_if.wimpl", "tests/wimpl/br_if/br_if.wasm");
 }
 
 #[test]
 fn br_if_2() {
-    let path = "tests/wimpl/br_if_2/br_if.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/br_if_2/br_if.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+    test("tests/wimpl/br_if_2/br_if.wimpl", "tests/wimpl/br_if_2/br_if.wasm");
 }
 
 #[test]
-fn br_table() { //br_table's type for inputs is wrong! 
-    let path = "tests/wimpl/br_table/br_table.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/br_table/br_table.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+fn br_table() {  
+    test("tests/wimpl/br_table/br_table.wimpl", "tests/wimpl/br_table/br_table.wasm");
 }
 
 #[test]
-fn if_() { //br_table's type for inputs is wrong! 
-    let path = "tests/wimpl/if/if.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/if/if.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+fn if_() {
+    test("tests/wimpl/if/if.wimpl", "tests/wimpl/if/if.wasm");
 }
 
 #[test]
-fn if_else() { //br_table's type for inputs is wrong! 
-    let path = "tests/wimpl/if_else/if_else.wimpl";
-    let expected = Instr::from_file(path).unwrap();
-
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
-    let module = Module::from_file("tests/wimpl/if_else/if_else.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs, expected);
+fn if_else() { 
+    test("tests/wimpl/if_else/if_else.wimpl", "tests/wimpl/if_else/if_else.wasm");
 }
 
 #[test]
