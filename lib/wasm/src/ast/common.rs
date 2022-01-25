@@ -12,13 +12,13 @@ use crate::highlevel::MemoryOp;
 
 /* AST nodes common to high- and low-level representations. */
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 /// WebAssembly primitive values.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum Val {
     I32(i32),
     I64(i64),
-    // Wrap floats, such that they can be ordered and compared (unlike IEEE754 floats),
-    // to make it possible, e.g., to put instructions in HashSets etc.
+    // Wrap floats such that they can be ordered and compared (unlike IEEE 754 
+    // floats), e.g., to allow for values or instructions in `HashSet`s.
     F32(OrderedFloat<f32>),
     F64(OrderedFloat<f64>),
 }
@@ -34,6 +34,7 @@ impl Val {
         }
     }
 
+    /// Convert a value to the corresponding type.
     pub fn to_type(&self) -> ValType {
         match *self {
             Val::I32(_) => ValType::I32,
@@ -43,6 +44,7 @@ impl Val {
         }
     }
 
+    /// Parse a number as the given type `ty` and return as a typed value.
     pub fn from_str(str: &str, ty: ValType) -> Result<Self, ()> {
         Ok(match ty {
             ValType::I32 => Val::I32(str.parse().map_err(|_| ())?),
@@ -76,14 +78,21 @@ pub enum ValType {
     #[tag = 0x7c] F64,
 }
 
-impl fmt::Display for ValType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&format!("{:?}", self).to_lowercase())
-    }
-}
-
 impl ValType {
-    
+    /// Convert to the standard string representation, as in the WebAssembly
+    /// specification and text format.
+    pub fn to_str(self) -> &'static str {
+        match self {
+            ValType::I32 => "i32",
+            ValType::I64 => "i64",
+            ValType::F32 => "f32",
+            ValType::F64 => "f64",
+        }
+    }
+
+    /// Convert to a single character, as used, e.g., by Emscripten.
+    /// Lowercase is for 32 bit, uppercase is for 64 bit; 
+    /// `i` for integers, `f` for floats.
     pub fn to_char(self) -> char {
         match self {
             ValType::I32 => 'i',
@@ -101,6 +110,12 @@ impl ValType {
             'F' => ValType::F64,
             _ => panic!("found unknown type")
         }
+    }
+}
+
+impl fmt::Display for ValType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.to_str())
     }
 }
 
@@ -187,6 +202,7 @@ impl FromStr for FunctionType {
     }
 }
 
+/// In the WebAssembly MVP, blocks can return either nothing or a single value.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct BlockType(pub Option<ValType>);
 
@@ -194,6 +210,7 @@ impl FromStr for BlockType {
     type Err = ();
 
     fn from_str(str: &str) -> Result<Self, Self::Err> {
+        // Re-use implementation for parsing `FunctionType`s.
         let FunctionType { params, results } = FunctionType::from_str(str)?;
         match (&params[..], &results[..]) {
             ([], []) => Ok(BlockType(None)),
