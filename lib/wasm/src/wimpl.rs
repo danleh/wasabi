@@ -867,6 +867,7 @@ pub struct State {
     pub stack_var_count: usize,
     pub var_stack: Vec<Var>,
     pub label_stack: Vec<usize>, 
+    pub else_taken: bool, 
 }
 
 fn panic_if_size_lt (vec : &Vec<Var>, size : usize, error: &str) {
@@ -931,6 +932,7 @@ fn wimplify_helper(
                 stack_var_count: state.stack_var_count,
                 var_stack: Vec::new(),
                 label_stack: state.label_stack.clone(),
+                else_taken: false,
             }; 
 
             let block_body = wimplify_helper(instrs, tys, &mut block_state).unwrap();
@@ -998,38 +1000,54 @@ fn wimplify_helper(
                 if_return = Some(state.var_stack.pop().unwrap());             
             }
 
-            // the lhs produced in else is actually the same as in the if branch
-            // hence, throw away the variable and decrement the stack variable counter
-            let else_body = wimplify_helper(instrs, tys, state).unwrap(); 
-            let mut else_return = None;
-            if let Some(_btype) = blocktype.0 {
-                panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
-                let _ = state.var_stack.pop();
-                else_return = Some(state.var_stack.pop().unwrap());             
-                state.stack_var_count -= 1; 
-            }
-
-            // validation that if-body and else-body have the same number of returns
-            // type checking validation already done 
-            match (if_return, else_return) {
-                (None, Some(_)) | (Some(_), None) => {
-                    panic!("if and else branch should either both return a value or None");
-                },
-                (None, None) | (Some(_), Some(_)) => (),
-            }; 
-
-            Some(If{
-                lhs,
-                label: Some(Label(curr_label_count)),
-                condition: rhs.pop().unwrap(),
-                if_body: Body { instrs: if_body, result: if_return },
-                else_body: Some(Body{ instrs: else_body, result: else_return}),
-            })
             
+            if state.else_taken {
+                
+                state.else_taken = false; 
+
+                // the lhs produced in else is actually the same as in the if branch
+                // hence, throw away the variable and decrement the stack variable counter
+                let else_body = wimplify_helper(instrs, tys, state).unwrap(); 
+                let mut else_return = None;
+                if let Some(_btype) = blocktype.0 {
+                    panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
+                    let _ = state.var_stack.pop();
+                    else_return = Some(state.var_stack.pop().unwrap());             
+                    state.stack_var_count -= 1; 
+                }
+
+                // validation that if-body and else-body have the same number of returns
+                // type checking validation already done 
+                match (if_return, else_return) {
+                    (None, Some(_)) | (Some(_), None) => {
+                        panic!("if and else branch should either both return a value or None");
+                    },
+                    (None, None) | (Some(_), Some(_)) => (),
+                }; 
+
+                Some(If{
+                    lhs,
+                    label: Some(Label(curr_label_count)),
+                    condition: rhs.pop().unwrap(),
+                    if_body: Body { instrs: if_body, result: if_return },
+                    else_body: Some(Body{ instrs: else_body, result: else_return}),
+                })
+
+            } else {
+
+                Some(If{
+                    lhs,
+                    label: Some(Label(curr_label_count)),
+                    condition: rhs.pop().unwrap(),
+                    if_body: Body { instrs: if_body, result: if_return },
+                    else_body: None,
+                })
+            }
         },
 
         highlevel::Instr::Else => {
-            panic!("else found outside an if branch")
+            state.else_taken = true; 
+            return Ok(result_instrs); 
         },
 
         highlevel::Instr::End => {
@@ -2137,6 +2155,54 @@ fn br_table() { //br_table's type for inputs is wrong!
     }
 
     let module = Module::from_file("tests/wimpl/br_table/br_table.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module).unwrap();
+
+    println!("\nACTUAL");
+    for instr in &actual {
+        println!("{}", instr);
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn if_() { //br_table's type for inputs is wrong! 
+    let path = "tests/wimpl/if/if.wimpl";
+    let expected = Instr::from_file(path).unwrap();
+
+    println!("EXPECTED");
+    for instr in &expected {
+        println!("{}", instr);
+    }
+
+    let module = Module::from_file("tests/wimpl/if/if.wasm").unwrap();
+    let func = module.functions().next().unwrap().1;
+    let instrs = func.code().unwrap().body.as_slice();
+    let actual = wimplify(instrs, func, &module).unwrap();
+
+    println!("\nACTUAL");
+    for instr in &actual {
+        println!("{}", instr);
+    }
+    println!();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn if_else() { //br_table's type for inputs is wrong! 
+    let path = "tests/wimpl/if_else/if_else.wimpl";
+    let expected = Instr::from_file(path).unwrap();
+
+    println!("EXPECTED");
+    for instr in &expected {
+        println!("{}", instr);
+    }
+
+    let module = Module::from_file("tests/wimpl/if_else/if_else.wasm").unwrap();
     let func = module.functions().next().unwrap().1;
     let instrs = func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
