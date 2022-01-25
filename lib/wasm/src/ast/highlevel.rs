@@ -140,9 +140,18 @@ pub type Expr = Vec<Instr>;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Instr {
+    // TODO convert such that there are never instructions following an 
+    // unreachable state (i.e., unreachable/br/br_table)
+    // Then, insert explicit drops to make sure the stack aligns.
+    // For that, decoding needs to check whether lowlevel::Instr == Unreachable,
+    // br, or br_table, then set a flag that skips to the next end.
+    // This would be the only "information loss" vs. the input Wasm binary.
     Unreachable,
     Nop,
 
+    // TODO Make highlevel::Instr nesting, i.e., Block(BlockType, Vec<Instr>)
+    // see, e.g., the reference interpreter: https://github.com/WebAssembly/spec/blob/master/interpreter/valid/valid.ml
+    // This would get rid of else and end.
     Block(BlockType),
     Loop(BlockType),
     If(BlockType),
@@ -155,8 +164,12 @@ pub enum Instr {
 
     Return,
     Call(Idx<Function>),
+    // TODO remove Idx<Table>, always 0 in MVP.
     CallIndirect(FunctionType, Idx<Table>),
 
+    // TODO Include the type explicitly in the instruction to remove 
+    // value-polymorphism.
+    // However, this would require type checking during lowlevel parsing :(
     Drop,
     Select,
 
@@ -166,10 +179,13 @@ pub enum Instr {
     Load(LoadOp, Memarg),
     Store(StoreOp, Memarg),
 
+    // TODO remove Idx<Memory>, always 0 in MVP.
     MemorySize(Idx<Memory>),
     MemoryGrow(Idx<Memory>),
 
     Const(Val),
+    // TODO Discern between UnaryOp and BinaryOp.
+    // This would make arity a static information.
     Numeric(NumericOp),
 }
 
