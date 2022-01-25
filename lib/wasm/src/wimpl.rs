@@ -27,7 +27,7 @@ use crate::{
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Function {
     pub type_: FunctionType,
-    pub instrs: Vec<Instr>, //Body FIXME
+    pub instrs: Body,//Vec<Instr>, //Body FIXME
     //pub export: Vec<String>,
     pub name: String,
     //pub param_names: Vec<Option<String>>,
@@ -35,11 +35,9 @@ pub struct Function {
 
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "func f{} {} {{\n", self.name, self.type_); 
-        for instr in &self.instrs {
-            write!(f, "{}", instr); 
-        }
-        write!(f, "\n}}")        
+        write!(f, "func f{} {} ", self.name, self.type_); 
+        write!(f, "{}", self.instrs); 
+        Ok(())
     }
 }
 
@@ -1372,7 +1370,10 @@ pub fn wimplify(
 
     Ok(Function{
         type_: function.type_.clone(),
-        instrs: result_instrs,
+        instrs: Body{
+            instrs: result_instrs,
+            result: None,
+        }, 
         name,
     })
 }
@@ -1763,7 +1764,7 @@ fn test (path_wimpl: &str, path_wasm: &str) {
     println!("\nACTUAL");
     println!("{}", actual);
 
-    assert_eq!(actual.instrs, expected);
+    assert_eq!(actual.instrs.instrs, expected);
 }
 
 #[test]
@@ -1871,115 +1872,3 @@ fn if_else() {
     test("tests/wimpl/if_else/if_else.wimpl", "tests/wimpl/if_else/if_else.wasm");
 }
 
-#[test]
-fn constant_wasm() {
-    let module = Module::from_file("tests/wimpl/const.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    // let instrs = func.code().unwrap().body.as_slice();
-    let instrs = &func.code().unwrap().body[0..1];
-    let actual = wimplify(instrs, func, &module).unwrap();
-    //println!("actual {:?}",actual);
-    for ins in &actual.instrs {
-        println!("{}", ins);
-    }
-    let expected = vec![Instr::Const {
-        lhs: Var::Stack(0),
-        val: Val::I32(3),
-    }];
-    assert_eq!(actual.instrs, expected);
-}
-
-#[test]
-fn drop_wasm() {
-    let module = Module::from_file("tests/wimpl/const.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    // let instrs = func.code().unwrap().body.as_slice();
-    let instrs = &func.code().unwrap().body[0..2];
-    let actual = wimplify(instrs, func, &module).unwrap();
-    //println!("actual {:?}",actual);
-    for ins in &actual.instrs {
-        println!("{}", ins);
-    }
-    let expected = vec![Instr::Const {
-        lhs: Var::Stack(0),
-        val: Val::I32(3),
-    }];
-    assert_eq!(actual.instrs, expected);
-}
-
-#[test]
-fn add_wasm() {
-    let module = Module::from_file("tests/wimpl/add.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    // let instrs = func.code().unwrap().body.as_slice();
-    let instrs = &func.code().unwrap().body[0..3];
-    let actual = wimplify(instrs, func, &module).unwrap();
-    for ins in &actual.instrs {
-        println!("{}", ins);
-    }
-    let expected = vec![
-        Instr::Const {
-            lhs: Var::Stack(0),
-            val: Val::I32(3),
-        },
-        Instr::Const {
-            lhs: Var::Stack(1),
-            val: Val::I32(4),
-        },
-        Instr::Numeric {
-            lhs: Var::Stack(2),
-            op: highlevel::NumericOp::I32Add,
-            rhs: vec![Var::Stack(1), Var::Stack(0)],
-        },
-    ];
-    println!("{:?}", expected);
-    assert_eq!(actual.instrs, expected);
-}
-
-#[test]
-fn call_ind_wasm() {
-    let module = Module::from_file("tests/wimpl/call_ind.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    // let instrs = func.code().unwrap().body.as_slice();
-    let instrs = &func.code().unwrap().body[0..2];
-    let actual = wimplify(instrs, func, &module).unwrap();
-    //println!("{:?}",actual);
-    for ins in &actual.instrs {
-        println!("{}", ins);
-    }
-    let expected = vec![
-        Instr::Const {
-            lhs: Var::Stack(0),
-            val: Val::I32(0),
-        },
-        Instr::CallIndirect {
-            lhs: None,
-            type_: FunctionType {
-                params: Box::new([]),
-                results: Box::new([]),
-            },
-            table_idx: Var::Stack(0),
-            args: Vec::new(),
-        },
-    ];
-    assert_eq!(actual.instrs, expected);
-}
-
-#[test]
-fn block_br() {
-    let module = Module::from_file("tests/wimpl/block-br.wasm").unwrap();
-    let func = module.functions().next().unwrap().1;
-    // let instrs = func.code().unwrap().body.as_slice();
-    let instrs = &func.code().unwrap().body;
-
-    let actual = wimplify(instrs, func, &module).unwrap();
-    //println!("{:?}", actual);
-    for ins in &actual.instrs {
-        println!("{}", ins);
-    }
-    // let expected = vec![FoldedExpr(
-    //     CallIndirect(FunctionType::new(&[], &[]), Idx::from(0)),
-    //     vec![FoldedExpr::new(Const(Val::I32(0)))],
-    // )];
-    // assert_eq!(actual.instrs, expected);
-}
