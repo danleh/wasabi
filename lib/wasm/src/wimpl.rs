@@ -24,18 +24,35 @@ use crate::{
     FunctionType, Memarg,
 };
 
+// we want our functions to either have names (in case of debug mode)
+// or Func variables which is 
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum FunctionName { 
+    Name(String), 
+    Generic(Func)
+}
+
+impl fmt::Display for FunctionName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FunctionName::Name(s) => write!(f, "{}", s),
+            FunctionName::Generic(fun) => write!(f, "{}", fun),
+        }
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Function {
     pub type_: FunctionType,
     pub instrs: Body, //want to reuse 
     //pub export: Vec<String>,
-    pub name: String,
+    pub name: FunctionName,
     //pub param_names: Vec<Option<String>>,
 }
 
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "func f{} {} ", self.name, self.type_); 
+        write!(f, "func {} {} ", self.name, self.type_); 
         write!(f, "{}", self.instrs); 
         Ok(())
     }
@@ -928,7 +945,7 @@ fn wimplify_instrs(
     for _ in 0..n_inputs {
         rhs.push(state.var_stack.pop().expect("type correct wasm programs should not have empty stack"));
     }
-    //FIXME: create rhs using rsplit_at so that numeric instrs and calls have arguments in the right (intuitive) order
+    //create rhs using rsplit_at so that numeric instrs and calls have arguments in the right (intuitive) order
         // rsplit_at does not exist
         // you could reverse state.var_stack and then split_at but that seems to be more expensive 
         // instead we just reverse here 
@@ -1348,7 +1365,9 @@ fn wimplify_instrs(
     Ok(result_instrs)
 }
 
-static mut FN_COUNTER : usize = 0; 
+// since functions are numbered in order we can maintain a global variable 
+// of the counter and use it to generate function names 
+static mut FN_COUNTER : i32 = -1; 
 
 pub fn wimplify(
     instrs: &[highlevel::Instr],
@@ -1356,17 +1375,19 @@ pub fn wimplify(
     module: &Module,
 ) -> Result<Function, String> {
 
+    use FunctionName::*; 
+
     let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
     let mut instrs = VecDeque::from_iter(instrs); //pass in iterator instead of vecdeque
     let mut tys = VecDeque::from_iter(tys);
     let result_instrs = wimplify_instrs(&mut instrs, &mut tys, &mut State::default()).unwrap();
     
     let name = if let Some(name) = &function.name {
-        name.clone()
+        Name(name.clone())
     } else {
         unsafe{
             FN_COUNTER += 1;    
-            FN_COUNTER.to_string()
+            Generic(Func(FN_COUNTER as usize))
         }
     }; 
 
@@ -1760,6 +1781,7 @@ fn test (path_wimpl: &str, path_wasm: &str) {
 
     let module = Module::from_file(path_wasm).unwrap();
     let func = module.functions().next().unwrap().1;
+    println!("{:?}", func); 
     let instrs = &func.code().unwrap().body.as_slice();
     let actual = wimplify(instrs, func, &module).unwrap();
 

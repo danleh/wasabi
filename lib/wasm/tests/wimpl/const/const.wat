@@ -1,5 +1,5 @@
 (module
-  (func $0
+  (func $constant
     i32.const 3
     drop
   )
