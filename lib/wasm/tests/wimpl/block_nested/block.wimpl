@@ -2,6 +2,6 @@ s4 = @label0: block {
 s0 = i32.const 42
 @label1: block {s1 = i32.const 0 }
 s2 = i32.const 1
-s3 = i32.add(s2, s0)
+s3 = i32.add(s0, s2)
 s3
 }

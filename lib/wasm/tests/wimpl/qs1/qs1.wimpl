@@ -1,6 +1,6 @@
 s0 = l0
 s1 = l1
-s2 = i32.add(s1, s0) 
+s2 = i32.add(s0, s1) 
 l0 = s2
 s3 = g0
 l1 = s3

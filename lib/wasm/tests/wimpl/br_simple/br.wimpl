@@ -1,5 +1,4 @@
 s1 = @label0: block {
 s0 = i32.const 42
 br @label0 (s0)
-s0
 }

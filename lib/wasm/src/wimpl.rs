@@ -27,7 +27,7 @@ use crate::{
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Function {
     pub type_: FunctionType,
-    pub instrs: Body,//Vec<Instr>, //Body FIXME
+    pub instrs: Body, //want to reuse 
     //pub export: Vec<String>,
     pub name: String,
     //pub param_names: Vec<Option<String>>,
@@ -122,8 +122,6 @@ impl FromStr for Label {
 
 #[derive(Debug, Eq, PartialEq, Clone, Default)]
 pub struct Body {
-    // When writing select as if, the bodies will not have any instructions just returns
-    // FIXME Then could we not use an empty vec?
     instrs: Vec<Instr>,
     result: Option<Var>,
 }
@@ -930,6 +928,11 @@ fn wimplify_instrs(
     for _ in 0..n_inputs {
         rhs.push(state.var_stack.pop().expect("type correct wasm programs should not have empty stack"));
     }
+    //FIXME: create rhs using rsplit_at so that numeric instrs and calls have arguments in the right (intuitive) order
+        // rsplit_at does not exist
+        // you could reverse state.var_stack and then split_at but that seems to be more expensive 
+        // instead we just reverse here 
+    rhs.reverse(); 
 
     let result_instr: Option<Instr> = match instr {
 
@@ -1086,7 +1089,9 @@ fn wimplify_instrs(
                 // value to be returned is already in rhs
                 // push it back on the stack
                 value = rhs.pop(); 
-                state.var_stack.push(value.unwrap()); //hacky and wrong FIXME  
+                //state.var_stack.push(value.unwrap()); 
+                    // hacky and wrong FIXME - br_simple testcase still fails 
+                    // because the block expects a variable to be returned 
             }
             
             Some(Br {
@@ -1175,13 +1180,10 @@ fn wimplify_instrs(
         highlevel::Instr::Drop => None, 
 
         highlevel::Instr::Select => { 
-            //FIXME: create rhs using rsplit_at 
-            //rhs is in the right order so 
-            //rhs = [cond, if, else]
             panic_if_size_lt(&rhs, 3, "select requires that there is a condition and two other values on the stack"); 
-            let arg3 = rhs.pop().unwrap(); //else  //wasm spec pg 71/155
+            let arg1 = rhs.pop().unwrap(); //cond  //wasm spec pg 71/155
             let arg2 = rhs.pop().unwrap(); //if
-            let arg1 = rhs.pop().unwrap(); //cond
+            let arg3 = rhs.pop().unwrap(); //else
             Some(If {
                 lhs,
                 label: None,
@@ -1280,8 +1282,8 @@ fn wimplify_instrs(
             Some(Store {
                 op: *storeop,
                 memarg: *memarg,
-                value: rhs.pop().unwrap(),
                 addr: rhs.pop().unwrap(),
+                value: rhs.pop().unwrap(),
             })
         }
 
