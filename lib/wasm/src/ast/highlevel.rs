@@ -902,35 +902,9 @@ impl FromStr for NumericOp {
 }
 
 impl Instr {
-    /// for all where the type can be determined by just looking at the instruction, not additional
-    /// information like the function or module etc.
-    pub fn to_type(&self) -> Option<FunctionType> {
-        use Instr::*;
-        use ValType::*;
-        match *self {
-            Unreachable | Nop => Some(FunctionType::new(&[], &[])),
-            Load(ref op, _) => Some(op.to_type()),
-            Store(ref op, _) => Some(op.to_type()),
-            MemorySize(_) => Some(FunctionType::new(&[], &[I32])),
-            MemoryGrow(_) => Some(FunctionType::new(&[I32], &[I32])),
-            Const(ref val) => Some(FunctionType::new(&[], &[val.to_type()])),
-            Numeric(ref op) => Some(op.to_type()),
-            CallIndirect(ref func_ty, _) => Some(FunctionType::new(&[&func_ty.params[..], &[I32]].concat(), &func_ty.results)),
-
-            // nesting...
-            Block(_) | Loop(_) | If(_) | Else | End => None,
-            // depends on branch target?
-            Br(_) | BrIf(_) | BrTable { .. } => None,
-            // need to inspect function type
-            Return | Call(_) => None,
-            // need abstract type stack "evaluation"
-            Drop | Select => None,
-            // need lookup in locals/globals
-            Local(_, _) | Global(_, _) => None,
-        }
-    }
-
-    /// returns instruction name as in Wasm spec
+    /// Returns the instruction name as in the WebAssembly specification and
+    /// text format.
+    /// This is only the mnemonic, without instruction arguments.
     pub fn to_name(&self) -> &'static str {
         use Instr::*;
         match *self {
@@ -971,6 +945,38 @@ impl Instr {
             Load(op, _) => op.to_name(),
             Store(op, _) => op.to_name(),
             Numeric(op) => op.to_name(),
+        }
+    }
+
+    /// Returns a type for those instructions, for which it can be determined
+    /// by just looking at the instruction, and which does neither need to
+    /// additional context information like the function or module, nor type
+    /// inference (for stack-polymorphic and value-polymorphic instructions).
+    pub fn simple_type(&self) -> Option<FunctionType> {
+        use Instr::*;
+        use ValType::*;
+        match *self {
+            Nop => Some(FunctionType::new(&[], &[])),
+            Load(ref op, _) => Some(op.to_type()),
+            Store(ref op, _) => Some(op.to_type()),
+            MemorySize(_) => Some(FunctionType::new(&[], &[I32])),
+            MemoryGrow(_) => Some(FunctionType::new(&[I32], &[I32])),
+            Const(ref val) => Some(FunctionType::new(&[], &[val.to_type()])),
+            Numeric(ref op) => Some(op.to_type()),
+            CallIndirect(ref func_ty, _) => Some(FunctionType::new(&[&func_ty.params[..], &[I32]].concat(), &func_ty.results)),
+
+            // Difficult because of nesting and block types.
+            Block(_) | Loop(_) | If(_) | Else | End => None,
+            // Depends on the branch target block.
+            Br(_) | BrIf(_) | BrTable { .. } => None,
+            // Need to inspect the current/called function type.
+            Return | Call(_) => None,
+            // Need lookup in locals/globals
+            Local(_, _) | Global(_, _) => None,
+            // Value-polymorphic, need abstract type stack.
+            Drop | Select => None,
+            // Stack-polymorphic, needs type inference (br* above as weel).
+            Unreachable => None,
         }
     }
 }
