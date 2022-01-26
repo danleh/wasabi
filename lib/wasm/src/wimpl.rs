@@ -168,7 +168,7 @@ impl FromStr for Label {
 
 #[derive(Debug, Eq, PartialEq, Clone, Default)]
 pub struct Body {
-    instrs: Vec<Instr>,
+    instrs: Vec<Stmt>,
     result: Option<Var>,
 }
 
@@ -213,30 +213,24 @@ impl fmt::Display for Body {
 // TODO Optimize this representation, in particular remove redundant assignments
 // between stack variables and locals/globals.
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub enum Instr {
+pub enum Stmt {
+
+    StmtLHS {
+        lhs: Var, 
+        expr: ExprLHS,
+    },
+
+    StmtOpt {
+        lhs: Var,
+        expr: ExprOpt,
+    }, 
+
+    Expr {
+        expr: ExprOpt, 
+    }, 
+
     // Simplify: nop is not necessary for analysis.
     Unreachable,
-
-    Block {
-        lhs: Option<Var>,
-        label: Label,
-        body: Body,
-    },
-    Loop {
-        lhs: Option<Var>,
-        label: Label,
-        body: Body,
-    },
-    If {
-        lhs: Option<Var>,
-        // No label for an if generated from select or br_if
-        // (where this if block is never the target of a branch).
-        label: Option<Label>,
-        condition: Var,
-        // Invariant: if and else must either both return value or not.
-        if_body: Body,
-        else_body: Option<Body>,
-    },
 
     Br {
         target: Label,
@@ -254,17 +248,53 @@ pub enum Instr {
         value: Option<Var>,
     },
 
+    Store {
+        op: StoreOp,
+        memarg: Memarg,
+        value: Var,
+        addr: Var,
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum ExprOpt {
+
+    Block {
+        //lhs: Option<Var>,
+        label: Label,
+        body: Body,
+    },
+    Loop {
+        //lhs: Option<Var>,
+        label: Label,
+        body: Body,
+    },
+    If {
+        //lhs: Option<Var>,
+        // No label for an if generated from select or br_if
+        // (where this if block is never the target of a branch).
+        label: Option<Label>,
+        condition: Var,
+        // Invariant: if and else must either both return value or not.
+        if_body: Body,
+        else_body: Option<Body>,
+    },
     Call {
-        lhs: Option<Var>,
+        //lhs: Option<Var>,
         func: Func,
         args: Vec<Var>,
     },
     CallIndirect {
-        lhs: Option<Var>,
+        //lhs: Option<Var>,
         type_: FunctionType,
         table_idx: Var,
         args: Vec<Var>,
     },
+
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum ExprLHS {
 
     // Simplify: No instruction for drop, this is just a dead variable.
     // TODO Remove dead variables recursively.
@@ -273,42 +303,39 @@ pub enum Instr {
 
     // Simplify: Handles all of local.set, global.set, local.tee, local.get, global.get.
     Assign {
-        lhs: Var,
+        //lhs: Var,
         rhs: Var,
     },
 
     Load {
-        lhs: Var,
+        //lhs: Var,
         op: LoadOp,
         memarg: Memarg,
         addr: Var,
     },
-    Store {
-        op: StoreOp,
-        memarg: Memarg,
-        value: Var,
-        addr: Var,
-    },
-
     MemorySize {
-        lhs: Var,
+        //lhs: Var,
     },
     MemoryGrow {
-        lhs: Var,
+        //lhs: Var,
         pages: Var,
     },
 
     Const {
-        lhs: Var,
+        //lhs: Var,
         val: Val,
     },
 
     Numeric {
-        lhs: Var,
+        //lhs: Var,
         op: NumericOp,
         rhs: Vec<Var>,
     },
 }
+
+// TODO: we want some arguments to definitely have an LHS 
+// do we write a special enum X for them and have it be lhs = X
+// while the ones which are optional LHS are enum Y lhs = Y and Y 
 
 /// User-facing error for parsing the Wimpl text format.
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -395,37 +422,8 @@ fn adapt_nom_parser<'input, O>(
     }
 }
 
-impl Instr {
-    /// Convenience accessor for all instructions that have a LHS.
-    pub fn lhs(&self) -> Option<Var> {
-        use Instr::*;
-        match self {
-            Unreachable => None,
-
-            Block { lhs, .. } => *lhs,
-            Loop { lhs, .. } => *lhs,
-            If { lhs, .. } => *lhs,
-
-            Br { .. } => None,
-            BrTable { .. } => None,
-            Return { .. } => None,
-
-            Call { lhs, .. } => *lhs,
-            CallIndirect { lhs, .. } => *lhs,
-
-            Assign { lhs, .. } => Some(*lhs),
-
-            Load { lhs, .. } => Some(*lhs),
-            Store { .. } => None,
-
-            MemorySize { lhs } => Some(*lhs),
-            MemoryGrow { lhs, .. } => Some(*lhs),
-
-            Const { lhs, .. } => Some(*lhs),
-            Numeric { lhs, .. } => Some(*lhs),
-        }
-    }
-
+impl Stmt {
+    
     /// Parse multiple instructions, with possibly preceding and trailing whitespace.
     fn parse_nom_multiple_ws(input: &str) -> NomResult<Vec<Instr>> {
         preceded(ws, many0(terminated(Instr::parse_nom_single, ws)))(input)
@@ -732,35 +730,262 @@ where
 // - Things in parentheses (x, y) signify runtime arguments.
 // - Everything outside of the parentheses is statically encoded into the instruction.
 // - Curly brances { ... } signify block bodies (i.e., instructions and an optional return variable).
-impl fmt::Display for Instr {
+impl fmt::Display for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(lhs) = self.lhs() {
-            write!(f, "{} = ", lhs)?;
-        }
-
-        use Instr::*;
+        use Stmt::*;
         match self {
+            StmtLHS { lhs, expr } => {
+                write!(f, "{} = {}", lhs, expr)?;
+            },
+            StmtOpt { lhs, expr } => {
+                write!(f, "{} = {}", lhs, expr)?;
+            },
+            Expr { expr } => {
+                write!(f, "{}", expr)?;
+            },
             Unreachable => f.write_str("unreachable")?,
+            // br @label0 (s1)
+            Br { 
+                target, 
+                value 
+            } => {
+                write!(f, "br {}", target)?;
+                display_delim(f, value, " (", ")", ", ")?;
+            },
+            // br-table @label0 @label1 @label2 default=@label3 (s0)
+            BrTable { 
+                idx, 
+                table, 
+                default, 
+                value 
+            } => {
+                f.write_str("br_table")?;
+                display_delim(f, table, " ", "", " ")?;
+                write!(f, " default={} ({})", default, idx)?;
+                display_delim(f, value, " (", ")", ", ")?;    
+            },
+            // return (s1)
+            Return { value } => {
+                f.write_str("return")?;
+                display_delim(f, value, " (", ")", ", ")?;                
+            },
+            // i32.store offset=3 align=4 (s0//addr) (s1//value)
+            Store { 
+                op, 
+                memarg, 
+                value, 
+                addr 
+            } => {
+                write!(f, "{}", op)?;
+                if !memarg.is_default(*op) {
+                    f.write_str(" ")?;
+                    memarg.fmt(f, *op)?;
+                    f.write_str(" ")?;
+                }
+                write!(f, "({}) ({})", addr, value)?;                
+            },
+        }
+        // match self {
+        //     Unreachable => f.write_str("unreachable")?,
 
+        //     // s0 = @label0: block {
+        //     //   s1 = i32.const 3
+        //     //   s1
+        //     // }
+        //     Block {
+        //         lhs: _,
+        //         label,
+        //         body,
+        //     } => write!(f, "{}: block {}", label, body)?,
+            // // s0 = @label0: loop {
+            // //     s1 = i32.const 3
+            // //     br @label0 (s1)
+            // //     s1
+            // // }
+        //     Loop {
+        //         lhs: _,
+        //         label,
+        //         body,
+        //     } => write!(f, "{}: loop {}", label, body)?,
+            // // s0 = @label0: if {
+            // //     s1 = i32.const 3
+            // //     s1
+            // // } else {
+            // //     s2 = i32.const 6
+            // //     s2
+            // // }
+        //     If {
+        //         lhs: _,
+        //         condition,
+        //         label,
+        //         if_body,
+        //         else_body,
+        //     } => {
+        //         //println!("{:?}", self);
+        //         if let Some(label) = label {
+        //             write!(f, "{}: ", label)?;
+        //         }
+        //         write!(f, "if ({}) {}", condition, if_body)?;
+        //         if let Some(else_branch) = else_body {
+        //             write!(f, " else {}", else_branch)?;
+        //         }
+        //     }
+
+        //     // br @label0 (s1)
+        //     Br { target, value } => {
+        //         write!(f, "br {}", target)?;
+        //         display_delim(f, value, " (", ")", ", ")?;
+        //     }
+        //     // br-table @label0 @label1 @label2 default=@label3 (s0)
+        //     BrTable {
+        //         idx: index,
+        //         table,
+        //         default,
+        //         value,
+        //     } => {
+        //         f.write_str("br_table")?;
+        //         display_delim(f, table, " ", "", " ")?;
+        //         write!(f, " default={} ({})", default, index)?;
+        //         display_delim(f, value, " (", ")", ", ")?;
+        //     }
+
+        //     // return (s1)
+        //     Return { value } => {
+        //         f.write_str("return")?;
+        //         display_delim(f, value, " (", ")", ", ")?;
+        //     }
+
+        //     // s0 = call f1 (s1)
+        //     Call { lhs: _, func, args } => {
+        //         // Always print the parentheses, even if `args` is empty.
+        //         write!(f, "call {} (", func)?;
+        //         display_delim(f, args, "", "", ", ")?;
+        //         f.write_str(")")?;
+        //     }
+        //     // s2 = call_indirect [] -> [i32] (s0) (s1, s2, s3...)
+        //     CallIndirect {
+        //         lhs: _,
+        //         type_,
+        //         table_idx: table_index,
+        //         args,
+        //     } => {
+        //         // Always print the parentheses, even if `args` is empty.
+        //         write!(f, "call_indirect {} ({}) (", type_, table_index)?;
+        //         display_delim(f, args, "", "", ", ")?;
+        //         f.write_str(")")?;
+        //     }
+
+        //     // s2 = s1
+        //     Assign { lhs: _, rhs } => write!(f, "{}", rhs)?,
+
+        //     // s1 = i32.load offset=3 align=4 (s0)
+        //     Load {
+        //         lhs: _,
+        //         op,
+        //         memarg,
+        //         addr,
+        //     } => {
+        //         write!(f, "{}", op)?;
+        //         if !memarg.is_default(*op) {
+        //             f.write_str(" ")?;
+        //             memarg.fmt(f, *op)?;
+        //             f.write_str(" ")?;
+        //         }
+        //         write!(f, "({})", addr)?;
+        //     }
+        //     // i32.store offset=3 align=4 (s0//addr) (s1//value)
+        //     Store {
+        //         op,
+        //         memarg,
+        //         addr,
+        //         value,
+        //     } => {
+        //         write!(f, "{}", op)?;
+        //         if !memarg.is_default(*op) {
+        //             f.write_str(" ")?;
+        //             memarg.fmt(f, *op)?;
+        //             f.write_str(" ")?;
+        //         }
+        //         write!(f, "({}) ({})", addr, value)?;
+        //     }
+
+        //     // s1 = memory.size
+        //     MemorySize { lhs: _ } => write!(f, "memory.size")?,
+        //     // s1 = memory.grow(s0)
+        //     MemoryGrow { lhs: _, pages } => write!(f, "memory.grow({})", pages)?,
+
+        //     // s1 = i32.const 3
+        //     Const { lhs: _, val } => write!(f, "{}.const {}", val.to_type(), val)?,
+
+        //     // s2 = i32.add(s0, s1)
+        //     // s1 = f32.neg(s0)
+        //     Numeric { lhs: _, op, rhs } => {
+        //         write!(f, "{}", op)?;
+        //         display_delim(f, rhs, "(", ")", ", ")?;
+        //     }
+        // };
+
+        Ok(())
+    }
+}
+
+impl fmt::Display for ExprLHS {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            // s2 = s1
+            ExprLHS::Assign { rhs } => {
+                write!(f, "{}", rhs) 
+            },
+            // s1 = i32.load offset=3 align=4 (s0)
+            ExprLHS::Load { 
+                op, 
+                memarg, 
+                addr 
+            } => {
+                write!(f, "{}", op)?;
+                if !memarg.is_default(*op) {
+                    f.write_str(" ")?;
+                    memarg.fmt(f, *op)?;
+                    f.write_str(" ")?;
+                }
+                write!(f, "({})", addr)
+            },
+            // s1 = memory.size
+            ExprLHS::MemorySize { } => write!(f, "memory.size"),
+            // s1 = memory.grow(s0)
+            ExprLHS::MemoryGrow { pages } => write!(f, "memory.grow({})", pages),
+            // s1 = i32.const 3
+            ExprLHS::Const { val } => write!(f, "{}.const {}", val.to_type(), val),
+            // s2 = i32.add(s0, s1)
+            // s1 = f32.neg(s0)
+            ExprLHS::Numeric { op, rhs } => {
+                write!(f, "{}", op)?;
+                display_delim(f, rhs, "(", ")", ", ")
+            }
+        }
+    }
+}
+
+impl fmt::Display for ExprOpt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
             // s0 = @label0: block {
             //   s1 = i32.const 3
             //   s1
             // }
-            Block {
-                lhs: _,
-                label,
-                body,
-            } => write!(f, "{}: block {}", label, body)?,
+            ExprOpt::Block { 
+                label, 
+                body 
+            } => write!(f, "{}: block {}", label, body),
             // s0 = @label0: loop {
             //     s1 = i32.const 3
             //     br @label0 (s1)
             //     s1
-            // }
-            Loop {
-                lhs: _,
-                label,
-                body,
-            } => write!(f, "{}: loop {}", label, body)?,
+            // }            
+            ExprOpt::Loop { 
+                label, 
+                body 
+            } => write!(f, "{}: loop {}", label, body),
             // s0 = @label0: if {
             //     s1 = i32.const 3
             //     s1
@@ -768,118 +993,42 @@ impl fmt::Display for Instr {
             //     s2 = i32.const 6
             //     s2
             // }
-            If {
-                lhs: _,
-                condition,
-                label,
-                if_body,
-                else_body,
+            ExprOpt::If { 
+                label, 
+                condition, 
+                if_body, 
+                else_body 
             } => {
-                //println!("{:?}", self);
                 if let Some(label) = label {
                     write!(f, "{}: ", label)?;
                 }
-                write!(f, "if ({}) {}", condition, if_body)?;
+                write!(f, "if ({}) {}", condition, if_body); 
                 if let Some(else_branch) = else_body {
-                    write!(f, " else {}", else_branch)?;
+                    write!(f, " else {}", else_branch); 
                 }
-            }
-
-            // br @label0 (s1)
-            Br { target, value } => {
-                write!(f, "br {}", target)?;
-                display_delim(f, value, " (", ")", ", ")?;
-            }
-            // br-table @label0 @label1 @label2 default=@label3 (s0)
-            BrTable {
-                idx: index,
-                table,
-                default,
-                value,
-            } => {
-                f.write_str("br_table")?;
-                display_delim(f, table, " ", "", " ")?;
-                write!(f, " default={} ({})", default, index)?;
-                display_delim(f, value, " (", ")", ", ")?;
-            }
-
-            // return (s1)
-            Return { value } => {
-                f.write_str("return")?;
-                display_delim(f, value, " (", ")", ", ")?;
-            }
-
+                Ok(())
+            },
             // s0 = call f1 (s1)
-            Call { lhs: _, func, args } => {
+            ExprOpt::Call { 
+                func, 
+                args 
+            } => {
                 // Always print the parentheses, even if `args` is empty.
                 write!(f, "call {} (", func)?;
                 display_delim(f, args, "", "", ", ")?;
-                f.write_str(")")?;
-            }
+                f.write_str(")")
+            },
             // s2 = call_indirect [] -> [i32] (s0) (s1, s2, s3...)
-            CallIndirect {
-                lhs: _,
-                type_,
-                table_idx: table_index,
-                args,
+            ExprOpt::CallIndirect { 
+                type_, 
+                table_idx, 
+                args 
             } => {
-                // Always print the parentheses, even if `args` is empty.
-                write!(f, "call_indirect {} ({}) (", type_, table_index)?;
+                write!(f, "call_indirect {} ({}) (", type_, table_idx)?;
                 display_delim(f, args, "", "", ", ")?;
-                f.write_str(")")?;
-            }
-
-            // s2 = s1
-            Assign { lhs: _, rhs } => write!(f, "{}", rhs)?,
-
-            // s1 = i32.load offset=3 align=4 (s0)
-            Load {
-                lhs: _,
-                op,
-                memarg,
-                addr,
-            } => {
-                write!(f, "{}", op)?;
-                if !memarg.is_default(*op) {
-                    f.write_str(" ")?;
-                    memarg.fmt(f, *op)?;
-                    f.write_str(" ")?;
-                }
-                write!(f, "({})", addr)?;
-            }
-            // i32.store offset=3 align=4 (s0//addr) (s1//value)
-            Store {
-                op,
-                memarg,
-                addr,
-                value,
-            } => {
-                write!(f, "{}", op)?;
-                if !memarg.is_default(*op) {
-                    f.write_str(" ")?;
-                    memarg.fmt(f, *op)?;
-                    f.write_str(" ")?;
-                }
-                write!(f, "({}) ({})", addr, value)?;
-            }
-
-            // s1 = memory.size
-            MemorySize { lhs: _ } => write!(f, "memory.size")?,
-            // s1 = memory.grow(s0)
-            MemoryGrow { lhs: _, pages } => write!(f, "memory.grow({})", pages)?,
-
-            // s1 = i32.const 3
-            Const { lhs: _, val } => write!(f, "{}.const {}", val.to_type(), val)?,
-
-            // s2 = i32.add(s0, s1)
-            // s1 = f32.neg(s0)
-            Numeric { lhs: _, op, rhs } => {
-                write!(f, "{}", op)?;
-                display_delim(f, rhs, "(", ")", ", ")?;
-            }
-        };
-
-        Ok(())
+                f.write_str(")")
+            },
+        }
     }
 }
 
@@ -960,9 +1109,11 @@ fn wimplify_instrs(
     instrs: &mut VecDeque<&highlevel::Instr>,
     tys: &mut VecDeque<InstructionType>,
     state: &mut State,
-) -> Result<Vec<Instr>, String> {
+) -> Result<Vec<Stmt>, String> {
     
-    use Instr::*;
+    use Stmt::*;
+    use ExprLHS::*; 
+    use ExprOpt::*; 
     use Var::*;
 
     let instr = instrs.pop_front().unwrap();
