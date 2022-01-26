@@ -5,8 +5,8 @@
     i32.add
     i32.const 3
     i32.add
-	f64.const 45.6
-	f64.abs
+	  f64.const 45.6
+	  f64.abs
     drop
     drop
   )

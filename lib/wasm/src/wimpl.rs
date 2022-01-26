@@ -19,10 +19,32 @@ use nom::{
 
 use crate::{highlevel::MemoryOp, types::InstructionType, Val, ValType};
 use crate::{
-    highlevel::{self, LoadOp, Module, NumericOp, StoreOp},
+    highlevel::{self, LoadOp, NumericOp, StoreOp},
     types::types,
     FunctionType, Memarg,
 };
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct Module {
+    pub functions: Vec<Function>,
+    // From the name section, if present, e.g., compiler-generated debug info.
+    // pub name: Option<String>,
+    // pub globals: Vec<Global>,
+    // pub tables: Vec<Table>,
+    // pub memories: Vec<Memory>,
+    // pub start: Option<Idx<Function>>,
+    // pub custom_sections: Vec<RawCustomSection>,
+}
+
+impl fmt::Display for Module {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "module\n").expect("");         
+        self.functions.iter().for_each(|fun| {
+            write!(f, "{}\n", fun).expect(""); 
+        }); 
+        Ok(())
+    }
+}
 
 // we want our functions to either have names (in case of debug mode)
 // or Func variables which is 
@@ -52,8 +74,25 @@ pub struct Function {
 
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "func {} {} ", self.name, self.type_); 
-        write!(f, "{}", self.instrs); 
+        write!(f, "func {}", self.name)?;
+        write!(f, " [")?; 
+        self.type_.params.iter().enumerate().for_each(|(ind,p)| {
+            if ind == self.type_.params.len() -1 {
+                write!(f, "p{}: {}", ind, p).expect("");  
+            } else {
+                write!(f, "p{}: {}, ", ind, p).expect(""); 
+            }
+        });
+        write!(f, "] -> [")?;
+        self.type_.results.iter().enumerate().for_each(|(ind,r)| {
+            if ind == (self.type_.results.len() - 1) {
+                write!(f, "{}", r).expect(""); 
+            } else {
+                write!(f, "{}, ", r).expect(""); 
+            }
+        }); 
+        write!(f, "] ")?; 
+        write!(f, "{}", self.instrs)?; 
         Ok(())
     }
 }
@@ -965,6 +1004,7 @@ fn wimplify_instrs(
         // you could reverse state.var_stack and then split_at but that seems to be more expensive 
         // instead we just reverse here 
     rhs.reverse(); 
+    // split_of
 
     let result_instr: Option<Instr> = match instr {
 
@@ -1392,38 +1432,39 @@ fn wimplify_instrs(
     Ok(result_instrs)
 }
 
-// since functions are numbered in order we can maintain a global variable 
-// of the counter and use it to generate function names 
-static mut FN_COUNTER : i32 = -1; 
+pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
+    let mut wimpl_funcs = Vec::new(); 
+    for (ind, func) in module.functions() {
+        
+        let instrs = func.code().unwrap().body.as_slice();
+        let tys = types(instrs, func, module).map_err(|e| format!("{:?}", e)).expect("");
+        
+        let mut instrs = VecDeque::from_iter(instrs); //pass in iterator instead of vecdeque
+        let mut ty = VecDeque::from_iter(tys);
+        let result_instrs = wimplify_instrs(&mut instrs, &mut ty, &mut State::new(func.type_.params.len())).unwrap();
+        
+        let name = if let Some(name) = &func.name {
+            FunctionName::Name(name.clone())
+        } else {
+            FunctionName::Generic(Func(ind.into_inner()))
+        }; 
 
-pub fn wimplify(
-    instrs: &[highlevel::Instr],
-    function: &highlevel::Function,
-    module: &Module,
-) -> Result<Function, String> {
-
-    let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
-    let mut instrs = VecDeque::from_iter(instrs); //pass in iterator instead of vecdeque
-    let mut tys = VecDeque::from_iter(tys);
-    let result_instrs = wimplify_instrs(&mut instrs, &mut tys, &mut State::new(function.type_.params.len())).unwrap();
-    
-    let name = if let Some(name) = &function.name {
-        FunctionName::Name(name.clone())
-    } else {
-        unsafe{
-            FN_COUNTER += 1;    
-            FunctionName::Generic(Func(FN_COUNTER as usize))
-        }
-    }; 
-
-    Ok(Function{
-        type_: function.type_.clone(),
-        instrs: Body{
-            instrs: result_instrs,
-            result: None,
-        }, 
-        name,
+        wimpl_funcs.push(Function{
+            type_: func.type_.clone(),
+            instrs: Body{
+                instrs: result_instrs,
+                result: None,
+            }, 
+            name,
+        }); 
+    }
+    Ok(Module{
+        functions: wimpl_funcs,
     })
+}
+
+pub fn wimplify (path: &str) -> Result<Module, String> {
+    wimplify_module(&highlevel::Module::from_file(path).unwrap())
 }
 
 #[cfg(test)]
@@ -1797,6 +1838,7 @@ mod test {
     }
 }
 
+#[cfg(test)]
 fn test (path_wimpl: &str, path_wasm: &str) {
     let expected = Instr::from_file(path_wimpl).unwrap();
     println!("EXPECTED");
@@ -1804,15 +1846,9 @@ fn test (path_wimpl: &str, path_wasm: &str) {
         println!("{}", instr);
     }
 
-    let module = Module::from_file(path_wasm).unwrap();
-    let func = module.functions().next().unwrap().1;
-    let instrs = &func.code().unwrap().body.as_slice();
-    let actual = wimplify(instrs, func, &module).unwrap();
-
-    println!("\nACTUAL");
-    println!("{}", actual);
-
-    assert_eq!(actual.instrs.instrs, expected);
+    let wimpl_module = wimplify(path_wasm).expect(""); 
+    println!("{}", wimpl_module); 
+    assert_eq!(wimpl_module.functions[0].instrs.instrs, expected);
 }
 
 #[test]
