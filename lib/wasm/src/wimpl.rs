@@ -38,37 +38,21 @@ pub struct Module {
 
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "module\n").expect("");         
+        writeln!(f, "module").expect("");         
         self.functions.iter().for_each(|fun| {
-            write!(f, "{}\n", fun).expect(""); 
+            writeln!(f, "{}", fun).expect(""); 
         }); 
         Ok(())
     }
 }
 
-// we want our functions to either have names (in case of debug mode)
-// or Func variables which is 
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub enum FunctionName { 
-    Name(String), 
-    Generic(Func)
-}
-
-impl fmt::Display for FunctionName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FunctionName::Name(s) => write!(f, "{}", s),
-            FunctionName::Generic(fun) => write!(f, "{}", fun),
-        }
-    }
-}
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Function {
     pub type_: FunctionType,
     pub instrs: Body, //want to reuse 
     //pub export: Vec<String>,
-    pub name: FunctionName,
+    pub name: Func,
     //pub param_names: Vec<Option<String>>,
 }
 
@@ -138,12 +122,18 @@ impl FromStr for Var {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub struct Func(usize);
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum Func { //TODO changes names to be better
+    Named(String), 
+    Idx(usize),
+}
 
 impl fmt::Display for Func {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "f{}", self.0)
+        match self {
+            Func::Named(s) => write!(f, "{}", s),
+            Func::Idx(i) => write!(f, "f{}", i),
+        }
     }
 }
 
@@ -153,7 +143,7 @@ impl FromStr for Func {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let i = s.strip_prefix('f').ok_or(())?;
         let i = i.parse().map_err(|_| ())?;
-        Ok(Func(i))
+        Ok(Func::Idx(i))
     }
 }
 
@@ -1232,7 +1222,7 @@ fn wimplify_instrs(
 
         highlevel::Instr::Call(idx) => Some(Call {
             lhs,
-            func: Func(idx.into_inner()), 
+            func: Func::Idx(idx.into_inner()), 
             args: rhs,
         }),
 
@@ -1438,15 +1428,15 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
         
         let instrs = func.code().unwrap().body.as_slice();
         let tys = types(instrs, func, module).map_err(|e| format!("{:?}", e)).expect("");
-        
+        println!("{:?}", instrs); 
         let mut instrs = VecDeque::from_iter(instrs); //pass in iterator instead of vecdeque
         let mut ty = VecDeque::from_iter(tys);
         let result_instrs = wimplify_instrs(&mut instrs, &mut ty, &mut State::new(func.type_.params.len())).unwrap();
         
         let name = if let Some(name) = &func.name {
-            FunctionName::Name(name.clone())
+            Func::Named(name.clone())
         } else {
-            FunctionName::Generic(Func(ind.into_inner()))
+            Func::Idx(ind.into_inner())
         }; 
 
         wimpl_funcs.push(Function{
@@ -1562,7 +1552,7 @@ mod test {
             (
                 Call {
                     lhs: None,
-                    func: Func(7),
+                    func: Func::Idx(7),
                     args: Vec::new(),
                 },
                 "call f7 ()",
@@ -1674,7 +1664,7 @@ mod test {
             (
                 Call {
                     lhs: None,
-                    func: Func(2),
+                    func: Func::Idx(2),
                     args: vec![Stack(2), Stack(3)],
                 },
                 "call f2 ( s2, s3 )",
