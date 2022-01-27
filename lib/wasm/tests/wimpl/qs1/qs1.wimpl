@@ -1,7 +1,7 @@
-s0 = l0
-s1 = l1
+s0 = p0
+s1 = p1
 s2 = i32.add(s0, s1) 
-l0 = s2
+p0 = s2
 s3 = g0
-l1 = s3
+p1 = s3
 g0 = s3 // or g0 = l1 ?? 
