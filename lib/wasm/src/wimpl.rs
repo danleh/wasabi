@@ -95,17 +95,27 @@ pub enum LhsVar {
     Param(ValType, usize),
 }
 
-// impl LhsVar{ 
-//     fn get_usize(&self) -> usize {
-//         use LhsVar::*; 
-//         match self {
-//             Stack(_, i) => *i,
-//             Local(_, i) => *i,
-//             Global(_, i) => *i,
-//             Param(_, i) => *i,
-//         } 
-//     }   
-// }
+impl LhsVar{ 
+    fn get_usize(&self) -> usize {
+        use LhsVar::*; 
+        match self {
+            Stack(_, i) => *i,
+            Local(_, i) => *i,
+            Global(_, i) => *i,
+            Param(_, i) => *i,
+        } 
+    }   
+
+    fn get_ty(&self) -> ValType {
+        use LhsVar::*; 
+        match self {
+            Stack(ty, _) => *ty,
+            Local(ty, _) => *ty,
+            Global(ty, _) => *ty,
+            Param(ty, _) => *ty,
+        } 
+    }   
+}
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum RhsVar {
@@ -1189,9 +1199,7 @@ fn wimplify_instrs(
     use Stmt::*;
     use ExprLHS::*; 
     use ExprOpt::*; 
-    use LhsVar::*;
-    use RhsVar::*; 
-
+   
     let instr = instrs.pop_front().unwrap();
     let ty = tys.pop_front().unwrap();
 
@@ -1211,6 +1219,12 @@ fn wimplify_instrs(
     } else {
         panic!("cannot return more than one value in wasm1.0")
     };
+
+    let mut lhs_ty = if lhs.is_some() {
+        ty.results[0]
+    } else {
+        None
+    };  
 
     let mut rhs: Vec<LhsVar> = Vec::new();
     for _ in 0..n_inputs {
@@ -1252,6 +1266,11 @@ fn wimplify_instrs(
             if let Some(_btype) = blocktype.0 {
                 //panic_if_size_lt(&block_state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
                 lhs = block_state.var_stack.pop();
+                lhs_ty = if lhs.is_some() { 
+                    Some(lhs.unwrap().get_ty()) 
+                } else { 
+                    None 
+                };                 
                 result = Some(RhsVar::new(block_state.var_stack.pop().unwrap()));//.get_usize()));             
             }
 
@@ -1306,6 +1325,11 @@ fn wimplify_instrs(
             if let Some(_btype) = blocktype.0 {
                 //panic_if_size_lt(&loop_state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
                 lhs = loop_state.var_stack.pop();
+                lhs_ty = if lhs.is_some() { 
+                    Some(lhs.unwrap().get_ty()) 
+                } else { 
+                    None 
+                };
                 result = Some(RhsVar::new(loop_state.var_stack.pop().unwrap())); //.get_usize()));             
             }
             state.label_count = loop_state.label_count;
@@ -1347,6 +1371,11 @@ fn wimplify_instrs(
             if let Some(_btype) = blocktype.0 {
                 //panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
                 lhs = state.var_stack.pop();
+                lhs_ty = if lhs.is_some() { 
+                    Some(lhs.unwrap().get_ty()) 
+                } else { 
+                    None 
+                };
                 if_return = Some(RhsVar::new(state.var_stack.pop().unwrap())); //.get_usize()));             
             }
 
@@ -1741,7 +1770,6 @@ fn wimplify_instrs(
         }
 
         highlevel::Instr::Const(val) => {
-            println!("here"); 
             if let Some(lhs) = lhs {
                 Some(StmtLHS{ lhs, expr:Const{ val: *val }})
             } else {
@@ -1763,14 +1791,16 @@ fn wimplify_instrs(
             }
         }
     };
-
+    //println!("{:?}", result_instr);
     if let Some(result_instr) = result_instr {
         result_instrs.push(result_instr);
     }
 
     if !instrs.is_empty() {
+        //println!("\n\n{}, {:?}, {:?}", instr, ty, result_instrs); 
         if let Some(lhs) = lhs { 
-            state.var_stack.push(LhsVar::Stack(ty.results[0].expect(""), state.stack_var_count));
+            state.var_stack.push(LhsVar::Stack(lhs_ty.unwrap(), state.stack_var_count));
+            //state.var_stack.push(LhsVar::Stack(ty.results[0].expect(""), state.stack_var_count));
             if let LhsVar::Stack(_, _) = lhs {
                 state.stack_var_count += 1;
             }
