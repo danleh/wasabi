@@ -268,7 +268,8 @@ impl fmt::Display for StackType {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct InstructionType {
     pub inputs: Vec<InferredValType>,
-    pub results: StackType,
+    // TODO do we need this to be StackType because of stack polymorphic/unreachable instructions?
+    pub results: Vec<InferredValType>,
 }
 
 impl InstructionType {
@@ -326,6 +327,11 @@ impl fmt::Display for InstructionType {
     }
 }
 
+// TODO move comment up
+// Implements the relaxed type-checking for dead code from
+// https://github.com/WebAssembly/relaxed-dead-code-validation/blob/main/proposals/relaxed-dead-code-validation/Push-Pop.md
+// In particular, this will admit some instruction sequences that were formerly
+// ill-typed, but only for statically-known dead code.
 
 /// Holds the state during type checking.
 ///
@@ -378,20 +384,7 @@ impl TypeChecker {
 
     #[must_use]
     pub fn pop_val(&mut self) -> Result<InferredValType, TypeError> {
-        // TODO(Daniel): I don't really understand why this is necessary: 
-        // understand and document stack height validation.
-        // let frame = self.top_ctrl()?;
-        // let height = frame.height;
-        // if self.value_stack.len() == height {
-            // if unreachable {
-            //     return Ok(InferredValType::unknown());
-            // }
-        //     else {
-        //         return Err(Error::new("value stack underflow"));
-        //     }
-        // }
-
-        match &mut self.value_stack {
+        match self.value_stack {
             StackType::Unreachable => Ok(InferredValType::unknown()),
             StackType::Reachable(value_stack) => 
                 value_stack
@@ -411,7 +404,7 @@ impl TypeChecker {
     pub fn pop_vals_expected(
         &mut self,
         expected: &[ValType],
-    ) -> Result<Vec<InferredValType>, TypeError> {
+    ) -> Result<Vec<ValType>, TypeError> {
         let actual: Result<Vec<_>, _> = expected
             .iter()
             // The expected types must be checked in reverse order...
@@ -425,12 +418,14 @@ impl TypeChecker {
     }
 
     pub fn push_val(&mut self, type_: impl Into<InferredValType>) {
-        self.value_stack.push(type_.into())
+        if let StackType::Reachable(value_stack) = self.value_stack {
+            value_stack.push(type_.into())
+        }
     }
 
     pub fn push_vals(&mut self, types: &[ValType]) {
         for &ty in types {
-            self.value_stack.push(ty.into());
+            self.push_val(ty);
         }
     }
 
@@ -442,7 +437,6 @@ impl TypeChecker {
             block_instr: BlockInstr::Function,
             inputs: Vec::new(),
             results,
-            height: 0,
         })
     }
 
@@ -453,11 +447,10 @@ impl TypeChecker {
                 Instr::If(_) => BlockInstr::If,
                 Instr::Else => BlockInstr::Else,
                 Instr::Loop(_) => BlockInstr::Loop,
-                _ => panic!("non-control instruction {:?}", instr),
+                _ => unreachable!("push_ctrl() should not be called with non-control instruction {:?}", instr),
             },
             inputs: inputs.clone(),
             results,
-            height: self.value_stack.len(),
         });
         self.push_vals(&inputs);
     }
@@ -475,19 +468,14 @@ impl TypeChecker {
             .iter()
             .rev()
             .nth(label.0 as usize)
-            .ok_or(format!("invalid control stack label {}", label.0).into())
+            .ok_or(format!("invalid branch target label {}", label.0).into())
     }
 
     #[must_use]
     pub fn pop_ctrl(&mut self) -> Result<ControlFrame, TypeError> {
         let frame = self.top_ctrl()?;
         let results = frame.results.clone();
-        let height = frame.height;
         self.pop_vals_expected(&results)?;
-        // FIXME
-        // if self.value_stack.len() != height {
-        //     return Err(Error::new("value stack underflow"));
-        // }
         Ok(self
             .control_stack
             .pop()
@@ -523,10 +511,6 @@ struct ControlFrame {
     // Input and result types of the block.
     inputs: Vec<ValType>,
     results: Vec<ValType>,
-
-    // Height of the value stack at the start of the block, used to check that
-    // operands do not underflow the current block.
-    height: usize,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -628,7 +612,7 @@ fn type_check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function,
             state.push_vals(&frame.results);
             InstructionType::new(
                 Vec::new(),
-                StackType::from(frame.results).0
+                StackType::from(frame.results)
             )
         }
         Else => {
@@ -639,7 +623,7 @@ fn type_check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function,
             state.push_ctrl(instr, frame.inputs, frame.results.clone());
             InstructionType::new(
                 Vec::new(),
-                StackType::from(frame.results).0,
+                StackType::from(frame.results),
             )
         }
 
@@ -651,8 +635,8 @@ fn type_check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function,
                 state.pop_vals_expected(&ty)?;
             state.push_vals(&state.label_types(state.get_ctrl(*label)?));
             InstructionType {
-                inputs: ty.clone(),
-                results: ty,
+                inputs: vec![ValType::I32.into(), ty.into()],
+                results: vec![],
             }
         }
         // All of these branches are followed by dead code, which makes their
