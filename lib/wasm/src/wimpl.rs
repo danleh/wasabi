@@ -156,7 +156,42 @@ impl RhsVar {
     }
 }
 
-//TODO impl FromStr for LhsVar {
+impl FromStr for LhsVar {
+    type Err = ();
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // `split_at` can panic, so ensure `s` has at least one byte.
+        if s.is_empty() {
+            return Err(());
+        }
+
+        //TODO: code review Daniel
+        let (letter, i) = s.split_at(1);
+        let (i, ty_) = i.split_at(i.find(':').unwrap()); 
+        
+        let ty = if ty_.contains('3') {
+            let (_, ty) = ty_.split_at(ty_.find('3').unwrap()-1);
+            ty
+        } else if ty_.contains('6') {
+            let (_, ty) = ty_.split_at(ty_.find('6').unwrap()-1);
+            ty
+        } else {
+            panic!("unknown type")
+        }; 
+
+        let i = i.parse().map_err(|_| ())?;
+        let ty = ValType::new(ty.chars().next().unwrap()); 
+        
+        use LhsVar::*; 
+        Ok(match letter {
+            "s" => Stack(ty, i),
+            "l" => Local(ty, i),
+            "g" => Global(ty, i),
+            "p" => Param(ty, i),
+            _ => return Err(()),
+        })
+    }
+}
 
 impl FromStr for RhsVar {
     type Err = ();
@@ -478,7 +513,7 @@ fn adapt_nom_parser<'input, O>(
         Err(err) => Err(ParseError::from(err, input)),
     }
 }
-/*
+
 impl Stmt {
     
     /// Parse multiple instructions, with possibly preceding and trailing whitespace.
@@ -504,23 +539,28 @@ impl Stmt {
         // re-used multiple times :/. For this reason, most are written as normal
         // functions with explicit type signatures.
 
-        fn var(input: &str) -> NomResult<RhsVar> {
+        
+        fn lhsvar(input: &str) -> NomResult<LhsVar> {
+            map_res(take_until("="), LhsVar::from_str)(input)
+        }
+        fn rhsvar(input: &str) -> NomResult<RhsVar> {
             map_res(alphanumeric1, RhsVar::from_str)(input)
         }
         fn arg_single(input: &str) -> NomResult<RhsVar> {
-            delimited(pair(tag("("), ws), var, pair(ws, tag(")")))(input)
+            delimited(pair(tag("("), ws), rhsvar, pair(ws, tag(")")))(input)
         }
         fn arg_list(input: &str) -> NomResult<Vec<RhsVar>> {
             delimited(
                 pair(tag("("), ws),
-                separated_list0(tuple((ws, tag(","), ws)), var),
+                separated_list0(tuple((ws, tag(","), ws)), rhsvar),
                 pair(ws, tag(")")),
             )(input)
         }
         fn lhs(input: &str) -> NomResult<LhsVar> {
             // Include trailing whitespace in this parser, since LHS is always
             // followed by something else, so we don't need to put ws there.
-            terminated(var, tuple((ws, tag("="), ws)))(input)
+            terminated(lhsvar, tuple((ws, tag("="), ws)))(input)
+            //terminated(var, tuple((ws, tag("="), ws)))(input)
         }
         fn label(input: &str) -> NomResult<Label> {
             map_res(
@@ -555,7 +595,7 @@ impl Stmt {
             map(
                 delimited(
                     tag("{"),
-                    pair(Stmt::parse_nom_multiple_ws, opt(terminated(var, ws))),
+                    pair(Stmt::parse_nom_multiple_ws, opt(terminated(rhsvar, ws))),
                     tag("}"),
                 ),
                 |(instrs, result)| Body {
@@ -667,7 +707,7 @@ impl Stmt {
         );
 
         let assign = map(
-            pair(lhs, var), 
+            pair(lhs, rhsvar), 
             |(lhs, rhs)| 
             StmtLHS{ lhs, expr: Assign { rhs } }
         );
@@ -763,8 +803,8 @@ impl Stmt {
         Self::from_str_multiple(&str).map_err(|e| io::Error::new(ErrorKind::Other, e))
     }
 }
-*/
-/*
+
+
 /// Adapt nom parser for use with Rust `parse()` / `from_str`.
 impl FromStr for Stmt {
     type Err = ParseError;
@@ -773,7 +813,7 @@ impl FromStr for Stmt {
         adapt_nom_parser(Self::parse_nom_single, input)
     }
 }
-*/
+
 /// Helper function for `fmt::Display`-ing an arbitrary iterator of `values`,
 /// where each element is separated by `delim` and if the iterator is non-empty
 /// surrounded by `begin` and `end`.
@@ -1747,17 +1787,18 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
 pub fn wimplify (path: &str) -> Result<Module, String> {
     wimplify_module(&highlevel::Module::from_file(path).unwrap())
 }
-/*
+
 #[cfg(test)]
 mod test {
     // Convenience imports:
     use super::Body;
     use super::Func;
     use super::Stmt::{self, *};
-    use super::ExprLHS::{self, *};
-    use super::ExprOpt::{self, *};
+    use super::ExprLHS::*;
+    use super::ExprOpt::*;
     use super::Label;
-    use super::Var::{self, *};
+    use super::RhsVar::{self};
+    use super::LhsVar::{self};
     use super::{wimpl, wimpls};
     use crate::highlevel::LoadOp::*;
     use crate::highlevel::NumericOp::*;
@@ -1780,47 +1821,47 @@ mod test {
         static ref WIMPL_CANONICAL_SYNTAX_TESTCASES: Vec<(Stmt, &'static str, &'static str)> = vec![
             (Unreachable, "unreachable", ""),
             (Return { value: None }, "return", "return without value"),
-            (Return { value: Some(Stack(0)) }, "return (s0)", "with value, with whitespace"),
-            (StmtLHS{ lhs: Stack(0), expr: MemorySize { } }, "s0 = memory.size", "with lhs"),
-            (StmtLHS{ lhs: Global(0), expr: Assign { rhs: Local(0) } }, "g0 = l0", ""),
+            (Return { value: Some(RhsVar::Stack(0)) }, "return (s0)", "with value, with whitespace"),
+            (StmtLHS{ lhs: LhsVar::Stack(ValType::I32, 0), expr: MemorySize { } }, "s0: i32 = memory.size", "with lhs"),
+            (StmtLHS{ lhs: LhsVar::Global(ValType::I32, 0), expr: Assign { rhs: RhsVar::Local(0) } }, "g0: i32 = l0", ""),
             (
                 StmtLHS{
-                    lhs: Stack(0),
+                    lhs: LhsVar::Stack(ValType::I32, 0),
                     expr: Const {
                         val: I32(1337),
                     }, 
                 },
-                "s0 = i32.const 1337",
+                "s0: i32 = i32.const 1337",
                 ""
             ),
             (
                 StmtLHS{
-                    lhs: Stack(1),
+                    lhs: LhsVar::Stack(ValType::I32, 1),
                     expr: Numeric {
                         op: I32Add,
-                        rhs: vec![Stack(2), Stack(3)],
+                        rhs: vec![RhsVar::Stack(2), RhsVar::Stack(3)],
                     },
                 },
-                "s1 = i32.add(s2, s3)",
+                "s1: i32 = i32.add(s2, s3)",
                 ""
             ),
             (
                 StmtLHS{
-                    lhs: Stack(1),
+                    lhs: LhsVar::Stack(ValType::I32, 1),
                     expr: Load {
                         op: I32Load,
                         memarg: Memarg::default(I32Load),
-                        addr: Stack(0),
+                        addr: RhsVar::Stack(0),
                     }
                 },
-                "s1 = i32.load(s0)",
+                "s1: i32 = i32.load(s0)",
                 ""
             ),
             (
                 Store {
                     op: I64Store8,
-                    value: Stack(1),
-                    addr: Stack(2),
+                    value: RhsVar::Stack(1),
+                    addr: RhsVar::Stack(2),
                     memarg: Memarg {
                         offset: 0,
                         alignment_exp: 4,
@@ -1837,13 +1878,13 @@ mod test {
                 "br @label0",
                 "br without value"
             ),
-            (Br { target: Label(1), value: Some(Stack(0)) }, "br @label1 (s0)", "br with value"),
+            (Br { target: Label(1), value: Some(RhsVar::Stack(0)) }, "br @label1 (s0)", "br with value"),
             (
                 BrTable {
-                    idx: Stack(0),
+                    idx: RhsVar::Stack(0),
                     table: vec![Label(1), Label(2)],
                     default: Label(0),
-                    value: Some(Stack(1)),
+                    value: Some(RhsVar::Stack(1)),
                 },
                 "br_table @label1 @label2 default=@label0 (s0) (s1)",
                 "br_table with index argument and passed value"
@@ -1860,14 +1901,14 @@ mod test {
             ),
             (
                 StmtOpt{
-                    lhs: Stack(1),
+                    lhs: LhsVar::Stack(ValType::I32, 1),
                     expr: CallIndirect {
                         type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
-                        table_idx: Stack(0),
-                        args: vec![Stack(2), Stack(3)],
+                        table_idx: RhsVar::Stack(0),
+                        args: vec![RhsVar::Stack(2), RhsVar::Stack(3)],
                     }
                 },
-                "s1 = call_indirect [i32] -> [i32] (s0) (s2, s3)",
+                "s1: i32 = call_indirect [i32] -> [i32] (s0) (s2, s3)",
                 ""
             ),
             (
@@ -1884,16 +1925,16 @@ mod test {
             ),
             (
                 StmtOpt{
-                    lhs: Stack(1),
+                    lhs: LhsVar::Stack(ValType::I32, 1),
                     expr: Block {
                         label: Label(0),
                         body: Body {
                             instrs: vec![],
-                            result: Some(Stack(0)),
+                            result: Some(RhsVar::Stack(0)),
                         },
                     }
                 },
-                "s1 = @label0: block { s0 }",
+                "s1: i32 = @label0: block { s0 }",
                 "no block instructions, only a result"
             ),
             (
@@ -1903,20 +1944,20 @@ mod test {
                         body: Body {
                             instrs: vec![
                                 StmtLHS{
-                                    lhs: Stack(1),
-                                    expr: Assign { rhs: Stack(0) }
+                                    lhs: LhsVar::Stack(ValType::I32, 1),
+                                    expr: Assign { rhs: RhsVar::Stack(0) }
                                 }],
                             result: None,
                         },
                     }
                 },
-                "@label1: block { s1 = s0 }",
+                "@label1: block { s1: i32 = s0 }",
                 "block with a single instruction, no result; on one line"
             ),
             (
                 Expr{ 
                     expr: If {
-                        condition: Stack(0),
+                        condition: RhsVar::Stack(0),
                         label: None,
                         if_body: Body {
                             instrs: vec![Br {
@@ -1938,18 +1979,18 @@ mod test {
                         body: Body {
                             instrs: vec![
                                 StmtOpt{
-                                    lhs: Stack(0),
+                                    lhs: LhsVar::Stack(ValType::I32, 0),
                                     expr: Block {
                                         label: Label(2),
                                         body: Body {
                                             instrs: vec![
                                                 StmtLHS{
-                                                    lhs: Stack(1),
+                                                    lhs: LhsVar::Stack(ValType::I32, 1),
                                                     expr: Const {
                                                     val: I32(7),
                                                     }
                                             }],
-                                            result: Some(Stack(1)),
+                                            result: Some(RhsVar::Stack(1)),
                                         },
                                     },
                                 }, 
@@ -1964,8 +2005,8 @@ mod test {
                     }
                 },
     r"@label1: loop {
-  s0 = @label2: block {
-    s1 = i32.const 7
+  s0: i32 = @label2: block {
+    s1: i32 = i32.const 7
     s1
   }
   br @label1
@@ -1977,13 +2018,13 @@ mod test {
         /// because they contain too little or too much whitespace.
         /// They are only used for testing parsing, not pretty-printing.
         static ref WIMPL_ALTERNATIVE_SYNTAX_TESTCASES: Vec<(Stmt, &'static str, &'static str)> = vec![
-            (Return { value: Some(Stack(0)) }, "return(s0)", "no space between op and arguments"),
-            (StmtLHS{ lhs: Stack(1), expr: MemoryGrow { pages: Stack(0) } }, "s1 = memory.grow ( s0 )", "extra space around arguments"),
+            (Return { value: Some(RhsVar::Stack(0)) }, "return(s0)", "no space between op and arguments"),
+            (StmtLHS{ lhs: LhsVar::Stack(ValType::I32, 1), expr: MemoryGrow { pages: RhsVar::Stack(0) } }, "s1: i32 = memory.grow ( s0 )", "extra space around arguments"),
             (
                 Expr{
                     expr: Call {
                         func: Func::Idx(2),
-                        args: vec![Stack(2), Stack(3)],
+                        args: vec![RhsVar::Stack(2), RhsVar::Stack(3)],
                     }
                 },
                 "call f2 ( s2, s3 )",
@@ -1991,32 +2032,32 @@ mod test {
             ),
             (
                 StmtOpt{
-                    lhs: Stack(1),
+                    lhs: LhsVar::Stack(ValType::I32, 1),
                     expr: CallIndirect {
                         type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
-                        table_idx: Stack(0),
+                        table_idx: RhsVar::Stack(0),
                         args: vec![],
                     },
                 },
-                "s1 = call_indirect [  i32  ] ->[i32] (s0) ()",
+                "s1: i32 = call_indirect [  i32  ] ->[i32] (s0) ()",
                 "non-standard spacing around function type"
             ),
             (
                 StmtLHS{
-                    lhs: Stack(1),
+                    lhs: LhsVar::Stack(ValType::I32, 1),
                     expr: Numeric {
                         op: I32Add,
-                        rhs: vec![Stack(2), Stack(3)],
+                        rhs: vec![RhsVar::Stack(2), RhsVar::Stack(3)],
                     }
                 },
-                "s1 = i32.add (s2,s3)",
+                "s1: i32 = i32.add (s2,s3)",
                 "space before arguments, no space after comma"
             ),
             (
                 Store {
                     op: I64Store8,
-                    value: Stack(1),
-                    addr: Stack(2),
+                    value: RhsVar::Stack(1),
+                    addr: RhsVar::Stack(2),
                     memarg: Memarg {
                         offset: 0,
                         alignment_exp: 4,
@@ -2045,14 +2086,14 @@ mod test {
                         body: Body {
                             instrs: vec![
                                 StmtLHS{
-                                    lhs: Stack(1), 
-                                    expr: Assign { rhs: Stack(0) },
+                                    lhs: LhsVar::Stack(ValType::I32, 1), 
+                                    expr: Assign { rhs: RhsVar::Stack(0) },
                                 }],
-                            result: Some(Stack(1)),
+                            result: Some(RhsVar::Stack(1)),
                         },
                     }
                 },
-                "@label2: block { s1 = s0 s1 }",
+                "@label2: block { s1: i32 = s0 s1 }",
                 "no linebreak between block instructions and result"
             )
         ];
@@ -2067,20 +2108,20 @@ mod test {
 
     #[test]
     fn parse_var() {
-        assert_eq!(Ok(Stack(0)), "s0".parse());
-        assert_eq!(Ok(Global(0)), "g0".parse());
+        assert_eq!(Ok(RhsVar::Stack(0)), "s0".parse());
+        assert_eq!(Ok(RhsVar::Global(0)), "g0".parse());
 
         // Negative tests:
         assert!(
-            " s0 \n ".parse::<Var>().is_err(),
+            " s0 \n ".parse::<RhsVar>().is_err(),
             "whitespace is not allowed"
         );
         assert!(
-            "sABC".parse::<Var>().is_err(),
+            "sABC".parse::<RhsVar>().is_err(),
             "characters instead of number"
         );
         assert!(
-            "x123".parse::<Var>().is_err(),
+            "x123".parse::<RhsVar>().is_err(),
             "invalid variable type/prefix"
         );
     }
@@ -2156,14 +2197,14 @@ mod test {
         };
     }
 }
-*/
+
 #[cfg(test)]
 fn test (path_wimpl: &str, path_wasm: &str) {
-    // let expected = Stmt::from_file(path_wimpl).unwrap();
-    // println!("EXPECTED");
-    // for instr in &expected {
-    //     println!("{}", instr);
-    // }
+    let expected = Stmt::from_file(path_wimpl).unwrap();
+    println!("EXPECTED");
+    for instr in &expected {
+        println!("{}", instr);
+    }
 
     let wimpl_module = wimplify(path_wasm).expect(""); 
     println!("{}", wimpl_module); 

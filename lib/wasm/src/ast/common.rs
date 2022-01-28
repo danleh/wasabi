@@ -81,6 +81,16 @@ impl ValType {
             ValType::F64 => 'F',
         }
     }
+
+    pub fn new(ch: char) -> Self {
+        match ch {
+            'i' => ValType::I32,
+            'I' => ValType::I64,
+            'f' => ValType::F32,
+            'F' => ValType::F64,
+            _ => panic!("found unknown type")
+        }
+    }
 }
 
 impl FromStr for ValType {
