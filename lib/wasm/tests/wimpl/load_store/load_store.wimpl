@@ -1,5 +1,5 @@
-s0 = i32.const 42
-s1 = i32.const 0
+s0: i32 = i32.const 42
+s1: i32 = i32.const 0
 i32.store offset=0 (s1) (s0)
-s2 = i32.const 0
-s3 = i32.load offset=0 (s2)
+s2: i32 = i32.const 0
+s3: i32 = i32.load offset=0 (s2)

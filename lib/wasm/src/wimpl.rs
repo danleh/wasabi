@@ -166,6 +166,7 @@ impl FromStr for LhsVar {
         }
 
         //TODO: code review Daniel
+        println!("{}",s);
         let (letter, i) = s.split_at(1);
         let (i, ty_) = i.split_at(i.find(':').unwrap()); 
         
@@ -2247,7 +2248,7 @@ fn global() {
 }
 
 #[test]
-fn load_store() {
+fn load_store() { //
     test("tests/wimpl/load_store/load_store.wimpl", "tests/wimpl/load_store/load_store.wasm"); 
 }
 
@@ -2277,7 +2278,7 @@ fn br_simple() {
 }
 
 #[test]
-fn br_nested_simple() {  
+fn br_nested_simple() {  //
     test("tests/wimpl/br_nested_simple/br.wimpl", "tests/wimpl/br_nested_simple/br.wasm");
 }
 

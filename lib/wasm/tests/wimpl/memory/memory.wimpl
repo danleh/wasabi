@@ -1,2 +1,2 @@
-s0 = memory.size
-s1 = memory.grow (s0)
+s0: i32 = memory.size
+s1: i32 = memory.grow (s0)
