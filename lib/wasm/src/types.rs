@@ -724,3 +724,8 @@ where
         Some((instr, ty))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    
+}
