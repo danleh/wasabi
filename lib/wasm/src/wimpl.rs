@@ -40,6 +40,8 @@ impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "module").expect("");         
         self.functions.iter().for_each(|fun| {
+            // TODO sketch of fix for function indentation
+            // writeln!(f, "{}", format!("{}", fun).replace("\n", "\n  ")) // reindents everything
             writeln!(f, "{}", fun).expect(""); 
         }); 
         Ok(())
@@ -174,6 +176,7 @@ pub struct Body {
     instrs: Vec<Stmt>,
     result: Option<Var>,
 }
+// TODO struct Body(Vec<Stmt>);
 
 const BLOCK_INDENT: &str = "  ";
 
@@ -224,7 +227,7 @@ pub enum Stmt {
         type_ : Option<ValType>, 
     },
 
-    Expr_ { //TODO rename
+    Expr_ { //TODO rename Expr
         expr: Expr, 
     }, 
 
@@ -258,6 +261,7 @@ pub enum Stmt {
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Expr {
 
+    // TODO move block, loop, if t
     Block {
         label: Label,
         body: Body, //TODO no need for Body, only Vec<Instr> 
@@ -415,7 +419,7 @@ fn adapt_nom_parser<'input, O>(
         Err(err) => Err(ParseError::from(err, input)),
     }
 }
-/*
+/* 
 impl Stmt {
     
     /// Parse multiple instructions, with possibly preceding and trailing whitespace.
@@ -1108,11 +1112,6 @@ impl State {
             return_var: None,  
         }
     }
-
-    // pub(crate) fn clone(&self) -> _ {
-    //     todo!()
-    // }
-
 }
 
 fn panic_if_size_lt <T> (vec : &[T], size : usize, error: &str) {
@@ -1149,10 +1148,10 @@ fn wimplify_instrs(
     let lhs = if n_results == 0 {
         None
     } else if n_results == 1 {
-        // TODO: clippy gives warnings when you make below a documentation comment
         // tee lhs is the argument itself, ie, rhs which is handled in the match arm for it below
         match instr {
             highlevel::Instr::Local(highlevel::LocalOp::Tee,_) => None, 
+            highlevel::Instr::End => None,  
             _ => Some(Stack(state.stack_var_count)) 
         }
     } else {
@@ -1169,7 +1168,8 @@ fn wimplify_instrs(
 
         highlevel::Instr::Nop => None,
 
-        highlevel::Instr::Block(blocktype) => {
+        highlevel::Instr::Block(blocktype) |
+        highlevel::Instr::Loop(blocktype) => {
             
             let btype = blocktype.0; 
 
@@ -1181,7 +1181,8 @@ fn wimplify_instrs(
                 state.stack_var_count += 1; 
                 vec![Assign { 
                     lhs: result_var.unwrap(), 
-                    expr: Const{ val: Val::I32(0) } , 
+                    // FIXME generate correct constant matching block type.
+                    expr: Const{ val: Val::I32(0) } ,  
                     type_: Some(btype),  
                 }]
             } else {
@@ -1237,80 +1238,10 @@ fn wimplify_instrs(
             }; 
             
             res_vec.push(Expr_{ expr: block }); 
+            
             Some(res_vec) 
         }
-
-        highlevel::Instr::Loop(blocktype) => {
-            
-            let btype = blocktype.0; 
-
-            //first, if the block returns a value, create a variable that will store the return and keep track of the variable 
-            //if it doesn't return anything, create an empty vector  
-            let mut result_var = None; 
-            let mut res_vec = if let Some(btype) = btype {
-                result_var = Some(Stack(state.stack_var_count)); 
-                vec![Assign { 
-                    lhs: result_var.unwrap(), 
-                    expr: Const{ val: Val::I32(0) } , 
-                    type_: Some(btype),  
-                }]
-            } else {
-                Vec::new()
-            }; 
-            state.stack_var_count += 1; 
-
-            //save current stack state and prepare to go into a new block 
-            let curr_label_count = state.label_count;
-            state.label_count += 1;
-            state.label_stack.push(curr_label_count); 
-
-            //create new block state 
-            let mut loop_state = State {
-                label_count: state.label_count,
-                stack_var_count: state.stack_var_count,
-                var_stack: Vec::new(),
-                label_stack: state.label_stack.clone(),
-                else_taken: false,
-                param_len: state.param_len, 
-                return_var: result_var, 
-            }; 
-
-            //call wimplify on remaining instructions with new block state 
-            let loop_body = wimplify_instrs(instrs, tys, &mut loop_state).unwrap();
-            
-            
-            // // the variable returned by the block, if any is on top of the stack 
-            // // and was pushed there by the end instruction 
-            // // that variable should be assigned to the variable created to hold the return 
-            // if let Some(btype) = btype {
-            //     panic_if_size_lt(&block_state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
-                
-            //     lhs = block_state.var_stack.pop();
-            //         //TODO: why is lhs here?? end isn't pushing it 
-            //         //if should be that the stack is only of atleast len 1 right why 2 
-            //         //if i change this everything breaks :((( 
-
-            //     block_body.push(Assign{
-            //         lhs: result_var.unwrap(),
-            //         expr: VarRef{ rhs: block_state.var_stack.pop().unwrap() },
-            //         type_: Some(btype),
-            //     });           
-            // }
-            
-            state.label_count = loop_state.label_count;
-            state.stack_var_count = loop_state.stack_var_count; 
-            if btype.is_some() {
-                state.var_stack.push(loop_state.return_var.unwrap());     
-            }
-            
-            let loop_ = Block{
-                label: Label(curr_label_count),
-                body: Body { instrs: loop_body, result: None },
-            }; 
-            
-            res_vec.push(Expr_{ expr: loop_ }); 
-            Some(res_vec)  
-        },
+        
 
         highlevel::Instr::If(blocktype) => {
             panic_if_size_lt(&rhs, 1, "if consumes one value from stack as condition"); 
@@ -1336,8 +1267,15 @@ fn wimplify_instrs(
             state.label_count += 1;
             state.label_stack.push(curr_label_count); 
 
-            let mut if_state = state.clone(); 
-            if_state.return_var = result_var;  
+            let mut if_state = State {
+                label_count: state.label_count,
+                stack_var_count: state.stack_var_count,
+                var_stack: Vec::new(),
+                label_stack: state.label_stack.clone(),
+                else_taken: false,
+                param_len: state.param_len, 
+                return_var: result_var, 
+            }; 
 
             let if_body = wimplify_instrs(instrs, tys, &mut if_state).unwrap();            
             
@@ -1431,11 +1369,11 @@ fn wimplify_instrs(
         highlevel::Instr::End => {
             // if end has a return, push it to the stack since 
             // the enclosing function will have to pop it back out
-            println!("varstack before {:?}", state.var_stack);
-            if let Some(lhs) = lhs {
+            println!("varstack before {:?}, lhs {:?}", state.var_stack, lhs);
+            if let Some(lhs) = state.return_var {
                 result_instrs.push(Assign{
-                    lhs: state.return_var.unwrap(), 
-                    expr: VarRef{ rhs: lhs}, 
+                    lhs, 
+                    expr: VarRef{ rhs: state.var_stack.pop().unwrap()}, 
                     type_: lhs_ty, 
                 });
             }
@@ -2341,6 +2279,11 @@ fn br_table() {
 #[test]
 fn if_() {
     test("tests/wimpl/if/if.wimpl", "tests/wimpl/if/if.wasm");
+}
+
+#[test]
+fn if_ret() {
+    test("tests/wimpl/if_ret/if.wimpl", "tests/wimpl/if_ret/if.wasm");
 }
 
 #[test]
