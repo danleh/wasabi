@@ -1162,8 +1162,7 @@ fn wimplify_instrs(
                 state.stack_var_count += 1; 
                 vec![Stmt::Assign { 
                     lhs: result_var.unwrap(), 
-                    // FIXME generate correct constant matching block type.
-                    expr: Const{ val: Val::I32(0) } ,  
+                    expr: Const{ val: Val::get_default_value(btype) } ,  
                     type_: btype,  
                 }]
             } else {

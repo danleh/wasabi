@@ -24,6 +24,16 @@ pub enum Val {
 }
 
 impl Val {
+    
+    pub fn get_default_value (type_: ValType) -> Self {
+        match type_ {
+            ValType::I32 => Val::I32(0),
+            ValType::I64 => Val::I64(0),
+            ValType::F32 => Val::F32(OrderedFloat(0.0)),
+            ValType::F64 => Val::F64(OrderedFloat(0.0)),
+        }
+    }
+
     pub fn to_type(&self) -> ValType {
         match *self {
             Val::I32(_) => ValType::I32,
@@ -73,6 +83,7 @@ impl fmt::Display for ValType {
 }
 
 impl ValType {
+    
     pub fn to_char(self) -> char {
         match self {
             ValType::I32 => 'i',
