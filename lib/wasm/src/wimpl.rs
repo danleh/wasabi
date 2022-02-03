@@ -1085,6 +1085,7 @@ macro_rules! wimpls {
 pub(crate) use wimpl;
 pub(crate) use wimpls;
 
+#[derive(Clone, Default)]
 pub struct State {
     pub label_count: usize,
     pub stack_var_count: usize,
@@ -1107,6 +1108,10 @@ impl State {
             return_var: None,  
         }
     }
+
+    // pub(crate) fn clone(&self) -> _ {
+    //     todo!()
+    // }
 
 }
 
@@ -1135,11 +1140,13 @@ fn wimplify_instrs(
     let instr = instrs.pop_front().unwrap();
     let ty = tys.pop_front().unwrap();
 
+    println!("{}, {}, {:?}", instr, ty, state.var_stack);
+
     let n_inputs = ty.inputs.len();
     let n_results = ty.results.len();
     let mut result_instrs = Vec::new();
 
-    let mut lhs = if n_results == 0 {
+    let lhs = if n_results == 0 {
         None
     } else if n_results == 1 {
         // TODO: clippy gives warnings when you make below a documentation comment
@@ -1171,6 +1178,7 @@ fn wimplify_instrs(
             let mut result_var = None; 
             let mut res_vec = if let Some(btype) = btype {
                 result_var = Some(Stack(state.stack_var_count)); 
+                state.stack_var_count += 1; 
                 vec![Assign { 
                     lhs: result_var.unwrap(), 
                     expr: Const{ val: Val::I32(0) } , 
@@ -1179,8 +1187,7 @@ fn wimplify_instrs(
             } else {
                 Vec::new()
             }; 
-            state.stack_var_count += 1; 
-
+            
             //save current stack state and prepare to go into a new block 
             let curr_label_count = state.label_count;
             state.label_count += 1;
@@ -1198,28 +1205,31 @@ fn wimplify_instrs(
             }; 
 
             //call wimplify on remaining instructions with new block state 
-            let mut block_body = wimplify_instrs(instrs, tys, &mut block_state).unwrap();
+            let block_body = wimplify_instrs(instrs, tys, &mut block_state).unwrap();
             
-            // the variable returned by the block, if any is on top of the stack 
-            // and was pushed there by the end instruction 
-            // that variable should be assigned to the variable created to hold the return 
-            if let Some(btype) = btype {
-                panic_if_size_lt(&block_state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
+            // // the variable returned by the block, if any is on top of the stack 
+            // // and was pushed there by the end instruction 
+            // // that variable should be assigned to the variable created to hold the return 
+            // if let Some(btype) = btype {
+            //     panic_if_size_lt(&block_state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
                 
-                lhs = block_state.var_stack.pop();
-                    //TODO: why is lhs here?? end isn't pushing it 
-                    //if should be that the stack is only of atleast len 1 right why 2 
-                    //if i change this everything breaks :((( 
+            //     lhs = block_state.var_stack.pop();
+            //         //TODO: why is lhs here?? end isn't pushing it 
+            //         //if should be that the stack is only of atleast len 1 right why 2 
+            //         //if i change this everything breaks :((( 
 
-                block_body.push(Assign{
-                    lhs: result_var.unwrap(),
-                    expr: VarRef{ rhs: block_state.var_stack.pop().unwrap() },
-                    type_: Some(btype),
-                });           
-            }
+            //     block_body.push(Assign{
+            //         lhs: result_var.unwrap(),
+            //         expr: VarRef{ rhs: block_state.var_stack.pop().unwrap() },
+            //         type_: Some(btype),
+            //     });           
+            // }
             
             state.label_count = block_state.label_count;
             state.stack_var_count = block_state.stack_var_count; 
+            if btype.is_some() {
+                state.var_stack.push(block_state.return_var.unwrap());     
+            }
 
             let block = Block{
                 label: Label(curr_label_count),
@@ -1232,107 +1242,168 @@ fn wimplify_instrs(
 
         highlevel::Instr::Loop(blocktype) => {
             
+            let btype = blocktype.0; 
+
+            //first, if the block returns a value, create a variable that will store the return and keep track of the variable 
+            //if it doesn't return anything, create an empty vector  
+            let mut result_var = None; 
+            let mut res_vec = if let Some(btype) = btype {
+                result_var = Some(Stack(state.stack_var_count)); 
+                vec![Assign { 
+                    lhs: result_var.unwrap(), 
+                    expr: Const{ val: Val::I32(0) } , 
+                    type_: Some(btype),  
+                }]
+            } else {
+                Vec::new()
+            }; 
+            state.stack_var_count += 1; 
+
+            //save current stack state and prepare to go into a new block 
             let curr_label_count = state.label_count;
             state.label_count += 1;
             state.label_stack.push(curr_label_count); 
 
+            //create new block state 
             let mut loop_state = State {
                 label_count: state.label_count,
                 stack_var_count: state.stack_var_count,
                 var_stack: Vec::new(),
                 label_stack: state.label_stack.clone(),
                 else_taken: false,
-                param_len: state.param_len,
-                return_var: None, 
+                param_len: state.param_len, 
+                return_var: result_var, 
             }; 
 
+            //call wimplify on remaining instructions with new block state 
             let loop_body = wimplify_instrs(instrs, tys, &mut loop_state).unwrap();
             
-            // FIXME idk if this is right 
-            // the variable returned by the loop, if any is on top of the stack 
-            // and was pushed there by the end instruction 
-            let mut result = None; 
-            if let Some(_btype) = blocktype.0 {
-                panic_if_size_lt(&loop_state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
-                lhs = loop_state.var_stack.pop();
-                //lhs_ty = lhs.map(|unwraped_lhs| unwraped_lhs.get_ty());
-                result = Some(loop_state.var_stack.pop().unwrap());              
-            }
+            
+            // // the variable returned by the block, if any is on top of the stack 
+            // // and was pushed there by the end instruction 
+            // // that variable should be assigned to the variable created to hold the return 
+            // if let Some(btype) = btype {
+            //     panic_if_size_lt(&block_state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
+                
+            //     lhs = block_state.var_stack.pop();
+            //         //TODO: why is lhs here?? end isn't pushing it 
+            //         //if should be that the stack is only of atleast len 1 right why 2 
+            //         //if i change this everything breaks :((( 
+
+            //     block_body.push(Assign{
+            //         lhs: result_var.unwrap(),
+            //         expr: VarRef{ rhs: block_state.var_stack.pop().unwrap() },
+            //         type_: Some(btype),
+            //     });           
+            // }
+            
             state.label_count = loop_state.label_count;
             state.stack_var_count = loop_state.stack_var_count; 
-
-            let bodyrhs = Loop{
+            if btype.is_some() {
+                state.var_stack.push(loop_state.return_var.unwrap());     
+            }
+            
+            let loop_ = Block{
                 label: Label(curr_label_count),
-                body: Body { instrs: loop_body, result},
+                body: Body { instrs: loop_body, result: None },
             }; 
-
-            if let Some(lhs) = lhs {
-                Some(vec![Assign{
-                    lhs,
-                    expr: bodyrhs,
-                    type_: blocktype.0,
-                }])
-            } else {
-                Some(vec![Expr_{ expr: bodyrhs }]) 
-            } 
+            
+            res_vec.push(Expr_{ expr: loop_ }); 
+            Some(res_vec)  
         },
 
         highlevel::Instr::If(blocktype) => {
             panic_if_size_lt(&rhs, 1, "if consumes one value from stack as condition"); 
 
+            let btype = blocktype.0; 
+
+            //first, if the block returns a value, create a variable that will store the return and keep track of the variable 
+            //if it doesn't return anything, create an empty vector  
+            let mut result_var = None; 
+            let mut res_vec = if let Some(btype) = btype {
+                result_var = Some(Stack(state.stack_var_count)); 
+                state.stack_var_count += 1;
+                vec![Assign { 
+                    lhs: result_var.unwrap(), 
+                    expr: Const{ val: Val::I32(0) } , 
+                    type_: Some(btype),  
+                }]
+            } else {
+                Vec::new()
+            }; 
+            
             let curr_label_count = state.label_count;
             state.label_count += 1;
             state.label_stack.push(curr_label_count); 
 
-            let if_body = wimplify_instrs(instrs, tys, state).unwrap();            
-            let mut if_return = None;
-            if let Some(_btype) = blocktype.0 {
-                panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
-                lhs = state.var_stack.pop();
-                
-                //lhs_ty = lhs.map(|unwraped_lhs| unwraped_lhs.get_ty());
-                if_return = Some(state.var_stack.pop().unwrap());              
-            }
+            let mut if_state = state.clone(); 
+            if_state.return_var = result_var;  
 
-            let ifrhs = if state.else_taken {
+            let if_body = wimplify_instrs(instrs, tys, &mut if_state).unwrap();            
+            
+            // let mut if_return = None;
+            // if let Some(_btype) = blocktype.0 {
+            //     panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
+            //     lhs = state.var_stack.pop();
                 
-                state.else_taken = false; 
+            //     //lhs_ty = lhs.map(|unwraped_lhs| unwraped_lhs.get_ty());
+            //     if_return = Some(state.var_stack.pop().unwrap());              
+            // }
+
+            let ifrhs = if if_state.else_taken {
+                
+                if_state.else_taken = false; 
 
                 // the lhs produced in else is actually the same as in the if branch
                 // hence, throw away the variable and decrement the stack variable counter
-                let else_body = wimplify_instrs(instrs, tys, state).unwrap(); 
-                let mut else_return = None;
-                if let Some(_btype) = blocktype.0 {
-                    panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
-                    let _ = state.var_stack.pop();
-                    else_return = Some(state.var_stack.pop().unwrap());            
-                    state.stack_var_count -= 1; 
-                }
+                let else_body = wimplify_instrs(instrs, tys, &mut if_state).unwrap(); 
+                
+                // let mut else_return = None;
+                // if let Some(_btype) = blocktype.0 {
+                //     panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
+                //     let _ = state.var_stack.pop();
+                //     else_return = Some(state.var_stack.pop().unwrap());            
+                //     state.stack_var_count -= 1; 
+                // }
 
                 // validation that if-body and else-body have the same number of returns
                 // type checking validation already done 
-                match (if_return, else_return) {
-                    (None, Some(_)) | (Some(_), None) => {
-                        panic!("if and else branch should either both return a value or None");
-                    },
-                    (None, None) | (Some(_), Some(_)) => (),
-                }; 
+                // match (if_return, else_return) {
+                //     (None, Some(_)) | (Some(_), None) => {
+                //         panic!("if and else branch should either both return a value or None");
+                //     },
+                //     (None, None) | (Some(_), Some(_)) => (),
+                // }; 
+
+                state.label_count = if_state.label_count;
+                state.stack_var_count = if_state.stack_var_count; 
+                if let Some(_btype) = blocktype.0 {
+                    state.var_stack.push(result_var.unwrap()); 
+                }
 
                 If{
                     label: Some(Label(curr_label_count)),
                     condition: rhs.pop().unwrap(), 
-                    if_body: Body { instrs: if_body, result: if_return },
-                    else_body: Some(Body{ instrs: else_body, result: else_return}),
+                    if_body: Body { instrs: if_body, result: None },
+                    else_body: Some(Body{ instrs: else_body, result: None}),
                 }
+
             } else {
+                
+                state.label_count = if_state.label_count;
+                state.stack_var_count = if_state.stack_var_count; 
+                if let Some(_btype) = blocktype.0 {
+                    state.var_stack.push(result_var.unwrap()); 
+                }
+                
                 If {
                     label: Some(Label(curr_label_count)),
                     condition: rhs.pop().unwrap(),
-                    if_body: Body { instrs: if_body, result: if_return },
+                    if_body: Body { instrs: if_body, result: None },
                     else_body: None,
                 } 
             };
-
+            /* 
             if let Some(lhs) = lhs {
                 Some(vec![Assign{
                     lhs,
@@ -1340,21 +1411,33 @@ fn wimplify_instrs(
                     type_: blocktype.0,
                 }])
             } else {
-                Some(vec![Expr_{ expr: ifrhs }])
-            }
+            */
+            res_vec.push(Expr_{ expr: ifrhs }); 
+            Some(res_vec)            
         },
 
         highlevel::Instr::Else => {
             state.else_taken = true; 
+            if state.return_var != None {
+                result_instrs.push(Assign{
+                    lhs: state.return_var.unwrap(), 
+                    expr: VarRef{ rhs: state.var_stack.pop().unwrap() },
+                    type_: None, //FIXME
+                })
+            }
             return Ok(result_instrs); 
         },
 
         highlevel::Instr::End => {
             // if end has a return, push it to the stack since 
             // the enclosing function will have to pop it back out
-            state.label_stack.pop(); 
+            println!("varstack before {:?}", state.var_stack);
             if let Some(lhs) = lhs {
-                state.var_stack.push(lhs); 
+                result_instrs.push(Assign{
+                    lhs: state.return_var.unwrap(), 
+                    expr: VarRef{ rhs: lhs}, 
+                    type_: lhs_ty, 
+                });
             }
             return Ok(result_instrs);
         }
