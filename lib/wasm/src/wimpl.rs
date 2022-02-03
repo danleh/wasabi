@@ -223,6 +223,7 @@ pub enum Stmt {
     }, 
 
     // Simplify: nop is not necessary for analysis.
+
     Unreachable,
 
     Block {
@@ -244,14 +245,14 @@ pub enum Stmt {
 
     Br {
         target: Label,
-        value: Option<Var>,
     },
+
     // Simplify: Represent br_if as an if (cond) { .. , br @label () }.
+
     BrTable {
         idx: Var,
         table: Vec<Label>,
         default: Label,
-        value: Option<Var>,
     },
 
     Return {
@@ -269,14 +270,12 @@ pub enum Stmt {
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Expr {
 
-
     Call {
-        //lhs: Option<Var>,
         func: Func,
         args: Vec<Var>,
     },
+
     CallIndirect {
-        //lhs: Option<Var>,
         type_: FunctionType,
         table_idx: Var,
         args: Vec<Var>,
@@ -288,31 +287,26 @@ pub enum Expr {
 
     // Simplify: Handles all of local.set, global.set, local.tee, local.get, global.get.
     VarRef {
-        //lhs: Var,
         rhs: Var,
     },
 
     Load {
-        //lhs: Var,
         op: LoadOp,
         memarg: Memarg,
         addr: Var,
     },
-    MemorySize {
-        //lhs: Var,
-    },
+
+    MemorySize, 
+
     MemoryGrow {
-        //lhs: Var,
         pages: Var,
     },
 
     Const {
-        //lhs: Var,
         val: Val,
     },
 
     Numeric {
-        //lhs: Var,
         op: NumericOp,
         rhs: Vec<Var>,
     },
@@ -751,22 +745,20 @@ impl fmt::Display for Stmt {
             // br @label0 (s1)
             Br { 
                 target, 
-                value 
             } => {
                 write!(f, "br {}", target)?;
-                display_delim(f, value, " (", ")", ", ")?;
+                //display_delim(f, value, " (", ")", ", ")?;
             },
             // br-table @label0 @label1 @label2 default=@label3 (s0)
             BrTable { 
                 idx, 
                 table, 
                 default, 
-                value 
             } => {
                 f.write_str("br_table")?;
                 display_delim(f, table, " ", "", " ")?;
                 write!(f, " default={} ({})", default, idx)?;
-                display_delim(f, value, " (", ")", ", ")?;    
+                //display_delim(f, value, " (", ")", ", ")?;    
             },
             // return (s1)
             Return { value } => {
@@ -1235,7 +1227,7 @@ fn wimplify_instrs(
                 state.stack_var_count += 1;
                 vec![Stmt::Assign { 
                     lhs: result_var.unwrap(), 
-                    expr: Const{ val: Val::I32(0) } , 
+                    expr: Const{ val: Val::get_default_value(btype) } , 
                     type_: btype,  
                 }]
             } else {
@@ -1393,13 +1385,11 @@ fn wimplify_instrs(
                     }, 
                     Stmt::Br {
                         target,
-                        value: None, 
                     }
                 ])
             } else {
                 Some(vec![Stmt::Br {
                     target,
-                    value: None, 
                 }])
             }           
         },
@@ -1429,7 +1419,6 @@ fn wimplify_instrs(
                         }, 
                         Stmt::Br {
                             target,
-                            value: None, 
                         }
                     ]), 
                     else_body: None,
@@ -1442,7 +1431,6 @@ fn wimplify_instrs(
                     if_body: Body(vec![
                         Stmt::Br {
                             target,
-                            value: None, 
                         }
                     ]), 
                     else_body: None,
@@ -1505,7 +1493,6 @@ fn wimplify_instrs(
                 idx, 
                 table: target_list,
                 default,
-                value: None,
             }); 
 
             Some(res_insts)
@@ -1572,7 +1559,7 @@ fn wimplify_instrs(
             
                     Stmt::Assign{ 
                         lhs, 
-                        expr: Const{ val: Val::I32(0) },  
+                        expr: Const{ val: Val::get_default_value(type_) },  
                         type_ 
                     },
             
