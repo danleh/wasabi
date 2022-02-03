@@ -40,9 +40,7 @@ impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "module").expect("");         
         self.functions.iter().for_each(|fun| {
-            // TODO sketch of fix for function indentation
-            // writeln!(f, "{}", format!("{}", fun).replace("\n", "\n  ")) // reindents everything
-            writeln!(f, "{}", fun).expect(""); 
+            writeln!(f, "  {}", format!("{}", fun).replace("\n", "\n  ")).expect("");  // reindents everything
         }); 
         Ok(())
     }
@@ -1629,12 +1627,13 @@ fn wimplify_instrs(
             };
             
             panic_if_size_lt(&rhs, 1, "local.set expects a value on the stack"); 
+            panic_if_size_lt(&ty.inputs, 1, "return type of global.set not found"); 
             Some(vec![Stmt::Assign{
                 lhs : local_var, 
                 expr: VarRef {
                     rhs: rhs.pop().unwrap(),
                 },
-                type_: ty.inputs[0].unwrap(), //TODO: panic if not  
+                type_: ty.inputs[0].unwrap(), 
             }])            
         }
 
@@ -1647,6 +1646,8 @@ fn wimplify_instrs(
             };
             
             panic_if_size_lt(&rhs, 1, "local.tee expects a value on the stack"); 
+            panic_if_size_lt(&ty.inputs, 1, "return type of global.set not found"); 
+
             let rhs = rhs.pop().unwrap();
             state.var_stack.push(rhs); 
             Some(vec![Stmt::Assign{
@@ -1654,7 +1655,7 @@ fn wimplify_instrs(
                 expr: VarRef {
                     rhs,
                 },
-                type_: ty.inputs[0].unwrap(), //TODO: panic if not 
+                type_: ty.inputs[0].unwrap(), 
             }])
         }
 
@@ -1674,14 +1675,16 @@ fn wimplify_instrs(
         }
 
         highlevel::Instr::Global(highlevel::GlobalOp::Set, global_ind) => {
-            let global_var = Global(global_ind.into_inner());
             panic_if_size_lt(&rhs, 1, "global.set expects a value on the stack"); 
+            panic_if_size_lt(&ty.inputs, 1, "return type of global.set not found"); 
+            
+            let global_var = Global(global_ind.into_inner());
             Some(vec![Stmt::Assign{
                 lhs: global_var,
                 expr: VarRef {
                     rhs: rhs.pop().unwrap(),
                 },
-                type_: ty.inputs[0].unwrap(), //TODO: panic if not 
+                type_: ty.inputs[0].unwrap(), 
             }])
         }
 
