@@ -1133,7 +1133,8 @@ fn wimplify_instrs(
         // tee lhs is the argument itself, ie, rhs which is handled in the match arm for it below
         match instr {
             highlevel::Instr::Local(highlevel::LocalOp::Tee,_) => None, 
-            highlevel::Instr::End => None,  
+            highlevel::Instr::End => None,
+            highlevel::Instr::BrIf(_) => None,  
             _ => Some(Stack(state.stack_var_count)) 
         }
     } else {
@@ -1363,10 +1364,6 @@ fn wimplify_instrs(
             
             else {
 
-            // if end has a return, push it to the stack since 
-            // the enclosing function will have to pop it back out
-            println!("varstack before {:?}, lhs {:?}", state.var_stack, lhs);
-            
             let (_, return_info) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack"); 
             
             if let Some((lhs, type_)) = return_info {
@@ -1387,9 +1384,9 @@ fn wimplify_instrs(
             let target = Label(target); 
 
             let val = rhs.pop();
-            state.var_stack.push(val.unwrap()); 
-
+            
             if let Some(return_val) = val {
+                state.var_stack.push(return_val); //TODO bad behaviour 
                 let (lhs, type_) = return_info.expect("br expected to produce a value"); 
                 Some(vec![
                     Stmt::Assign{ 
@@ -1416,19 +1413,20 @@ fn wimplify_instrs(
             let (target, return_info) = state.label_stack[state.label_stack.len()-lab.into_inner()-1]; 
             let target = Label(target); 
 
+            println!("target:{} return_info:{:?}", target, return_info); 
+
             let condition = rhs.pop().unwrap(); 
             
-            // pop the return   
-            let value = rhs.pop(); 
             
-            if let Some(value) = value {
-                let (lhs, type_) = return_info.expect("br_if is expected to produce a value"); 
+            if let Some((lhs_, type_)) = return_info {
+                let value = state.var_stack.pop().expect("br_if is expected to produce a value"); 
+                state.var_stack.push(value); //TODO bad?  
                 Some(vec![Stmt::If{
                     label: None,
                     condition, 
                     if_body: Body(vec![
                         Stmt::Assign{ 
-                            lhs, 
+                            lhs: lhs_, 
                             expr: VarRef{ rhs: value }, 
                             type_, 
                         }, 
@@ -1440,6 +1438,7 @@ fn wimplify_instrs(
                     else_body: None,
                 }])    
             } else {
+                println!("here"); 
                 Some(vec![Stmt::If{
                     label: None,
                     condition, 
@@ -1635,7 +1634,7 @@ fn wimplify_instrs(
                 expr: VarRef {
                     rhs: rhs.pop().unwrap(),
                 },
-                type_: lhs_ty.unwrap(), 
+                type_: ty.inputs[0].unwrap(), //TODO: panic if not  
             }])            
         }
 
@@ -1655,7 +1654,7 @@ fn wimplify_instrs(
                 expr: VarRef {
                     rhs,
                 },
-                type_: lhs_ty.unwrap(), 
+                type_: ty.inputs[0].unwrap(), //TODO: panic if not 
             }])
         }
 
@@ -1682,7 +1681,7 @@ fn wimplify_instrs(
                 expr: VarRef {
                     rhs: rhs.pop().unwrap(),
                 },
-                type_: lhs_ty.unwrap(), 
+                type_: ty.inputs[0].unwrap(), //TODO: panic if not 
             }])
         }
 
@@ -2273,7 +2272,7 @@ fn global() {
 }
 
 #[test]
-fn load_store() { //
+fn load_store() { 
     test("tests/wimpl/load_store/load_store.wimpl", "tests/wimpl/load_store/load_store.wasm"); 
 }
 
@@ -2303,7 +2302,7 @@ fn block_nested() {
 }
 
 #[test]
-fn br_simple() {
+fn br_simple() { //interesting case
     test("tests/wimpl/br_simple/br.wimpl", "tests/wimpl/br_simple/br.wasm");
 }
 
@@ -2318,22 +2317,22 @@ fn br_nested() {
 }
 
 #[test]
-fn br_triple_nested() {
+fn br_triple_nested() { // does not run because of type checker bug 
     test("tests/wimpl/br_triple_nested/br.wimpl", "tests/wimpl/br_triple_nested/br.wasm");
 }
 
 #[test]
-fn br_if() {  
+fn br_if() {  // insteresting case 
     test("tests/wimpl/br_if/br_if.wimpl", "tests/wimpl/br_if/br_if.wasm");
 }
 
 #[test]
-fn br_if_2() {
+fn br_if_2() { // does not run because of type checker bug 
     test("tests/wimpl/br_if_2/br_if.wimpl", "tests/wimpl/br_if_2/br_if.wasm");
 }
 
 #[test]
-fn br_table() {  
+fn br_table() {  // does not run because of type checker bug 
     test("tests/wimpl/br_table/br_table.wimpl", "tests/wimpl/br_table/br_table.wasm");
 }
 
