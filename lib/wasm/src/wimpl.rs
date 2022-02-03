@@ -82,60 +82,18 @@ impl fmt::Display for Function {
 }
 
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum LhsVar {
-    Stack(ValType, usize),
-    Local(ValType, usize),
-    Global(ValType, usize),
-    Param(ValType, usize),
-}
-
-impl LhsVar{ 
-    
-    // fn get_usize(&self) -> usize {
-    //     use LhsVar::*; 
-    //     match self {
-    //         Stack(_, i) => *i,
-    //         Local(_, i) => *i,
-    //         Global(_, i) => *i,
-    //         Param(_, i) => *i,
-    //     } 
-    // }   
-
-    fn get_ty(&self) -> ValType {
-        use LhsVar::*; 
-        match self {
-            Stack(ty, _) => *ty,
-            Local(ty, _) => *ty,
-            Global(ty, _) => *ty,
-            Param(ty, _) => *ty,
-        } 
-    }   
-}
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum RhsVar {
+pub enum Var {
     Stack(usize),
     Local(usize),
     Global(usize),
     Param(usize),
 }
 
-impl fmt::Display for LhsVar {
+impl fmt::Display for Var {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use LhsVar::*;
-        match self {
-            Stack(ty, i) => write!(f, "s{}: {}", i, ty),
-            Local(ty, i) => write!(f, "l{}: {}", i, ty),
-            Global(ty, i) => write!(f, "g{}: {}", i, ty),
-            Param(ty, i) => write!(f, "p{}: {}", i, ty),
-        }
-    }
-}
-
-impl fmt::Display for RhsVar {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use RhsVar::*;
+        use Var::*;
         match self {
             Stack(i) => write!(f, "s{}", i),
             Local(i) => write!(f, "l{}", i),
@@ -145,56 +103,8 @@ impl fmt::Display for RhsVar {
     }
 }
 
-impl RhsVar {
-    fn new (var: LhsVar) -> Self { 
-        match var{
-            LhsVar::Stack(_, size) => RhsVar::Stack(size),
-            LhsVar::Local(_, size) => RhsVar::Local(size), 
-            LhsVar::Global(_, size) => RhsVar::Global(size), 
-            LhsVar::Param(_, size) => RhsVar::Param(size), 
-        }
-    }
-}
 
-impl FromStr for LhsVar {
-    type Err = ();
-    
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // `split_at` can panic, so ensure `s` has at least one byte.
-        if s.is_empty() {
-            return Err(());
-        }
-
-        //TODO: code review Daniel
-        println!("{}",s);
-        let (letter, i) = s.split_at(1);
-        let (i, ty_) = i.split_at(i.find(':').unwrap()); 
-        
-        let ty = if ty_.contains('3') {
-            let (_, ty) = ty_.split_at(ty_.find('3').unwrap()-1);
-            ty
-        } else if ty_.contains('6') {
-            let (_, ty) = ty_.split_at(ty_.find('6').unwrap()-1);
-            ty
-        } else {
-            panic!("unknown type")
-        }; 
-
-        let i = i.parse().map_err(|_| ())?;
-        let ty = ValType::new(ty.chars().next().unwrap()); 
-        
-        use LhsVar::*; 
-        Ok(match letter {
-            "s" => Stack(ty, i),
-            "l" => Local(ty, i),
-            "g" => Global(ty, i),
-            "p" => Param(ty, i),
-            _ => return Err(()),
-        })
-    }
-}
-
-impl FromStr for RhsVar {
+impl FromStr for Var {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -204,7 +114,7 @@ impl FromStr for RhsVar {
         }
         let (letter, i) = s.split_at(1);
         let i = i.parse().map_err(|_| ())?;
-        use RhsVar::*;
+        use Var::*;
         Ok(match letter {
             "s" => Stack(i),
             "l" => Local(i),
@@ -262,7 +172,7 @@ impl FromStr for Label {
 #[derive(Debug, Eq, PartialEq, Clone, Default)]
 pub struct Body {
     instrs: Vec<Stmt>,
-    result: Option<RhsVar>,
+    result: Option<Var>,
 }
 
 const BLOCK_INDENT: &str = "  ";
@@ -309,12 +219,12 @@ impl fmt::Display for Body {
 pub enum Stmt {
 
     StmtLHS {
-        lhs: LhsVar, 
+        lhs: Var, 
         expr: ExprLHS,
     },
 
     StmtOpt {
-        lhs: LhsVar,
+        lhs: Var,
         expr: ExprOpt,
     }, 
 
@@ -327,25 +237,25 @@ pub enum Stmt {
 
     Br {
         target: Label,
-        value: Option<RhsVar>,
+        value: Option<Var>,
     },
     // Simplify: Represent br_if as an if (cond) { br }.
     BrTable {
-        idx: RhsVar,
+        idx: Var,
         table: Vec<Label>,
         default: Label,
-        value: Option<RhsVar>,
+        value: Option<Var>,
     },
 
     Return {
-        value: Option<RhsVar>,
+        value: Option<Var>,
     },
 
     Store {
         op: StoreOp,
         memarg: Memarg,
-        value: RhsVar,
-        addr: RhsVar,
+        value: Var,
+        addr: Var,
     }
 }
 
@@ -367,7 +277,7 @@ pub enum ExprOpt {
         // No label for an if generated from select or br_if
         // (where this if block is never the target of a branch).
         label: Option<Label>,
-        condition: RhsVar,
+        condition: Var,
         // Invariant: if and else must either both return value or not.
         if_body: Body,
         else_body: Option<Body>,
@@ -375,13 +285,13 @@ pub enum ExprOpt {
     Call {
         //lhs: Option<Var>,
         func: Func,
-        args: Vec<RhsVar>,
+        args: Vec<Var>,
     },
     CallIndirect {
         //lhs: Option<Var>,
         type_: FunctionType,
-        table_idx: RhsVar,
-        args: Vec<RhsVar>,
+        table_idx: Var,
+        args: Vec<Var>,
     },
 
 }
@@ -397,21 +307,21 @@ pub enum ExprLHS {
     // Simplify: Handles all of local.set, global.set, local.tee, local.get, global.get.
     Assign {
         //lhs: Var,
-        rhs: RhsVar,
+        rhs: Var,
     },
 
     Load {
         //lhs: Var,
         op: LoadOp,
         memarg: Memarg,
-        addr: RhsVar,
+        addr: Var,
     },
     MemorySize {
         //lhs: Var,
     },
     MemoryGrow {
         //lhs: Var,
-        pages: RhsVar,
+        pages: Var,
     },
 
     Const {
@@ -422,7 +332,7 @@ pub enum ExprLHS {
     Numeric {
         //lhs: Var,
         op: NumericOp,
-        rhs: Vec<RhsVar>,
+        rhs: Vec<Var>,
     },
 }
 
@@ -541,23 +451,23 @@ impl Stmt {
         // functions with explicit type signatures.
 
         
-        fn lhsvar(input: &str) -> NomResult<LhsVar> {
-            map_res(take_until("="), LhsVar::from_str)(input)
+        fn lhsvar(input: &str) -> NomResult<Var> {
+            map_res(take_until("="), Var::from_str)(input)
         }
-        fn rhsvar(input: &str) -> NomResult<RhsVar> {
-            map_res(alphanumeric1, RhsVar::from_str)(input)
+        fn rhsvar(input: &str) -> NomResult<Var> {
+            map_res(alphanumeric1, Var::from_str)(input)
         }
-        fn arg_single(input: &str) -> NomResult<RhsVar> {
+        fn arg_single(input: &str) -> NomResult<Var> {
             delimited(pair(tag("("), ws), rhsvar, pair(ws, tag(")")))(input)
         }
-        fn arg_list(input: &str) -> NomResult<Vec<RhsVar>> {
+        fn arg_list(input: &str) -> NomResult<Vec<Var>> {
             delimited(
                 pair(tag("("), ws),
                 separated_list0(tuple((ws, tag(","), ws)), rhsvar),
                 pair(ws, tag(")")),
             )(input)
         }
-        fn lhs(input: &str) -> NomResult<LhsVar> {
+        fn lhs(input: &str) -> NomResult<Var> {
             // Include trailing whitespace in this parser, since LHS is always
             // followed by something else, so we don't need to put ws there.
             terminated(lhsvar, tuple((ws, tag("="), ws)))(input)
@@ -1195,7 +1105,7 @@ pub(crate) use wimpls;
 pub struct State {
     pub label_count: usize,
     pub stack_var_count: usize,
-    pub var_stack: Vec<LhsVar>,
+    pub var_stack: Vec<Var>,
     pub label_stack: Vec<usize>, 
     pub else_taken: bool, 
     pub param_len: usize, //TODO: remains constant so technically should be all uppercase but clippy compares
@@ -1236,6 +1146,7 @@ fn wimplify_instrs(
     use Stmt::*;
     use ExprLHS::*; 
     use ExprOpt::*; 
+    use Var::*; 
    
     let instr = instrs.pop_front().unwrap();
     let ty = tys.pop_front().unwrap();
@@ -1251,15 +1162,15 @@ fn wimplify_instrs(
         // tee lhs is the argument itself, ie, rhs which is handled in the match arm for it below
         match instr {
             highlevel::Instr::Local(highlevel::LocalOp::Tee,_) => None, 
-            _ => Some(LhsVar::Stack(ty.results[0].expect(""), state.stack_var_count)) 
+            _ => Some(Stack(state.stack_var_count)) 
         }
     } else {
         panic!("cannot return more than one value in wasm1.0")
     };
 
-    let mut lhs_ty = lhs.map(|unwraped_lhs| unwraped_lhs.get_ty());
+    //let mut lhs_ty = lhs.map(|_|ty.results[0]).unwrap();
 
-    let mut rhs: Vec<LhsVar> = state.var_stack.split_off(state.var_stack.len()-n_inputs); 
+    let mut rhs: Vec<Var> = state.var_stack.split_off(state.var_stack.len()-n_inputs); 
     
     let result_instr: Option<Stmt> = match instr {
 
@@ -1290,8 +1201,8 @@ fn wimplify_instrs(
             if let Some(_btype) = blocktype.0 {
                 panic_if_size_lt(&block_state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
                 lhs = block_state.var_stack.pop();
-                lhs_ty = lhs.map(|unwraped_lhs| unwraped_lhs.get_ty());                 
-                result = Some(RhsVar::new(block_state.var_stack.pop().unwrap()));             
+                //lhs_ty = lhs.map(|unwraped_lhs| unwraped_lhs.get_ty());                 
+                result = Some(block_state.var_stack.pop().unwrap());             
             }
 
             state.label_count = block_state.label_count;
@@ -1336,8 +1247,8 @@ fn wimplify_instrs(
             if let Some(_btype) = blocktype.0 {
                 panic_if_size_lt(&loop_state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
                 lhs = loop_state.var_stack.pop();
-                lhs_ty = lhs.map(|unwraped_lhs| unwraped_lhs.get_ty());
-                result = Some(RhsVar::new(loop_state.var_stack.pop().unwrap()));              
+                //lhs_ty = lhs.map(|unwraped_lhs| unwraped_lhs.get_ty());
+                result = Some(loop_state.var_stack.pop().unwrap());              
             }
             state.label_count = loop_state.label_count;
             state.stack_var_count = loop_state.stack_var_count; 
@@ -1369,8 +1280,8 @@ fn wimplify_instrs(
             if let Some(_btype) = blocktype.0 {
                 panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
                 lhs = state.var_stack.pop();
-                lhs_ty = lhs.map(|unwraped_lhs| unwraped_lhs.get_ty());
-                if_return = Some(RhsVar::new(state.var_stack.pop().unwrap()));              
+                //lhs_ty = lhs.map(|unwraped_lhs| unwraped_lhs.get_ty());
+                if_return = Some(state.var_stack.pop().unwrap());              
             }
 
             let ifrhs = if state.else_taken {
@@ -1384,7 +1295,7 @@ fn wimplify_instrs(
                 if let Some(_btype) = blocktype.0 {
                     panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
                     let _ = state.var_stack.pop();
-                    else_return = Some(RhsVar::new(state.var_stack.pop().unwrap()));            
+                    else_return = Some(state.var_stack.pop().unwrap());            
                     state.stack_var_count -= 1; 
                 }
 
@@ -1399,14 +1310,14 @@ fn wimplify_instrs(
 
                 If{
                     label: Some(Label(curr_label_count)),
-                    condition: RhsVar::new(rhs.pop().unwrap()), 
+                    condition: rhs.pop().unwrap(), 
                     if_body: Body { instrs: if_body, result: if_return },
                     else_body: Some(Body{ instrs: else_body, result: else_return}),
                 }
             } else {
                 If {
                     label: Some(Label(curr_label_count)),
-                    condition: RhsVar::new(rhs.pop().unwrap()),
+                    condition: rhs.pop().unwrap(),
                     if_body: Body { instrs: if_body, result: if_return },
                     else_body: None,
                 } 
@@ -1442,7 +1353,7 @@ fn wimplify_instrs(
             
             // value to be returned is already in rhs
             // push it back on the stack
-            let value = rhs.pop().map(RhsVar::new);
+            let value = rhs.pop();
             
             Some(Br {
                 target,
@@ -1455,10 +1366,10 @@ fn wimplify_instrs(
             
             let target = Label(state.label_stack[state.label_stack.len()-lab.into_inner()-1]); 
             
-            let condition = RhsVar::new(rhs.pop().unwrap()); 
+            let condition = rhs.pop().unwrap(); 
             
             // pop the return   
-            let value = rhs.pop().map(RhsVar::new); 
+            let value = rhs.pop(); 
             
             let ifrhs = If{
                 label: None,
@@ -1491,9 +1402,9 @@ fn wimplify_instrs(
                 lab_table.push(Label(state.label_stack[state.label_stack.len()-lab.into_inner()-1])); 
             }
 
-            let idx = RhsVar::new(rhs.pop().unwrap()); 
+            let idx = rhs.pop().unwrap(); 
 
-            let value = rhs.pop().map(RhsVar::new); 
+            let value = rhs.pop(); 
 
             let default = Label(state.label_stack[state.label_stack.len()-default.into_inner()-1]);
             
@@ -1508,7 +1419,7 @@ fn wimplify_instrs(
         highlevel::Instr::Return => {
             panic_if_size_gt(&rhs, 1, "multiple returns not yet allowed");
             if let Some(val) = rhs.pop() {
-                Some(Return{ value: Some(RhsVar::new(val))})
+                Some(Return{ value: Some(val)})
             } else {
                 Some(Return{ value: None})
             }
@@ -1517,7 +1428,7 @@ fn wimplify_instrs(
         highlevel::Instr::Call(idx) => {
             let call_rhs = Call {
                 func: Func::Idx(idx.into_inner()), 
-                args: rhs.iter().map(|var| RhsVar::new(*var)).collect(),
+                args: rhs,
             }; 
             if let Some(lhs) = lhs {
                 Some(StmtOpt{
@@ -1537,8 +1448,8 @@ fn wimplify_instrs(
             panic_if_size_lt(&rhs, 1, "call_indirect requires an index"); 
             let callind_rhs = CallIndirect{
                 type_: fn_type.clone(), 
-                table_idx: RhsVar::new(rhs.pop().unwrap()),
-                args: rhs.iter().map(|var|RhsVar::new(*var)).collect(),
+                table_idx: rhs.pop().unwrap(),
+                args: rhs,
             }; 
             if let Some(lhs) = lhs {
                 Some(StmtOpt{
@@ -1554,9 +1465,9 @@ fn wimplify_instrs(
 
         highlevel::Instr::Select => { 
             panic_if_size_lt(&rhs, 3, "select requires that there is a condition and two other values on the stack"); 
-            let arg1 = RhsVar::new(rhs.pop().unwrap()); //cond  //wasm spec pg 71/155
-            let arg2 = RhsVar::new(rhs.pop().unwrap()); //if
-            let arg3 = RhsVar::new(rhs.pop().unwrap()); //else
+            let arg1 = rhs.pop().unwrap(); //cond  //wasm spec pg 71/155
+            let arg2 = rhs.pop().unwrap(); //if
+            let arg3 = rhs.pop().unwrap(); //else
             let if_rhs = If {
                 label: None,
                 condition: arg1,
@@ -1583,9 +1494,9 @@ fn wimplify_instrs(
         highlevel::Instr::Local(highlevel::LocalOp::Get, local_ind) => {
             let ind = local_ind.into_inner(); 
             let local_var = if ind > state.param_len - 1 {
-                RhsVar::Local(local_ind.into_inner()-state.param_len)
+                Local(local_ind.into_inner()-state.param_len)
             } else {
-                RhsVar::Param(ind)
+                Param(ind)
             }; 
 
             if let Some(lhs) = lhs {
@@ -1603,16 +1514,16 @@ fn wimplify_instrs(
         highlevel::Instr::Local(highlevel::LocalOp::Set, local_ind) => {
             let ind = local_ind.into_inner(); 
             let local_var = if ind > state.param_len - 1 {
-                LhsVar::Local(ty.inputs[0].expect(""), local_ind.into_inner()-state.param_len)
+                Local(local_ind.into_inner()-state.param_len)
             } else {
-                LhsVar::Param(ty.inputs[0].expect(""), ind)
+                Param(ind)
             };
             
             panic_if_size_lt(&rhs, 1, "local.set expects a value on the stack"); 
             Some(StmtLHS{
                 lhs : local_var, 
                 expr: Assign {
-                    rhs: RhsVar::new(rhs.pop().unwrap()),
+                    rhs: rhs.pop().unwrap(),
                 }
             })            
         }
@@ -1620,9 +1531,9 @@ fn wimplify_instrs(
         highlevel::Instr::Local(highlevel::LocalOp::Tee, local_ind) => {
             let ind = local_ind.into_inner(); 
             let local_var = if ind > state.param_len - 1 {
-                LhsVar::Local(ty.inputs[0].expect(""), local_ind.into_inner()-state.param_len)
+                Local(local_ind.into_inner()-state.param_len)
             } else {
-                LhsVar::Param(ty.inputs[0].expect(""), ind)
+                Param(ind)
             };
             
             panic_if_size_lt(&rhs, 1, "local.tee expects a value on the stack"); 
@@ -1631,13 +1542,13 @@ fn wimplify_instrs(
             Some(StmtLHS{
                 lhs: local_var,
                 expr: Assign {
-                    rhs: RhsVar::new(rhs),
+                    rhs,
                 }
             })
         }
 
         highlevel::Instr::Global(highlevel::GlobalOp::Get, global_ind) => {
-            let global_var = RhsVar::Global(global_ind.into_inner());
+            let global_var = Global(global_ind.into_inner());
             if let Some(lhs) = lhs {
                 Some(StmtLHS{
                     lhs, 
@@ -1651,12 +1562,12 @@ fn wimplify_instrs(
         }
 
         highlevel::Instr::Global(highlevel::GlobalOp::Set, global_ind) => {
-            let global_var = LhsVar::Global(ty.inputs[0].expect(""), global_ind.into_inner());
+            let global_var = Global(global_ind.into_inner());
             panic_if_size_lt(&rhs, 1, "global.set expects a value on the stack"); 
             Some(StmtLHS{
                 lhs: global_var,
                 expr: Assign {
-                    rhs: RhsVar::new(rhs.pop().unwrap()),
+                    rhs: rhs.pop().unwrap(),
                 }
             })
         }
@@ -1669,7 +1580,7 @@ fn wimplify_instrs(
                 panic!("Every load consumes a value"); 
             }
             let lhs = lhs.unwrap();
-            let rhs = RhsVar::new(rhs.pop().unwrap());
+            let rhs = rhs.pop().unwrap();
             Some(StmtLHS{
                 lhs,
                 expr: Load {
@@ -1685,8 +1596,8 @@ fn wimplify_instrs(
             Some(Store {
                 op: *storeop,
                 memarg: *memarg,
-                addr: RhsVar::new(rhs.pop().unwrap()),
-                value: RhsVar::new(rhs.pop().unwrap()),
+                addr: rhs.pop().unwrap(),
+                value: rhs.pop().unwrap(),
             })
         }
 
@@ -1705,7 +1616,7 @@ fn wimplify_instrs(
                 Some(StmtLHS{
                     lhs, 
                     expr: MemoryGrow {
-                        pages: RhsVar::new(rhs.pop().unwrap()),
+                        pages: rhs.pop().unwrap(),
                     } 
                 })
             } else {
@@ -1727,7 +1638,7 @@ fn wimplify_instrs(
                     lhs, 
                     expr: Numeric {
                         op: *numop,
-                        rhs: rhs.iter().map(|var| RhsVar::new(*var)).collect(),
+                        rhs,
                     }
                 })
             } else {
@@ -1742,8 +1653,8 @@ fn wimplify_instrs(
 
     if !instrs.is_empty() {
         if let Some(lhs) = lhs { 
-            state.var_stack.push(LhsVar::Stack(lhs_ty.unwrap(), state.stack_var_count));
-            if let LhsVar::Stack(_, _) = lhs {
+            state.var_stack.push(Stack(state.stack_var_count));
+            if let Stack(_) = lhs {
                 state.stack_var_count += 1;
             }
         }
@@ -1798,8 +1709,7 @@ mod test {
     use super::ExprLHS::*;
     use super::ExprOpt::*;
     use super::Label;
-    use super::RhsVar::{self};
-    use super::LhsVar::{self};
+    use super::Var::{self};
     use super::{wimpl, wimpls};
     use crate::highlevel::LoadOp::*;
     use crate::highlevel::NumericOp::*;
@@ -1822,12 +1732,12 @@ mod test {
         static ref WIMPL_CANONICAL_SYNTAX_TESTCASES: Vec<(Stmt, &'static str, &'static str)> = vec![
             (Unreachable, "unreachable", ""),
             (Return { value: None }, "return", "return without value"),
-            (Return { value: Some(RhsVar::Stack(0)) }, "return (s0)", "with value, with whitespace"),
-            (StmtLHS{ lhs: LhsVar::Stack(ValType::I32, 0), expr: MemorySize { } }, "s0: i32 = memory.size", "with lhs"),
-            (StmtLHS{ lhs: LhsVar::Global(ValType::I32, 0), expr: Assign { rhs: RhsVar::Local(0) } }, "g0: i32 = l0", ""),
+            (Return { value: Some(Var::Stack(0)) }, "return (s0)", "with value, with whitespace"),
+            (StmtLHS{ lhs: Var::Stack(0), expr: MemorySize { } }, "s0: i32 = memory.size", "with lhs"),
+            (StmtLHS{ lhs: Var::Global(0), expr: Assign { rhs: Var::Local(0) } }, "g0: i32 = l0", ""),
             (
                 StmtLHS{
-                    lhs: LhsVar::Stack(ValType::I32, 0),
+                    lhs: Var::Stack(0),
                     expr: Const {
                         val: I32(1337),
                     }, 
@@ -1837,10 +1747,10 @@ mod test {
             ),
             (
                 StmtLHS{
-                    lhs: LhsVar::Stack(ValType::I32, 1),
+                    lhs: Var::Stack(1),
                     expr: Numeric {
                         op: I32Add,
-                        rhs: vec![RhsVar::Stack(2), RhsVar::Stack(3)],
+                        rhs: vec![Var::Stack(2), Var::Stack(3)],
                     },
                 },
                 "s1: i32 = i32.add(s2, s3)",
@@ -1848,11 +1758,11 @@ mod test {
             ),
             (
                 StmtLHS{
-                    lhs: LhsVar::Stack(ValType::I32, 1),
+                    lhs: Var::Stack(1),
                     expr: Load {
                         op: I32Load,
                         memarg: Memarg::default(I32Load),
-                        addr: RhsVar::Stack(0),
+                        addr: Var::Stack(0),
                     }
                 },
                 "s1: i32 = i32.load(s0)",
@@ -1861,8 +1771,8 @@ mod test {
             (
                 Store {
                     op: I64Store8,
-                    value: RhsVar::Stack(1),
-                    addr: RhsVar::Stack(2),
+                    value: Var::Stack(1),
+                    addr: Var::Stack(2),
                     memarg: Memarg {
                         offset: 0,
                         alignment_exp: 4,
@@ -1879,13 +1789,13 @@ mod test {
                 "br @label0",
                 "br without value"
             ),
-            (Br { target: Label(1), value: Some(RhsVar::Stack(0)) }, "br @label1 (s0)", "br with value"),
+            (Br { target: Label(1), value: Some(Var::Stack(0)) }, "br @label1 (s0)", "br with value"),
             (
                 BrTable {
-                    idx: RhsVar::Stack(0),
+                    idx: Var::Stack(0),
                     table: vec![Label(1), Label(2)],
                     default: Label(0),
-                    value: Some(RhsVar::Stack(1)),
+                    value: Some(Var::Stack(1)),
                 },
                 "br_table @label1 @label2 default=@label0 (s0) (s1)",
                 "br_table with index argument and passed value"
@@ -1902,11 +1812,11 @@ mod test {
             ),
             (
                 StmtOpt{
-                    lhs: LhsVar::Stack(ValType::I32, 1),
+                    lhs: Var::Stack(1),
                     expr: CallIndirect {
                         type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
-                        table_idx: RhsVar::Stack(0),
-                        args: vec![RhsVar::Stack(2), RhsVar::Stack(3)],
+                        table_idx: Var::Stack(0),
+                        args: vec![Var::Stack(2), Var::Stack(3)],
                     }
                 },
                 "s1: i32 = call_indirect [i32] -> [i32] (s0) (s2, s3)",
@@ -1926,12 +1836,12 @@ mod test {
             ),
             (
                 StmtOpt{
-                    lhs: LhsVar::Stack(ValType::I32, 1),
+                    lhs: Var::Stack(1),
                     expr: Block {
                         label: Label(0),
                         body: Body {
                             instrs: vec![],
-                            result: Some(RhsVar::Stack(0)),
+                            result: Some(Var::Stack(0)),
                         },
                     }
                 },
@@ -1945,8 +1855,8 @@ mod test {
                         body: Body {
                             instrs: vec![
                                 StmtLHS{
-                                    lhs: LhsVar::Stack(ValType::I32, 1),
-                                    expr: Assign { rhs: RhsVar::Stack(0) }
+                                    lhs: Var::Stack(1),
+                                    expr: Assign { rhs: Var::Stack(0) }
                                 }],
                             result: None,
                         },
@@ -1958,7 +1868,7 @@ mod test {
             (
                 Expr{ 
                     expr: If {
-                        condition: RhsVar::Stack(0),
+                        condition: Var::Stack(0),
                         label: None,
                         if_body: Body {
                             instrs: vec![Br {
@@ -1980,18 +1890,18 @@ mod test {
                         body: Body {
                             instrs: vec![
                                 StmtOpt{
-                                    lhs: LhsVar::Stack(ValType::I32, 0),
+                                    lhs: Var::Stack(0),
                                     expr: Block {
                                         label: Label(2),
                                         body: Body {
                                             instrs: vec![
                                                 StmtLHS{
-                                                    lhs: LhsVar::Stack(ValType::I32, 1),
+                                                    lhs: Var::Stack(1),
                                                     expr: Const {
                                                     val: I32(7),
                                                     }
                                             }],
-                                            result: Some(RhsVar::Stack(1)),
+                                            result: Some(Var::Stack(1)),
                                         },
                                     },
                                 }, 
@@ -2019,13 +1929,13 @@ mod test {
         /// because they contain too little or too much whitespace.
         /// They are only used for testing parsing, not pretty-printing.
         static ref WIMPL_ALTERNATIVE_SYNTAX_TESTCASES: Vec<(Stmt, &'static str, &'static str)> = vec![
-            (Return { value: Some(RhsVar::Stack(0)) }, "return(s0)", "no space between op and arguments"),
-            (StmtLHS{ lhs: LhsVar::Stack(ValType::I32, 1), expr: MemoryGrow { pages: RhsVar::Stack(0) } }, "s1: i32 = memory.grow ( s0 )", "extra space around arguments"),
+            (Return { value: Some(Var::Stack(0)) }, "return(s0)", "no space between op and arguments"),
+            (StmtLHS{ lhs: Var::Stack(1), expr: MemoryGrow { pages: Var::Stack(0) } }, "s1: i32 = memory.grow ( s0 )", "extra space around arguments"),
             (
                 Expr{
                     expr: Call {
                         func: Func::Idx(2),
-                        args: vec![RhsVar::Stack(2), RhsVar::Stack(3)],
+                        args: vec![Var::Stack(2), Var::Stack(3)],
                     }
                 },
                 "call f2 ( s2, s3 )",
@@ -2033,10 +1943,10 @@ mod test {
             ),
             (
                 StmtOpt{
-                    lhs: LhsVar::Stack(ValType::I32, 1),
+                    lhs: Var::Stack(1),
                     expr: CallIndirect {
                         type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
-                        table_idx: RhsVar::Stack(0),
+                        table_idx: Var::Stack(0),
                         args: vec![],
                     },
                 },
@@ -2045,10 +1955,10 @@ mod test {
             ),
             (
                 StmtLHS{
-                    lhs: LhsVar::Stack(ValType::I32, 1),
+                    lhs: Var::Stack(1),
                     expr: Numeric {
                         op: I32Add,
-                        rhs: vec![RhsVar::Stack(2), RhsVar::Stack(3)],
+                        rhs: vec![Var::Stack(2), Var::Stack(3)],
                     }
                 },
                 "s1: i32 = i32.add (s2,s3)",
@@ -2057,8 +1967,8 @@ mod test {
             (
                 Store {
                     op: I64Store8,
-                    value: RhsVar::Stack(1),
-                    addr: RhsVar::Stack(2),
+                    value: Var::Stack(1),
+                    addr: Var::Stack(2),
                     memarg: Memarg {
                         offset: 0,
                         alignment_exp: 4,
@@ -2087,10 +1997,10 @@ mod test {
                         body: Body {
                             instrs: vec![
                                 StmtLHS{
-                                    lhs: LhsVar::Stack(ValType::I32, 1), 
-                                    expr: Assign { rhs: RhsVar::Stack(0) },
+                                    lhs: Var::Stack(1), 
+                                    expr: Assign { rhs: Var::Stack(0) },
                                 }],
-                            result: Some(RhsVar::Stack(1)),
+                            result: Some(Var::Stack(1)),
                         },
                     }
                 },
@@ -2109,20 +2019,20 @@ mod test {
 
     #[test]
     fn parse_var() {
-        assert_eq!(Ok(RhsVar::Stack(0)), "s0".parse());
-        assert_eq!(Ok(RhsVar::Global(0)), "g0".parse());
+        assert_eq!(Ok(Var::Stack(0)), "s0".parse());
+        assert_eq!(Ok(Var::Global(0)), "g0".parse());
 
         // Negative tests:
         assert!(
-            " s0 \n ".parse::<RhsVar>().is_err(),
+            " s0 \n ".parse::<Var>().is_err(),
             "whitespace is not allowed"
         );
         assert!(
-            "sABC".parse::<RhsVar>().is_err(),
+            "sABC".parse::<Var>().is_err(),
             "characters instead of number"
         );
         assert!(
-            "x123".parse::<RhsVar>().is_err(),
+            "x123".parse::<Var>().is_err(),
             "invalid variable type/prefix"
         );
     }
