@@ -259,10 +259,10 @@ pub enum Stmt {
 pub enum Expr {
 
     Block {
-        //lhs: Option<Var>,
         label: Label,
-        body: Body,
+        body: Body, //TODO no need for Body, only Vec<Instr> 
     },
+
     Loop {
         //lhs: Option<Var>,
         label: Label,
@@ -1092,6 +1092,7 @@ pub struct State {
     pub label_stack: Vec<usize>, 
     pub else_taken: bool, 
     pub param_len: usize, //TODO: remains constant so technically should be all uppercase but clippy compares
+    pub return_var: Option<Var>,   
 }
 
 impl State {
@@ -1102,7 +1103,8 @@ impl State {
             var_stack: Vec::new(),
             label_stack: Vec::new(),
             else_taken: false,
-            param_len,  
+            param_len,
+            return_var: None,  
         }
     }
 
@@ -1154,18 +1156,37 @@ fn wimplify_instrs(
     
     let mut rhs: Vec<Var> = state.var_stack.split_off(state.var_stack.len()-n_inputs); 
     
-    let result_instr: Option<Stmt> = match instr {
+    let result_instr: Option<Vec<Stmt>> = match instr {
 
-        highlevel::Instr::Unreachable => Some(Unreachable),
+        highlevel::Instr::Unreachable => Some(vec![Unreachable]),
 
         highlevel::Instr::Nop => None,
 
         highlevel::Instr::Block(blocktype) => {
             
+            let btype = blocktype.0; 
+
+            //first, if the block returns a value, create a variable that will store the return and keep track of the variable 
+            //if it doesn't return anything, create an empty vector  
+            let mut result_var = None; 
+            let mut res_vec = if let Some(btype) = btype {
+                result_var = Some(Stack(state.stack_var_count)); 
+                vec![Assign { 
+                    lhs: result_var.unwrap(), 
+                    expr: Const{ val: Val::I32(0) } , 
+                    type_: Some(btype),  
+                }]
+            } else {
+                Vec::new()
+            }; 
+            state.stack_var_count += 1; 
+
+            //save current stack state and prepare to go into a new block 
             let curr_label_count = state.label_count;
             state.label_count += 1;
             state.label_stack.push(curr_label_count); 
 
+            //create new block state 
             let mut block_state = State {
                 label_count: state.label_count,
                 stack_var_count: state.stack_var_count,
@@ -1173,37 +1194,40 @@ fn wimplify_instrs(
                 label_stack: state.label_stack.clone(),
                 else_taken: false,
                 param_len: state.param_len, 
+                return_var: result_var, 
             }; 
 
-            let block_body = wimplify_instrs(instrs, tys, &mut block_state).unwrap();
+            //call wimplify on remaining instructions with new block state 
+            let mut block_body = wimplify_instrs(instrs, tys, &mut block_state).unwrap();
             
             // the variable returned by the block, if any is on top of the stack 
             // and was pushed there by the end instruction 
-            let mut result = None; 
-            if let Some(_btype) = blocktype.0 {
+            // that variable should be assigned to the variable created to hold the return 
+            if let Some(btype) = btype {
                 panic_if_size_lt(&block_state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
+                
                 lhs = block_state.var_stack.pop();
-                //lhs_ty = lhs.map(|unwraped_lhs| unwraped_lhs.get_ty());                 
-                result = Some(block_state.var_stack.pop().unwrap());             
-            }
+                    //TODO: why is lhs here?? end isn't pushing it 
+                    //if should be that the stack is only of atleast len 1 right why 2 
+                    //if i change this everything breaks :((( 
 
+                block_body.push(Assign{
+                    lhs: result_var.unwrap(),
+                    expr: VarRef{ rhs: block_state.var_stack.pop().unwrap() },
+                    type_: Some(btype),
+                });           
+            }
+            
             state.label_count = block_state.label_count;
             state.stack_var_count = block_state.stack_var_count; 
 
-            let bodyrhs = Block{
+            let block = Block{
                 label: Label(curr_label_count),
-                body: Body { instrs: block_body, result},
+                body: Body { instrs: block_body, result: None },
             }; 
-
-            if let Some(lhs) = lhs {
-                Some(Assign{
-                    lhs,
-                    expr: bodyrhs,
-                    type_: blocktype.0, 
-                })
-            } else {
-                Some( Expr_{ expr: bodyrhs } ) 
-            } 
+            
+            res_vec.push(Expr_{ expr: block }); 
+            Some(res_vec) 
         }
 
         highlevel::Instr::Loop(blocktype) => {
@@ -1218,7 +1242,8 @@ fn wimplify_instrs(
                 var_stack: Vec::new(),
                 label_stack: state.label_stack.clone(),
                 else_taken: false,
-                param_len: state.param_len, 
+                param_len: state.param_len,
+                return_var: None, 
             }; 
 
             let loop_body = wimplify_instrs(instrs, tys, &mut loop_state).unwrap();
@@ -1242,13 +1267,13 @@ fn wimplify_instrs(
             }; 
 
             if let Some(lhs) = lhs {
-                Some(Assign{
+                Some(vec![Assign{
                     lhs,
                     expr: bodyrhs,
                     type_: blocktype.0,
-                })
+                }])
             } else {
-                Some(Expr_{ expr: bodyrhs } ) 
+                Some(vec![Expr_{ expr: bodyrhs }]) 
             } 
         },
 
@@ -1264,6 +1289,7 @@ fn wimplify_instrs(
             if let Some(_btype) = blocktype.0 {
                 panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
                 lhs = state.var_stack.pop();
+                
                 //lhs_ty = lhs.map(|unwraped_lhs| unwraped_lhs.get_ty());
                 if_return = Some(state.var_stack.pop().unwrap());              
             }
@@ -1308,13 +1334,13 @@ fn wimplify_instrs(
             };
 
             if let Some(lhs) = lhs {
-                Some(Assign{
+                Some(vec![Assign{
                     lhs,
                     expr: ifrhs,
                     type_: blocktype.0,
-                })
+                }])
             } else {
-                Some(Expr_{ expr: ifrhs })
+                Some(vec![Expr_{ expr: ifrhs }])
             }
         },
 
@@ -1334,16 +1360,30 @@ fn wimplify_instrs(
         }
 
         highlevel::Instr::Br(lab) => {                        
+            
             let target = Label(state.label_stack[state.label_stack.len()-lab.into_inner()-1]); 
             
-            // value to be returned is already in rhs
-            // push it back on the stack
-            let value = rhs.pop();
-            
-            Some(Br {
-                target,
-                value, 
-            })
+            let val = rhs.pop();
+            state.var_stack.push(val.unwrap()); 
+
+            if let Some(return_val) = val {
+                Some(vec![
+                    Assign{ 
+                        lhs: state.return_var.unwrap(), 
+                        expr: VarRef{ rhs: return_val }, 
+                        type_: None 
+                    }, 
+                    Br {
+                        target,
+                        value: None, 
+                    }
+                ])
+            } else {
+                Some(vec![Br {
+                    target,
+                    value: None, 
+                }])
+            }           
         },
 
         highlevel::Instr::BrIf(lab) => {
@@ -1370,13 +1410,13 @@ fn wimplify_instrs(
             };  
 
             if let Some(lhs) = lhs {
-                Some(Assign{
+                Some(vec![Assign{
                     lhs,
                     expr: ifrhs,
-                    type_: todo!(),
-                })
+                    type_: lhs_ty,
+                }])
             } else {
-                Some(Expr_{ expr: ifrhs })
+                Some(vec![Expr_{ expr: ifrhs }])
             }
        }
 
@@ -1394,20 +1434,20 @@ fn wimplify_instrs(
 
             let default = Label(state.label_stack[state.label_stack.len()-default.into_inner()-1]);
             
-            Some(BrTable {
+            Some(vec![BrTable {
                 idx, 
                 table: lab_table,
                 default,
                 value,
-            })
+            }])
         }
 
         highlevel::Instr::Return => {
             panic_if_size_gt(&rhs, 1, "multiple returns not yet allowed");
             if let Some(val) = rhs.pop() {
-                Some(Return{ value: Some(val)})
+                Some(vec![Return{ value: Some(val)}])
             } else {
-                Some(Return{ value: None})
+                Some(vec![Return{ value: None}])
             }
         }
 
@@ -1417,13 +1457,13 @@ fn wimplify_instrs(
                 args: rhs,
             }; 
             if let Some(lhs) = lhs {
-                Some(Assign{
+                Some(vec![Assign{
                     lhs,
                     expr: call_rhs,
                     type_: lhs_ty, 
-                })
+                }])
             } else {
-                Some(Expr_ { expr: call_rhs })
+                Some(vec![Expr_ { expr: call_rhs }])
             }            
         }, 
 
@@ -1439,13 +1479,13 @@ fn wimplify_instrs(
                 args: rhs,
             }; 
             if let Some(lhs) = lhs {
-                Some(Assign{
+                Some(vec![Assign{
                     lhs,
                     expr: callind_rhs,
                     type_: lhs_ty, 
-                })
+                }])
             } else {
-                Some(Expr_{ expr: callind_rhs})
+                Some(vec![Expr_{ expr: callind_rhs}])
             }
         }
 
@@ -1469,13 +1509,13 @@ fn wimplify_instrs(
                 }),
             }; 
             if let Some(lhs) = lhs {
-                Some(Assign{
+                Some(vec![Assign{
                     lhs,
                     expr: if_rhs,
                     type_: lhs_ty, 
-                })
+                }])
             } else {
-                Some(Expr_{ expr: if_rhs})
+                Some(vec![Expr_{ expr: if_rhs}])
             }
 
         }
@@ -1489,13 +1529,13 @@ fn wimplify_instrs(
             }; 
 
             if let Some(lhs) = lhs {
-                Some(Assign{
+                Some(vec![Assign{
                     lhs, 
                     expr: VarRef {
                         rhs: local_var,
                     }, 
                     type_: lhs_ty, 
-                })
+                }])
             } else {
                 panic!("local.get requires a local variable to save a value into");
             }
@@ -1510,13 +1550,13 @@ fn wimplify_instrs(
             };
             
             panic_if_size_lt(&rhs, 1, "local.set expects a value on the stack"); 
-            Some(Assign{
+            Some(vec![Assign{
                 lhs : local_var, 
                 expr: VarRef {
                     rhs: rhs.pop().unwrap(),
                 },
                 type_: lhs_ty, 
-            })            
+            }])            
         }
 
         highlevel::Instr::Local(highlevel::LocalOp::Tee, local_ind) => {
@@ -1530,25 +1570,25 @@ fn wimplify_instrs(
             panic_if_size_lt(&rhs, 1, "local.tee expects a value on the stack"); 
             let rhs = rhs.pop().unwrap();
             state.var_stack.push(rhs); 
-            Some(Assign{
+            Some(vec![Assign{
                 lhs: local_var,
                 expr: VarRef {
                     rhs,
                 },
                 type_: lhs_ty, 
-            })
+            }])
         }
 
         highlevel::Instr::Global(highlevel::GlobalOp::Get, global_ind) => {
             let global_var = Global(global_ind.into_inner());
             if let Some(lhs) = lhs {
-                Some(Assign{
+                Some(vec![Assign{
                     lhs, 
                     expr: VarRef {
                         rhs: global_var,
                     },
                     type_: lhs_ty, 
-                })
+                }])
             } else {
                 panic!("global.get requires a local variable to save a value into");
             }
@@ -1557,13 +1597,13 @@ fn wimplify_instrs(
         highlevel::Instr::Global(highlevel::GlobalOp::Set, global_ind) => {
             let global_var = Global(global_ind.into_inner());
             panic_if_size_lt(&rhs, 1, "global.set expects a value on the stack"); 
-            Some(Assign{
+            Some(vec![Assign{
                 lhs: global_var,
                 expr: VarRef {
                     rhs: rhs.pop().unwrap(),
                 },
                 type_: lhs_ty, 
-            })
+            }])
         }
 
         highlevel::Instr::Load(loadop, memarg) => {
@@ -1575,7 +1615,7 @@ fn wimplify_instrs(
             }
             let lhs = lhs.unwrap();
             let rhs = rhs.pop().unwrap();
-            Some(Assign{
+            Some(vec![Assign{
                 lhs,
                 expr: Load {
                     op: *loadop,
@@ -1583,22 +1623,22 @@ fn wimplify_instrs(
                     addr: rhs,
                 },
                 type_: lhs_ty, 
-            })
+            }])
         }
 
         highlevel::Instr::Store(storeop, memarg) => {
             panic_if_size_lt(&rhs, 2, "store consumes two values from the stack"); 
-            Some(Store {
+            Some(vec![Store {
                 op: *storeop,
                 memarg: *memarg,
                 addr: rhs.pop().unwrap(),
                 value: rhs.pop().unwrap(),
-            })
+            }])
         }
 
         highlevel::Instr::MemorySize(_) => {
             if let Some(lhs) = lhs {
-                Some(Assign{ lhs, expr: MemorySize{}, type_: lhs_ty })
+                Some(vec![Assign{ lhs, expr: MemorySize{}, type_: lhs_ty }])
             } else {
                 panic!("memory size has to produce a value"); 
             }
@@ -1608,13 +1648,13 @@ fn wimplify_instrs(
             assert_eq!(ind.into_inner(), 0, "wasm mvp only has single memory");
             panic_if_size_lt(&rhs, 1, "memory_grow has to consume a value from stack"); 
             if let Some(lhs) = lhs {
-                Some(Assign{
+                Some(vec![Assign{
                     lhs, 
                     expr: MemoryGrow {
                         pages: rhs.pop().unwrap(),
                     },
                     type_: lhs_ty, 
-                })
+                }])
             } else {
                 panic!("memory grow has to produce a value"); 
             }
@@ -1622,7 +1662,7 @@ fn wimplify_instrs(
 
         highlevel::Instr::Const(val) => {
             if let Some(lhs) = lhs {
-                Some(Assign{ lhs, expr:Const{ val: *val }, type_: lhs_ty})
+                Some(vec![Assign{ lhs, expr:Const{ val: *val }, type_: lhs_ty}])
             } else {
                 panic!("const has to produce a value "); 
             }
@@ -1630,14 +1670,14 @@ fn wimplify_instrs(
 
         highlevel::Instr::Numeric(numop) => {
             if let Some(lhs) = lhs {
-                Some(Assign{
+                Some(vec![Assign{
                     lhs, 
                     expr: Numeric {
                         op: *numop,
                         rhs,
                     },
                     type_: lhs_ty, 
-                })
+                }])
             } else {
                 panic!("numeric op has to produce a value "); 
             }
@@ -1645,7 +1685,9 @@ fn wimplify_instrs(
     };
 
     if let Some(result_instr) = result_instr {
-        result_instrs.push(result_instr);
+        for ins in result_instr {
+            result_instrs.push(ins);
+        }
     }
 
     if !instrs.is_empty() {
