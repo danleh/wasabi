@@ -221,7 +221,7 @@ pub enum Stmt {
     Assign {
         lhs: Var, 
         expr: Expr,
-        //type : Option<>
+        type_ : Option<ValType>, 
     },
 
     Expr_ { //TODO rename
@@ -415,7 +415,7 @@ fn adapt_nom_parser<'input, O>(
         Err(err) => Err(ParseError::from(err, input)),
     }
 }
-
+/*
 impl Stmt {
     
     /// Parse multiple instructions, with possibly preceding and trailing whitespace.
@@ -712,7 +712,7 @@ impl FromStr for Stmt {
         adapt_nom_parser(Self::parse_nom_single, input)
     }
 }
-
+*/
 /// Helper function for `fmt::Display`-ing an arbitrary iterator of `values`,
 /// where each element is separated by `delim` and if the iterator is non-empty
 /// surrounded by `begin` and `end`.
@@ -754,8 +754,12 @@ impl fmt::Display for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Stmt::*;
         match self {
-            Assign { lhs, expr } => {
-                write!(f, "{} = {}", lhs, expr)?;
+            Assign { lhs, expr , type_} => {
+                if let Some(type_) = type_ { 
+                    write!(f, "{}: {} = {}", lhs, type_, expr)?;
+                } else {
+                    write!(f, "{} = {}", lhs, expr)?;
+                }
             },
             Expr_ { expr } => {
                 write!(f, "{}", expr)?;
@@ -1146,8 +1150,8 @@ fn wimplify_instrs(
         panic!("cannot return more than one value in wasm1.0")
     };
 
-    //let mut lhs_ty = lhs.map(|_|ty.results[0]).unwrap();
-
+    let lhs_ty = lhs.map(|_|ty.results[0].unwrap());
+    
     let mut rhs: Vec<Var> = state.var_stack.split_off(state.var_stack.len()-n_inputs); 
     
     let result_instr: Option<Stmt> = match instr {
@@ -1195,6 +1199,7 @@ fn wimplify_instrs(
                 Some(Assign{
                     lhs,
                     expr: bodyrhs,
+                    type_: blocktype.0, 
                 })
             } else {
                 Some( Expr_{ expr: bodyrhs } ) 
@@ -1240,6 +1245,7 @@ fn wimplify_instrs(
                 Some(Assign{
                     lhs,
                     expr: bodyrhs,
+                    type_: blocktype.0,
                 })
             } else {
                 Some(Expr_{ expr: bodyrhs } ) 
@@ -1305,6 +1311,7 @@ fn wimplify_instrs(
                 Some(Assign{
                     lhs,
                     expr: ifrhs,
+                    type_: blocktype.0,
                 })
             } else {
                 Some(Expr_{ expr: ifrhs })
@@ -1366,6 +1373,7 @@ fn wimplify_instrs(
                 Some(Assign{
                     lhs,
                     expr: ifrhs,
+                    type_: todo!(),
                 })
             } else {
                 Some(Expr_{ expr: ifrhs })
@@ -1412,6 +1420,7 @@ fn wimplify_instrs(
                 Some(Assign{
                     lhs,
                     expr: call_rhs,
+                    type_: lhs_ty, 
                 })
             } else {
                 Some(Expr_ { expr: call_rhs })
@@ -1433,6 +1442,7 @@ fn wimplify_instrs(
                 Some(Assign{
                     lhs,
                     expr: callind_rhs,
+                    type_: lhs_ty, 
                 })
             } else {
                 Some(Expr_{ expr: callind_rhs})
@@ -1462,6 +1472,7 @@ fn wimplify_instrs(
                 Some(Assign{
                     lhs,
                     expr: if_rhs,
+                    type_: lhs_ty, 
                 })
             } else {
                 Some(Expr_{ expr: if_rhs})
@@ -1482,7 +1493,8 @@ fn wimplify_instrs(
                     lhs, 
                     expr: VarRef {
                         rhs: local_var,
-                    }
+                    }, 
+                    type_: lhs_ty, 
                 })
             } else {
                 panic!("local.get requires a local variable to save a value into");
@@ -1502,7 +1514,8 @@ fn wimplify_instrs(
                 lhs : local_var, 
                 expr: VarRef {
                     rhs: rhs.pop().unwrap(),
-                }
+                },
+                type_: lhs_ty, 
             })            
         }
 
@@ -1521,7 +1534,8 @@ fn wimplify_instrs(
                 lhs: local_var,
                 expr: VarRef {
                     rhs,
-                }
+                },
+                type_: lhs_ty, 
             })
         }
 
@@ -1532,7 +1546,8 @@ fn wimplify_instrs(
                     lhs, 
                     expr: VarRef {
                         rhs: global_var,
-                    }
+                    },
+                    type_: lhs_ty, 
                 })
             } else {
                 panic!("global.get requires a local variable to save a value into");
@@ -1546,7 +1561,8 @@ fn wimplify_instrs(
                 lhs: global_var,
                 expr: VarRef {
                     rhs: rhs.pop().unwrap(),
-                }
+                },
+                type_: lhs_ty, 
             })
         }
 
@@ -1565,7 +1581,8 @@ fn wimplify_instrs(
                     op: *loadop,
                     memarg: *memarg,
                     addr: rhs,
-                }
+                },
+                type_: lhs_ty, 
             })
         }
 
@@ -1581,7 +1598,7 @@ fn wimplify_instrs(
 
         highlevel::Instr::MemorySize(_) => {
             if let Some(lhs) = lhs {
-                Some(Assign{ lhs, expr: MemorySize{} })
+                Some(Assign{ lhs, expr: MemorySize{}, type_: lhs_ty })
             } else {
                 panic!("memory size has to produce a value"); 
             }
@@ -1595,7 +1612,8 @@ fn wimplify_instrs(
                     lhs, 
                     expr: MemoryGrow {
                         pages: rhs.pop().unwrap(),
-                    } 
+                    },
+                    type_: lhs_ty, 
                 })
             } else {
                 panic!("memory grow has to produce a value"); 
@@ -1604,7 +1622,7 @@ fn wimplify_instrs(
 
         highlevel::Instr::Const(val) => {
             if let Some(lhs) = lhs {
-                Some(Assign{ lhs, expr:Const{ val: *val }})
+                Some(Assign{ lhs, expr:Const{ val: *val }, type_: lhs_ty})
             } else {
                 panic!("const has to produce a value "); 
             }
@@ -1617,7 +1635,8 @@ fn wimplify_instrs(
                     expr: Numeric {
                         op: *numop,
                         rhs,
-                    }
+                    },
+                    type_: lhs_ty, 
                 })
             } else {
                 panic!("numeric op has to produce a value "); 
@@ -1677,7 +1696,7 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
 pub fn wimplify (path: &str) -> Result<Module, String> {
     wimplify_module(&highlevel::Module::from_file(path).unwrap())
 }
-
+/* 
 #[cfg(test)]
 mod test {
     // Convenience imports:
@@ -2085,7 +2104,7 @@ mod test {
         };
     }
 }
-
+*/
 #[cfg(test)]
 fn test (path_wimpl: &str, path_wasm: &str) {
     // let expected = Stmt::from_file(path_wimpl).unwrap();
