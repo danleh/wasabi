@@ -1,6 +1,7 @@
 (module
   (type (;0;) (func (param i32 f32)))
   (func $1 (type 0) (param i32 f32)
+    (local i32 i32)
     (local.get 1)
     (i32.add
       (local.get 0)

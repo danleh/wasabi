@@ -1068,8 +1068,6 @@ pub struct State {
     pub label_stack: Vec<(usize, Option<(Var, ValType)>)>, 
     pub else_taken: bool, 
     pub param_len: usize, //TODO: remains constant so technically should be all uppercase but clippy compares
-    // pub return_var: Option<Var>, 
-    // pub return_var_ty: Option<ValType>, 
 }
 
 impl State {
@@ -1081,8 +1079,6 @@ impl State {
             label_stack: Vec::new(),
             else_taken: false,
             param_len,
-            // return_var: None,
-            // return_var_ty: None,   
         }
     }
 }
@@ -1120,10 +1116,12 @@ fn wimplify_instrs(
     let lhs = if n_results == 0 {
         None
     } else if n_results == 1 {
-        // tee lhs is the argument itself, ie, rhs which is handled in the match arm for it below
         match instr {
+            // tee lhs is the argument itself, ie, rhs which is handled in the match arm for it below
             highlevel::Instr::Local(highlevel::LocalOp::Tee,_) => None, 
+            // end does not produce a value, it indicates that you have to save var_stack top into the return variable 
             highlevel::Instr::End => None,
+            // brif does not produce a value, the returned value is stored in the label's return variable 
             highlevel::Instr::BrIf(_) => None,  
             _ => Some(Stack(state.stack_var_count)) 
         }
@@ -1777,11 +1775,28 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
     let mut wimpl_funcs = Vec::new(); 
     for (ind, func) in module.functions() {
         
+        //initialize the local variables //TODO: iterator returns twice the number of locals as is initialized
+        let mut result_instrs = Vec::new(); 
+        for (loc_ind, loc) in func.locals() {
+            let (loc_name, loc_type) = (&loc.name, loc.type_); 
+            if let Some(_loc_name) = loc_name {
+                todo!("you haven't yet implemented locals having names");     
+            } else {
+                result_instrs.push(Stmt::Assign{
+                    lhs: Var::Local(loc_ind.into_inner()-func.type_.params.len()),
+                    expr: Expr::Const{ val: Val::get_default_value(loc_type) } ,
+                    type_: loc_type,
+                })
+            }
+        }
+
         let instrs = func.code().unwrap().body.as_slice();
         let tys = types(instrs, func, module).map_err(|e| format!("{:?}", e)).expect("");
         let mut instrs = VecDeque::from_iter(instrs); //TODO pass in iterator instead of vecdeque
         let mut ty = VecDeque::from_iter(tys);
-        let result_instrs = wimplify_instrs(&mut instrs, &mut ty, &mut State::new(func.type_.params.len())).unwrap();
+        for inst in wimplify_instrs(&mut instrs, &mut ty, &mut State::new(func.type_.params.len())).unwrap() {
+            result_instrs.push(inst); 
+        }
         
         let name = if let Some(name) = &func.name {
             Func::Named(name.clone())
