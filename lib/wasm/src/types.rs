@@ -33,17 +33,22 @@ use crate::{
 pub struct TypeError {
     pub message: String,
 
-    // Optional location information.
-    pub instruction: Option<Idx<Instr>>,
-    pub function: Option<Idx<Function>>,
+    // Optional type error location information.
+    pub instruction_idx: Option<Idx<Instr>>,
+    pub instruction: Option<Instr>,
+
+    pub function_idx: Option<Idx<Function>>,
+    pub function_name: Option<String>,
 }
 
 impl TypeError {
     pub fn new(message: impl AsRef<str>) -> Self {
         Self {
             message: message.as_ref().to_string(),
+            instruction_idx: None,
             instruction: None,
-            function: None,
+            function_idx: None,
+            function_name: None,
         }
     }
 }
@@ -51,11 +56,17 @@ impl TypeError {
 impl fmt::Display for TypeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("type error")?;
-        if let Some(function) = self.function {
-            write!(f, ", function #{}", function.into_inner())?;
+        if let Some(function_idx) = self.function_idx {
+            write!(f, ", function #{}", function_idx.into_inner())?;
+            if let Some(function_name) = &self.function_name {
+                write!(f, " ({})", function_name)?;
+            }
         }
-        if let Some(instruction) = self.instruction {
-            write!(f, ", instruction #{}", instruction.into_inner())?;
+        if let Some(instruction_idx) = self.instruction_idx {
+            write!(f, ", instruction #{}", instruction_idx.into_inner())?;
+            if let Some(instruction) = &self.instruction {
+                write!(f, " ({}) ", instruction)?;
+            }
         }
         write!(f, ": {}", self.message)
     }
@@ -361,7 +372,8 @@ impl<'module> TypeChecker<'module> {
             Self::check_function(function, module)
                 // Add type error location information.
                 .map_err(|mut e| {
-                    e.function = Some(func_idx);
+                    e.function_idx = Some(func_idx);
+                    e.function_name = function.name.clone();
                     e
                 })?;
         }
@@ -380,7 +392,8 @@ impl<'module> TypeChecker<'module> {
                     .check_next_instr(instr)
                     // Add type error location information.
                     .map_err(|mut e| {
-                        e.instruction = Some(instr_idx.into());
+                        e.instruction_idx = Some(instr_idx.into());
+                        e.instruction = Some(instr.clone());
                         e
                     })?;
             }
