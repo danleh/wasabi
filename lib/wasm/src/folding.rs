@@ -3,7 +3,8 @@ use std::fmt;
 use crate::highlevel::Instr::*;
 use crate::highlevel::NumericOp::*;
 use crate::highlevel::{Function, Instr, Module};
-use crate::types::types;
+use crate::types::InferredInstructionType;
+use crate::types::TypeChecker;
 use crate::{FunctionType, Idx, Val};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -40,25 +41,28 @@ pub fn folds(
     function: &Function,
     module: &Module,
 ) -> Result<Vec<FoldedExpr>, String> {
-    let tys = types(instrs, function, module).map_err(|e| format!("{:?}", e))?;
+    let mut type_checker = TypeChecker::begin_function(function, module);
     let mut stack = Vec::new();
-    for (instr, ty) in instrs.iter().zip(tys.into_iter()) {
+    for instr in instrs {
+        let ty = type_checker.check_next_instr(instr).map_err(|e| e.to_string())?;
         println!("{:?}, {:?}", instr, ty);
-        let n_inputs = ty.inputs.len();
-        let n_results = ty.results.len();
-        let expr = if n_inputs == 0 {
-            FoldedExpr(instr.clone(), Vec::new())
-        } else {
-            let mut args = Vec::new();
-            for _ in 0..n_inputs {
-                let x = stack.pop().unwrap();
-                println!("{:?}", x);
-                args.push(x);
-            }
-            args.reverse();
-            FoldedExpr(instr.clone(), args)
-        };
-        stack.push(expr);
+        if let InferredInstructionType::Reachable(ty) = ty {
+            let n_inputs = ty.params.len();
+            let n_results = ty.results.len();
+            let expr = if n_inputs == 0 {
+                FoldedExpr(instr.clone(), Vec::new())
+            } else {
+                let mut args = Vec::new();
+                for _ in 0..n_inputs {
+                    let x = stack.pop().unwrap();
+                    println!("{:?}", x);
+                    args.push(x);
+                }
+                args.reverse();
+                FoldedExpr(instr.clone(), args)
+            };
+            stack.push(expr);
+        }
     }
     Ok(stack)
 }

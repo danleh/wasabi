@@ -17,10 +17,9 @@ use nom::{
     AsChar, Finish, IResult,
 };
 
-use crate::{highlevel::MemoryOp, types::InstructionType, Val, ValType};
+use crate::{highlevel::MemoryOp, types::{InferredInstructionType, TypeChecker}, Val, ValType};
 use crate::{
     highlevel::{self, LoadOp, NumericOp, StoreOp},
-    types::types,
     FunctionType, Memarg,
 };
 
@@ -1099,7 +1098,7 @@ fn panic_if_size_gt <T> (vec : &[T], size : usize, error: &str) {
 
 fn wimplify_instrs(
     instrs: &mut VecDeque<&highlevel::Instr>,
-    tys: &mut VecDeque<InstructionType>,
+    tys: &mut VecDeque<InferredInstructionType>,
     state: &mut State,
 ) -> Result<Vec<Stmt>, String> {
     
@@ -1109,9 +1108,14 @@ fn wimplify_instrs(
     let instr = instrs.pop_front().unwrap();
     let ty = tys.pop_front().unwrap();
 
+    let ty = match ty {
+        InferredInstructionType::Unreachable => return Ok(Vec::new()),
+        InferredInstructionType::Reachable(ty) => ty,
+    };
+
     println!("{}, {}, {:?}", instr, ty, state.var_stack);
 
-    let n_inputs = ty.inputs.len();
+    let n_inputs = ty.params.len();
     let n_results = ty.results.len();
     let mut result_instrs = Vec::new();
 
@@ -1131,7 +1135,7 @@ fn wimplify_instrs(
         panic!("cannot return more than one value in wasm1.0")
     };
 
-    let lhs_ty = lhs.map(|_|ty.results[0].unwrap());
+    let lhs_ty = lhs.map(|_|ty.results[0]);
     
     let mut rhs: Vec<Var> = state.var_stack.split_off(state.var_stack.len()-n_inputs); 
     
@@ -1549,7 +1553,7 @@ fn wimplify_instrs(
             let arg1 = rhs.pop().unwrap(); //cond  //wasm spec pg 71/155
             let arg2 = rhs.pop().unwrap(); //if
             let arg3 = rhs.pop().unwrap(); //else
-            let type_ = ty.results[0].unwrap(); 
+            let type_ = ty.results[0]; 
             
             if let Some(lhs) = lhs {
                 Some(vec![
@@ -1610,13 +1614,13 @@ fn wimplify_instrs(
             };
             
             panic_if_size_lt(&rhs, 1, "local.set expects a value on the stack"); 
-            panic_if_size_lt(&ty.inputs, 1, "return type of global.set not found"); 
+            panic_if_size_lt(&ty.params, 1, "return type of global.set not found"); 
             Some(vec![Stmt::Assign{
                 lhs : local_var, 
                 expr: VarRef {
                     rhs: rhs.pop().unwrap(),
                 },
-                type_: ty.inputs[0].unwrap(), 
+                type_: ty.params[0], 
             }])            
         }
 
@@ -1629,7 +1633,7 @@ fn wimplify_instrs(
             };
             
             panic_if_size_lt(&rhs, 1, "local.tee expects a value on the stack"); 
-            panic_if_size_lt(&ty.inputs, 1, "return type of global.set not found"); 
+            panic_if_size_lt(&ty.params, 1, "return type of global.set not found"); 
 
             let rhs = rhs.pop().unwrap();
             state.var_stack.push(rhs); 
@@ -1638,7 +1642,7 @@ fn wimplify_instrs(
                 expr: VarRef {
                     rhs,
                 },
-                type_: ty.inputs[0].unwrap(), 
+                type_: ty.params[0], 
             }])
         }
 
@@ -1659,7 +1663,7 @@ fn wimplify_instrs(
 
         highlevel::Instr::Global(highlevel::GlobalOp::Set, global_ind) => {
             panic_if_size_lt(&rhs, 1, "global.set expects a value on the stack"); 
-            panic_if_size_lt(&ty.inputs, 1, "return type of global.set not found"); 
+            panic_if_size_lt(&ty.params, 1, "return type of global.set not found"); 
             
             let global_var = Global(global_ind.into_inner());
             Some(vec![Stmt::Assign{
@@ -1667,7 +1671,7 @@ fn wimplify_instrs(
                 expr: VarRef {
                     rhs: rhs.pop().unwrap(),
                 },
-                type_: ty.inputs[0].unwrap(), 
+                type_: ty.params[0], 
             }])
         }
 
@@ -1790,7 +1794,13 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
         }
 
         let instrs = func.code().unwrap().body.as_slice();
-        let tys = types(instrs, func, module).map_err(|e| format!("{:?}", e)).expect("");
+        // FIXME generate type on-demand inside wimplify, not here beforehand.
+        let mut tys = VecDeque::new();
+        let mut type_checker = TypeChecker::begin_function(func, module);
+        for instr in instrs {
+            let ty = type_checker.check_next_instr(instr).map_err(|e| e.to_string())?;
+            tys.push_back(ty);
+        }
         let mut instrs = VecDeque::from_iter(instrs); //TODO pass in iterator instead of vecdeque
         let mut ty = VecDeque::from_iter(tys);
         for inst in wimplify_instrs(&mut instrs, &mut ty, &mut State::new(func.type_.params.len())).unwrap() {
