@@ -349,6 +349,48 @@ struct BlockFrame {
 
 impl<'module> TypeChecker<'module> {
     /*
+    Convenience functions without having to instantiate a type checker.
+
+    They do not return the types for individual instructions, only a result
+    whether overall type checking was successful.
+    */
+
+    /// Type checks all functions and globals in a `module`.
+    pub fn check_module(module: &Module) -> Result<(), TypeError> {
+        for (func_idx, function) in module.functions() {
+            Self::check_function(function, module)
+                // Add type error location information.
+                .map_err(|mut e| {
+                    e.function = Some(func_idx);
+                    e
+                })?;
+        }
+
+        // TODO type check globals initialization code.
+
+        Ok(())
+    }
+
+    /// Type checks all instructions in a `function`.
+    pub fn check_function(function: &Function, module: &Module) -> Result<(), TypeError> {
+        if let Some(code) = function.code() {
+            let mut type_checker = TypeChecker::begin_function(function, module);
+            for (instr_idx, instr) in code.body.iter().enumerate() {
+                let _instr_type_ignored = type_checker
+                    .check_next_instr(instr)
+                    // Add type error location information.
+                    .map_err(|mut e| {
+                        e.instruction = Some(instr_idx.into());
+                        e
+                    })?;
+            }
+        }
+
+        Ok(())
+    }
+
+
+    /*
     High-level API of the type checker.
     */
 
@@ -367,6 +409,8 @@ impl<'module> TypeChecker<'module> {
 
     /// Check and infer the type for the next instruction.
     pub fn check_next_instr(&mut self, instr: &'_ Instr) -> Result<InferredInstructionType, TypeError> {
+        // Pulled out of the impl only for formatting reasons: put very long 
+        // function after the interface definitions here.
         type_check_instr(self, instr, self.function, self.module)
     }
 
@@ -518,25 +562,7 @@ impl<'module> TypeChecker<'module> {
     }
 }
 
-pub fn type_check_module(module: &Module) -> Result<(), TypeError> {
-    for (func_idx, function) in module.functions() {
-        if let Some(code) = function.code() {
-            let mut type_checker = TypeChecker::begin_function(function, module);
-            for (instr_idx, instr) in code.body.iter().enumerate() {
-                let _instr_type_ignored = type_checker
-                    .check_next_instr(instr)
-                    // Add type error location information.
-                    .map_err(|mut e| {
-                        e.function = Some(func_idx);
-                        e.instruction = Some(instr_idx.into());
-                        e
-                    })?;
-            }
-        }
-    }
-    Ok(())
-}
-
+#[inline(always)]
 fn type_check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, module: &Module) -> Result<InferredInstructionType, TypeError> {
     // If we are already in dead code, do not return a concrete instruction 
     // type, because it could contain unconstrained types and would not be able
@@ -755,5 +781,13 @@ fn type_check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function,
 
 #[cfg(test)]
 mod tests {
-    
+    use crate::highlevel::Module;
+
+    use super::TypeChecker;
+
+    #[test]
+    pub fn simple_type() {
+        let module = Module::from_file("tests/wimpl/const/const.wasm").unwrap();
+        TypeChecker::check_module(&module).unwrap();
+    }
 }
