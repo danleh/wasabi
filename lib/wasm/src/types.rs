@@ -671,7 +671,12 @@ fn type_check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function,
         }
         End => {
             let frame = state.pop_block()?;
-            state.push_vals(&frame.results)?;
+            // If the block stack is emtpy, this end was for the whole function,
+            // then there is no parent stack to push the results to.
+            let is_function_end = state.block_stack.is_empty();
+            if !is_function_end {
+                state.push_vals(&frame.results)?;
+            }
             inferred_type(FunctionType::new(&[], &frame.results))
         }
         Else => {
