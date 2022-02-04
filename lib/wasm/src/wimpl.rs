@@ -89,6 +89,8 @@ pub enum Var {
     Local(usize),
     Global(usize),
     Param(usize),
+    //Return        //FIXME
+    //Block(usize) 
 }
 
 impl fmt::Display for Var {
@@ -1067,7 +1069,7 @@ pub struct State {
     pub var_stack: Vec<Var>,
     pub label_stack: Vec<(usize, Option<(Var, ValType)>)>, 
     pub else_taken: bool, 
-    pub param_len: usize, //TODO: remains constant so technically should be all uppercase but clippy compares
+    pub param_len: usize, 
 }
 
 impl State {
@@ -1345,9 +1347,10 @@ fn wimplify_instrs(
 
         highlevel::Instr::End => {
             // TODO temporary fix for function returns 
-            if instrs.len() == 0 {
+            if instrs.len() == 0 { 
                 None 
             } 
+            //FIXME top will be function label 
             
             else {
 
@@ -1373,7 +1376,7 @@ fn wimplify_instrs(
             let val = rhs.pop();
             
             if let Some(return_val) = val {
-                state.var_stack.push(return_val); //TODO bad behaviour 
+                state.var_stack.push(return_val); //FIXME not neccessary anymore if we don't generate unreachable instruction  
                 let (lhs, type_) = return_info.expect("br expected to produce a value"); 
                 Some(vec![
                     Stmt::Assign{ 
@@ -1405,7 +1408,7 @@ fn wimplify_instrs(
             
             if let Some((lhs_, type_)) = return_info {
                 let value = state.var_stack.pop().expect("br_if is expected to produce a value"); 
-                state.var_stack.push(value); //TODO bad?  
+                state.var_stack.push(value); //FIXME not neccessary anymore if we don't generate unreachable instruction 
                 Some(vec![Stmt::If{
                     label: None,
                     condition, 
@@ -1454,17 +1457,15 @@ fn wimplify_instrs(
             let mut target_list = Vec::new();
             let mut res_insts = Vec::new(); 
             
+            let val = rhs.pop().expect("br target expects a value on the stack"); 
             for lab in table {
                 let (target, return_info) = state.label_stack[state.label_stack.len()-lab.into_inner()-1]; 
                 target_list.push(Label(target));
                 if let Some((lhs, type_)) = return_info {
-                    // TODO probably a bug? the values carried by each label need to be 
-                    // assigned to the respective returns 
-                    // where are these values, they should be in pop
                     res_insts.push(
                         Stmt::Assign{
                             lhs,
-                            expr: VarRef{rhs: rhs.pop().expect("br target expects a value on the stack")},
+                            expr: VarRef{rhs: val },
                             type_ ,
                     })     
                 }
@@ -1476,12 +1477,10 @@ fn wimplify_instrs(
             let (default_target, default_return_info) = state.label_stack[state.label_stack.len()-default.into_inner()-1];
             let default = Label(default_target); 
             if let Some((lhs, type_)) = default_return_info {
-                // TODO probably a bug? 
-                // default value could also carry a value right 
                 res_insts.push(
                     Stmt::Assign{
                         lhs,
-                        expr: VarRef{rhs: rhs.pop().expect("br default target expects a value on the stack")},
+                        expr: VarRef{rhs: val },
                         type_ ,
                     }
                 )     
@@ -1775,7 +1774,7 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
     let mut wimpl_funcs = Vec::new(); 
     for (ind, func) in module.functions() {
         
-        //initialize the local variables //TODO: iterator returns twice the number of locals as is initialized
+        //initialize the local variables 
         let mut result_instrs = Vec::new(); 
         for (loc_ind, loc) in func.locals() {
             let (loc_name, loc_type) = (&loc.name, loc.type_); 
