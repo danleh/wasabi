@@ -93,10 +93,10 @@ impl std::error::Error for TypeError {}
 /// as the subtyping relation. That is, any regular value type can be used in
 /// place of `?`.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct InferredValType(pub Option<ValType>);
+pub struct InferredValType(Option<ValType>);
 
 #[derive(Debug, thiserror::Error, Copy, Clone, Eq, PartialEq)]
-#[error("unconstrained or unknown type")]
+#[error("unconstrained/unknown value type")]
 pub struct UnconstrainedTypeError;
 
 impl InferredValType {
@@ -159,8 +159,8 @@ impl TryFrom<InferredValType> for ValType {
     type Error = UnconstrainedTypeError;
 
     #[inline(always)]
-    fn try_from(with_unknown: InferredValType) -> Result<Self, Self::Error> {
-        with_unknown.0.ok_or(UnconstrainedTypeError)
+    fn try_from(maybe_unknown: InferredValType) -> Result<Self, Self::Error> {
+        maybe_unknown.0.ok_or(UnconstrainedTypeError)
     }
 }
 
@@ -203,44 +203,30 @@ impl fmt::Display for InferredValType {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum StackType {
     Unreachable,
-    Reachable(Vec<InferredValType>)
+    /// Because reachable code never has unconstrained variables, this is a
+    /// stack of `ValType`, not `InferredValType`.
+    Reachable(Vec<ValType>)
 }
 
-impl StackType {
-    pub fn unreachable() -> Self {
-        StackType::Unreachable
-    }
-
-    pub fn reachable<T: AsRef<[U]>, U: Into<InferredValType>>(tys: T) -> Self {
-        StackType::Reachable(tys.as_ref().iter().map(|&ty| ty.into()).collect())
-    }
-}
-
-impl<T: AsRef<[ValType]>> From<T> for StackType {
+impl From<Vec<ValType>> for StackType {
     #[inline(always)]
-    fn from(tys: T) -> Self {
-        Self::reachable(tys)
+    fn from(tys: Vec<ValType>) -> Self {
+        Self::Reachable(tys)
     }
 }
 
-impl TryFrom<&StackType> for Vec<ValType> {
-    type Error = UnconstrainedTypeError;
-
-    fn try_from(with_unknown: &StackType) -> Result<Self, Self::Error> {
-        match with_unknown {
-            StackType::Unreachable => Err(UnconstrainedTypeError),
-            StackType::Reachable(with_unknown) => 
-                with_unknown.iter().copied().map(ValType::try_from).collect()
-        }
-    }
-}
+#[derive(Debug, thiserror::Error, Copy, Clone, Eq, PartialEq)]
+#[error("unreachable code")]
+pub struct UnreachableError;
 
 impl TryFrom<StackType> for Vec<ValType> {
-    type Error = UnconstrainedTypeError;
+    type Error = UnreachableError;
 
-    #[inline(always)]
-    fn try_from(with_unknown: StackType) -> Result<Self, Self::Error> {
-        TryFrom::try_from(&with_unknown)
+    fn try_from(maybe_unreachable: StackType) -> Result<Self, Self::Error> {
+        match maybe_unreachable {
+            StackType::Unreachable => Err(UnreachableError),
+            StackType::Reachable(tys) => Ok(tys)
+        }
     }
 }
 
@@ -263,69 +249,46 @@ impl fmt::Display for StackType {
 }
 
 
-/// Similar to a `FunctionType`, lifted to include both value polymorphism and
-/// stack polymorphism.
+/// Similar to a `FunctionType`, but distinguishes between instructions in
+/// unreachable code, where a fully-constrained type cannot be given due to
+/// value- and stack-polymorphism, and "normal" instructions in reachable code,
+/// which can always be typed with simple `ValType`s.
+/// 
+/// A more fully-featured type checker might want to assign types also to the
+/// instructions that are in unreachable code, but those types have two
+/// problems:
+/// 1. They cannot be expressed with the surface WebAssembly type syntax, 
+/// because of unconstrained types, i.e., they would be over `InferredValType`.
+/// 2. They cannot be determined in a streaming, O(1) memory and O(1) runtime
+/// fashion, because it is only clear which values a stack-polymorphic 
+/// instruction produces at the _end_ of blocks.
+/// For these reasons, we restrict ourselves here to producing only types
+/// for reachable instructions. Note that dead code is still type _checked_ (!)
+/// by our `TypeChecker`, it just doesn't _assign_ types to each instruction.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct InstructionType {
-    pub inputs: Vec<InferredValType>,
-    // TODO do we need this to be StackType because of stack polymorphic/unreachable instructions?
-    pub results: Vec<InferredValType>,
+pub enum InferredInstructionType {
+    Unreachable,
+    Reachable(FunctionType)
 }
 
-impl InstructionType {
-    pub fn new(inputs: Vec<InferredValType>, results: Vec<InferredValType>) -> Self {
-        InstructionType {
-            inputs,
-            results,
+// impl From<FunctionType> for InferredInstructionType {
+//     #[inline(always)]
+//     fn from(func_ty: FunctionType) -> Self {
+//         InferredInstructionType::Reachable(func_ty)
+//     }
+// }
+
+impl TryFrom<InferredInstructionType> for FunctionType {
+    type Error = UnreachableError;
+
+    fn try_from(maybe_unreachable: InferredInstructionType) -> Result<Self, Self::Error> {
+        match maybe_unreachable {
+            InferredInstructionType::Unreachable => Err(UnreachableError),
+            InferredInstructionType::Reachable(func_ty) => Ok(func_ty),
         }
     }
-
-    pub fn lift(function_type: &FunctionType) -> Self {
-        fn lift(tys: &[ValType]) -> Vec<InferredValType> {
-            tys.iter().copied().map(InferredValType::from).collect()
-        }
-        InstructionType {
-            inputs: lift(&function_type.params),
-            results: lift(&function_type.results).into(),
-        }
-    }
 }
 
-impl<T: Borrow<FunctionType>> From<T> for InstructionType {
-    #[inline(always)]
-    fn from(function_type: T) -> Self {
-        InstructionType::lift(function_type.borrow())
-    }
-}
-
-impl TryFrom<&InstructionType> for FunctionType {
-    type Error = UnconstrainedTypeError;
-
-    fn try_from(with_unknown: &InstructionType) -> Result<Self, Self::Error> {
-        fn try_from(with_unknown: &Vec<InferredValType>) -> Result<Vec<ValType>, UnconstrainedTypeError> {
-            with_unknown.iter().copied().map(ValType::try_from).collect()
-        }
-        Ok(FunctionType::new(
-            &try_from(&with_unknown.inputs)?,
-            &try_from(&with_unknown.results)?,
-        ))
-    }
-}
-
-impl TryFrom<InstructionType> for FunctionType {
-    type Error = UnconstrainedTypeError;
-
-    fn try_from(with_unknown: InstructionType) -> Result<Self, Self::Error> {
-        TryFrom::try_from(&with_unknown)
-    }
-}
-
-impl fmt::Display for InstructionType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // HACK Reuse fmt::Display implementation, unreachable case never happens.
-        write!(f, "{} -> {}", StackType::Reachable(self.inputs), StackType::Reachable(self.results))
-    }
-}
 
 // TODO move comment up
 // Implements the relaxed type-checking for dead code from
@@ -338,20 +301,53 @@ impl fmt::Display for InstructionType {
 /// Strongly inspired by the official type-checking algorithm, as described
 /// in the specification: https://webassembly.github.io/spec/core/appendix/algorithm.html#algo-valid
 /// 
-/// There are two differences in our implementation from the specification:
-/// - We don't do stack height validation in branches.
-// TODO This is fine for now, as we assume only valid WebAssembly modules
-// are analyzed/transformed by our tools. Eventually, we should implement this.
-/// - We not only _check_, but also _infer_ types for each instruction.
+/// There are some differences to the validation algorithm as it is in the spec:
+/// 1. We not only _check_, but also _assign_ types for each (reachable) 
+/// instruction.
+/// 2. We have nested "sub-stacks" for each block, instead of one "flat"
+/// value stack + one control stack.
+/// 3. We compute the label type for each block (i.e., the values that a branch
+/// to a certain block "transports") once and store them, instead of determining
+/// them anew (loop vs. others) each time they are queried.
 #[derive(Debug)]
-pub struct TypeChecker {
-    // TODO include function and module in here, will add lifetime to TypeChecker
+pub struct TypeChecker<'module> {
+    /// For looking up the type of globals and functions.
+    module: &'module Module,
+    /// For looking up the type of parameters and locals.
+    function: &'module Function,
     
-    value_stack: StackType,
-    control_stack: Vec<ControlFrame>,
+    /// Nested sub-stacks for each block.
+    /// Merges the value and control stacks in the specification algorithm.
+    block_stack: Vec<BlockFrame>,
 }
 
-impl TypeChecker {
+#[derive(Debug)]
+struct BlockFrame {
+    value_stack: Vec<InferredValType>,
+
+    /// This is equivalent to having an "ellipsis" pseudo-type at the bottom
+    /// of the `value_stack`.
+    unreachable: bool,
+
+    /// Needed to type-check that the correct results are on the current
+    /// sub-stack before leaving a block.
+    results: Vec<ValType>,
+
+    /// Needed to type-check branches targeting this block: Which values does
+    /// the branch "transport" from the current stack to this one (the target)?
+    /// For loops, these are the inputs to the loop block, for every other block
+    /// (if, else, block) it's the output types.
+    label_inputs: Vec<ValType>,
+
+    // TODO Once we switch `hl::Instr` to use nested blocks, it is no longer
+    // necessary to check that an `else` instruction closes an `if` block.
+    // Since we assume we only work on valid Wasm modules anyway, and once that
+    // change is made, we don't need to check against the block op anyway,
+    // let's not capture it here, unlike in the spec validation algorithm.
+    // op: Instr
+}
+
+impl<'module> TypeChecker<'module> {
     /*
     High-level API of the type checker.
     */
@@ -359,49 +355,63 @@ impl TypeChecker {
     /// Begin type checking a function.
     /// This ensures that the final end instruction and branches/returns out of
     /// the function are correctly typed.
-    pub fn begin_function(type_: &FunctionType) -> Self {
+    pub fn begin_function(function: &'module Function, module: &'module Module) -> Self {
         let mut self_ = TypeChecker {
-            value_stack: StackType::Reachable(Vec::new()),
-            control_stack: Vec::new(),
+            module,
+            function,
+            block_stack: Vec::new(),
         };
-        self_.push_ctrl_func(type_.results.to_vec());
+        self_.push_func_block(function.type_.results.to_vec());
         self_
     }
 
-    /// Check and infer the type for another instruction.
-    // TODO move function and module into self.
-    pub fn check_next_instr(&mut self, instr: &Instr, function: &Function, module: &Module) -> Result<InstructionType, TypeError> {
-        type_check_instr(self, instr, function, module)
+    /// Check and infer the type for the next instruction.
+    pub fn check_next_instr(&mut self, instr: &'_ Instr) -> Result<InferredInstructionType, TypeError> {
+        type_check_instr(self, instr, self.function, self.module)
     }
 
-    pub fn current_stack_type(&self) -> &StackType {
-        &self.value_stack
+    /// Returns the type stack of the current block (without the surrounding
+    /// parent stacks, since they are not accessible from inside anyway).
+    pub fn current_block_type_stack(&self) -> Result<StackType, TypeError> {
+        let frame = self.top_block()?;
+        Ok(if frame.unreachable {
+            StackType::Unreachable
+        } else {
+            let tys = frame.value_stack.iter().copied()
+                .map(ValType::try_from)
+                .collect::<Result<Vec<ValType>, _>>()
+                .expect("unknown types should only appear in unreachable code");
+            StackType::Reachable(tys)
+        })
     }
 
     /*
      * Value stack operations:
      */
 
-    #[must_use]
-    pub fn pop_val(&mut self) -> Result<InferredValType, TypeError> {
-        match self.value_stack {
-            StackType::Unreachable => Ok(InferredValType::unknown()),
-            StackType::Reachable(value_stack) => 
-                value_stack
-                    .pop()
-                    .ok_or("expected a value, but value stack was empty".into())
+    fn pop_val(&mut self) -> Result<InferredValType, TypeError> {
+        let frame = self.top_block()?;
+        if frame.unreachable {
+            // Once we are in unreachable code, the prior stack-polymorphic
+            // instructions can produce necessary value "out of thin air".
+            if frame.value_stack.is_empty() {
+                return Ok(InferredValType::unknown())
+            }
+            // However, if there are already concrete types pushed onto the
+            // stack, produce those first (i.e., proceed with the following,
+            // "regular" logic).
         }
+
+        frame.value_stack.pop().ok_or("expected a value, but value stack was empty".into())
     }
 
-    #[must_use]
-    pub fn pop_val_expected(&mut self, expected: ValType) -> Result<ValType, TypeError> {
+    fn pop_val_expected(&mut self, expected: ValType) -> Result<ValType, TypeError> {
         let actual = self.pop_val()?;
         expected.join(actual)
             .ok_or(format!("expected type {}, but got {}", expected, actual).into())
     }
 
-    #[must_use]
-    pub fn pop_vals_expected(
+    fn pop_vals_expected(
         &mut self,
         expected: &[ValType],
     ) -> Result<Vec<ValType>, TypeError> {
@@ -417,132 +427,134 @@ impl TypeChecker {
         Ok(actual)
     }
 
-    pub fn push_val(&mut self, type_: impl Into<InferredValType>) {
-        if let StackType::Reachable(value_stack) = self.value_stack {
-            value_stack.push(type_.into())
-        }
+    fn push_val(&mut self, type_: impl Into<InferredValType>) -> Result<(), TypeError> {
+        self.top_block()?.value_stack.push(type_.into());
+        Ok(())
     }
 
-    pub fn push_vals(&mut self, types: &[ValType]) {
+    fn push_vals(&mut self, types: &[ValType]) -> Result<(), TypeError> {
         for &ty in types {
-            self.push_val(ty);
+            self.push_val(ty)?;
         }
+        Ok(())
     }
 
     /*
      * Control stack operations:
      */
-    pub fn push_ctrl_func(&mut self, results: Vec<ValType>) {
-        self.control_stack.push(ControlFrame {
-            block_instr: BlockInstr::Function,
-            inputs: Vec::new(),
-            results,
+    pub fn push_func_block(&mut self, results: Vec<ValType>) {
+        self.block_stack.push(BlockFrame {
+            value_stack: Vec::new(),
+            unreachable: false,
+            results: results.clone(),
+            label_inputs: results,
         })
     }
 
-    pub fn push_ctrl(&mut self, instr: &Instr, inputs: Vec<ValType>, results: Vec<ValType>) {
-        self.control_stack.push(ControlFrame {
-            block_instr: match instr {
-                Instr::Block(_) => BlockInstr::Block,
-                Instr::If(_) => BlockInstr::If,
-                Instr::Else => BlockInstr::Else,
-                Instr::Loop(_) => BlockInstr::Loop,
-                _ => unreachable!("push_ctrl() should not be called with non-control instruction {:?}", instr),
-            },
-            inputs: inputs.clone(),
+    pub fn push_block(&mut self, instr: &Instr, inputs: Vec<ValType>, results: Vec<ValType>) {
+        let label_types = match instr {
+            Instr::Block(_) | Instr::If(_) | Instr::Else => results.clone(),
+            Instr::Loop(_) => inputs.clone(),
+            _ => unreachable!("push_ctrl() should not be called with non-control instruction {:?}", instr),
+        };
+        self.block_stack.push(BlockFrame {
+            value_stack: inputs.iter().cloned().map(InferredValType::from).collect(),
+            unreachable: false,
             results,
+            label_inputs: label_types
         });
-        self.push_vals(&inputs);
     }
 
-    #[must_use]
-    pub fn top_ctrl(&mut self) -> Result<&mut ControlFrame, TypeError> {
-        self.control_stack
-            .last_mut()
-            .ok_or("empty control stack".into())
+    fn top_block(&mut self) -> Result<&mut BlockFrame, TypeError> {
+        // TODO Once `hl::Instr` is nested, there can no longer be more ends
+        // then block begins, so this error won't be possible any more and we
+        // could use `expect()` here, and remove the `Result` from this function
+        // and many others in the type checker.
+        self.block_stack.last_mut().ok_or("empty block stack".into())
     }
 
-    #[must_use]
-    pub fn get_ctrl(&self, label: Label) -> Result<&ControlFrame, TypeError> {
-        self.control_stack
+    pub fn get_block(&self, label: Label) -> Result<&BlockFrame, TypeError> {
+        self.block_stack
             .iter()
             .rev()
             .nth(label.0 as usize)
             .ok_or(format!("invalid branch target label {}", label.0).into())
     }
 
-    #[must_use]
-    pub fn pop_ctrl(&mut self) -> Result<ControlFrame, TypeError> {
-        let frame = self.top_ctrl()?;
-        let results = frame.results.clone();
-        self.pop_vals_expected(&results)?;
+    pub fn pop_block(&mut self) -> Result<BlockFrame, TypeError> {
+        // Check that the current (inner) block has the correct result types on
+        // the top of its stack. This needs to happen before calling 
+        // `block_stack.pop()`, otherwise `pop_vals_expected()` will pop WRONGLY
+        // from the parent (outer) stack.
+        let frame = self.top_block()?;
+        let results = frame.results.as_slice();
+        self.pop_vals_expected(results)?;
+        
         Ok(self
-            .control_stack
+            .block_stack
             .pop()
-            .expect("already checked with top_ctrl()"))
-    }
-
-    pub fn label_types(&self, frame: &ControlFrame) -> Vec<ValType> {
-        if frame.block_instr == BlockInstr::Loop {
-            frame.inputs.clone()
-        } else {
-            frame.results.clone()
-        }
+            .expect("already checked with top_block()"))
     }
 
     /// Switches to "unreachable mode" for this block, i.e., allows 
     /// stack-polymorphic instructions to produce an arbitrary number of values.
+    /// 
+    /// Like the spec algorithm, we make the unreachable instructions consume
+    /// all remaining values on the stack, even though the typing rules would
+    /// actually permit it to not do that. This results in an instruction
+    /// type for unreachable that is not always "stack-minimal", i.e., it might
+    /// be the unreachable first clears of values that in then produces out of
+    /// thin air again because of its stack-polymorphic result.
+    /// 
+    /// Also, we don't return the cleared values from the stack here, because
+    /// we return the "non-consuming" type for unreachable instructions, i.e.,
+    /// we simplify the assigned instruction type to never consume anything.
     #[must_use]
     pub fn unreachable(&mut self) -> Result<(), TypeError> {
-        let new_stack_height = self.top_ctrl()?.height;
-        // Drop all values in the current block from the stack.
-        self.value_stack
-            // FIXME stack underflow to TypeError
-            .resize_with(new_stack_height, || panic!("stack underflow"));
-        self.top_ctrl()?.unreachable = true;
+        let frame = self.top_block()?;
+        frame.value_stack.clear();
+        frame.unreachable = true;
         Ok(())
     }
 }
 
-#[derive(Debug)]
-struct ControlFrame {
-    block_instr: BlockInstr,
-
-    // Input and result types of the block.
-    inputs: Vec<ValType>,
-    results: Vec<ValType>,
-}
-
-#[derive(Debug, Eq, PartialEq)]
-enum BlockInstr {
-    Function,
-    Block,
-    If,
-    Else,
-    Loop,
-}
-
-// TODO add location information
 pub fn type_check_module(module: &Module) -> Result<(), TypeError> {
-    for (func_idx, func) in module.functions() {
-        if let Some(code) = func.code() {
-            // println!("  func ${}  {}", func_idx.into_inner(), func.type_);
-            types(&code.body, func, &module).map_err(|mut err| {
-                err.function = Some(func_idx);
-                err
-            })?;
+    for (func_idx, function) in module.functions() {
+        if let Some(code) = function.code() {
+            let mut type_checker = TypeChecker::begin_function(function, module);
+            for (instr_idx, instr) in code.body.iter().enumerate() {
+                let _instr_type_ignored = type_checker
+                    .check_next_instr(instr)
+                    // Add type error location information.
+                    .map_err(|mut e| {
+                        e.function = Some(func_idx);
+                        e.instruction = Some(instr_idx.into());
+                        e
+                    })?;
+            }
         }
     }
     Ok(())
 }
 
-fn type_check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, module: &Module) -> Result<InstructionType, TypeError> {
+fn type_check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, module: &Module) -> Result<InferredInstructionType, TypeError> {
+    // If we are already in dead code, do not return a concrete instruction 
+    // type, because it could contain unconstrained types and would not be able
+    // to produce a type in O(1) runtime/memory in all cases.
+    let was_unreachable = state.top_block()?.unreachable;
+    let inferred_type = |func_ty| {
+        if was_unreachable {
+            InferredInstructionType::Unreachable
+        } else {
+            InferredInstructionType::Reachable(func_ty)
+        }
+    };
+    
     // In the simple cases, we know the type from the instruction alone.
     if let Some(ty) = instr.simple_type() {
-        // TODO add TypeChecker::signature() helper
         state.pop_vals_expected(&ty.params)?;
         state.push_vals(&ty.results);
-        return Ok(ty.into())
+        return Ok(inferred_type(ty))
     }
 
     use Instr::*;
@@ -554,38 +566,43 @@ fn type_check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function,
             let op_ty = op.to_type(local_ty);
             state.pop_vals_expected(&op_ty.params)?;
             state.push_vals(&op_ty.results);
-            op_ty.into()
+            inferred_type(op_ty)
         }
         Global(op, idx) => {
             let global_ty = module.global(*idx);
             let op_ty = op.to_type(global_ty.type_.0);
             state.pop_vals_expected(&op_ty.params)?;
             state.push_vals(&op_ty.results);
-            op_ty.into()
+            inferred_type(op_ty)
         }
         Call(idx) => {
             let function_ty = module.function(*idx).type_.clone();
             state.pop_vals_expected(&function_ty.params)?;
             state.push_vals(&function_ty.results);
-            function_ty.into()
+            inferred_type(function_ty)
         }
 
         // Value-polymorphic:
         Drop => {
             let ty = state.pop_val()?;
-            InstructionType::new(vec![ty], Vec::new())
+            match (ValType::try_from(ty), was_unreachable) {
+                (_, true) => InferredInstructionType::Unreachable,
+                (Ok(ty), false) => InferredInstructionType::Reachable(FunctionType::new(&[ty], &[])),
+                (Err(UnconstrainedTypeError), false) => unreachable!("unconstrained stack type should never appear in reachable code"),
+            }
         }
         Select => {
             state.pop_val_expected(ValType::I32)?;
             let ty1 = state.pop_val()?;
             let ty2 = state.pop_val()?;
             let ty = ty1.join(ty2)
-                .ok_or(format!("incompatible types {} and {} for select arguments", ty1, ty2).into())?;
+                .ok_or(TypeError::from(format!("incompatible types {} and {} for select arguments", ty1, ty2)))?;
             state.push_val(ty);
-            InstructionType::new(
-                vec![ValType::I32.into(), ty, ty],
-                vec![ty]
-            )
+            match (ValType::try_from(ty), was_unreachable) {
+                (_, true) => InferredInstructionType::Unreachable,
+                (Ok(ty), false) => InferredInstructionType::Reachable(FunctionType::new(&[ValType::I32, ty, ty], &[ty])),
+                (Err(UnconstrainedTypeError), false) => unreachable!("unconstrained stack type should never appear in reachable code"),
+            }
         }
 
         // Blocks, i.e., block/loop/if/else.
@@ -596,91 +613,102 @@ fn type_check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function,
         // See https://github.com/WebAssembly/spec/blob/master/interpreter/valid/valid.ml
         // and https://github.com/WasmCert/WasmCert-Isabelle/blob/master/WebAssembly/Wasm_Checker_Types.thy
         Block(block_ty) | Loop(block_ty) => {
-            state.push_ctrl(instr, Vec::new(), block_ty.0.into_iter().collect());
-            InstructionType::new(Vec::new(), Vec::new())
+            state.push_block(instr, Vec::new(), block_ty.0.into_iter().collect());
+            // TODO Once we support the multi-value extension, this won't be
+            // an empty input always.
+            inferred_type(FunctionType::new(&[], &[]))
         }
         If(block_ty) => {
             state.pop_val_expected(ValType::I32)?;
-            state.push_ctrl(instr, Vec::new(), block_ty.0.into_iter().collect());
-            InstructionType::new(
-                vec![ValType::I32.into()],
-                Vec::new()
-            )
+            state.push_block(instr, Vec::new(), block_ty.0.into_iter().collect());
+            inferred_type(FunctionType::new(&[ValType::I32], &[]))
         }
         End => {
-            let frame = state.pop_ctrl()?;
+            let frame = state.pop_block()?;
             state.push_vals(&frame.results);
-            InstructionType::new(
-                Vec::new(),
-                StackType::from(frame.results)
-            )
+            inferred_type(FunctionType::new(&[], &frame.results))
         }
         Else => {
-            let frame = state.pop_ctrl()?;
-            if frame.block_instr != BlockInstr::If {
-                Err("else instruction not matching if")?
-            }
-            state.push_ctrl(instr, frame.inputs, frame.results.clone());
-            InstructionType::new(
-                Vec::new(),
-                StackType::from(frame.results),
-            )
+            let frame = state.pop_block()?;
+            // TODO We don't do this check here, because once `hl::Instr` is 
+            // nested, this invariant will be true by construction of the AST.
+            // if frame.block_instr != BlockInstr::If {
+            //     Err("else instruction not matching if")?
+            // }
+            // Because in the MVP blocks have no inputs, assume empty as the 
+            // input type here. However, once we handle the multi-value 
+            // extension, we need to get the if's input type from either the
+            // type checker (i.e., a `frame.inputs` field), or if we have a 
+            // nested `hl::Instr` AST from the AST node directly.
+            state.push_block(instr, Vec::new(), frame.results.clone());
+            inferred_type(FunctionType::new(&[], &frame.results))
         }
 
         // Branches: br_if is the only branch that is not followed by dead code.
         BrIf(label) => {
+            // Condition.
             state.pop_val_expected(ValType::I32)?;
-            let ty = state.label_types(state.get_ctrl(*label)?);
-            let ty =
-                state.pop_vals_expected(&ty)?;
-            state.push_vals(&state.label_types(state.get_ctrl(*label)?));
-            InstructionType {
-                inputs: vec![ValType::I32.into(), ty.into()],
-                results: vec![],
-            }
-        }
-        // All of these branches are followed by dead code, which makes their
-        // types stack-polymorphic:
-        Br(label) => {
-            let ty =
-                state.pop_vals_expected(&state.label_types(state.get_ctrl(*label)?))?;
-            state.unreachable()?;
-            InstructionType {
-                inputs: ty,
-                results: Vec::new(),
-            }
-        }
-        BrTable { table, default } => {
-            state.pop_val_expected(ValType::I32)?;
-            for label in table {
-                state.pop_vals_expected(&state.label_types(state.get_ctrl(*label)?))?;
-                state.push_vals(&state.label_types(state.get_ctrl(*label)?));
-            }
-            let ty =
-                state.pop_vals_expected(&state.label_types(state.get_ctrl(*default)?))?;
-            state.unreachable()?;
-            InstructionType {
-                inputs: ty,
-                results: Vec::new(),
-            }
-        }
-        Return => {
-            todo!("currently not stack polymorphic "); 
-            let ty = &function.type_.results;
-            state.pop_vals_expected(ty)?;
-            state.unreachable()?;
-            InstructionType {
-                inputs: ty.iter().map(|ty| Some(*ty)).collect(),
-                results: Vec::new(),
-            }
             
+            let label_inputs = state.get_block(*label)?.label_inputs.as_slice();
+            state.pop_vals_expected(label_inputs)?;
+            state.push_vals(label_inputs)?;
+
+            // The result type is the condition + all types from the target label.
+            let mut input_tys = vec![ValType::I32];
+            input_tys.extend_from_slice(label_inputs);
+            inferred_type(FunctionType::new(&input_tys, &[]))
         }
 
-        // The prototypical stack-polymorphic type.
+        // All of these branches are followed by dead code, which makes their
+        // types stack-polymorphic and switches the type checker to unreachable.
+        Br(label) => {
+            let label_inputs = state.get_block(*label)?.label_inputs.as_slice();
+            state.unreachable()?;
+            inferred_type(FunctionType::new(label_inputs, &[]))
+        }
+        BrTable { table, default } => {
+            // Branch index.
+            state.pop_val_expected(ValType::I32)?;
+            
+            // Pop and immediately push every branch target label types again,
+            // this also ensures they are all the same.
+            for label in table {
+                let label_inputs = state.get_block(*label)?.label_inputs.as_slice();
+                state.pop_vals_expected(label_inputs)?;
+                state.push_vals(label_inputs)?;
+            }
+
+            // Check the default label types.
+            let label_inputs = state.get_block(*default)?.label_inputs.as_slice();
+            state.pop_vals_expected(label_inputs)?;
+
+            state.unreachable()?;
+
+            // The result type is the condition + the types from all target labels.
+            let mut input_tys = vec![ValType::I32];
+            input_tys.extend_from_slice(label_inputs);
+            inferred_type(FunctionType::new(&input_tys, &[]))
+        }
+        Return => {
+            let tys = &function.type_.results[..];
+            state.pop_vals_expected(tys)?;
+            state.unreachable()?;
+            inferred_type(FunctionType::new(&tys, &[]))
+        }
+
+        // The prototypical stack-polymorphic instruction.
+        // Here you can see well our simplification: we return a concrete type
+        // for unreachable, that does not consume anything from the stack,
+        // but this only works because subsequent dead code won't get a concrete
+        // instruction type anyway.
+        // This only concerns the assigned instruction type, the type checker
+        // will still validate that every dead instruction gets its required
+        // inputs from the stack-polymorphic unreachabel instruction. We just
+        // cannot tell those types HERE, only later, once they are popped (and
+        // the "ellipsis" is "expanded" in concrete types).
         Unreachable => {
             state.unreachable()?;
-            todo!("should produce 'ellipsis' type")
-            // ty.into()
+            inferred_type(FunctionType::new(&[], &[]))
         }
 
         instr => unreachable!(
@@ -690,40 +718,40 @@ fn type_check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function,
     })
 }
 
-/// Extension trait for adding types to instruction sequences.
-pub trait WithTypes: Sized {
-    /// Checks and infers types for instructions from `function`.
-    fn with_types<'a>(self, function: &'a Function, module: &'a Module) -> WithTypesIter<'a, Self>;
-}
+// /// Extension trait for adding types to instruction sequences.
+// pub trait WithTypes: Sized {
+//     /// Checks and infers types for instructions from `function`.
+//     fn with_types<'a>(self, function: &'a Function, module: &'a Module) -> WithTypesIter<'a, Self>;
+// }
 
-impl<Iter, I> WithTypes for Iter
-where
-    Iter: Iterator<Item = I>,
-    I: Borrow<Instr>
-{
-    fn with_types<'a>(self, function: &'a Function, module: &'a Module) -> WithTypesIter<'a, Self> {
-        let mut type_checker = TypeChecker::new();
-        type_checker.push_ctrl_func(function.type_.results.to_vec());
-        WithTypesIter(self, TypeChecker::new(), function, module)
-    }
-}
+// impl<Iter, I> WithTypes for Iter
+// where
+//     Iter: Iterator<Item = I>,
+//     I: Borrow<Instr>
+// {
+//     fn with_types<'a>(self, function: &'a Function, module: &'a Module) -> WithTypesIter<'a, Self> {
+//         let mut type_checker = TypeChecker::new();
+//         type_checker.push_ctrl_func(function.type_.results.to_vec());
+//         WithTypesIter(self, TypeChecker::new(), function, module)
+//     }
+// }
 
-pub struct WithTypesIter<'a, I>(I, TypeChecker, &'a Function, &'a Module);
+// pub struct WithTypesIter<'a, I>(I, TypeChecker, &'a Function, &'a Module);
 
-impl<'a, Iter, I> Iterator for WithTypesIter<'a, Iter>
-where
-    Iter: Iterator<Item = I>,
-    I: Borrow<Instr>
-{
-    type Item = (I, Result<InstructionType, TypeError>);
+// impl<'a, Iter, I> Iterator for WithTypesIter<'a, Iter>
+// where
+//     Iter: Iterator<Item = I>,
+//     I: Borrow<Instr>
+// {
+//     type Item = (I, Result<InstructionType, TypeError>);
 
-    fn next(&mut self) -> Option<Self::Item> {
-        // TODO add location information to error
-        let instr = self.0.next()?;
-        let ty = self.1.instr(instr.borrow(), self.2, self.3);
-        Some((instr, ty))
-    }
-}
+//     fn next(&mut self) -> Option<Self::Item> {
+//         // TODO add location information to error
+//         let instr = self.0.next()?;
+//         let ty = self.1.instr(instr.borrow(), self.2, self.3);
+//         Some((instr, ty))
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
