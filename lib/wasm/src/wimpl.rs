@@ -37,10 +37,11 @@ pub struct Module {
 
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "module").expect("");         
+        writeln!(f, "module {{").expect("");         
         self.functions.iter().for_each(|fun| {
             writeln!(f, "  {}", format!("{}", fun).replace("\n", "\n  ")).expect("");  // reindents everything
         }); 
+        writeln!(f, "}}").expect("");         
         Ok(())
     }
 }
