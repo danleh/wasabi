@@ -1022,7 +1022,7 @@ impl fmt::Display for Expr {
         }
     }
 }
-
+/* 
 macro_rules! wimpl {
     ($($tokens:tt)+) => {
         {
@@ -1060,7 +1060,7 @@ macro_rules! wimpls {
 // Export macros.
 pub(crate) use wimpl;
 pub(crate) use wimpls;
-
+*/
 #[derive(Clone, Default)]
 pub struct State {
     pub label_count: usize,
@@ -1776,7 +1776,7 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
 pub fn wimplify (path: &str) -> Result<Module, String> {
     wimplify_module(&highlevel::Module::from_file(path).unwrap())
 }
-/* 
+ 
 #[cfg(test)]
 mod test {
     // Convenience imports:
@@ -1786,7 +1786,7 @@ mod test {
     use super::Expr::*;
     use super::Label;
     use super::Var::{self};
-    use super::{wimpl, wimpls};
+    //use super::{wimpl, wimpls};
     use crate::highlevel::LoadOp::*;
     use crate::highlevel::NumericOp::*;
     use crate::highlevel::StoreOp::*;
@@ -1809,14 +1809,15 @@ mod test {
             (Unreachable, "unreachable", ""),
             (Return { value: None }, "return", "return without value"),
             (Return { value: Some(Var::Stack(0)) }, "return (s0)", "with value, with whitespace"),
-            (Assign{ lhs: Var::Stack(0), expr: MemorySize { } }, "s0: i32 = memory.size", "with lhs"),
-            (Assign{ lhs: Var::Global(0), expr: VarRef { rhs: Var::Local(0) } }, "g0: i32 = l0", ""),
+            (Assign{ lhs: Var::Stack(0), expr: MemorySize { } , type_: ValType::I32}, "s0: i32 = memory.size", "with lhs"),
+            (Assign{ lhs: Var::Global(0), expr: VarRef { rhs: Var::Local(0) }, type_: ValType::I32 }, "g0: i32 = l0", ""),
             (
                 Assign{
                     lhs: Var::Stack(0),
                     expr: Const {
                         val: I32(1337),
                     }, 
+                    type_: ValType::I32, 
                 },
                 "s0: i32 = i32.const 1337",
                 ""
@@ -1828,6 +1829,7 @@ mod test {
                         op: I32Add,
                         rhs: vec![Var::Stack(2), Var::Stack(3)],
                     },
+                    type_: ValType::I32, 
                 },
                 "s1: i32 = i32.add(s2, s3)",
                 ""
@@ -1839,7 +1841,8 @@ mod test {
                         op: I32Load,
                         memarg: Memarg::default(I32Load),
                         addr: Var::Stack(0),
-                    }
+                    }, 
+                    type_: ValType::I32, 
                 },
                 "s1: i32 = i32.load(s0)",
                 ""
@@ -1860,20 +1863,20 @@ mod test {
             (
                 Br {
                     target: Label(0),
-                    value: None,
                 },
                 "br @label0",
                 "br without value"
             ),
-            (Br { target: Label(1), value: Some(Var::Stack(0)) }, "br @label1 (s0)", "br with value"),
+            // (Br { target: Label(1), value: Some(Var::Stack(0)) }, 
+            //     r"
+            //     br @label1 (s0)", "br with value"),
             (
                 BrTable {
                     idx: Var::Stack(0),
                     table: vec![Label(1), Label(2)],
                     default: Label(0),
-                    value: Some(Var::Stack(1)),
                 },
-                "br_table @label1 @label2 default=@label0 (s0) (s1)",
+                "br_table @label1 @label2 default=@label0 (s0)",
                 "br_table with index argument and passed value"
             ),
             (
@@ -1893,112 +1896,99 @@ mod test {
                         type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
                         table_idx: Var::Stack(0),
                         args: vec![Var::Stack(2), Var::Stack(3)],
-                    }
+                    }, 
+                    type_: ValType::I32,
                 },
                 "s1: i32 = call_indirect [i32] -> [i32] (s0) (s2, s3)",
                 ""
             ),
             (
-                Stmt::Expr{
-                    expr: Block {
-                        label: Label(0),
-                        body: Body {
-                            instrs: vec![],
-                            result: None,
-                        },
-                    }
+                Stmt::Block {
+                    label: Label(0),
+                    body: Body (vec![]),
                 },
                 "@label0: block {}", ""
             ),
+            // (
+            //     Assign{
+            //         lhs: Var::Stack(1),
+            //         expr: Block {
+            //             label: Label(0),
+            //             body: Body {
+            //                 instrs: vec![],
+            //                 result: Some(Var::Stack(0)),
+            //             },
+            //         }
+            //     },
+            //     "s1: i32 = @label0: block { s0 }",
+            //     "no block instructions, only a result"
+            // ),
             (
-                Assign{
-                    lhs: Var::Stack(1),
-                    expr: Block {
-                        label: Label(0),
-                        body: Body {
-                            instrs: vec![],
-                            result: Some(Var::Stack(0)),
-                        },
-                    }
-                },
-                "s1: i32 = @label0: block { s0 }",
-                "no block instructions, only a result"
-            ),
-            (
-                Stmt::Expr{
-                    expr: Block {
-                        label: Label(1),
-                        body: Body {
-                            instrs: vec![
-                                Assign{
-                                    lhs: Var::Stack(1),
-                                    expr: VarRef { rhs: Var::Stack(0) }
-                                }],
-                            result: None,
-                        },
-                    }
+                Stmt::Block {
+                    label: Label(1),
+                    body: Body(vec![
+                        Assign{
+                            lhs: Var::Stack(1),
+                            expr: VarRef { rhs: Var::Stack(0) }, 
+                            type_: ValType::I32,
+                        }]),
                 },
                 "@label1: block { s1: i32 = s0 }",
                 "block with a single instruction, no result; on one line"
             ),
             (
-                Stmt::Expr{ 
-                    expr: If {
+                Stmt::If {
                         condition: Var::Stack(0),
                         label: None,
-                        if_body: Body {
-                            instrs: vec![Br {
+                        if_body: Body (
+                            vec![Br {
                                 target: Label(0),
-                                value: None,
-                            }],
-                            result: None,
-                        },
+                            }]), 
                         else_body: None,
-                    }
                 },
                 "if (s0) { br @label0 }",
                 "if + br (which is our form of br_if)"
             ),
-            (
-                Stmt::Expr{
-                    expr: Loop {
-                        label: Label(1),
-                        body: Body {
-                            instrs: vec![
-                                Assign{
-                                    lhs: Var::Stack(0),
-                                    expr: Block {
-                                        label: Label(2),
-                                        body: Body {
-                                            instrs: vec![
-                                                Assign{
-                                                    lhs: Var::Stack(1),
-                                                    expr: Const {
-                                                    val: I32(7),
-                                                    }
-                                            }],
-                                            result: Some(Var::Stack(1)),
-                                        },
-                                    },
-                                }, 
-                                Br {
-                                    target: Label(1),
-                                    value: None,
-                                },
+//             (
+//                 Stmt::Expr{
+//                     expr: Loop {
+//                         label: Label(1),
+//                         body: Body {
+//                             instrs: vec![
+//                                 Assign{
+//                                     lhs: Var::Stack(0),
+//                                     expr: Block {
+//                                         label: Label(2),
+//                                         body: Body {
+//                                             instrs: vec![
+//                                                 Assign{
+//                                                     lhs: Var::Stack(1),
+//                                                     expr: Const {
+//                                                     val: I32(7),
+//                                                     }
+//                                             }],
+//                                             result: Some(Var::Stack(1)),
+//                                         },
+//                                     },
+//                                 }, 
+//                                 Br {
+//                                     target: Label(1),
+//                                     value: None,
+//                                 },
                                 
-                            ],
-                            result: None,
-                        },
-                    }
-                },
-    r"@label1: loop {
-  s0: i32 = @label2: block {
-    s1: i32 = i32.const 7
-    s1
-  }
-  br @label1
-}",
-            "nested and multi-line loop/block")
+//                             ],
+//                             result: None,
+//                         },
+//                     }
+//                 },
+//     r"@label1: loop {
+//   s0: i32 = @label2: block {
+//     s1: i32 = i32.const 7
+//     s1
+//   }
+//   br @label1
+// }",
+//             "nested and multi-line loop/block")
         ];
 
         /// The following examples are NOT in the canonical text format, e.g.,
@@ -2006,7 +1996,7 @@ mod test {
         /// They are only used for testing parsing, not pretty-printing.
         static ref WIMPL_ALTERNATIVE_SYNTAX_TESTCASES: Vec<(Stmt, &'static str, &'static str)> = vec![
             (Return { value: Some(Var::Stack(0)) }, "return(s0)", "no space between op and arguments"),
-            (Assign{ lhs: Var::Stack(1), expr: MemoryGrow { pages: Var::Stack(0) } }, "s1: i32 = memory.grow ( s0 )", "extra space around arguments"),
+            (Assign{ lhs: Var::Stack(1), expr: MemoryGrow { pages: Var::Stack(0) }, type_: ValType::I32, }, "s1: i32 = memory.grow ( s0 )", "extra space around arguments"),
             (
                 Stmt::Expr{
                     expr: Call {
@@ -2025,6 +2015,7 @@ mod test {
                         table_idx: Var::Stack(0),
                         args: vec![],
                     },
+                    type_: ValType::I32,
                 },
                 "s1: i32 = call_indirect [  i32  ] ->[i32] (s0) ()",
                 "non-standard spacing around function type"
@@ -2035,7 +2026,8 @@ mod test {
                     expr: Numeric {
                         op: I32Add,
                         rhs: vec![Var::Stack(2), Var::Stack(3)],
-                    }
+                    }, 
+                    type_: ValType::I32,
                 },
                 "s1: i32 = i32.add (s2,s3)",
                 "space before arguments, no space after comma"
@@ -2054,31 +2046,22 @@ mod test {
                 "minimal spacing around arguments"
             ),
             (
-                Stmt::Expr{
-                    expr: Block {
-                        label: Label(0),
-                        body: Body {
-                            instrs: vec![],
-                            result: None,
-                        },
-                    }
+                Stmt::Block {
+                    label: Label(0),
+                    body: Body(vec![]),
                 },
                 "@label0:block{}",
                 "minimal space in block"
             ),
             (
-                Stmt::Expr{ 
-                    expr: Block {
+                Stmt::Block {
                         label: Label(2),
-                        body: Body {
-                            instrs: vec![
+                        body: Body (vec![
                                 Assign{
                                     lhs: Var::Stack(1), 
                                     expr: VarRef { rhs: Var::Stack(0) },
-                                }],
-                            result: Some(Var::Stack(1)),
-                        },
-                    }
+                                    type_: ValType::I32,
+                                }]),
                 },
                 "@label2: block { s1: i32 = s0 s1 }",
                 "no linebreak between block instructions and result"
@@ -2112,7 +2095,7 @@ mod test {
             "invalid variable type/prefix"
         );
     }
-
+    /* 
     #[test]
     fn parse_instr() {
         let parse_testcases = WIMPL_CANONICAL_SYNTAX_TESTCASES
@@ -2162,7 +2145,7 @@ mod test {
         let instrs = Stmt::from_file("tests/wimpl/syntax.wimpl");
         assert!(instrs.is_ok());
     }
-
+    
     #[test]
     fn macros() {
         let _ = wimpl!(g0 = f32.const 1.1);
@@ -2183,8 +2166,9 @@ mod test {
             l0 = g0
         };
     }
+    */
 }
-*/
+
 #[cfg(test)]
 fn test (path_wimpl: &str, path_wasm: &str) {
     // let expected = Stmt::from_file(path_wimpl).unwrap();
