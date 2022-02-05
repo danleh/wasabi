@@ -35,6 +35,37 @@ pub struct Module {
     // pub custom_sections: Vec<RawCustomSection>,
 }
 
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct Function {
+    pub type_: FunctionType,
+    pub instrs: Body, //want to reuse 
+    //pub export: Vec<String>,
+    pub name: Func,
+    //pub param_names: Vec<Option<String>>,
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub enum Var {
+    Stack(usize),
+    Local(usize),
+    Global(usize),
+    Param(usize),
+    Return,        
+    Block(usize), 
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum Func {
+    Named(String), 
+    Idx(usize),
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub struct Label(usize);
+
+#[derive(Debug, Eq, PartialEq, Clone, Default)]
+pub struct Body(Vec<Stmt>); 
+
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "module {{").expect("");         
@@ -44,16 +75,6 @@ impl fmt::Display for Module {
         writeln!(f, "}}").expect("");         
         Ok(())
     }
-}
-
-
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub struct Function {
-    pub type_: FunctionType,
-    pub instrs: Body, //want to reuse 
-    //pub export: Vec<String>,
-    pub name: Func,
-    //pub param_names: Vec<Option<String>>,
 }
 
 impl fmt::Display for Function {
@@ -81,18 +102,6 @@ impl fmt::Display for Function {
     }
 }
 
-
-
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum Var {
-    Stack(usize),
-    Local(usize),
-    Global(usize),
-    Param(usize),
-    Return,        //FIXME
-    Block(usize), 
-}
-
 impl fmt::Display for Var {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Var::*;
@@ -107,6 +116,20 @@ impl fmt::Display for Var {
     }
 }
 
+impl fmt::Display for Func {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Func::Named(s) => write!(f, "{}", s),
+            Func::Idx(i) => write!(f, "f{}", i),
+        }
+    }
+}
+
+impl fmt::Display for Label {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "@label{}", self.0)
+    }
+}
 
 impl FromStr for Var {
     type Err = ();
@@ -129,21 +152,6 @@ impl FromStr for Var {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub enum Func {
-    Named(String), 
-    Idx(usize),
-}
-
-impl fmt::Display for Func {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Func::Named(s) => write!(f, "{}", s),
-            Func::Idx(i) => write!(f, "f{}", i),
-        }
-    }
-}
-
 impl FromStr for Func {
     type Err = ();
 
@@ -151,15 +159,6 @@ impl FromStr for Func {
         let i = s.strip_prefix('f').ok_or(())?;
         let i = i.parse().map_err(|_| ())?;
         Ok(Func::Idx(i))
-    }
-}
-
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub struct Label(usize);
-
-impl fmt::Display for Label {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "@label{}", self.0)
     }
 }
 
@@ -172,9 +171,6 @@ impl FromStr for Label {
         Ok(Label(i))
     }
 }
-
-#[derive(Debug, Eq, PartialEq, Clone, Default)]
-pub struct Body(Vec<Stmt>); 
 
 const BLOCK_INDENT: &str = "  ";
 
@@ -290,6 +286,7 @@ pub enum Expr {
     // Simplify: Encode select as result = if (arg0) { arg1 } else { arg2 }.
 
     // Simplify: Handles all of local.set, global.set, local.tee, local.get, global.get.
+
     VarRef {
         rhs: Var,
     },
@@ -1071,7 +1068,7 @@ pub struct State {
     pub var_stack: Vec<Var>,
     pub label_stack: Vec<(usize, Option<(Var, ValType)>)>, 
     pub else_taken: bool, 
-    pub param_len: usize, 
+    pub num_params: usize, 
 }
 
 impl State {
@@ -1082,7 +1079,7 @@ impl State {
             var_stack: Vec::new(),
             label_stack: Vec::new(),
             else_taken: false,
-            param_len,
+            num_params: param_len,
         }
     }
 }
@@ -1116,7 +1113,7 @@ fn wimplify_instrs(
         InferredInstructionType::Reachable(ty) => ty,
     };
 
-    println!("{}, {}, {:?}", instr, ty, state.var_stack);
+    //println!("{}, {}, {:?}", instr, ty, state.var_stack);
 
     let n_inputs = ty.params.len();
     let n_results = ty.results.len();
@@ -1157,7 +1154,7 @@ fn wimplify_instrs(
             //if it doesn't return anything, create an empty vector  
             //block variable has same usize as the labelnumber!
             let mut result_var = None; 
-            let mut res_vec = if let Some(btype) = btype {
+            let mut res_instr_vec = if let Some(btype) = btype {
                 result_var = Some(Block(state.label_count)); 
                 state.stack_var_count += 1; 
                 vec![Stmt::Assign { 
@@ -1173,8 +1170,6 @@ fn wimplify_instrs(
             let curr_label_count = state.label_count;
             state.label_count += 1;
             
-            
-            
             //create new block state 
             let mut block_state = State {
                 label_count: state.label_count,
@@ -1183,7 +1178,7 @@ fn wimplify_instrs(
                 label_stack: 
                     state.label_stack.clone(),
                 else_taken: false,
-                param_len: state.param_len,   
+                num_params: state.num_params,   
             }; 
             if let Some(result_var) = result_var {
                 block_state.label_stack.push((curr_label_count, Some((result_var, btype.unwrap()))))                
@@ -1194,42 +1189,26 @@ fn wimplify_instrs(
             //call wimplify on remaining instructions with new block state 
             let block_body = wimplify_instrs(instrs, tys, &mut block_state).unwrap();
             
-            // // the variable returned by the block, if any is on top of the stack 
-            // // and was pushed there by the end instruction 
-            // // that variable should be assigned to the variable created to hold the return 
-            // if let Some(btype) = btype {
-            //     panic_if_size_lt(&block_state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
-                
-            //     lhs = block_state.var_stack.pop();
-            //     block_body.push(Assign{
-            //         lhs: result_var.unwrap(),
-            //         expr: VarRef{ rhs: block_state.var_stack.pop().unwrap() },
-            //         type_: Some(btype),
-            //     });           
-            // }
-            
+            //update block state
             state.label_count = block_state.label_count;
             state.stack_var_count = block_state.stack_var_count; 
             if btype.is_some() {
                 state.var_stack.push(result_var.unwrap());     
             }
 
-            res_vec.push(Stmt::Block{
+            //push block statement into result list 
+            res_instr_vec.push(Stmt::Block{
                 label: Label(curr_label_count),
                 body: Body(block_body),
-            }); 
-            
-            Some(res_vec) 
+            });             
+            Some(res_instr_vec) 
         }
         
-
         highlevel::Instr::If(blocktype) => {
             panic_if_size_lt(&rhs, 1, "if consumes one value from stack as condition"); 
 
             let btype = blocktype.0; 
 
-            //first, if the block returns a value, create a variable that will store the return and keep track of the variable 
-            //if it doesn't return anything, create an empty vector  
             let mut result_var = None; 
             let mut res_vec = if let Some(btype) = btype {
                 result_var = Some(Block(state.label_count)); 
@@ -1246,16 +1225,13 @@ fn wimplify_instrs(
             let curr_label_count = state.label_count;
             state.label_count += 1;
             
-
             let mut if_state = State {
                 label_count: state.label_count,
                 stack_var_count: state.stack_var_count,
                 var_stack: Vec::new(),
                 label_stack: state.label_stack.clone(),
                 else_taken: false,
-                param_len: state.param_len, 
-                // return_var: result_var, 
-                // return_var_ty: btype,  
+                num_params: state.num_params, 
             }; 
             if let Some(result_var) = result_var {
                 if_state.label_stack.push((curr_label_count, Some((result_var, btype.unwrap()))))                
@@ -1265,40 +1241,12 @@ fn wimplify_instrs(
 
             let if_body = wimplify_instrs(instrs, tys, &mut if_state).unwrap();            
             
-            // let mut if_return = None;
-            // if let Some(_btype) = blocktype.0 {
-            //     panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
-            //     lhs = state.var_stack.pop();
-                
-            //     //lhs_ty = lhs.map(|unwraped_lhs| unwraped_lhs.get_ty());
-            //     if_return = Some(state.var_stack.pop().unwrap());              
-            // }
-
             res_vec.push(if if_state.else_taken {
                 
                 if_state.else_taken = false; 
 
-                // the lhs produced in else is actually the same as in the if branch
-                // hence, throw away the variable and decrement the stack variable counter
                 let else_body = wimplify_instrs(instrs, tys, &mut if_state).unwrap(); 
                 
-                // let mut else_return = None;
-                // if let Some(_btype) = blocktype.0 {
-                //     panic_if_size_lt(&state.var_stack, 2, "block expects a value to be returned, which is not on the stack"); 
-                //     let _ = state.var_stack.pop();
-                //     else_return = Some(state.var_stack.pop().unwrap());            
-                //     state.stack_var_count -= 1; 
-                // }
-
-                // validation that if-body and else-body have the same number of returns
-                // type checking validation already done 
-                // match (if_return, else_return) {
-                //     (None, Some(_)) | (Some(_), None) => {
-                //         panic!("if and else branch should either both return a value or None");
-                //     },
-                //     (None, None) | (Some(_), Some(_)) => (),
-                // }; 
-
                 state.label_count = if_state.label_count;
                 state.stack_var_count = if_state.stack_var_count; 
                 if let Some(_btype) = blocktype.0 {
@@ -1327,15 +1275,6 @@ fn wimplify_instrs(
                     else_body: None,
                 } 
             });
-            /* 
-            if let Some(lhs) = lhs {
-                Some(vec![Assign{
-                    lhs,
-                    expr: ifrhs,
-                    type_: blocktype.0,
-                }])
-            } else {
-            */
             Some(res_vec)            
         },
 
@@ -1357,8 +1296,6 @@ fn wimplify_instrs(
 
         highlevel::Instr::End => {
              
-            //FIXME top will be function label 
-            
             let (_, return_info) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack"); 
             
             if state.label_stack.is_empty() {
@@ -1418,7 +1355,6 @@ fn wimplify_instrs(
 
             let condition = rhs.pop().unwrap(); 
             
-            
             if let Some((lhs_, type_)) = return_info {
                 let value = state.var_stack.pop().expect("br_if is expected to produce a value"); 
                 state.var_stack.push(value); //FIXME not neccessary anymore if we don't generate unreachable instruction 
@@ -1449,18 +1385,6 @@ fn wimplify_instrs(
                     else_body: None,
                 }])
             }
-
-            
-
-            // if let Some(lhs) = lhs {
-            //     Assign{
-            //         lhs,
-            //         expr: ifrhs,
-            //         type_: lhs_ty.unwrap(),
-            //     }])
-            // } else {
-            //     Some(vec![Stmt::Expr{ expr: ifrhs }])
-            // }
        }
 
         highlevel::Instr::BrTable { table, default } => { 
@@ -1469,11 +1393,11 @@ fn wimplify_instrs(
             let mut target_list = Vec::new();
             let mut res_insts = Vec::new(); 
             
+            // condition used for br_table
             let idx = rhs.pop().unwrap(); 
-            println!("here"); 
             
+            //if default returns a value, pop a value from rhs since thats the variable that is set 
             let (_, return_info) = state.label_stack[state.label_stack.len()-default.into_inner()-1]; 
-            
             let val = if return_info.is_some() {
                 rhs.pop().expect("br_table expects a value for the labels") 
             } else {
@@ -1493,7 +1417,6 @@ fn wimplify_instrs(
                 }
             }
 
-            
             let (default_target, default_return_info) = state.label_stack[state.label_stack.len()-default.into_inner()-1];
             let default = Label(default_target); 
             if let Some((lhs, type_)) = default_return_info {
@@ -1542,6 +1465,7 @@ fn wimplify_instrs(
 
         highlevel::Instr::CallIndirect(fn_type, index) => {
             assert_eq!(index.into_inner(), 0, "wasm mvp must always have a single table"); 
+
             // in call_indirect,
             // the last variable on the stack is the index value
             // the rest (till you collect all the needed parameters are arguments
@@ -1551,6 +1475,7 @@ fn wimplify_instrs(
                 table_idx: rhs.pop().unwrap(),
                 args: rhs,
             }; 
+
             if let Some(lhs) = lhs {
                 Some(vec![Stmt::Assign{
                     lhs,
@@ -1566,7 +1491,7 @@ fn wimplify_instrs(
 
         highlevel::Instr::Select => { 
             panic_if_size_lt(&rhs, 3, "select requires that there is a condition and two other values on the stack"); 
-            let arg1 = rhs.pop().unwrap(); //cond  //wasm spec pg 71/155
+            let arg1 = rhs.pop().unwrap(); //cond  
             let arg2 = rhs.pop().unwrap(); //if
             let arg3 = rhs.pop().unwrap(); //else
             let type_ = ty.results[0]; 
@@ -1602,8 +1527,8 @@ fn wimplify_instrs(
 
         highlevel::Instr::Local(highlevel::LocalOp::Get, local_ind) => {
             let ind = local_ind.into_inner(); 
-            let local_var = if ind > state.param_len - 1 {
-                Local(local_ind.into_inner()-state.param_len)
+            let local_var = if ind > state.num_params - 1 {
+                Local(local_ind.into_inner()-state.num_params)
             } else {
                 Param(ind)
             }; 
@@ -1623,8 +1548,8 @@ fn wimplify_instrs(
 
         highlevel::Instr::Local(highlevel::LocalOp::Set, local_ind) => {
             let ind = local_ind.into_inner(); 
-            let local_var = if ind > state.param_len - 1 {
-                Local(local_ind.into_inner()-state.param_len)
+            let local_var = if ind > state.num_params - 1 {
+                Local(local_ind.into_inner()-state.num_params)
             } else {
                 Param(ind)
             };
@@ -1642,8 +1567,8 @@ fn wimplify_instrs(
 
         highlevel::Instr::Local(highlevel::LocalOp::Tee, local_ind) => {
             let ind = local_ind.into_inner(); 
-            let local_var = if ind > state.param_len - 1 {
-                Local(local_ind.into_inner()-state.param_len)
+            let local_var = if ind > state.num_params - 1 {
+                Local(local_ind.into_inner()-state.num_params)
             } else {
                 Param(ind)
             };
