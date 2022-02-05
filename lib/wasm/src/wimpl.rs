@@ -69,12 +69,12 @@ impl fmt::Display for Function {
         write!(f, "] -> [")?;
         self.type_.results.iter().enumerate().for_each(|(ind,r)| {
             if ind == (self.type_.results.len() - 1) {
-                write!(f, "{}", r).expect(""); 
+                write!(f, "r{}: {}", ind, r).expect(""); 
             } else {
-                write!(f, "{}, ", r).expect(""); 
+                write!(f, "r{}: {}, ", ind, r).expect(""); 
             }
         }); 
-        write!(f, "] ")?; 
+        write!(f, "] @label0: ")?; 
         write!(f, "{}", self.instrs)?; 
         Ok(())
     }
@@ -1076,7 +1076,7 @@ pub struct State {
 impl State {
     fn new (param_len: usize) -> Self {
         State {
-            label_count: 0,
+            label_count: 1,
             stack_var_count: 0,
             var_stack: Vec::new(),
             label_stack: Vec::new(),
@@ -1115,7 +1115,7 @@ fn wimplify_instrs(
         InferredInstructionType::Reachable(ty) => ty,
     };
 
-    println!("{}, {}, {:?}", instr, ty, state.var_stack);
+    //println!("{}, {}, {:?}", instr, ty, state.var_stack);
 
     let n_inputs = ty.params.len();
     let n_results = ty.results.len();
@@ -1171,7 +1171,6 @@ fn wimplify_instrs(
             //save current stack state and prepare to go into a new block 
             let curr_label_count = state.label_count;
             state.label_count += 1;
-            println!("result var {:?}", result_var);
             
             
             
@@ -1356,27 +1355,31 @@ fn wimplify_instrs(
         },
 
         highlevel::Instr::End => {
-            // TODO temporary fix for function returns 
-            if instrs.len() == 0 { 
-                None 
-            } 
+             
             //FIXME top will be function label 
             
-            else {
-            println!("label stack: {:?}", state.label_stack); 
             let (_, return_info) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack"); 
             
-            println!("END {:?}", return_info); 
-            if let Some((lhs, type_)) = return_info {
-                result_instrs.push(Stmt::Assign{
-                    lhs, 
-                    expr: VarRef{ rhs: state.var_stack.pop().unwrap()}, 
-                    type_, 
-                });
+            if state.label_stack.is_empty() {
+                // this is the return from a function 
+                if let Some((ret_var, type_)) = return_info {
+                    result_instrs.push(Stmt::Assign{
+                        lhs: ret_var,
+                        expr: VarRef{ rhs: state.var_stack.pop().unwrap()}, 
+                        type_,
+                    });
+                }; 
+            } else {
+                // this is the return from a block: block/loop/if
+                if let Some((lhs, type_)) = return_info {
+                    result_instrs.push(Stmt::Assign{
+                        lhs, 
+                        expr: VarRef{ rhs: state.var_stack.pop().unwrap()}, 
+                        type_, 
+                    });
+                }
             }
-
-            return Ok(result_instrs);
-            }
+            return Ok(result_instrs)
         }
 
         highlevel::Instr::Br(lab) => {                        
@@ -1412,8 +1415,6 @@ fn wimplify_instrs(
             let (target, return_info) = state.label_stack[state.label_stack.len()-lab.into_inner()-1]; 
             let target = Label(target); 
 
-            println!("target:{} return_info:{:?}", target, return_info); 
-
             let condition = rhs.pop().unwrap(); 
             
             
@@ -1436,7 +1437,6 @@ fn wimplify_instrs(
                     else_body: None,
                 }])    
             } else {
-                println!("here"); 
                 Some(vec![Stmt::If{
                     label: None,
                     condition, 
@@ -1808,9 +1808,17 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
             let ty = type_checker.check_next_instr(instr).map_err(|e| e.to_string())?;
             tys.push_back(ty);
         }
+
         let mut instrs = VecDeque::from_iter(instrs); //TODO pass in iterator instead of vecdeque
         let mut ty = VecDeque::from_iter(tys);
-        for inst in wimplify_instrs(&mut instrs, &mut ty, &mut State::new(func.type_.params.len())).unwrap() {
+
+        let mut state = State::new(func.type_.params.len()); 
+        if func.type_.results.len() == 0 { state.label_stack.push((0, None)); } 
+        else { 
+            state.label_stack.push((0, Some((Var::Return, func.type_.results[0])))); 
+        }
+
+        for inst in wimplify_instrs(&mut instrs, &mut ty, &mut state).unwrap() {
             result_instrs.push(inst); 
         }
         
