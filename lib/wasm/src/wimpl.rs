@@ -88,8 +88,8 @@ pub enum Var {
     Local(usize),
     Global(usize),
     Param(usize),
-    //Return        //FIXME
-    //Block(usize) 
+    Return,        //FIXME
+    Block(usize), 
 }
 
 impl fmt::Display for Var {
@@ -100,6 +100,8 @@ impl fmt::Display for Var {
             Local(i) => write!(f, "l{}", i),
             Global(i) => write!(f, "g{}", i),
             Param(i) => write!(f, "p{}", i),
+            Return => write!(f, "r0"),
+            Block(i) => write!(f, "b{}", i),
         }
     }
 }
@@ -1152,9 +1154,10 @@ fn wimplify_instrs(
 
             //first, if the block returns a value, create a variable that will store the return and keep track of the variable 
             //if it doesn't return anything, create an empty vector  
+            //block variable has same usize as the labelnumber!
             let mut result_var = None; 
             let mut res_vec = if let Some(btype) = btype {
-                result_var = Some(Stack(state.stack_var_count)); 
+                result_var = Some(Block(state.label_count)); 
                 state.stack_var_count += 1; 
                 vec![Stmt::Assign { 
                     lhs: result_var.unwrap(), 
@@ -1168,23 +1171,25 @@ fn wimplify_instrs(
             //save current stack state and prepare to go into a new block 
             let curr_label_count = state.label_count;
             state.label_count += 1;
-            if let Some(result_var) = result_var {
-                state.label_stack.push((curr_label_count, Some((result_var, btype.unwrap()))))                
-            } else {
-                state.label_stack.push((curr_label_count, None)); 
-            }
+            println!("result var {:?}", result_var);
+            
+            
             
             //create new block state 
             let mut block_state = State {
                 label_count: state.label_count,
                 stack_var_count: state.stack_var_count,
                 var_stack: Vec::new(),
-                label_stack: state.label_stack.clone(),
+                label_stack: 
+                    state.label_stack.clone(),
                 else_taken: false,
-                param_len: state.param_len, 
-                // return_var: result_var, 
-                // return_var_ty: btype,  
+                param_len: state.param_len,   
             }; 
+            if let Some(result_var) = result_var {
+                block_state.label_stack.push((curr_label_count, Some((result_var, btype.unwrap()))))                
+            } else {
+                block_state.label_stack.push((curr_label_count, None)); 
+            }
 
             //call wimplify on remaining instructions with new block state 
             let block_body = wimplify_instrs(instrs, tys, &mut block_state).unwrap();
@@ -1227,7 +1232,7 @@ fn wimplify_instrs(
             //if it doesn't return anything, create an empty vector  
             let mut result_var = None; 
             let mut res_vec = if let Some(btype) = btype {
-                result_var = Some(Stack(state.stack_var_count)); 
+                result_var = Some(Block(state.label_count)); 
                 state.stack_var_count += 1;
                 vec![Stmt::Assign { 
                     lhs: result_var.unwrap(), 
@@ -1240,11 +1245,7 @@ fn wimplify_instrs(
             
             let curr_label_count = state.label_count;
             state.label_count += 1;
-            if let Some(result_var) = result_var {
-                state.label_stack.push((curr_label_count, Some((result_var, btype.unwrap()))))                
-            } else {
-                state.label_stack.push((curr_label_count, None)); 
-            }
+            
 
             let mut if_state = State {
                 label_count: state.label_count,
@@ -1256,6 +1257,11 @@ fn wimplify_instrs(
                 // return_var: result_var, 
                 // return_var_ty: btype,  
             }; 
+            if let Some(result_var) = result_var {
+                if_state.label_stack.push((curr_label_count, Some((result_var, btype.unwrap()))))                
+            } else {
+                if_state.label_stack.push((curr_label_count, None)); 
+            }
 
             let if_body = wimplify_instrs(instrs, tys, &mut if_state).unwrap();            
             
@@ -1357,9 +1363,10 @@ fn wimplify_instrs(
             //FIXME top will be function label 
             
             else {
-
+            println!("label stack: {:?}", state.label_stack); 
             let (_, return_info) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack"); 
             
+            println!("END {:?}", return_info); 
             if let Some((lhs, type_)) = return_info {
                 result_instrs.push(Stmt::Assign{
                     lhs, 
