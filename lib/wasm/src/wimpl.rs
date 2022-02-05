@@ -1115,7 +1115,7 @@ fn wimplify_instrs(
         InferredInstructionType::Reachable(ty) => ty,
     };
 
-    //println!("{}, {}, {:?}", instr, ty, state.var_stack);
+    println!("{}, {}, {:?}", instr, ty, state.var_stack);
 
     let n_inputs = ty.params.len();
     let n_results = ty.results.len();
@@ -1468,7 +1468,17 @@ fn wimplify_instrs(
             let mut target_list = Vec::new();
             let mut res_insts = Vec::new(); 
             
-            let val = rhs.pop().expect("br target expects a value on the stack"); 
+            let idx = rhs.pop().unwrap(); 
+            println!("here"); 
+            
+            let (_, return_info) = state.label_stack[state.label_stack.len()-default.into_inner()-1]; 
+            
+            let val = if return_info.is_some() {
+                rhs.pop().expect("br_table expects a value for the labels") 
+            } else {
+                Stack(100)  //this is never actually going to be used //TODO code review daniel   
+            }; 
+            
             for lab in table {
                 let (target, return_info) = state.label_stack[state.label_stack.len()-lab.into_inner()-1]; 
                 target_list.push(Label(target));
@@ -1481,8 +1491,6 @@ fn wimplify_instrs(
                     })     
                 }
             }
-
-            let idx = rhs.pop().unwrap(); 
 
             
             let (default_target, default_return_info) = state.label_stack[state.label_stack.len()-default.into_inner()-1];
