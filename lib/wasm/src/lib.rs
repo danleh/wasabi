@@ -15,6 +15,8 @@ mod types;
 mod folding;
 pub mod wimpl;
 
+pub mod callgraph;
+
 #[cfg(test)]
 mod tests;
 

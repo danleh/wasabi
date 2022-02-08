@@ -17,7 +17,7 @@ use nom::{
     AsChar, Finish, IResult,
 };
 
-use crate::{highlevel::MemoryOp, types::{InferredInstructionType, TypeChecker}, Val, ValType};
+use crate::{highlevel::{MemoryOp, Table}, types::{InferredInstructionType, TypeChecker}, Val, ValType};
 use crate::{
     highlevel::{self, LoadOp, NumericOp, StoreOp},
     FunctionType, Memarg,
@@ -28,8 +28,9 @@ pub struct Module {
     pub functions: Vec<Function>,
     // From the name section, if present, e.g., compiler-generated debug info.
     // pub name: Option<String>,
+    // TODO uncomment, clone from hl::Module
     // pub globals: Vec<Global>,
-    // pub tables: Vec<Table>,
+    pub tables: Vec<Table>,
     // pub memories: Vec<Memory>,
     // pub start: Option<Idx<Function>>,
     // pub custom_sections: Vec<RawCustomSection>,
@@ -256,7 +257,7 @@ pub enum Stmt {
     //     default: Label,
     // },
 
-    Switch { //TODO code review 
+    Switch {  
         index: Var,
         cases: Vec<Body>,
         default: Body,
@@ -1158,6 +1159,7 @@ fn wimplify_instrs(
     
     let mut rhs: Vec<Var> = state.var_stack.split_off(state.var_stack.len()-n_inputs); 
     
+    // FIXME change to empty Vec for None cases
     let result_instr: Option<Vec<Stmt>> = match instr {
 
         highlevel::Instr::Unreachable => Some(vec![Stmt::Unreachable]),
@@ -1414,59 +1416,26 @@ fn wimplify_instrs(
             // condition used for br_table
             let idx = rhs.pop().unwrap(); 
             
-            //if default returns a value, pop a value from rhs since thats the variable that is set 
-            let (_, return_info) = state.label_stack[state.label_stack.len()-default.into_inner()-1]; 
-            let val = if return_info.is_some() {
-                rhs.pop().expect("br_table expects a value for the labels") 
-            } else {
-                Stack(100)  //this is never actually going to be used //TODO code review daniel   
-            }; 
+            //TODO change label_stack access everywhere 
+            //if default returns a value, pop a value from rhs since thats the variable that is set
             
-            let mut cases: Vec<Body> = Vec::new(); 
-            
-            //get instructions of the cases: first the assign statement and then the Br statement
-            for lab in table {
-                let (target, return_info) = state.label_stack[state.label_stack.len()-lab.into_inner()-1]; 
-                if let Some((lhs, type_)) = return_info {
-                    cases.push(Body(vec![
-                        Stmt::Assign{
-                            lhs,
-                            expr: VarRef{rhs: val },
-                            type_ ,
-                        }, 
-                        Stmt::Br{
-                            target: Label(target),
-                        }
-                    ]))
-                } else {
-                    cases.push(Body(vec![
-                        Stmt::Br{
-                            target: Label(target),
-                        }
-                    ]))
-                }
-            }
+            let val = rhs.pop();
 
-            //get default 
-            let (default_target, default_return_info) = state.label_stack[state.label_stack.len()-default.into_inner()-1];
-            let default = if let Some((lhs, type_)) = default_return_info {
-                Body(vec![
-                    Stmt::Assign{
-                    lhs,
-                    expr: VarRef{rhs: val },
-                    type_ ,
-                    }, 
-                    Stmt::Br{
-                        target: Label(default_target),
-                    }
-                ])
-            } else {
-                Body(vec![
-                    Stmt::Br{
-                        target: Label(default_target),
-                    }
-                ])
-            }; 
+            let label_to_case_body = |label: crate::Label| {
+                let (label, label_result) = state.label_stack.iter().rev().nth(label.into_inner()).expect("label stack should never be empty"); 
+                let mut body = Vec::new();
+                if let Some((lhs, type_)) = label_result {
+                    body.push(Stmt::Assign{
+                        lhs: *lhs,
+                        expr: VarRef{rhs: val.expect("label_result and val are both either None or Som") },
+                        type_: *type_ ,
+                    }); 
+                }
+                body.push(Stmt::Br { target: Label(*label) });
+                Body(body)
+            };
+            let default = label_to_case_body(*default);
+            let cases = table.iter().copied().map(label_to_case_body).collect(); 
 
             res_insts.push(Stmt::Switch {
                 index: idx,
