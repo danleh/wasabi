@@ -198,6 +198,12 @@ impl fmt::Display for Body {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct SwitchCase {
+    assign: Option<Body>,
+    br: Body, 
+}
+
 /// Wimpl instructions make the following major changes over high-level Wasm:
 /// - Remove the evaluation/operand stack completely, every instruction takes
 /// explicit arguments and optionally produces a (in the Wasm MVP) single LHS.
@@ -249,11 +255,17 @@ pub enum Stmt {
 
     // Simplify: Represent br_if as an if (cond) { .. , br @label () }.
 
-    BrTable {
-        idx: Var,
-        table: Vec<Label>,
-        default: Label,
-    },
+    // BrTable {
+    //     idx: Var,
+    //     table: Vec<Label>,
+    //     default: Label,
+    // },
+
+    Switch { //TODO code review 
+        index: Var,
+        cases: Vec<SwitchCase>,
+        default: SwitchCase,
+    }, 
 
     Return {
         value: Option<Var>,
@@ -751,16 +763,37 @@ impl fmt::Display for Stmt {
                 //display_delim(f, value, " (", ")", ", ")?;
             },
             // br-table @label0 @label1 @label2 default=@label3 (s0)
-            BrTable { 
-                idx, 
-                table, 
+            // BrTable { 
+            //     idx, 
+            //     table, 
+            //     default, 
+            // } => {
+            //     f.write_str("br_table")?;
+            //     display_delim(f, table, " ", "", " ")?;
+            //     write!(f, " default={} ({})", default, idx)?;
+            //     //display_delim(f, value, " (", ")", ", ")?;    
+            // },
+            Switch {
+                index, 
+                cases,
                 default, 
             } => {
-                f.write_str("br_table")?;
-                display_delim(f, table, " ", "", " ")?;
-                write!(f, " default={} ({})", default, idx)?;
-                //display_delim(f, value, " (", ")", ", ")?;    
-            },
+                writeln!(f, "switch ({}) {{", index)?;
+                for (ind, inst) in cases.iter().enumerate() {
+                    writeln!(f, "case {}: {{", ind)?;
+                    if let Some(assign) = &inst.assign {
+                        writeln!(f, "{}", assign)?;                
+                    }
+                    writeln!(f, "{}", inst.br)?;                
+                    f.write_str("}}")?;                
+                }
+                f.write_str("default: ")?;
+                if let Some(assign) = &default.assign {
+                    writeln!(f, "{}", assign)?;                
+                }
+                writeln!(f, "{}", default.br)?;                
+                f.write_str("}")?;                
+            }, 
             // return (s1)
             Return { value } => {
                 f.write_str("return")?;
@@ -1390,7 +1423,6 @@ fn wimplify_instrs(
         highlevel::Instr::BrTable { table, default } => { 
             panic_if_size_lt(&rhs, 1, "br_table requires a condition"); 
             
-            let mut target_list = Vec::new();
             let mut res_insts = Vec::new(); 
             
             // condition used for br_table
@@ -1404,34 +1436,50 @@ fn wimplify_instrs(
                 Stack(100)  //this is never actually going to be used //TODO code review daniel   
             }; 
             
+            let mut cases: Vec<SwitchCase> = Vec::new(); 
+            
+            //get instructions of the cases: first the assign statement and then the Br statement
             for lab in table {
                 let (target, return_info) = state.label_stack[state.label_stack.len()-lab.into_inner()-1]; 
-                target_list.push(Label(target));
-                if let Some((lhs, type_)) = return_info {
-                    res_insts.push(
-                        Stmt::Assign{
+                
+                cases.push(SwitchCase{
+                    assign: if let Some((lhs, type_)) = return_info {
+                        Some(Body(vec![Stmt::Assign{
                             lhs,
                             expr: VarRef{rhs: val },
                             type_ ,
-                    })     
-                }
+                        }]))     
+                    } else { 
+                        None
+                    },
+                    
+                    br: Body(vec![Stmt::Br{
+                        target: Label(target),
+                    }]),
+                })
             }
 
+            //get default 
             let (default_target, default_return_info) = state.label_stack[state.label_stack.len()-default.into_inner()-1];
-            let default = Label(default_target); 
-            if let Some((lhs, type_)) = default_return_info {
-                res_insts.push(
-                    Stmt::Assign{
+            let default = SwitchCase {
+                assign: if let Some((lhs, type_)) = default_return_info {
+                    Some(Body(vec![Stmt::Assign{
                         lhs,
                         expr: VarRef{rhs: val },
                         type_ ,
-                    }
-                )     
-            }
+                    }]))
+                } else {
+                    None
+                }, 
 
-            res_insts.push(Stmt::BrTable {
-                idx, 
-                table: target_list,
+                br: Body(vec![Stmt::Br{
+                    target: Label(default_target),
+                }]), 
+            }; 
+
+            res_insts.push(Stmt::Switch {
+                index: idx,
+                cases,
                 default,
             }); 
 
@@ -1870,15 +1918,15 @@ mod test {
             // (Br { target: Label(1), value: Some(Var::Stack(0)) }, 
             //     r"
             //     br @label1 (s0)", "br with value"),
-            (
-                BrTable {
-                    idx: Var::Stack(0),
-                    table: vec![Label(1), Label(2)],
-                    default: Label(0),
-                },
-                "br_table @label1 @label2 default=@label0 (s0)",
-                "br_table with index argument and passed value"
-            ),
+            // (
+            //     BrTable {
+            //         idx: Var::Stack(0),
+            //         table: vec![Label(1), Label(2)],
+            //         default: Label(0),
+            //     },
+            //     "br_table @label1 @label2 default=@label0 (s0)",
+            //     "br_table with index argument and passed value"
+            // ),
             (
                 Stmt::Expr{
                     expr: Call {
