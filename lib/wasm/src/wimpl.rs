@@ -110,7 +110,7 @@ impl fmt::Display for Var {
             Local(i) => write!(f, "l{}", i),
             Global(i) => write!(f, "g{}", i),
             Param(i) => write!(f, "p{}", i),
-            Return => write!(f, "r0"),
+            Return => write!(f, "r"),
             Block(i) => write!(f, "b{}", i),
         }
     }
@@ -198,11 +198,6 @@ impl fmt::Display for Body {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub struct SwitchCase {
-    assign: Option<Body>,
-    br: Body, 
-}
 
 /// Wimpl instructions make the following major changes over high-level Wasm:
 /// - Remove the evaluation/operand stack completely, every instruction takes
@@ -263,8 +258,8 @@ pub enum Stmt {
 
     Switch { //TODO code review 
         index: Var,
-        cases: Vec<SwitchCase>,
-        default: SwitchCase,
+        cases: Vec<Body>,
+        default: Body,
     }, 
 
     Return {
@@ -780,18 +775,9 @@ impl fmt::Display for Stmt {
             } => {
                 writeln!(f, "switch ({}) {{", index)?;
                 for (ind, inst) in cases.iter().enumerate() {
-                    writeln!(f, "case {}: {{", ind)?;
-                    if let Some(assign) = &inst.assign {
-                        writeln!(f, "{}", assign)?;                
-                    }
-                    writeln!(f, "{}", inst.br)?;                
-                    f.write_str("}}")?;                
+                    writeln!(f, "case {}: {}}}", ind, inst)?;
                 }
-                f.write_str("default: ")?;
-                if let Some(assign) = &default.assign {
-                    writeln!(f, "{}", assign)?;                
-                }
-                writeln!(f, "{}", default.br)?;                
+                writeln!(f, "default: {}", default)?;                
                 f.write_str("}")?;                
             }, 
             // return (s1)
@@ -1436,45 +1422,50 @@ fn wimplify_instrs(
                 Stack(100)  //this is never actually going to be used //TODO code review daniel   
             }; 
             
-            let mut cases: Vec<SwitchCase> = Vec::new(); 
+            let mut cases: Vec<Body> = Vec::new(); 
             
             //get instructions of the cases: first the assign statement and then the Br statement
             for lab in table {
                 let (target, return_info) = state.label_stack[state.label_stack.len()-lab.into_inner()-1]; 
-                
-                cases.push(SwitchCase{
-                    assign: if let Some((lhs, type_)) = return_info {
-                        Some(Body(vec![Stmt::Assign{
+                if let Some((lhs, type_)) = return_info {
+                    cases.push(Body(vec![
+                        Stmt::Assign{
                             lhs,
                             expr: VarRef{rhs: val },
                             type_ ,
-                        }]))     
-                    } else { 
-                        None
-                    },
-                    
-                    br: Body(vec![Stmt::Br{
-                        target: Label(target),
-                    }]),
-                })
+                        }, 
+                        Stmt::Br{
+                            target: Label(target),
+                        }
+                    ]))
+                } else {
+                    cases.push(Body(vec![
+                        Stmt::Br{
+                            target: Label(target),
+                        }
+                    ]))
+                }
             }
 
             //get default 
             let (default_target, default_return_info) = state.label_stack[state.label_stack.len()-default.into_inner()-1];
-            let default = SwitchCase {
-                assign: if let Some((lhs, type_)) = default_return_info {
-                    Some(Body(vec![Stmt::Assign{
-                        lhs,
-                        expr: VarRef{rhs: val },
-                        type_ ,
-                    }]))
-                } else {
-                    None
-                }, 
-
-                br: Body(vec![Stmt::Br{
-                    target: Label(default_target),
-                }]), 
+            let default = if let Some((lhs, type_)) = default_return_info {
+                Body(vec![
+                    Stmt::Assign{
+                    lhs,
+                    expr: VarRef{rhs: val },
+                    type_ ,
+                    }, 
+                    Stmt::Br{
+                        target: Label(default_target),
+                    }
+                ])
+            } else {
+                Body(vec![
+                    Stmt::Br{
+                        target: Label(default_target),
+                    }
+                ])
             }; 
 
             res_insts.push(Stmt::Switch {
