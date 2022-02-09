@@ -17,7 +17,7 @@ use nom::{
     AsChar, Finish, IResult,
 };
 
-use crate::{highlevel::{MemoryOp, Table}, types::{InferredInstructionType, TypeChecker}, Val, ValType};
+use crate::{highlevel::{MemoryOp, Global, Table}, types::{InferredInstructionType, TypeChecker}, Val, ValType};
 use crate::{
     highlevel::{self, LoadOp, NumericOp, StoreOp},
     FunctionType, Memarg,
@@ -28,8 +28,7 @@ pub struct Module {
     pub functions: Vec<Function>,
     // From the name section, if present, e.g., compiler-generated debug info.
     // pub name: Option<String>,
-    // TODO uncomment, clone from hl::Module
-    // pub globals: Vec<Global>,
+    pub globals: Vec<Global>,
     pub tables: Vec<Table>,
     // pub memories: Vec<Memory>,
     // pub start: Option<Idx<Function>>,
@@ -776,9 +775,9 @@ impl fmt::Display for Stmt {
             } => {
                 writeln!(f, "switch ({}) {{", index)?;
                 for (ind, inst) in cases.iter().enumerate() {
-                    writeln!(f, "case {}: {}}}", ind, inst)?;
+                    writeln!(f, "  {}", format!("case {}: {}}}", ind, inst).replace("\n", "\n  ")).expect("");  // reindents everything
                 }
-                writeln!(f, "default: {}", default)?;                
+                writeln!(f, "  {}", format!("default: {}", default).replace("\n", "\n  ")).expect("");  // reindents everything
                 f.write_str("}")?;                
             }, 
             // return (s1)
@@ -840,146 +839,6 @@ impl fmt::Display for Stmt {
                 }
             },
         }
-        // match self {
-        //     Unreachable => f.write_str("unreachable")?,
-
-        //     // s0 = @label0: block {
-        //     //   s1 = i32.const 3
-        //     //   s1
-        //     // }
-        //     Block {
-        //         lhs: _,
-        //         label,
-        //         body,
-        //     } => write!(f, "{}: block {}", label, body)?,
-            // // s0 = @label0: loop {
-            // //     s1 = i32.const 3
-            // //     br @label0 (s1)
-            // //     s1
-            // // }
-        //     Loop {
-        //         lhs: _,
-        //         label,
-        //         body,
-        //     } => write!(f, "{}: loop {}", label, body)?,
-            // // s0 = @label0: if {
-            // //     s1 = i32.const 3
-            // //     s1
-            // // } else {
-            // //     s2 = i32.const 6
-            // //     s2
-            // // }
-        //     If {
-        //         lhs: _,
-        //         condition,
-        //         label,
-        //         if_body,
-        //         else_body,
-        //     } => {
-        //         //println!("{:?}", self);
-        //         if let Some(label) = label {
-        //             write!(f, "{}: ", label)?;
-        //         }
-        //         write!(f, "if ({}) {}", condition, if_body)?;
-        //         if let Some(else_branch) = else_body {
-        //             write!(f, " else {}", else_branch)?;
-        //         }
-        //     }
-
-        //     // br @label0 (s1)
-        //     Br { target, value } => {
-        //         write!(f, "br {}", target)?;
-        //         display_delim(f, value, " (", ")", ", ")?;
-        //     }
-        //     // br-table @label0 @label1 @label2 default=@label3 (s0)
-        //     BrTable {
-        //         idx: index,
-        //         table,
-        //         default,
-        //         value,
-        //     } => {
-        //         f.write_str("br_table")?;
-        //         display_delim(f, table, " ", "", " ")?;
-        //         write!(f, " default={} ({})", default, index)?;
-        //         display_delim(f, value, " (", ")", ", ")?;
-        //     }
-
-        //     // return (s1)
-        //     Return { value } => {
-        //         f.write_str("return")?;
-        //         display_delim(f, value, " (", ")", ", ")?;
-        //     }
-
-        //     // s0 = call f1 (s1)
-        //     Call { lhs: _, func, args } => {
-        //         // Always print the parentheses, even if `args` is empty.
-        //         write!(f, "call {} (", func)?;
-        //         display_delim(f, args, "", "", ", ")?;
-        //         f.write_str(")")?;
-        //     }
-        //     // s2 = call_indirect [] -> [i32] (s0) (s1, s2, s3...)
-        //     CallIndirect {
-        //         lhs: _,
-        //         type_,
-        //         table_idx: table_index,
-        //         args,
-        //     } => {
-        //         // Always print the parentheses, even if `args` is empty.
-        //         write!(f, "call_indirect {} ({}) (", type_, table_index)?;
-        //         display_delim(f, args, "", "", ", ")?;
-        //         f.write_str(")")?;
-        //     }
-
-        //     // s2 = s1
-        //     Assign { lhs: _, rhs } => write!(f, "{}", rhs)?,
-
-        //     // s1 = i32.load offset=3 align=4 (s0)
-        //     Load {
-        //         lhs: _,
-        //         op,
-        //         memarg,
-        //         addr,
-        //     } => {
-        //         write!(f, "{}", op)?;
-        //         if !memarg.is_default(*op) {
-        //             f.write_str(" ")?;
-        //             memarg.fmt(f, *op)?;
-        //             f.write_str(" ")?;
-        //         }
-        //         write!(f, "({})", addr)?;
-        //     }
-        //     // i32.store offset=3 align=4 (s0//addr) (s1//value)
-        //     Store {
-        //         op,
-        //         memarg,
-        //         addr,
-        //         value,
-        //     } => {
-        //         write!(f, "{}", op)?;
-        //         if !memarg.is_default(*op) {
-        //             f.write_str(" ")?;
-        //             memarg.fmt(f, *op)?;
-        //             f.write_str(" ")?;
-        //         }
-        //         write!(f, "({}) ({})", addr, value)?;
-        //     }
-
-        //     // s1 = memory.size
-        //     MemorySize { lhs: _ } => write!(f, "memory.size")?,
-        //     // s1 = memory.grow(s0)
-        //     MemoryGrow { lhs: _, pages } => write!(f, "memory.grow({})", pages)?,
-
-        //     // s1 = i32.const 3
-        //     Const { lhs: _, val } => write!(f, "{}.const {}", val.to_type(), val)?,
-
-        //     // s2 = i32.add(s0, s1)
-        //     // s1 = f32.neg(s0)
-        //     Numeric { lhs: _, op, rhs } => {
-        //         write!(f, "{}", op)?;
-        //         display_delim(f, rhs, "(", ")", ", ")?;
-        //     }
-        // };
-
         Ok(())
     }
 }
@@ -1159,12 +1018,11 @@ fn wimplify_instrs(
     
     let mut rhs: Vec<Var> = state.var_stack.split_off(state.var_stack.len()-n_inputs); 
     
-    // FIXME change to empty Vec for None cases
-    let result_instr: Option<Vec<Stmt>> = match instr {
+    let result_instr: Vec<Stmt> = match instr {
 
-        highlevel::Instr::Unreachable => Some(vec![Stmt::Unreachable]),
+        highlevel::Instr::Unreachable => vec![Stmt::Unreachable],
 
-        highlevel::Instr::Nop => None,
+        highlevel::Instr::Nop => Vec::new(),
 
         highlevel::Instr::Block(blocktype) |
         highlevel::Instr::Loop(blocktype) => {
@@ -1222,7 +1080,7 @@ fn wimplify_instrs(
                 label: Label(curr_label_count),
                 body: Body(block_body),
             });             
-            Some(res_instr_vec) 
+            res_instr_vec 
         }
         
         highlevel::Instr::If(blocktype) => {
@@ -1296,13 +1154,14 @@ fn wimplify_instrs(
                     else_body: None,
                 } 
             });
-            Some(res_vec)            
+            res_vec            
         },
 
         highlevel::Instr::Else => {
             state.else_taken = true; 
             
-            let (_, return_info) = state.label_stack[state.label_stack.len()-1]; 
+            //cannot pop because you still want it to be on the label stack while processing the else body 
+            let (_, return_info) = *state.label_stack.iter().rev().nth(state.label_stack.len()-1).expect("label stack should never be empty");
 
             if let Some((lhs, type_)) = return_info {
                 result_instrs.push(Stmt::Assign{
@@ -1343,7 +1202,7 @@ fn wimplify_instrs(
 
         highlevel::Instr::Br(lab) => {                        
             
-            let (target, return_info) = state.label_stack[state.label_stack.len()-lab.into_inner()-1]; 
+            let (target, return_info) = *state.label_stack.iter().rev().nth(lab.into_inner()).expect("label stack should never be empty"); 
             let target = Label(target); 
 
             let val = rhs.pop();
@@ -1351,7 +1210,7 @@ fn wimplify_instrs(
             if let Some(return_val) = val {
                 state.var_stack.push(return_val); //FIXME not neccessary anymore if we don't generate unreachable instruction  
                 let (lhs, type_) = return_info.expect("br expected to produce a value"); 
-                Some(vec![
+                vec![
                     Stmt::Assign{ 
                         lhs, 
                         expr: VarRef{ rhs: return_val }, 
@@ -1360,18 +1219,18 @@ fn wimplify_instrs(
                     Stmt::Br {
                         target,
                     }
-                ])
+                ]
             } else {
-                Some(vec![Stmt::Br {
+                vec![Stmt::Br {
                     target,
-                }])
+                }]
             }           
         },
 
         highlevel::Instr::BrIf(lab) => {
             panic_if_size_lt(&rhs, 1, "if required a conditional statement"); 
             
-            let (target, return_info) = state.label_stack[state.label_stack.len()-lab.into_inner()-1]; 
+            let (target, return_info) = *state.label_stack.iter().rev().nth(lab.into_inner()).expect("label stack should never be empty"); 
             let target = Label(target); 
 
             let condition = rhs.pop().unwrap(); 
@@ -1379,7 +1238,7 @@ fn wimplify_instrs(
             if let Some((lhs_, type_)) = return_info {
                 let value = state.var_stack.pop().expect("br_if is expected to produce a value"); 
                 state.var_stack.push(value); //FIXME not neccessary anymore if we don't generate unreachable instruction 
-                Some(vec![Stmt::If{
+                vec![Stmt::If{
                     label: None,
                     condition, 
                     if_body: Body(vec![
@@ -1393,9 +1252,9 @@ fn wimplify_instrs(
                         }
                     ]), 
                     else_body: None,
-                }])    
+                }]    
             } else {
-                Some(vec![Stmt::If{
+                vec![Stmt::If{
                     label: None,
                     condition, 
                     if_body: Body(vec![
@@ -1404,7 +1263,7 @@ fn wimplify_instrs(
                         }
                     ]), 
                     else_body: None,
-                }])
+                }]
             }
        }
 
@@ -1416,22 +1275,20 @@ fn wimplify_instrs(
             // condition used for br_table
             let idx = rhs.pop().unwrap(); 
             
-            //TODO change label_stack access everywhere 
-            //if default returns a value, pop a value from rhs since thats the variable that is set
-            
+            //pop a value from rhs since it could be that it needs to be assigned to a result variable 
             let val = rhs.pop();
 
             let label_to_case_body = |label: crate::Label| {
-                let (label, label_result) = state.label_stack.iter().rev().nth(label.into_inner()).expect("label stack should never be empty"); 
+                let (label, label_result) = *state.label_stack.iter().rev().nth(label.into_inner()).expect("label stack should never be empty"); 
                 let mut body = Vec::new();
                 if let Some((lhs, type_)) = label_result {
                     body.push(Stmt::Assign{
-                        lhs: *lhs,
+                        lhs,
                         expr: VarRef{rhs: val.expect("label_result and val are both either None or Som") },
-                        type_: *type_ ,
+                        type_,
                     }); 
                 }
-                body.push(Stmt::Br { target: Label(*label) });
+                body.push(Stmt::Br { target: Label(label) });
                 Body(body)
             };
             let default = label_to_case_body(*default);
@@ -1443,15 +1300,15 @@ fn wimplify_instrs(
                 default,
             }); 
 
-            Some(res_insts)
+            res_insts
         }
 
         highlevel::Instr::Return => {
             panic_if_size_gt(&rhs, 1, "multiple returns not yet allowed");
             if let Some(val) = rhs.pop() {
-                Some(vec![Stmt::Return{ value: Some(val)}])
+                vec![Stmt::Return{ value: Some(val)}]
             } else {
-                Some(vec![Stmt::Return{ value: None}])
+                vec![Stmt::Return{ value: None}]
             }
         }
 
@@ -1461,13 +1318,13 @@ fn wimplify_instrs(
                 args: rhs,
             }; 
             if let Some(lhs) = lhs {
-                Some(vec![Stmt::Assign{
+                vec![Stmt::Assign{
                     lhs,
                     expr: call_rhs,
                     type_: lhs_ty.unwrap(), 
-                }])
+                }]
             } else {
-                Some(vec![Stmt::Expr { expr: call_rhs }])
+                vec![Stmt::Expr { expr: call_rhs }]
             }            
         }, 
 
@@ -1485,17 +1342,17 @@ fn wimplify_instrs(
             }; 
 
             if let Some(lhs) = lhs {
-                Some(vec![Stmt::Assign{
+                vec![Stmt::Assign{
                     lhs,
                     expr: callind_rhs,
                     type_: lhs_ty.unwrap(), 
-                }])
+                }]
             } else {
-                Some(vec![Stmt::Expr{ expr: callind_rhs}])
+                vec![Stmt::Expr{ expr: callind_rhs}]
             }
         }
 
-        highlevel::Instr::Drop => None, 
+        highlevel::Instr::Drop => Vec::new(), 
 
         highlevel::Instr::Select => { 
             panic_if_size_lt(&rhs, 3, "select requires that there is a condition and two other values on the stack"); 
@@ -1505,7 +1362,7 @@ fn wimplify_instrs(
             let type_ = ty.results[0]; 
             
             if let Some(lhs) = lhs {
-                Some(vec![
+                vec![
             
                     Stmt::Assign{ 
                         lhs, 
@@ -1527,7 +1384,7 @@ fn wimplify_instrs(
                             type_ 
                         }]))
                     }
-                ])     
+                ]     
             } else {
                 panic!("select has to produce a value")
             }
@@ -1542,13 +1399,13 @@ fn wimplify_instrs(
             }; 
 
             if let Some(lhs) = lhs {
-                Some(vec![Stmt::Assign{
+                vec![Stmt::Assign{
                     lhs, 
                     expr: VarRef {
                         rhs: local_var,
                     }, 
                     type_: lhs_ty.unwrap(), 
-                }])
+                }]
             } else {
                 panic!("local.get requires a local variable to save a value into");
             }
@@ -1564,13 +1421,13 @@ fn wimplify_instrs(
             
             panic_if_size_lt(&rhs, 1, "local.set expects a value on the stack"); 
             panic_if_size_lt(&ty.params, 1, "return type of global.set not found"); 
-            Some(vec![Stmt::Assign{
+            vec![Stmt::Assign{
                 lhs : local_var, 
                 expr: VarRef {
                     rhs: rhs.pop().unwrap(),
                 },
                 type_: ty.params[0], 
-            }])            
+            }]            
         }
 
         highlevel::Instr::Local(highlevel::LocalOp::Tee, local_ind) => {
@@ -1586,25 +1443,25 @@ fn wimplify_instrs(
 
             let rhs = rhs.pop().unwrap();
             state.var_stack.push(rhs); 
-            Some(vec![Stmt::Assign{
+            vec![Stmt::Assign{
                 lhs: local_var,
                 expr: VarRef {
                     rhs,
                 },
                 type_: ty.params[0], 
-            }])
+            }]
         }
 
         highlevel::Instr::Global(highlevel::GlobalOp::Get, global_ind) => {
             let global_var = Global(global_ind.into_inner());
             if let Some(lhs) = lhs {
-                Some(vec![Stmt::Assign{
+                vec![Stmt::Assign{
                     lhs, 
                     expr: VarRef {
                         rhs: global_var,
                     },
                     type_: lhs_ty.unwrap(), 
-                }])
+                }]
             } else {
                 panic!("global.get requires a local variable to save a value into");
             }
@@ -1615,13 +1472,13 @@ fn wimplify_instrs(
             panic_if_size_lt(&ty.params, 1, "return type of global.set not found"); 
             
             let global_var = Global(global_ind.into_inner());
-            Some(vec![Stmt::Assign{
+            vec![Stmt::Assign{
                 lhs: global_var,
                 expr: VarRef {
                     rhs: rhs.pop().unwrap(),
                 },
                 type_: ty.params[0], 
-            }])
+            }]
         }
 
         highlevel::Instr::Load(loadop, memarg) => {
@@ -1633,7 +1490,7 @@ fn wimplify_instrs(
             }
             let lhs = lhs.unwrap();
             let rhs = rhs.pop().unwrap();
-            Some(vec![Stmt::Assign{
+            vec![Stmt::Assign{
                 lhs,
                 expr: Load {
                     op: *loadop,
@@ -1641,22 +1498,22 @@ fn wimplify_instrs(
                     addr: rhs,
                 },
                 type_: lhs_ty.unwrap(), 
-            }])
+            }]
         }
 
         highlevel::Instr::Store(storeop, memarg) => {
             panic_if_size_lt(&rhs, 2, "store consumes two values from the stack"); 
-            Some(vec![Stmt::Store {
+            vec![Stmt::Store {
                 op: *storeop,
                 memarg: *memarg,
                 addr: rhs.pop().unwrap(),
                 value: rhs.pop().unwrap(),
-            }])
+            }]
         }
 
         highlevel::Instr::MemorySize(_) => {
             if let Some(lhs) = lhs {
-                Some(vec![Stmt::Assign{ lhs, expr: MemorySize{}, type_: lhs_ty.unwrap() }])
+                vec![Stmt::Assign{ lhs, expr: MemorySize{}, type_: lhs_ty.unwrap() }]
             } else {
                 panic!("memory size has to produce a value"); 
             }
@@ -1666,13 +1523,13 @@ fn wimplify_instrs(
             assert_eq!(ind.into_inner(), 0, "wasm mvp only has single memory");
             panic_if_size_lt(&rhs, 1, "memory_grow has to consume a value from stack"); 
             if let Some(lhs) = lhs {
-                Some(vec![Stmt::Assign{
+                vec![Stmt::Assign{
                     lhs, 
                     expr: MemoryGrow {
                         pages: rhs.pop().unwrap(),
                     },
                     type_: lhs_ty.unwrap(), 
-                }])
+                }]
             } else {
                 panic!("memory grow has to produce a value"); 
             }
@@ -1680,7 +1537,7 @@ fn wimplify_instrs(
 
         highlevel::Instr::Const(val) => {
             if let Some(lhs) = lhs {
-                Some(vec![Stmt::Assign{ lhs, expr:Const{ val: *val }, type_: lhs_ty.unwrap()}])
+                vec![Stmt::Assign{ lhs, expr:Const{ val: *val }, type_: lhs_ty.unwrap()}]
             } else {
                 panic!("const has to produce a value "); 
             }
@@ -1688,24 +1545,22 @@ fn wimplify_instrs(
 
         highlevel::Instr::Numeric(numop) => {
             if let Some(lhs) = lhs {
-                Some(vec![Stmt::Assign{
+                vec![Stmt::Assign{
                     lhs, 
                     expr: Numeric {
                         op: *numop,
                         rhs,
                     },
                     type_: lhs_ty.unwrap(), 
-                }])
+                }]
             } else {
                 panic!("numeric op has to produce a value "); 
             }
         }
     };
 
-    if let Some(result_instr) = result_instr {
-        for ins in result_instr {
-            result_instrs.push(ins);
-        }
+    for ins in result_instr {
+        result_instrs.push(ins);
     }
 
     if !instrs.is_empty() {
@@ -1776,8 +1631,11 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
             name,
         }); 
     }
+
     Ok(Module{
         functions: wimpl_funcs,
+        globals: module.globals.clone(),
+        tables: module.tables.clone(),
     })
 }
 

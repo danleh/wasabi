@@ -19,7 +19,7 @@ impl CallGraph {
 pub fn callgraph(module: &wimpl::Module) -> CallGraph {
     // TODO split "collecting constraints" from "solving constraints to a graph"
 
-    let graph = HashSet::new();
+    //let graph = HashSet::new();
     // iterate over all funcs in module
     // iterate over all instr in func
     // if instr == Call
@@ -45,13 +45,13 @@ pub fn callgraph(module: &wimpl::Module) -> CallGraph {
                 // graph.add((func, func2))
 
         // Option D): index based analysis???
-
-    graph
+    todo!() 
+    //graph
 }
 
 #[cfg(test)]
 mod tests {
-    
+
     #[test]
     fn create_graph() {
         // parse wasm to hl module
