@@ -4,7 +4,7 @@ use std::{
     io::{self, ErrorKind},
     iter::FromIterator,
     path::Path,
-    str::FromStr,
+    str::FromStr, slice::Iter,
 };
 
 use nom::{
@@ -17,7 +17,7 @@ use nom::{
     AsChar, Finish, IResult,
 };
 
-use crate::{highlevel::{MemoryOp, Global, Table}, types::{InferredInstructionType, TypeChecker}, Val, ValType};
+use crate::{highlevel::{MemoryOp, Global, Table}, types::{InferredInstructionType, TypeChecker}, Val, ValType, Idx};
 use crate::{
     highlevel::{self, LoadOp, NumericOp, StoreOp},
     FunctionType, Memarg,
@@ -35,7 +35,13 @@ pub struct Module {
     // pub custom_sections: Vec<RawCustomSection>,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+impl Module {
+    pub fn function(&self, idx: Idx<highlevel::Function>) -> &Function {
+        &self.functions[idx.into_inner()]
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub struct Function {
     pub type_: FunctionType,
     pub instrs: Body, //want to reuse 
@@ -44,7 +50,13 @@ pub struct Function {
     //pub param_names: Vec<Option<String>>,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+impl Function {
+    pub fn get_name (self) -> Func {
+        self.name
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 pub enum Var {
     Stack(usize),
     Local(usize),
@@ -54,17 +66,17 @@ pub enum Var {
     Block(usize), 
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Func {
     Named(String), 
     Idx(usize),
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 pub struct Label(usize);
 
-#[derive(Debug, Eq, PartialEq, Clone, Default)]
-pub struct Body(Vec<Stmt>); 
+#[derive(Debug, Eq, PartialEq, Clone, Default, Hash)]
+pub struct Body(pub Vec<Stmt>); 
 
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -210,7 +222,7 @@ impl fmt::Display for Body {
 /// local.* and global.* instructions with a single `Assign` instruction.
 // TODO Optimize this representation, in particular remove redundant assignments
 // between stack variables and locals/globals.
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Stmt {
 
     Assign {
@@ -274,7 +286,7 @@ pub enum Stmt {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Expr {
 
     Call {
