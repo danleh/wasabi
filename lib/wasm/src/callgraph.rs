@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::Path, io, process::Command};
+use std::{collections::HashSet, path::Path, io::{self, Write}, process::{Command, Stdio}};
 
 use crate::{wimpl::{Func, self, Expr::Call, Function}, FunctionType};
 
@@ -16,13 +16,18 @@ impl CallGraph {
         dot_file
     }
 
-    pub fn to_png(&self, path: impl AsRef<Path>) -> io::Result<()> {
-        //dot -Tps filename.dot -o outfile.ps
-        Command::new("dot")
-                .args(["-Tps", &self.to_dot(), "-o", format!("{}", path)])
-                .spawn()
-                .expect(""); 
-        // invoke CLI tool with path as argument and to_dot() as stdinput
+    pub fn to_pdf(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        // Invoke Graphviz CLI tool with path as argument and to_dot() as stdin.
+        // Command line: dot -Tpdf -o outfile.pdf < stdin
+        let mut child = Command::new("dot")
+                .args(["-Tpdf", "-o"])
+                .arg(path.as_ref())
+                .stdin(Stdio::piped())
+                .spawn()?;
+        let mut stdin = child.stdin.take().expect("correctly requested stdin piped above!?");
+        stdin.write_all(self.to_dot().as_bytes())?;
+        let status = child.wait()?;
+        assert!(status.success(), "should not fail because we always produce valid dot input!?");
         Ok(())
     }
 }
@@ -38,35 +43,37 @@ pub fn callgraph(module: &wimpl::Module) -> CallGraph {
                 
                 wimpl::Stmt::Assign { lhs: _, expr: wimpl::Expr::Call{ func, args: _}, type_: _ } |
                 wimpl::Stmt::Expr{ expr: wimpl::Expr::Call { func, args: _} } => {
-                    graph.insert((fun.name, *func));
+                    graph.insert((fun.name.clone(), func.clone()));
                 }
 
-                wimpl::Stmt::Assign { lhs: _, expr: wimpl::Expr::CallIndirect { type_, table_idx, args: _ }, type_: _ } |
-                wimpl::Stmt::Expr{ expr: wimpl::Expr::CallIndirect { type_, table_idx, args: _ } } => {
+                wimpl::Stmt::Assign { lhs: _, expr: wimpl::Expr::CallIndirect { type_, table_idx: _, args: _ }, type_: _ } |
+                wimpl::Stmt::Expr{ expr: wimpl::Expr::CallIndirect { type_, table_idx: _, args: _ } } => {
                     
-                    //OPTION A
+                    //OPTION A: trivial, all functions are reachable
                     for f in &module.functions {
-                        graph.insert((fun.name, f.name));
+                        graph.insert((fun.name.clone(), f.name.clone()));
                     }
 
-                    let mut funcs_in_table: HashSet<(usize, FunctionType)> = HashSet::new();
+                    let mut funcs_in_table: HashSet<&Function> = HashSet::new();
                     for tab in &module.tables {
+                        // TODO interpret table offset for index-based analysis
                         for elem in &tab.elements {
-                            for fun in &elem.functions {
-                                funcs_in_table.insert((fun.into_inner(), module.function(*fun).type_)); 
+                            for func_idx in &elem.functions {
+                                let func = module.function(*func_idx);
+                                funcs_in_table.insert(func); 
                             }
                         }
                     } 
                     
                     //OPTION B 
-                    for (func, _) in funcs_in_table {
-                        graph.insert((fun.name, Func::Idx(func))); 
+                    for func in &funcs_in_table {
+                        graph.insert((fun.name.clone(), func.name.clone())); 
                     }
 
                     //OPTION C
-                    for (func, fn_type) in funcs_in_table {
-                        if fun.type_ == fn_type {
-                            graph.insert((fun.name, Func::Idx(func))); 
+                    for func in &funcs_in_table {
+                        if &func.type_ == type_ {
+                            graph.insert((fun.name.clone(), func.name.clone())); 
                         }
                     }
                 }
