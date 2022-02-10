@@ -9,7 +9,7 @@ impl CallGraph {
         let mut dot_file: String = "".to_owned();
         dot_file.push_str("digraph G {\n"); 
         dot_file.push_str("\trankdir=\"LR\";\n"); 
-        for (from_fn, to_fn) in self.0.clone() {
+        for (from_fn, to_fn) in &self.0 {
             dot_file.push_str(&format!("\t\"{}\"->\"{}\";\n", from_fn, to_fn)); 
         }
         dot_file.push_str("}\n");         
@@ -43,7 +43,7 @@ pub fn callgraph(module: &wimpl::Module) -> CallGraph {
                 
                 wimpl::Stmt::Assign { lhs: _, expr: wimpl::Expr::Call{ func, args: _}, type_: _ } |
                 wimpl::Stmt::Expr{ expr: wimpl::Expr::Call { func, args: _} } => {
-                    graph.insert((fun.name.clone(), func.clone()));
+                    graph.insert((fun.name(), func.clone()));
                 }
 
                 wimpl::Stmt::Assign { lhs: _, expr: wimpl::Expr::CallIndirect { type_, table_idx: _, args: _ }, type_: _ } |
@@ -51,7 +51,7 @@ pub fn callgraph(module: &wimpl::Module) -> CallGraph {
                     
                     //OPTION A: trivial, all functions are reachable
                     for f in &module.functions {
-                        graph.insert((fun.name.clone(), f.name.clone()));
+                        graph.insert((fun.name(), f.name()));
                     }
 
                     let mut funcs_in_table: HashSet<&Function> = HashSet::new();
@@ -65,39 +65,27 @@ pub fn callgraph(module: &wimpl::Module) -> CallGraph {
                         }
                     } 
                     
-                    //OPTION B 
-                    for func in &funcs_in_table {
-                        graph.insert((fun.name.clone(), func.name.clone())); 
-                    }
+                    // OPTION B 
+                    // for func in &funcs_in_table {
+                    //     graph.insert((fun.name(), func.name())); 
+                    // }
 
-                    //OPTION C
-                    for func in &funcs_in_table {
-                        if &func.type_ == type_ {
-                            graph.insert((fun.name.clone(), func.name.clone())); 
-                        }
-                    }
+                    // //OPTION C
+                    // for func in &funcs_in_table {
+                    //     if &func.type_ == type_ {
+                    //         graph.insert((fun.name(), func.name())); 
+                    //     }
+                    // }
+
+                    // TODO Daniel make constraints B & C orthogonal
                 }
                 _ => (), 
                 
             }
         }
     }
-        // Option B): add all functions in the table
-        // collect all function idx. in the elements
-        // let mut funcs_in_table = Set()
-        // for elem in table.elements
-            // for func in elem.funcs
-                // funcs_in_table.add(func)
-        // for func2 in funcs_in_table
-            // graph.add((func, func2))
 
-        // Option C): Type-drive analysis
-        // repeat stuff from B), except last step
-        // for func2 in funcs_in_table
-            // if func2.type == call_indirect.type
-                // graph.add((func, func2))
-
-        // Option D): index based analysis???
+    // Option D): index based analysis???
     CallGraph(graph) 
     //graph
 }
@@ -107,6 +95,7 @@ mod tests {
 
     #[test]
     fn create_graph() {
+        // TODO 2-3 function wasm file, 1 direct call, 2 call_indirect, 5 functions in total
         // parse wasm to hl module
         // convert hl to wimpl
         // run callgraph

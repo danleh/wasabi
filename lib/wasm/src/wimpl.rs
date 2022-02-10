@@ -51,8 +51,8 @@ pub struct Function {
 }
 
 impl Function {
-    pub fn get_name (self) -> Func {
-        self.name
+    pub fn name(&self) -> Func {
+        self.name.clone()
     }
 }
 
