@@ -102,6 +102,10 @@ pub struct Label(usize);
 // between stack variables and locals/globals.
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Stmt {
+    
+    // Simplify nop: Not necessary for analysis.
+
+    Unreachable,
 
     /// Expression statement, expression is executed for side-effects only.
     Expr(Expr),
@@ -120,10 +124,6 @@ pub enum Stmt {
         addr: Var,
         value: Var,
     },
-    
-    // Simplify nop: Not necessary for analysis.
-
-    Unreachable,
 
     // Simplify drop: This is just a dead variable, no instruction needed.
     // Simplify select: Encode as `if (arg0) { s0 = arg1 } else { s0 = arg2 }`.
@@ -351,6 +351,8 @@ impl fmt::Display for Stmt {
         use Stmt::*;
         match self {
 
+            Unreachable => f.write_str("unreachable")?,
+            
             Expr(expr) => write!(f, "{}", expr)?,
 
             Assign { lhs, rhs , type_} => {
@@ -373,8 +375,6 @@ impl fmt::Display for Stmt {
                 }
                 write!(f, "({}) ({})", addr, value)?;                
             },
-            
-            Unreachable => f.write_str("unreachable")?,
             
             Br { target } => write!(f, "br {}", target)?,
 
@@ -500,8 +500,10 @@ impl FromStr for Var {
         if s.is_empty() {
             return Err(());
         }
+        
         let (letter, i) = s.split_at(1);
         let i = i.parse().map_err(|_| ())?;
+
         use Var::*;
         Ok(match letter {
             "l" => Local(i),
@@ -600,18 +602,20 @@ mod parser {
     use nom::{
         branch::alt,
         bytes::complete::{tag, take_until, take_while, take_while1},
-        character::complete::{alphanumeric1, multispace1, not_line_ending},
+        character::complete::{alphanumeric1, multispace1, not_line_ending, u32},
         combinator::{all_consuming, map, map_res, opt, value},
         multi::{many0, separated_list0},
         sequence::{delimited, pair, preceded, terminated, tuple},
         AsChar, Finish, IResult,
     };
 
+    use super::*;
+
     /// Type abbreviation for nom's own parser result type.
-    type NomResult<'input, O> = IResult<&'input str, O>;
+    pub type NomResult<'input, O> = IResult<&'input str, O>;
 
     /// Adapt a nom parser such that it returns a standard Rust `Result`.
-    fn adapt_nom_parser<'input, O>(
+    pub fn adapt_nom_parser<'input, O>(
         parser: impl Fn(&'input str) -> NomResult<'input, O>,
         input: &'input str,
     ) -> Result<O, ParseError> {
@@ -622,7 +626,7 @@ mod parser {
         }
     }
 
-    // Utility parsers, used to build more complex ones below.
+    // Utility parsers, used to build more complex parsers below.
 
     /// Whitespace and comment parser, both of which are removed (which is why it returns unit).
     fn ws(input: &str) -> NomResult<()> {
@@ -644,12 +648,29 @@ mod parser {
     fn var(input: &str) -> NomResult<Var> {
         map_res(alphanumeric1, Var::from_str)(input)
     }
-    fn func(input: &str) -> NomResult<Var> {
+    fn func(input: &str) -> NomResult<Func> {
         map_res(alphanumeric1, Func::from_str)(input)
+    }
+    fn label(input: &str) -> NomResult<Label> {
+        map_res(
+            take_while(|c: char| c == '@' || c.is_alphanum()),
+            Label::from_str,
+        )(input)
+    }
+    fn val_type(input: &str) -> NomResult<ValType> {
+        map_res(alphanumeric1, ValType::from_str)(input)
+    }
+    fn op<T: FromStr>(input: &str) -> NomResult<T> {
+        map_res(
+            take_while(|c: char| c.is_alphanum() || c == '.' || c == '_'),
+            T::from_str
+        )(input)
     }
     
     fn arg_single(input: &str) -> NomResult<Var> {
-        delimited(pair(tag("("), ws), var, pair(ws, tag(")")))(input)
+        delimited(
+            pair(tag("("), ws), var, pair(ws, tag(")"))
+        )(input)
     }
     fn arg_list(input: &str) -> NomResult<Vec<Var>> {
         delimited(
@@ -658,34 +679,6 @@ mod parser {
             pair(ws, tag(")")),
         )(input)
     }
-    fn lhs(input: &str) -> NomResult<Var> {
-        // Include trailing whitespace in this parser, since LHS is always
-        // followed by something else, so we don't need to put ws there.
-        terminated(var, tuple((ws, tag("="), ws)))(input)
-        //terminated(var, tuple((ws, tag("="), ws)))(input)
-    }
-    fn label(input: &str) -> NomResult<Label> {
-        map_res(
-            take_while(|c: char| c == '@' || c.is_alphanum()),
-            Label::from_str,
-        )(input)
-    }
-    fn label_colon(input: &str) -> NomResult<Label> {
-        // Same as with lhs: include trailing whitespace here.
-        terminated(label, tuple((ws, tag(":"), ws)))(input)
-    }
-    fn op(input: &str) -> NomResult<&str> {
-        take_while(|c: char| c.is_alphanum() || c == '.' || c == '_')(input)
-    }
-
-
-    // HACK For call_indirect, we know nothing besides the argument list is following
-    // the function type, so consume up to the opening parenthesis.
-    // However, this will fail to recognize comments after the function type!
-    let func_ty = map_res(take_until("("), FunctionType::from_str);
-    // HACK Accept any non-whitespace character for the integer/float
-    // immediate, the rest of the parsing is done by Val::from_str.
-    let number = take_while1(|c: char| !c.is_ascii_whitespace());
 
     // The defaults of a memarg (if not given) depend on the natural alignment
     // of the memory instruction, hence this higher-order combinator.
@@ -693,115 +686,81 @@ mod parser {
         // Same trick as for function types in call_indirect: Consume until beginning of argument list.
         map_res(take_until("("), move |s| Memarg::from_str(s, op))
     }
-    fn body(input: &str) -> NomResult<Body> {
-        map(
-            delimited(
-                tag("{"),
-                pair(Stmt::stmts_ws, opt(terminated(var, ws))),
-                tag("}"),
-            ),
-            |(instrs, result)| Body {
-                instrs,
-                result,
+
+    // Memarg parsing depends on result of previous LoadOp/StoreOp parsing.
+    // This is easier to write in direct than in point-free style, so we do.
+    fn load(input: &str) -> NomResult<Expr> {
+        let (input, op) = op::<LoadOp>(input)?;
+        let (input, memarg) = memarg(op)(input)?;
+        let (input, addr) = arg_single(input)?;
+        Ok((
+            input,
+            Expr::Load {
+                op,
+                memarg,
+                addr,
             },
-        )(input)
+        ))
     }
-
     
-    /// Parse multiple statements, with possibly preceding and trailing whitespace.
-    fn stmts_ws(input: &str) -> NomResult<Vec<Stmt>> {
-        preceded(ws, many0(terminated(Stmt::stmt, ws)))(input)
-    }
-
-    /// Parse a single statement, without surrounding whitespace.
-    fn stmt(input: &str) -> NomResult<Stmt> {
-        // use Stmt::*;
-
-        // One parser for each instruction, using the utility parsers from above.
-
-        let unreachable = map(tag("unreachable"), |_| Unreachable);
-
-        let block = map(
-            tuple((opt(lhs), label_colon, tag("block"), ws, body)),
-            |(lhs, label, _, (), body)| 
-            if let Some(lhs) = lhs {
-                Assign{ lhs, expr: Block { label, body } }
-            } else {
-                Stmt::Expr{ expr: Block { label, body } }
-            }
-        );
-        let loop_ = map(
-            tuple((opt(lhs), label_colon, tag("loop"), ws, body)),
-            |(lhs, label, _, (), body)| 
-            if let Some(lhs) = lhs {
-                Assign{ lhs, expr: Loop { label, body } }
-            } else {
-                Stmt::Expr{ expr: Loop { label, body } }
-            }
-        );
-        let if_ = map(
-            tuple((
-                opt(lhs),
-                opt(label_colon),
-                tag("if"),
-                ws,
-                arg_single,
-                ws,
-                body,
-                opt(preceded(tuple((ws, tag("else"), ws)), body)),
-            )),
-            |(lhs, label, _, (), condition, (), if_body, else_body)| 
-            if let Some(lhs) = lhs {
-                Assign{ lhs, expr: If { label, condition, if_body, else_body, } }
-            } else {
-                Stmt::Expr{ expr: If { label, condition, if_body, else_body, } }
-            }            
-        );
-
-        let br = map(
-            tuple((tag("br"), ws, label, opt(preceded(ws, arg_single)))),
-            |(_, (), target, value)| Br { target, value },
-        );
-        let br_table = map(
-            tuple((
-                tag("br_table"),
-                ws,
-                separated_list0(ws, label),
-                ws,
-                tag("default"),
-                ws,
-                tag("="),
-                ws,
-                label,
-                ws,
-                arg_single,
-                opt(preceded(ws, arg_single)),
-            )),
-            |(_, (), table, (), _, (), _, (), default, (), idx, value)| BrTable {
-                table,
-                default,
-                idx,
+    fn store(input: &str) -> NomResult<Stmt> {
+        let (input, op) = op::<StoreOp>(input)?;
+        let (input, memarg) = memarg(op)(input)?;
+        let (input, addr) = arg_single(input)?;
+        let (input, ()) = ws(input)?;
+        let (input, value) = arg_single(input)?;
+        Ok((
+            input,
+            Stmt::Store {
+                op,
+                memarg,
+                addr,
                 value,
             },
+        ))
+    }
+
+    pub fn expr(input: &str) -> NomResult<Expr> {
+        use Expr::*;
+
+        let var_ref = map(var, VarRef);
+
+        // This is a bit tricky to parse, because `Val::from_str` requires a tyle as input,
+        // so parse the type first, the number only approximately, and then pass both later.
+        let const_ = map_res(
+            tuple((
+                val_type,
+                tag(".const"),
+                ws,
+                // HACK Accept any non-whitespace character for the integer/float
+                // immediate, the rest of the parsing is done by Val::from_str.
+                take_while1(|c: char| !c.is_ascii_whitespace()),
+            )),
+            |(ty, _, (), number)| Val::from_str(number, ty).map(Const),
         );
 
-        let return_ = map(
-            preceded(tag("return"), opt(preceded(ws, arg_single))),
-            |value| Return { value },
+        let memory_size = map(tag("memory.size"), |_| MemorySize); 
+        let memory_grow = map(
+            tuple((tag("memory.grow"), ws, arg_single)),
+            |(_, (), pages)| MemoryGrow { pages },
+        );
+
+        let numeric = map(
+            tuple((op::<NumericOp>, ws, arg_list)),
+            |(op, (), args)| Numeric { op, args },
         );
 
         let call = map(
-            tuple((opt(lhs), tag("call"), ws, func, ws, arg_list)),
-            |(lhs, _, (), func, (), args)| 
-            if let Some(lhs) = lhs {
-                Assign{ lhs, expr: Call { func, args } }
-            } else {
-                Stmt::Expr{ expr: Call { func, args } }
-            }
+            tuple((tag("call"), ws, func, ws, arg_list)),
+            |(_, (), func, (), args)| Call { func, args }
         );
+
+        // HACK For call_indirect, we know nothing besides the argument list is following
+        // the function type, so consume up to the opening parenthesis.
+        // However, this will fail to recognize comments after the function type!
+        let func_ty = map_res(take_until("("), FunctionType::from_str);
         let call_indirect = map(
             tuple((
-                opt(lhs),
                 tag("call_indirect"),
                 ws,
                 func_ty,
@@ -810,123 +769,141 @@ mod parser {
                 ws,
                 arg_list,
             )),
-            |(lhs, _, (), type_, (), table_idx, (), args)| 
-            if let Some(lhs) = lhs {
-                Assign{ lhs, expr: CallIndirect{ type_, table_idx, args } }
-            } else {
-                Stmt::Expr{ expr: CallIndirect{ type_, table_idx, args } }
-            }
+            |(_, (), type_, (), table_idx, (), args)| 
+                CallIndirect { type_, table_idx, args }
         );
+
+        alt((var_ref, const_, load, memory_size, memory_grow, numeric, call, call_indirect))(input)
+    }
+
+    /// Parse multiple statements, with possibly preceding and trailing whitespace.
+    fn stmts_ws(input: &str) -> NomResult<Vec<Stmt>> {
+        preceded(ws, many0(terminated(stmt, ws)))(input)
+    }
+
+    fn body(input: &str) -> NomResult<Body> {
+        map(delimited(tag("{"), stmts_ws, tag("}")), Body)(input)
+    }
+
+    /// Parse a single statement, without surrounding whitespace.
+    pub fn stmt(input: &str) -> NomResult<Stmt> {
+        use Stmt::*;
+
+        let unreachable = map(tag("unreachable"), |_| Unreachable);
+
+        let expr_stmt = map(expr, Expr);
 
         let assign = map(
-            pair(lhs, var), 
-            |(lhs, rhs)| 
-            Assign{ lhs, expr: VarRef{ rhs } }
+            tuple((var, ws, tag(":"), ws, val_type, ws, tag("="), ws, expr)),
+            |(lhs, (), _, (), type_, (), _, (), rhs)| Assign { lhs, type_, rhs }
         );
 
-        // Memarg parsing depends on result of previous LoadOp/StoreOp parsing.
-        // This is easier to write in direct than in point-free style, so we do.
-        fn load(input: &str) -> NomResult<Stmt> {
-            let (input, lhs) = lhs(input)?;
-            let (input, op) = map_res(op, LoadOp::from_str)(input)?;
-            let (input, memarg) = memarg(op)(input)?;
-            let (input, addr) = arg_single(input)?;
-            Ok((
-                input,
-                Assign{ 
-                    lhs, 
-                    expr: Load {
-                        op,
-                        memarg,
-                        addr,
-                    },
-                }
-            ))
-        }
-        
-        fn store(input: &str) -> NomResult<Stmt> {
-            let (input, op) = map_res(op, StoreOp::from_str)(input)?;
-            let (input, memarg) = memarg(op)(input)?;
-            let (input, addr) = arg_single(input)?;
-            let (input, ()) = ws(input)?;
-            let (input, value) = arg_single(input)?;
-            Ok((
-                input,
-                Store {
-                    op,
-                    memarg,
-                    addr,
-                    value,
-                },
-            ))
-        }
-        
-        let memory_size = map(terminated(lhs, tag("memory.size")), |lhs| 
-        Assign{ lhs, expr: MemorySize { } }); 
-        
-        let memory_grow = map(
-            tuple((lhs, tag("memory.grow"), ws, arg_single)),
-            |(lhs, _, (), pages)| Assign{ lhs, expr: MemoryGrow { pages }} ,
+        let br = map(
+            tuple((tag("br"), ws, label)),
+            |(_, (), target)| Br { target },
         );
 
-        let const_ = map_res(
+        let block = map(
+            tuple((label, ws, tag(":"), ws, tag("block"), ws, body)),
+            |(end_label, (), _, (), _, (), body)| Block { end_label, body }
+        );
+        let loop_ = map(
+            tuple((label, ws, tag(":"), ws, tag("loop"), ws, body)),
+            |(begin_label, (), _, (), _, (), body)| Loop { begin_label, body }
+        );
+
+        let if_ = map(
             tuple((
-                lhs,
-                map_res(take_until("."), ValType::from_str),
-                tag(".const"),
+                tag("if"),
                 ws,
-                number,
+                arg_single,
+                ws,
+                body,
+                opt(preceded(tuple((ws, tag("else"), ws)), body)),
             )),
-            |(lhs, ty, _, (), number)| Val::from_str(number, ty).map(|val| Assign{ lhs, expr: Const { val }} ),
+            |(_, (), condition, (), if_body, else_body)| If { condition, if_body, else_body }
         );
 
-        let numeric = map(
-            tuple((lhs, map_res(op, NumericOp::from_str), ws, arg_list)),
-            |(lhs, op, (), rhs)| Assign{ lhs, expr: Numeric { op, rhs } },
+        // Also parse the case number, but only for validation, then thrown away.
+        let case = map(
+            tuple((tag("case"), ws, u32, ws, tag(":"), ws, body)),
+            |(_, (), i, (), _, (), body)| (i, body)
+        );
+        let default = map(
+            tuple((tag("default"), ws, tag(":"), ws, body)),
+            |(_, (), _, (), body)| body
+        );
+        let switch = map_res(
+            tuple((
+                tag("switch"),
+                ws,
+                arg_single,
+                ws,
+                tag("{"),
+                ws,
+                many0(terminated(case, ws)),
+                default,
+                ws,
+                tag("}"),
+            )),
+            |(_, (), index, (), _, (), cases, default, (), _)| {
+                let (case_i, cases): (Vec<_>, Vec<_>) = cases.into_iter().unzip();
+                // Ensure that the case numbers are ascending and the same length as the cases.
+                if !(0..cases.len()).eq(case_i.into_iter().map(|i| i as usize)) {
+                    return Err(())
+                }
+
+                Ok(Switch { index, cases, default })
+            }
         );
 
         alt((
             unreachable,
+            assign,
+            store,
+            br,
             block,
             loop_,
             if_,
-            br,
-            br_table,
-            return_,
-            call,
-            call_indirect,
-            assign,
-            load,
-            store,
-            memory_size,
-            memory_grow,
-            const_,
-            numeric,
+            switch,
+
+            // HACK Order this case below assign, because otherwise the parser parses a LHS 
+            // variable as an `Stmt::Expr(Expr::VarRef(...))`, continues, and fails with the rest.
+            // Otherwise
+            expr_stmt,
         ))(input)
     }
 
 }
 
-impl Stmt {
-    // TODO move to impl Body FromStr
-    pub fn from_str_multiple(input: &str) -> Result<Vec<Self>, ParseError> {
-        adapt_nom_parser(Self::stmts_ws, input)
-    }
+// impl Stmt {
+//     // TODO move to impl Body FromStr
+//     pub fn from_str_multiple(input: &str) -> Result<Vec<Self>, ParseError> {
+//         adapt_nom_parser(Self::stmts_ws, input)
+//     }
 
-    /// Convenience function to parse Wimpl from a filename.
-    pub fn from_text_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
-        let str = std::fs::read_to_string(filename)?;
-        Self::from_str_multiple(&str).map_err(|e| io::Error::new(ErrorKind::Other, e))
+//     /// Convenience function to parse Wimpl from a filename.
+//     pub fn from_text_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
+//         let str = std::fs::read_to_string(filename)?;
+//         Self::from_str_multiple(&str).map_err(|e| io::Error::new(ErrorKind::Other, e))
+//     }
+// }
+
+// Adapt nom parser for use with Rust `parse()` / `from_str`.
+
+impl FromStr for Expr {
+    type Err = ParseError;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        parser::adapt_nom_parser(parser::expr, input)
     }
 }
 
-
-/// Adapt nom parser for use with Rust `parse()` / `from_str`.
 impl FromStr for Stmt {
     type Err = ParseError;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        adapt_nom_parser(Self::stmt, input)
+        parser::adapt_nom_parser(parser::stmt, input)
     }
 }
 
@@ -1021,7 +998,7 @@ fn wimplify_instrs(
         InferredInstructionType::Reachable(ty) => ty,
     };
 
-    println!("{}, {}, {:?}", instr, ty, state.var_stack);
+    // println!("{}, {}, {:?}", instr, ty, state.var_stack);
 
     let n_inputs = ty.params.len();
     let n_results = ty.results.len();
@@ -1710,8 +1687,24 @@ mod tests {
         /// format, i.e., with "standard" whitespace.
         static ref WIMPL_CANONICAL_SYNTAX_TESTCASES: Vec<(Stmt, &'static str, &'static str)> = vec![
             (Unreachable, "unreachable", ""),
-            (Assign{ lhs: Stack(0), type_: ValType::I32, rhs: MemorySize}, "s0: i32 = memory.size", "with lhs"),
-            (Assign{ lhs: Global(0), type_: ValType::I32, rhs: VarRef(Local(0)) }, "g0: i32 = l0", ""),
+            (
+                Assign { 
+                    lhs: Stack(0), 
+                    type_: ValType::I32, 
+                    rhs: MemorySize
+                }, 
+                "s0: i32 = memory.size", 
+                ""
+            ),
+            (   
+                Assign { 
+                    lhs: Global(0), 
+                    type_: ValType::I32, 
+                    rhs: VarRef(Local(0)) 
+                }, 
+                "g0: i32 = l0", 
+                "var ref on rhs"
+            ),
             (
                 Assign {
                     lhs: Stack(0),
@@ -1950,21 +1943,23 @@ mod tests {
             (
                 Block {
                         end_label: Label(2),
-                        body: Body (vec![
-                                Assign{
-                                    lhs: Stack(1), 
-                                    rhs: VarRef(Stack(0)),
-                                    type_: ValType::I32,
-                                }]),
+                        body: Body(vec![
+                            Assign {
+                                lhs: Stack(1), 
+                                rhs: VarRef(Stack(0)),
+                                type_: ValType::I32,
+                            },
+                            Expr(VarRef(Stack(1)))
+                        ]),
                 },
                 "@label2: block { s1: i32 = s0 s1 }",
-                "no linebreak between block instructions and result"
+                "weird but valid parse: expression statement with only a variable reference"
             )
         ];
     }
 
     #[test]
-    fn pretty_print_statement() {
+    fn pretty_print_stmt() {
         for (i, (wimpl, text, msg)) in WIMPL_CANONICAL_SYNTAX_TESTCASES.iter().enumerate() {
             assert_eq!(&wimpl.to_string(), text, "\ntest #{}\n{}", i, msg);
         }
@@ -2022,10 +2017,21 @@ mod tests {
             "only number for function name is not allowed"
         );
     }
-    
-    /* 
+
     #[test]
-    fn parse_instr() {
+    fn parse_expr() {
+        assert_eq!(Ok(MemorySize), "memory.size".parse());
+        assert_eq!(Ok(MemoryGrow { pages: Local(0) }), "memory.grow (l0)".parse());
+        assert_eq!(Ok(VarRef(Global(1))), "g1".parse());
+        assert_eq!(Ok(Numeric { 
+            op: I32Add, 
+            args: vec![Stack(0), Local(1)]
+        }), "i32.add(s0, l1)".parse());
+        // More complex expressions are tested in the statements.
+    }
+    
+    #[test]
+    fn parse_stmt() {
         let parse_testcases = WIMPL_CANONICAL_SYNTAX_TESTCASES
             .iter()
             .chain(WIMPL_ALTERNATIVE_SYNTAX_TESTCASES.iter());
@@ -2042,7 +2048,7 @@ mod tests {
             };
         }
     }
-
+    /* 
     #[test]
     fn parse_pretty_print_roundtrips() {
         // For the text inputs in the canonical format, parsing then pretty-printing
