@@ -23,13 +23,15 @@ use crate::{
     FunctionType, Memarg,
 };
 
+
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Module {
     pub functions: Vec<Function>,
-    // From the name section, if present, e.g., compiler-generated debug info.
-    // pub name: Option<String>,
     pub globals: Vec<Global>,
     pub tables: Vec<Table>,
+
+    // From the name section, if present, e.g., compiler-generated debug info.
+    // pub name: Option<String>,
     // pub memories: Vec<Memory>,
     // pub start: Option<Idx<Function>>,
     // pub custom_sections: Vec<RawCustomSection>,
@@ -43,10 +45,13 @@ impl Module {
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub struct Function {
-    pub type_: FunctionType,
-    pub instrs: Body, //want to reuse 
-    //pub export: Vec<String>,
+    /// Either the name of a function (from debug info originally), or a 
+    /// numerical index.
     pub name: Func,
+    pub type_: FunctionType,
+    pub body: Body,
+
+    //pub export: Vec<String>,
     //pub param_names: Vec<Option<String>>,
 }
 
@@ -56,36 +61,63 @@ impl Function {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
-pub enum Var {
-    Stack(usize),
-    Local(usize),
-    Global(usize),
-    Param(usize),
-    Return,        
-    Block(usize), 
-}
-
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Func {
-    Named(String), 
+    /// If the function had a debug name attached to it (from the `name` custom
+    /// section).
+    Named(String),
+    /// Otherwise, just refer to the function via its index, which is the same
+    /// as in the original WebAssembly module.
     Idx(usize),
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
-pub struct Label(usize);
-
+/// A sequence of instructions, typically as the body of a function or block.
 #[derive(Debug, Eq, PartialEq, Clone, Default, Hash)]
 pub struct Body(pub Vec<Stmt>); 
 
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
+pub enum Var {
+    // These two correspond to the WebAssembly constructs of the same name.
+    // Note that the index of locals in WebAssembly does not have to match
+    // the local numbering here, because the "index space" of locals contains
+    // also the function parameters.
+    Local(usize),
+    Global(usize),
+
+    /// Originally an (implicit) stack slot in the WebAssembly operand stack.
+    Stack(usize),
+    /// Originally a parameter to the current function (which would have been
+    /// accessed via `local.get` and was in the same index space as locals).
+    Param(usize),
+    /// Originally the result value of a block with non-empty block type.
+    BlockResult(usize),
+
+    // TODO why do we need this again? Can't the return statement just contain
+    // an expression?
+    Return,
+}
+
+/// An absolute block label, NOT to be confused with the relative branch labels
+/// of WebAssembly!
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
+pub struct Label(usize);
+
+
+// Pretty-printing of Wimpl:
+
+const PRETTY_PRINT_INDENT: &str = "  ";
+
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "module {{").expect("");         
-        self.functions.iter().for_each(|fun| {
-            writeln!(f, "  {}", format!("{}", fun).replace("\n", "\n  ")).expect("");  // reindents everything
-        }); 
-        writeln!(f, "}}").expect("");         
-        Ok(())
+        writeln!(f, "module {{").expect("");
+        for func in &self.functions {
+            // Indent each function.
+            writeln!(f, "{}{}",
+                PRETTY_PRINT_INDENT, 
+                func.to_string().replace("\n", &format!("\n{}", PRETTY_PRINT_INDENT))
+            )?;
+        }
+        writeln!(f, "}}")
     }
 }
 
@@ -93,37 +125,46 @@ impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "func {}", self.name)?;
         write!(f, " [")?; 
-        self.type_.params.iter().enumerate().for_each(|(ind,p)| {
-            if ind == self.type_.params.len() -1 {
-                write!(f, "p{}: {}", ind, p).expect("");  
-            } else {
-                write!(f, "p{}: {}, ", ind, p).expect(""); 
+        for (i, ty) in self.type_.params.iter().enumerate() {
+            write!(f, "{}: {}", Var::Param(i), ty)?;
+            if i < self.type_.params.len() {
+                write!(f, ", ")?;
             }
-        });
+        }
         write!(f, "] -> [")?;
-        self.type_.results.iter().enumerate().for_each(|(ind,r)| {
-            if ind == (self.type_.results.len() - 1) {
-                write!(f, "r{}: {}", ind, r).expect(""); 
-            } else {
-                write!(f, "r{}: {}, ", ind, r).expect(""); 
+        for (i, ty) in self.type_.results.iter().enumerate() {
+            write!(f, "{}", ty)?;
+            if i < self.type_.results.len() {
+                write!(f, ", ")?;
             }
-        }); 
-        write!(f, "] @label0: ")?; 
-        write!(f, "{}", self.instrs)?; 
-        Ok(())
+        }
+        write!(f, "] {}: ", Label(0))?;
+        write!(f, "{}", self.body)
     }
 }
 
-impl fmt::Display for Var {
+impl fmt::Display for Body {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Var::*;
-        match self {
-            Stack(i) => write!(f, "s{}", i),
-            Local(i) => write!(f, "l{}", i),
-            Global(i) => write!(f, "g{}", i),
-            Param(i) => write!(f, "p{}", i),
-            Return => write!(f, "r"),
-            Block(i) => write!(f, "b{}", i),
+        if self.0.is_empty() {
+            return f.write_str("{}");
+        }
+
+        // Put each instruction on a separate line.
+        let mut inner = String::new();
+        for instr in &self.0 {
+            writeln!(inner, "{}", instr)?;
+        }
+        // Pop-off the last superfluous newline.
+        inner.pop();
+
+        // If the inner part (inside the curly braces) is only a single line,
+        // e.g., a br instruction, the print as a single line as well.
+        if inner.lines().count() == 1 {
+            write!(f, "{{ {} }}", inner)
+        } else {
+            // Otherwise, recursively indent the inner blocks.
+            let inner = inner.replace("\n", &format!("\n{}", PRETTY_PRINT_INDENT));
+            write!(f, "{{\n{}{}\n}}", PRETTY_PRINT_INDENT, inner)
         }
     }
 }
@@ -137,11 +178,28 @@ impl fmt::Display for Func {
     }
 }
 
+impl fmt::Display for Var {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Var::*;
+        match self {
+            Local(i) => write!(f, "l{}", i),
+            Global(i) => write!(f, "g{}", i),
+            Stack(i) => write!(f, "s{}", i),
+            Param(i) => write!(f, "p{}", i),
+            BlockResult(i) => write!(f, "b{}", i),
+            Return => write!(f, "r"),
+        }
+    }
+}
+
 impl fmt::Display for Label {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "@label{}", self.0)
     }
 }
+
+
+// Parsing of the Wimpl text format:
 
 impl FromStr for Var {
     type Err = ();
@@ -181,32 +239,6 @@ impl FromStr for Label {
         let i = s.strip_prefix("@label").ok_or(())?;
         let i = i.parse().map_err(|_| ())?;
         Ok(Label(i))
-    }
-}
-
-const BLOCK_INDENT: &str = "  ";
-
-impl fmt::Display for Body {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Put each inner instruction and the result on a separate line.
-        let mut inner = String::new();
-        for instr in &self.0 {
-                writeln!(inner, "{}", instr)?;
-        }
-        // Pop-off the last superfluous newline (or do nothing if empty).
-        inner.pop();
-
-        // If there is only a single result without instructions, or only a
-        // single-line instructions (such as br @label), format on one line.
-        match inner.as_ref() {
-            "" => f.write_str("{}"),
-            single_line if single_line.lines().count() == 1 => write!(f, "{{ {} }}", single_line),
-            multi_line => {
-                // Recursively indent the inner blocks.
-                let multi_line = multi_line.replace("\n", &format!("\n{}", BLOCK_INDENT));
-                write!(f, "{{\n{}{}\n}}", BLOCK_INDENT, multi_line)
-            }
-        }
     }
 }
 
@@ -1046,7 +1078,7 @@ fn wimplify_instrs(
             //block variable has same usize as the labelnumber!
             let mut result_var = None; 
             let mut res_instr_vec = if let Some(btype) = btype {
-                result_var = Some(Block(state.label_count)); 
+                result_var = Some(BlockResult(state.label_count)); 
                 state.stack_var_count += 1; 
                 vec![Stmt::Assign { 
                     lhs: result_var.unwrap(), 
@@ -1102,7 +1134,7 @@ fn wimplify_instrs(
 
             let mut result_var = None; 
             let mut res_vec = if let Some(btype) = btype {
-                result_var = Some(Block(state.label_count)); 
+                result_var = Some(BlockResult(state.label_count)); 
                 state.stack_var_count += 1;
                 vec![Stmt::Assign { 
                     lhs: result_var.unwrap(), 
@@ -1639,7 +1671,7 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
 
         wimpl_funcs.push(Function{
             type_: func.type_.clone(),
-            instrs: Body(result_instrs), 
+            body: Body(result_instrs), 
             name,
         }); 
     }

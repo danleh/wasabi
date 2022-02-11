@@ -52,7 +52,7 @@ pub fn callgraph(module: &wimpl::Module) -> CallGraph {
     let mut graph: HashSet<(Func, Func)> = HashSet::new();
     
     for fun in &module.functions {
-        for instr in &fun.instrs.0 {
+        for instr in &fun.body.0 {
             match instr {
                 
                 wimpl::Stmt::Assign { lhs: _, expr: wimpl::Expr::Call{ func, args: _}, type_: _ } |
