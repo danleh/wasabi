@@ -7,16 +7,6 @@ use std::{
     str::FromStr, slice::Iter,
 };
 
-use nom::{
-    branch::alt,
-    bytes::complete::{tag, take_until, take_while, take_while1},
-    character::complete::{alphanumeric1, multispace1, not_line_ending},
-    combinator::{all_consuming, map, map_res, opt, value},
-    multi::{many0, separated_list0},
-    sequence::{delimited, pair, preceded, terminated, tuple},
-    AsChar, Finish, IResult,
-};
-
 use crate::{highlevel::{MemoryOp, Global, Table}, types::{InferredInstructionType, TypeChecker}, Val, ValType, Idx};
 use crate::{
     highlevel::{self, LoadOp, NumericOp, StoreOp},
@@ -63,11 +53,10 @@ impl Function {
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Func {
-    /// If the function had a debug name attached to it (from the `name` custom
-    /// section).
+    /// If the function had a debug name attached to it (from the `name` custom section).
     Named(String),
-    /// Otherwise, just refer to the function via its index, which is the same
-    /// as in the original WebAssembly module.
+    /// Otherwise, just refer to the function via its index, which is the same as in the original 
+    /// WebAssembly module.
     Idx(usize),
 }
 
@@ -78,16 +67,15 @@ pub struct Body(pub Vec<Stmt>);
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 pub enum Var {
     // These two correspond to the WebAssembly constructs of the same name.
-    // Note that the index of locals in WebAssembly does not have to match
-    // the local numbering here, because the "index space" of locals contains
-    // also the function parameters.
+    // Note that the index of locals in WebAssembly does not have to match the local numbering here,
+    // because the "index space" of locals contains also the function parameters.
     Local(usize),
     Global(usize),
 
     /// Originally an (implicit) stack slot in the WebAssembly operand stack.
     Stack(usize),
-    /// Originally a parameter to the current function (which would have been
-    /// accessed via `local.get` and was in the same index space as locals).
+    /// Originally a parameter to the current function (which would have been accessed via 
+    /// `local.get` and was in the same index space as locals).
     Param(usize),
     /// Originally the result value of a block with non-empty block type.
     BlockResult(usize),
@@ -96,8 +84,7 @@ pub enum Var {
     Return(usize),
 }
 
-/// An absolute block label, NOT to be confused with the relative branch labels
-/// of WebAssembly!
+/// An absolute block label, NOT to be confused with the relative branch labels of WebAssembly!
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 pub struct Label(usize);
 
@@ -119,8 +106,8 @@ pub enum Stmt {
     /// Expression statement, expression is executed for side-effects only.
     Expr(Expr),
 
-    /// This unifies all local.set, global.set, local.tee, local.get, and
-    /// global.get, and data-flow before branches ("br with value" in Wasm).
+    /// This unifies all local.set, global.set, local.tee, local.get, and global.get,
+    /// and data-flow before branches ("br with value" in Wasm).
     Assign {
         lhs: Var, 
         type_ : ValType, 
@@ -184,8 +171,8 @@ pub enum Expr {
 
     Const(Val),
 
-    // TODO Make Expr recursive (i.e., allow for folded expressions) by 
-    // replacing all occurrences of `Var` below with `Box<Expr>`.
+    // TODO Make Expr recursive (i.e., allow for folded expressions) by replacing all occurrences of
+    // `Var` below with `Box<Expr>`.
 
     Load {
         op: LoadOp,
@@ -225,9 +212,8 @@ fn indent_once(x: &dyn fmt::Display) -> String {
     format!("{}{}", PRETTY_PRINT_INDENT, x).replace("\n", PRETTY_PRINT_NEWLINE_INDENT)
 }
 
-/// Helper function for `fmt::Display`-ing an arbitrary iterator of `values`,
-/// where each element is separated by `delim` and if the iterator is non-empty
-/// surrounded by `begin` and `end`.
+/// Helper function for `fmt::Display`-ing an arbitrary iterator of `values`, where each element is
+/// separated by `delim` and if the iterator is non-empty surrounded by `begin` and `end`.
 fn display_delim<T>(
     f: &mut fmt::Formatter<'_>,
     values: T,
@@ -302,8 +288,8 @@ impl fmt::Display for Body {
         // Pop-off the last superfluous newline.
         inner.pop();
 
-        // If the inner part (inside the curly braces) is only a single line,
-        // e.g., a br instruction, the print as a single line as well.
+        // If the inner part (inside the curly braces) is only a single line, e.g., a single br
+        // instruction, then print the whole body as a single line as well.
         if inner.lines().count() == 1 {
             write!(f, "{{ {} }}", inner)
         } else {
@@ -525,8 +511,7 @@ impl FromStr for Func {
             let idx = idx.parse().map_err(|_| ())?;
             Func::Idx(idx)
         } else {
-            // Force functions to start with an alphabetic character, to avoid
-            // confusion with constants. 
+            // Functions must start with an alphabetic character, to avoid confusion with constants. 
             match s.chars().next() {
                 Some(c) if c.is_alpha() => Func::Named(s.to_string()),
                 _ => return Err(()),
@@ -598,125 +583,129 @@ impl fmt::Display for ParseError {
         write!(f, "{}^ error starts around here or later", indent)
     }
 }
+/*
+mod parser {
+    use nom::{
+        branch::alt,
+        bytes::complete::{tag, take_until, take_while, take_while1},
+        character::complete::{alphanumeric1, multispace1, not_line_ending},
+        combinator::{all_consuming, map, map_res, opt, value},
+        multi::{many0, separated_list0},
+        sequence::{delimited, pair, preceded, terminated, tuple},
+        AsChar, Finish, IResult,
+    };
 
-/// Type abbreviation for internal nom parser result.
-type NomResult<'input, O> = IResult<&'input str, O>;
+    /// Type abbreviation for internal nom parser result.
+    type NomResult<'input, O> = IResult<&'input str, O>;
 
-/// Whitespace and comment parser, both of which are removed (which is why it returns unit).
-fn ws(input: &str) -> NomResult<()> {
-    value(
-        (),
-        // NOTE `many0` may never wrap an inner parser that potentially matches
-        // the empty word. Because of this, use `multispace1`.
-        many0(alt((
-            multispace1,
-            // Line comment, i.e., from // until newline.
-            preceded(tag("//"), not_line_ending),
-        ))),
-    )(input)
-}
-
-/// Adapt nom parser such that it returns a standard Rust `Result`.
-fn adapt_nom_parser<'input, O>(
-    parser: impl Fn(&'input str) -> NomResult<'input, O>,
-    input: &'input str,
-) -> Result<O, ParseError> {
-    match all_consuming(parser)(input).finish() {
-        Ok(("", instr)) => Ok(instr),
-        Ok(_) => unreachable!(
-            "successful parse should hould have consumed full input because of all_consuming()"
-        ),
-        Err(err) => Err(ParseError::from(err, input)),
+    /// Adapt nom parser such that it returns a standard Rust `Result`.
+    fn adapt_nom_parser<'input, O>(
+        parser: impl Fn(&'input str) -> NomResult<'input, O>,
+        input: &'input str,
+    ) -> Result<O, ParseError> {
+        match all_consuming(parser)(input).finish() {
+            Ok(("", instr)) => Ok(instr),
+            Ok(_) => unreachable!(
+                "successful parse should hould have consumed full input because of all_consuming()"
+            ),
+            Err(err) => Err(ParseError::from(err, input)),
+        }
     }
-}
-/* 
-impl Stmt {
+
+    /// Whitespace and comment parser, both of which are removed (which is why it returns unit).
+    fn ws(input: &str) -> NomResult<()> {
+        value(
+            (),
+            // NOTE `many0` may never wrap an inner parser that potentially matches
+            // the empty word. Because of this, use `multispace1`.
+            many0(alt((
+                multispace1,
+                // Line comment, i.e., from // until newline.
+                preceded(tag("//"), not_line_ending),
+            ))),
+        )(input)
+    }
+
+    // Utility parsers, reused in the combined parsers below.
+    //
+    // They all assume only "internal" whitespace, i.e., they assume initial
+    // whitespace is already consumed by the outer parser and the input
+    // directly starts with the first non-whitespace token.
+    fn var(input: &str) -> NomResult<Var> {
+        map_res(alphanumeric1, Var::from_str)(input)
+    }
+    fn func(input: &str) -> NomResult<Var> {
+        map_res(alphanumeric1, Func::from_str)(input)
+    }
     
-    /// Parse multiple instructions, with possibly preceding and trailing whitespace.
-    fn parse_nom_multiple_ws(input: &str) -> NomResult<Vec<Stmt>> {
-        preceded(ws, many0(terminated(Stmt::parse_nom_single, ws)))(input)
+    fn arg_single(input: &str) -> NomResult<Var> {
+        delimited(pair(tag("("), ws), var, pair(ws, tag(")")))(input)
+    }
+    fn arg_list(input: &str) -> NomResult<Vec<Var>> {
+        delimited(
+            pair(tag("("), ws),
+            separated_list0(tuple((ws, tag(","), ws)), var),
+            pair(ws, tag(")")),
+        )(input)
+    }
+    fn lhs(input: &str) -> NomResult<Var> {
+        // Include trailing whitespace in this parser, since LHS is always
+        // followed by something else, so we don't need to put ws there.
+        terminated(var, tuple((ws, tag("="), ws)))(input)
+        //terminated(var, tuple((ws, tag("="), ws)))(input)
+    }
+    fn label(input: &str) -> NomResult<Label> {
+        map_res(
+            take_while(|c: char| c == '@' || c.is_alphanum()),
+            Label::from_str,
+        )(input)
+    }
+    fn label_colon(input: &str) -> NomResult<Label> {
+        // Same as with lhs: include trailing whitespace here.
+        terminated(label, tuple((ws, tag(":"), ws)))(input)
+    }
+    fn op(input: &str) -> NomResult<&str> {
+        take_while(|c: char| c.is_alphanum() || c == '.' || c == '_')(input)
     }
 
-    /// Parse a single instruction, without surrounding whitespace.
-    /// Main entry point into the nom-based parser.
-    fn parse_nom_single(input: &str) -> NomResult<Stmt> {
-        use Stmt::*;
-        use Expr::*; 
-        
-        // Utility parsers, reused in the different instruction parsers below.
-        //
-        // They all assume only "internal" whitespace, i.e., they assume initial
-        // whitespace is already consumed by the outer parser and the input
-        // directly starts with the first non-whitespace token.
-        //
-        // They can unfortunately not be written with let + point-free
-        // style, because type inference makes them FnMut, which then cannot be
-        // re-used multiple times :/. For this reason, most are written as normal
-        // functions with explicit type signatures.
 
-        
-        
-        fn var(input: &str) -> NomResult<Var> {
-            map_res(alphanumeric1, Var::from_str)(input)
-        }
-        fn arg_single(input: &str) -> NomResult<Var> {
-            delimited(pair(tag("("), ws), var, pair(ws, tag(")")))(input)
-        }
-        fn arg_list(input: &str) -> NomResult<Vec<Var>> {
+    // HACK For call_indirect, we know nothing besides the argument list is following
+    // the function type, so consume up to the opening parenthesis.
+    // However, this will fail to recognize comments after the function type!
+    let func_ty = map_res(take_until("("), FunctionType::from_str);
+    // HACK Accept any non-whitespace character for the integer/float
+    // immediate, the rest of the parsing is done by Val::from_str.
+    let number = take_while1(|c: char| !c.is_ascii_whitespace());
+
+    // The defaults of a memarg (if not given) depend on the natural alignment
+    // of the memory instruction, hence this higher-order combinator.
+    fn memarg<'a>(op: impl MemoryOp + 'a) -> impl FnMut(&'a str) -> NomResult<'a, Memarg> {
+        // Same trick as for function types in call_indirect: Consume until beginning of argument list.
+        map_res(take_until("("), move |s| Memarg::from_str(s, op))
+    }
+    fn body(input: &str) -> NomResult<Body> {
+        map(
             delimited(
-                pair(tag("("), ws),
-                separated_list0(tuple((ws, tag(","), ws)), var),
-                pair(ws, tag(")")),
-            )(input)
-        }
-        fn lhs(input: &str) -> NomResult<Var> {
-            // Include trailing whitespace in this parser, since LHS is always
-            // followed by something else, so we don't need to put ws there.
-            terminated(var, tuple((ws, tag("="), ws)))(input)
-            //terminated(var, tuple((ws, tag("="), ws)))(input)
-        }
-        fn label(input: &str) -> NomResult<Label> {
-            map_res(
-                take_while(|c: char| c == '@' || c.is_alphanum()),
-                Label::from_str,
-            )(input)
-        }
-        fn label_colon(input: &str) -> NomResult<Label> {
-            // Same as with lhs: include trailing whitespace here.
-            terminated(label, tuple((ws, tag(":"), ws)))(input)
-        }
-        fn op(input: &str) -> NomResult<&str> {
-            take_while(|c: char| c.is_alphanum() || c == '.' || c == '_')(input)
-        }
+                tag("{"),
+                pair(Stmt::stmts_ws, opt(terminated(var, ws))),
+                tag("}"),
+            ),
+            |(instrs, result)| Body {
+                instrs,
+                result,
+            },
+        )(input)
+    }
 
-        let func = map_res(alphanumeric1, Func::from_str);
-        // HACK For call_indirect, we know nothing besides the argument list is following
-        // the function type, so consume up to the opening parenthesis.
-        // However, this will fail to recognize comments after the function type!
-        let func_ty = map_res(take_until("("), FunctionType::from_str);
-        // HACK Accept any non-whitespace character for the integer/float
-        // immediate, the rest of the parsing is done by Val::from_str.
-        let number = take_while1(|c: char| !c.is_ascii_whitespace());
+    
+    /// Parse multiple statements, with possibly preceding and trailing whitespace.
+    fn stmts_ws(input: &str) -> NomResult<Vec<Stmt>> {
+        preceded(ws, many0(terminated(Stmt::stmt, ws)))(input)
+    }
 
-        // The defaults of a memarg (if not given) depend on the natural alignment
-        // of the memory instruction, hence this higher-order combinator.
-        fn memarg<'a>(op: impl MemoryOp + 'a) -> impl FnMut(&'a str) -> NomResult<'a, Memarg> {
-            // Same trick as for function types in call_indirect: Consume until beginning of argument list.
-            map_res(take_until("("), move |s| Memarg::from_str(s, op))
-        }
-        fn body(input: &str) -> NomResult<Body> {
-            map(
-                delimited(
-                    tag("{"),
-                    pair(Stmt::parse_nom_multiple_ws, opt(terminated(var, ws))),
-                    tag("}"),
-                ),
-                |(instrs, result)| Body {
-                    instrs,
-                    result,
-                },
-            )(input)
-        }
+    /// Parse a single statement, without surrounding whitespace.
+    fn stmt(input: &str) -> NomResult<Stmt> {
+        use Stmt::*;
 
         // One parser for each instruction, using the utility parsers from above.
 
@@ -906,12 +895,16 @@ impl Stmt {
         ))(input)
     }
 
+}
+
+impl Stmt {
+    // TODO move to impl Body FromStr
     pub fn from_str_multiple(input: &str) -> Result<Vec<Self>, ParseError> {
-        adapt_nom_parser(Self::parse_nom_multiple_ws, input)
+        adapt_nom_parser(Self::stmts_ws, input)
     }
 
     /// Convenience function to parse Wimpl from a filename.
-    pub fn from_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
+    pub fn from_text_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
         let str = std::fs::read_to_string(filename)?;
         Self::from_str_multiple(&str).map_err(|e| io::Error::new(ErrorKind::Other, e))
     }
@@ -923,10 +916,10 @@ impl FromStr for Stmt {
     type Err = ParseError;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        adapt_nom_parser(Self::parse_nom_single, input)
+        adapt_nom_parser(Self::stmt, input)
     }
 }
-*/
+ */
 /* 
 macro_rules! wimpl {
     ($($tokens:tt)+) => {
