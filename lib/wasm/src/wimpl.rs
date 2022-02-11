@@ -91,10 +91,9 @@ pub enum Var {
     Param(usize),
     /// Originally the result value of a block with non-empty block type.
     BlockResult(usize),
-
-    // TODO why do we need this again? Can't the return statement just contain
-    // an expression?
-    Return,
+    /// Originally the return value of the function.
+    /// In the Wasm MVP, there is always only a single one.
+    Return(usize),
 }
 
 /// An absolute block label, NOT to be confused with the relative branch labels
@@ -121,7 +120,7 @@ pub enum Stmt {
     Expr(Expr),
 
     /// This unifies all local.set, global.set, local.tee, local.get, and
-    /// global.get.
+    /// global.get, and data-flow before branches ("br with value" in Wasm).
     Assign {
         lhs: Var, 
         type_ : ValType, 
@@ -142,14 +141,11 @@ pub enum Stmt {
     // Simplify drop: This is just a dead variable, no instruction needed.
     // Simplify select: Encode as `if (arg0) { s0 = arg1 } else { s0 = arg2 }`.
 
-    // TODO could be simplified into r0 = value, br @body_end
-    Return {
-        value: Option<Var>,
-    },
-
-    /// The only branching construct in Wimpl.
-    /// `br_if` if represented as `if (cond) { .. , br @label }` and
+    /// `br` is the only branching construct in Wimpl.
+    /// `br_if` is represented as `if (cond) { .. , br @label }`.
     /// `br_table` as `switch (idx) { case 0: { br @label } ... }`.
+    /// `return` is represented as `br @label_body`.
+    /// Where for all cases the carried value is assigned explicitly beforehand.
     Br {
         target: Label,
     },
@@ -282,7 +278,7 @@ impl fmt::Display for Function {
         }
         write!(f, "] -> [")?;
         for (i, ty) in self.type_.results.iter().enumerate() {
-            write!(f, "{}", ty)?;
+            write!(f, "{}: {}", Var::Return(i), ty)?;
             if i < self.type_.results.len() {
                 write!(f, ", ")?;
             }
@@ -334,7 +330,7 @@ impl fmt::Display for Var {
             Stack(i) => write!(f, "s{}", i),
             Param(i) => write!(f, "p{}", i),
             BlockResult(i) => write!(f, "b{}", i),
-            Return => write!(f, "r"),
+            Return(i) => write!(f, "r{}", i),
         }
     }
 }
@@ -382,21 +378,19 @@ impl fmt::Display for Stmt {
             
             Unreachable => f.write_str("unreachable")?,
             
-            // return (s1)
-            Return { value } => {
-                f.write_str("return")?;
-                display_delim(f, value, " (", ")", ", ")?;                
-            },
-            
             Br { target } => write!(f, "br {}", target)?,
 
-            // @label0: block {
+            // block {
             //   s1 = i32.const 3
-            // }
+            // } @label0:
             Block { 
                 end_label: label, 
                 body 
-            } => write!(f, "{}: block {}", label, body)?,
+            } => write!(f, "block {} {}:", label, body)?,
+
+            // @label0: loop {
+            //   s1 = i32.const 3
+            // }
             Loop { 
                 begin_label: label, 
                 body 
@@ -1332,10 +1326,20 @@ fn wimplify_instrs(
 
         highlevel::Instr::Return => {
             panic_if_size_gt(&rhs, 1, "multiple returns not yet allowed");
+
+            let target = Label(0);
             if let Some(val) = rhs.pop() {
-                vec![Stmt::Return{ value: Some(val)}]
+                let return_var = state.label_stack[0].1.expect("mismatch between label stack and rhs");
+                vec![
+                    Stmt::Assign{ 
+                        lhs: return_var.0, 
+                        type_: return_var.1, 
+                        rhs: VarRef(val)
+                    }, 
+                    Stmt::Br{ target }
+                ]
             } else {
-                vec![Stmt::Return{ value: None}]
+                vec![Stmt::Br{ target }]
             }
         }
 
@@ -1628,7 +1632,7 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
         let mut state = State::new(func.type_.params.len()); 
         if func.type_.results.len() == 0 { state.label_stack.push((0, None)); } 
         else { 
-            state.label_stack.push((0, Some((Var::Return, func.type_.results[0])))); 
+            state.label_stack.push((0, Some((Var::Return(0), func.type_.results[0])))); 
         }
 
         for inst in wimplify_instrs(&mut instrs, &mut ty, &mut state).unwrap() {
@@ -1689,8 +1693,6 @@ mod test {
         /// format, i.e., with "standard" whitespace.
         static ref WIMPL_CANONICAL_SYNTAX_TESTCASES: Vec<(Stmt, &'static str, &'static str)> = vec![
             (Unreachable, "unreachable", ""),
-            (Return { value: None }, "return", "return without value"),
-            (Return { value: Some(Var::Stack(0)) }, "return (s0)", "with value, with whitespace"),
             (Assign{ lhs: Var::Stack(0), rhs: MemorySize { } , type_: ValType::I32}, "s0: i32 = memory.size", "with lhs"),
             (Assign{ lhs: Var::Global(0), rhs: VarRef(Var::Local(0)), type_: ValType::I32 }, "g0: i32 = l0", ""),
             (
@@ -1872,7 +1874,6 @@ mod test {
         /// because they contain too little or too much whitespace.
         /// They are only used for testing parsing, not pretty-printing.
         static ref WIMPL_ALTERNATIVE_SYNTAX_TESTCASES: Vec<(Stmt, &'static str, &'static str)> = vec![
-            (Return { value: Some(Var::Stack(0)) }, "return(s0)", "no space between op and arguments"),
             (Assign{ lhs: Var::Stack(1), rhs: MemoryGrow { pages: Var::Stack(0) }, type_: ValType::I32, }, "s1: i32 = memory.grow ( s0 )", "extra space around arguments"),
             (
                 Stmt::Expr(Call {
