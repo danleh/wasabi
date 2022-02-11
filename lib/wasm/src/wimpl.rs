@@ -142,6 +142,7 @@ pub enum Stmt {
     // Simplify drop: This is just a dead variable, no instruction needed.
     // Simplify select: Encode as `if (arg0) { s0 = arg1 } else { s0 = arg2 }`.
 
+    // TODO could be simplified into r0 = value, br @body_end
     Return {
         value: Option<Var>,
     },
