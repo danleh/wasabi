@@ -506,10 +506,12 @@ impl FromStr for Var {
         let i = i.parse().map_err(|_| ())?;
         use Var::*;
         Ok(match letter {
-            "s" => Stack(i),
             "l" => Local(i),
             "g" => Global(i),
+            "s" => Stack(i),
             "p" => Param(i),
+            "b" => BlockResult(i),
+            "r" => Return(i),
             _ => return Err(()),
         })
     }
@@ -519,9 +521,17 @@ impl FromStr for Func {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let i = s.strip_prefix('f').ok_or(())?;
-        let i = i.parse().map_err(|_| ())?;
-        Ok(Func::Idx(i))
+        Ok(if let Some(idx) = s.strip_prefix('f') {
+            let idx = idx.parse().map_err(|_| ())?;
+            Func::Idx(idx)
+        } else {
+            // Force functions to start with an alphabetic character, to avoid
+            // confusion with constants. 
+            match s.chars().next() {
+                Some(c) if c.is_alpha() => Func::Named(s.to_string()),
+                _ => return Err(()),
+            }
+        })
     }
 }
 
@@ -1946,9 +1956,16 @@ mod test {
     #[test]
     fn parse_var() {
         assert_eq!(Ok(Stack(0)), "s0".parse());
-        assert_eq!(Ok(Global(0)), "g0".parse());
+        assert_eq!(Ok(Global(42)), "g42".parse());
+        assert_eq!(Ok(BlockResult(1)), "b1".parse());
+        assert_eq!(Ok(Param(2)), "p2".parse());
+        assert_eq!(Ok(Return(0)), "r0".parse());
 
         // Negative tests:
+        assert!(
+            "".parse::<Var>().is_err(),
+            "empty is not allowed"
+        );
         assert!(
             " s0 \n ".parse::<Var>().is_err(),
             "whitespace is not allowed"
@@ -1962,6 +1979,23 @@ mod test {
             "invalid variable type/prefix"
         );
     }
+
+    #[test]
+    fn parse_func_id() {
+        assert_eq!(Ok(Func::Idx(13)), "f13".parse());
+        assert_eq!(Ok(Func::Named("bla".to_string())), "bla".parse());
+
+        // Negative tests:
+        assert!(
+            "".parse::<Var>().is_err(),
+            "empty is not allowed"
+        );
+        assert!(
+            "123\n ".parse::<Func>().is_err(),
+            "only number for function name is not allowed"
+        );
+    }
+    
     /* 
     #[test]
     fn parse_instr() {
