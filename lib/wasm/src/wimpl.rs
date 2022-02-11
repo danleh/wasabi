@@ -777,7 +777,7 @@ mod parser {
     }
 
     /// Parse multiple statements, with possibly preceding and trailing whitespace.
-    fn stmts_ws(input: &str) -> NomResult<Vec<Stmt>> {
+    pub fn stmts_ws(input: &str) -> NomResult<Vec<Stmt>> {
         preceded(ws, many0(terminated(stmt, ws)))(input)
     }
 
@@ -876,20 +876,21 @@ mod parser {
 
 }
 
-// impl Stmt {
-//     // TODO move to impl Body FromStr
-//     pub fn from_str_multiple(input: &str) -> Result<Vec<Self>, ParseError> {
-//         adapt_nom_parser(Self::stmts_ws, input)
-//     }
+// Adapt the nom parsers above such that they can be used with Rust `parse()` / `from_str`.
 
-//     /// Convenience function to parse Wimpl from a filename.
-//     pub fn from_text_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
-//         let str = std::fs::read_to_string(filename)?;
-//         Self::from_str_multiple(&str).map_err(|e| io::Error::new(ErrorKind::Other, e))
-//     }
-// }
+impl Stmt {
+    // TODO move to impl Body FromStr?
+    pub fn from_str_multiple(input: &str) -> Result<Vec<Self>, ParseError> {
+        parser::adapt_nom_parser(parser::stmts_ws, input)
+    }
 
-// Adapt nom parser for use with Rust `parse()` / `from_str`.
+    /// Convenience function to parse Wimpl from a filename.
+    // FIXME wimpl file should be a module, no?
+    pub fn from_text_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
+        let str = std::fs::read_to_string(filename)?;
+        Self::from_str_multiple(&str).map_err(|e| io::Error::new(ErrorKind::Other, e))
+    }
+}
 
 impl FromStr for Expr {
     type Err = ParseError;
@@ -907,20 +908,7 @@ impl FromStr for Stmt {
     }
 }
 
-/* 
-macro_rules! wimpl {
-    ($($tokens:tt)+) => {
-        {
-            let mut instrs = wimpls!($($tokens)+);
-            match (instrs.pop(), instrs.is_empty()) {
-                (Some(instr), true) => instr,
-                _ => panic!("The wimpl! macro accepts only a single instruction, use wimpls! instead.")
-            }
-        }
-    }
-}
-
-/// Convenience macro to write Wimpl instructions in Rust.
+/// Convenience macro to write Wimpl statements in Rust.
 macro_rules! wimpls {
     ($($tokens:tt)*) => {
         {
@@ -942,10 +930,23 @@ macro_rules! wimpls {
     }
 }
 
+/// Macro for a single Wimpl statement, see `wimpls!`.
+macro_rules! wimpl {
+    ($($tokens:tt)+) => {
+        {
+            let mut instrs = wimpls!($($tokens)+);
+            match (instrs.pop(), instrs.is_empty()) {
+                (Some(instr), true) => instr,
+                _ => panic!("The wimpl! macro accepts only a single instruction, use wimpls! instead.")
+            }
+        }
+    }
+}
+
 // Export macros.
-pub(crate) use wimpl;
-pub(crate) use wimpls;
-*/
+// pub(crate) use wimpl;
+// pub(crate) use wimpls;
+
 #[derive(Clone, Default)]
 pub struct State {
     pub label_count: usize,
@@ -2048,7 +2049,7 @@ mod tests {
             };
         }
     }
-    /* 
+
     #[test]
     fn parse_pretty_print_roundtrips() {
         // For the text inputs in the canonical format, parsing then pretty-printing
@@ -2076,31 +2077,31 @@ mod tests {
 
     #[test]
     fn parse_file() {
-        let instrs = Stmt::from_file("tests/wimpl/syntax.wimpl");
+        // FIXME update test input
+        let instrs = Stmt::from_text_file("tests/wimpl/syntax.wimpl");
         assert!(instrs.is_ok());
     }
     
     #[test]
     fn macros() {
-        let _ = wimpl!(g0 = f32.const 1.1);
-        let _ = wimpl!(s2 = i32.add (s0, s1));
+        let _ = wimpl!(g0: f32 = f32.const 1.1);
+        let _ = wimpl!(s2: i32 = i32.add (s0, s1));
         let _ = wimpl!(call_indirect [ ] ->[] (s1) ());
 
         // Tricky, because rustc lexes these tokens differently than we need to.
-        let _ = wimpl!(s3 = i32.load offset=3 (s0));
+        let _ = wimpl!(s3: i32 = i32.load offset=3 (s0));
         let _ = wimpl!(@label0: block {});
 
         // Multiple instructions:
         let _ = wimpls! {};
         let _ = wimpls! {
-            s4 = @label2: loop {
-                s5 = i32.const 3
-                br @label2 (s5)
+            @label2: loop {
+                s5: i32 = i32.const 3
+                br @label2
             }
-            l0 = g0
+            l0: i64 = g0
         };
     }
-    */
 }
 
 #[cfg(test)]
