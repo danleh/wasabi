@@ -53,15 +53,17 @@ pub fn callgraph(module: &wimpl::Module) -> CallGraph {
     
     for fun in &module.functions {
         for instr in &fun.body.0 {
+            use wimpl::Stmt::*;
+            use wimpl::Expr::*;
             match instr {
                 
-                wimpl::Stmt::Assign { lhs: _, expr: wimpl::Expr::Call{ func, args: _}, type_: _ } |
-                wimpl::Stmt::Expr{ expr: wimpl::Expr::Call { func, args: _} } => {
+                Assign { lhs: _, rhs: Call{ func, args: _}, type_: _ } |
+                Expr(Call { func, args: _}) => {
                     graph.insert((fun.name(), func.clone()));
                 }
 
-                wimpl::Stmt::Assign { lhs: _, expr: wimpl::Expr::CallIndirect { type_, table_idx: _, args: _ }, type_: _ } |
-                wimpl::Stmt::Expr{ expr: wimpl::Expr::CallIndirect { type_, table_idx: _, args: _ } } => {
+                Assign { lhs: _, rhs: CallIndirect { type_, table_idx: _, args: _ }, type_: _ } |
+                Expr(CallIndirect { type_, table_idx: _, args: _ }) => {
                     
                     //OPTION A: trivial, all functions are reachable
                     for f in &module.functions {

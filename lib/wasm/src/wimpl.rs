@@ -103,19 +103,167 @@ pub enum Var {
 pub struct Label(usize);
 
 
+/// Wimpl instructions make the following major changes over high-level Wasm:
+/// - Remove the evaluation/operand stack completely, every instruction takes
+/// explicit arguments and optionally produces a (in the Wasm MVP) single LHS.
+/// - Stratify, i.e., express instructions that add no expressiveness as
+/// combinations of simple instructions, e.g., br_if and select.
+/// - Resolve relative, numerical branch targets to explicitly labeled blocks.
+/// - Represent stack variables, locals, globals, and function parameters with
+/// a single `Variable` construct. As a side-effect of this replaces all
+/// local.* and global.* instructions with a single `Assign` instruction.
+// TODO Optimize this representation, in particular remove redundant assignments
+// between stack variables and locals/globals.
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+pub enum Stmt {
+
+    /// Expression statement, expression is executed for side-effects only.
+    Expr(Expr),
+
+    /// This unifies all local.set, global.set, local.tee, local.get, and
+    /// global.get.
+    Assign {
+        lhs: Var, 
+        type_ : ValType, 
+        rhs: Expr,
+    },
+
+    Store {
+        op: StoreOp,
+        memarg: Memarg,
+        addr: Var,
+        value: Var,
+    },
+    
+    // Simplify nop: Not necessary for analysis.
+
+    Unreachable,
+
+    // Simplify drop: This is just a dead variable, no instruction needed.
+    // Simplify select: Encode as `if (arg0) { s0 = arg1 } else { s0 = arg2 }`.
+
+    Return {
+        value: Option<Var>,
+    },
+
+    /// The only branching construct in Wimpl.
+    /// `br_if` if represented as `if (cond) { .. , br @label }` and
+    /// `br_table` as `switch (idx) { case 0: { br @label } ... }`.
+    Br {
+        target: Label,
+    },
+
+    Block {
+        body: Body, 
+        end_label: Label,
+    },
+
+    Loop {
+        begin_label: Label,
+        body: Body,
+    },
+
+    // If the if was target of a branch in the original WebAssembly, wrap
+    // this in a Wimpl block to have a branch target label available.
+    // TODO technically, we could simplify/represent If by Switch as well...
+    If {
+        condition: Var,
+        if_body: Body,
+        else_body: Option<Body>,
+    },
+
+    Switch {  
+        index: Var,
+        cases: Vec<Body>,
+        default: Body,
+    }, 
+
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+pub enum Expr {
+
+    VarRef(Var),
+
+    Const(Val),
+
+    // TODO Make Expr recursive (i.e., allow for folded expressions) by 
+    // replacing all occurrences of `Var` below with `Box<Expr>`.
+
+    Load {
+        op: LoadOp,
+        memarg: Memarg,
+        addr: Var,
+    },
+
+    MemorySize, 
+    MemoryGrow { pages: Var },
+
+    Numeric {
+        op: NumericOp,
+        args: Vec<Var>,
+    },
+
+    Call {
+        func: Func,
+        args: Vec<Var>,
+    },
+
+    CallIndirect {
+        type_: FunctionType,
+        table_idx: Var,
+        args: Vec<Var>,
+    },
+
+}
+
+
 // Pretty-printing of Wimpl:
 
 const PRETTY_PRINT_INDENT: &str = "  ";
+const PRETTY_PRINT_NEWLINE_INDENT: &str = "\n  ";
+
+/// Helper function that indents each line except the first.
+fn indent_once(x: &dyn fmt::Display) -> String {
+    x.to_string().replace("\n", PRETTY_PRINT_NEWLINE_INDENT)
+}
+
+/// Helper function for `fmt::Display`-ing an arbitrary iterator of `values`,
+/// where each element is separated by `delim` and if the iterator is non-empty
+/// surrounded by `begin` and `end`.
+fn display_delim<T>(
+    f: &mut fmt::Formatter<'_>,
+    values: T,
+    begin: &str,
+    end: &str,
+    delim: &str,
+) -> fmt::Result
+where
+    T: IntoIterator,
+    T::IntoIter: DoubleEndedIterator,
+    T::Item: fmt::Display,
+{
+    let mut iter = values.into_iter();
+    // Get last element:
+    match iter.next_back() {
+        // Empty iterator, don't format anything.
+        None => Ok(()),
+        Some(last) => {
+            f.write_str(begin)?;
+            for item in iter {
+                write!(f, "{}{}", item, delim)?;
+            }
+            write!(f, "{}", last)?;
+            f.write_str(end)
+        }
+    }
+}
 
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "module {{").expect("");
         for func in &self.functions {
-            // Indent each function.
-            writeln!(f, "{}{}",
-                PRETTY_PRINT_INDENT, 
-                func.to_string().replace("\n", &format!("\n{}", PRETTY_PRINT_INDENT))
-            )?;
+            writeln!(f, "{}", &indent_once(func))?;
         }
         writeln!(f, "}}")
     }
@@ -162,9 +310,7 @@ impl fmt::Display for Body {
         if inner.lines().count() == 1 {
             write!(f, "{{ {} }}", inner)
         } else {
-            // Otherwise, recursively indent the inner blocks.
-            let inner = inner.replace("\n", &format!("\n{}", PRETTY_PRINT_INDENT));
-            write!(f, "{{\n{}{}\n}}", PRETTY_PRINT_INDENT, inner)
+            write!(f, "{{\n{}\n}}", &indent_once(&inner))
         }
     }
 }
@@ -195,6 +341,161 @@ impl fmt::Display for Var {
 impl fmt::Display for Label {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "@label{}", self.0)
+    }
+}
+
+// Pretty-prints instructions, including indenting nested blocks.
+// Comments show examples.
+// Conventions for the text format:
+// - Things in parentheses (x, y) signify runtime arguments.
+// - Everything outside of the parentheses is statically encoded into the 
+//   instruction.
+// - Curly braces { ... } for nesting.
+impl fmt::Display for Stmt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Stmt::*;
+        match self {
+
+            Expr(expr) => write!(f, "{}", expr)?,
+
+            Assign { lhs, rhs , type_} => {
+                write!(f, "{}: {} = {}", lhs, type_, rhs)?;
+            },
+
+            // i32.store offset=3 align=4 (s0) (s1)
+            // The first argument is addr, second is value.
+            Store { 
+                op, 
+                memarg, 
+                addr,
+                value, 
+            } => {
+                write!(f, "{}", op)?;
+                if !memarg.is_default(*op) {
+                    f.write_str(" ")?;
+                    memarg.fmt(f, *op)?;
+                    f.write_str(" ")?;
+                }
+                write!(f, "({}) ({})", addr, value)?;                
+            },
+            
+            Unreachable => f.write_str("unreachable")?,
+            
+            // return (s1)
+            Return { value } => {
+                f.write_str("return")?;
+                display_delim(f, value, " (", ")", ", ")?;                
+            },
+            
+            Br { target } => write!(f, "br {}", target)?,
+
+            // @label0: block {
+            //   s1 = i32.const 3
+            // }
+            Block { 
+                end_label: label, 
+                body 
+            } => write!(f, "{}: block {}", label, body)?,
+            Loop { 
+                begin_label: label, 
+                body 
+            } => write!(f, "{}: loop {}", label, body)?,
+
+            If { 
+                condition, 
+                if_body, 
+                else_body 
+            } => {
+                write!(f, "if ({}) {}", condition, if_body)?; 
+                if let Some(else_body) = else_body {
+                    write!(f, " else {}", else_body)?; 
+                }
+            },
+
+            // switch (s0) {
+            //   case 0: {
+            //     b0 = i32.const 42
+            //     br @label0
+            //   }
+            //   ...
+            // }
+            Switch {
+                index, 
+                cases,
+                default, 
+            } => {
+                writeln!(f, "switch ({}) {{", index)?;
+                for (i, case) in cases.iter().enumerate() {
+                    writeln!(f, "{}case {}: {}", PRETTY_PRINT_INDENT, i, case)?;
+                }
+                writeln!(f, "{}default: {}", PRETTY_PRINT_INDENT, default)?;
+                f.write_str("}")?;                
+            },
+
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Expr::*;
+        match self {
+
+            VarRef(var) => write!(f, "{}", var),
+            
+            // i32.const 3
+            Const(val) => write!(f, "{}.const {}", val.to_type(), val),
+
+            // i32.load offset=3 align=4 (s0)
+            Load { 
+                op, 
+                memarg, 
+                addr 
+            } => {
+                write!(f, "{}", op)?;
+                if !memarg.is_default(*op) {
+                    f.write_str(" ")?;
+                    memarg.fmt(f, *op)?;
+                    f.write_str(" ")?;
+                }
+                write!(f, "({})", addr)
+            },
+
+            MemorySize => write!(f, "memory.size"),
+            MemoryGrow { pages } => write!(f, "memory.grow({})", pages),
+
+            // i32.add(s0, s1)
+            // f32.neg(s0)
+            Numeric { op, args } => {
+                write!(f, "{}", op)?;
+                display_delim(f, args, "(", ")", ", ")
+            }, 
+                        
+            // call f1 (s1, s2)
+            Call { 
+                func, 
+                args 
+            } => {
+                // Always print the parentheses, even if `args` is empty.
+                write!(f, "call {} (", func)?;
+                display_delim(f, args, "", "", ", ")?;
+                f.write_str(")")
+            },
+            
+            // call_indirect [] -> [i32] (s0) (s1, s2, s3...)
+            // The first argument is the table index, the others the args.
+            CallIndirect { 
+                type_, 
+                table_idx, 
+                args 
+            } => {
+                write!(f, "call_indirect {} ({}) (", type_, table_idx)?;
+                display_delim(f, args, "", "", ", ")?;
+                f.write_str(")")
+            },
+
+        }
     }
 }
 
@@ -240,128 +541,6 @@ impl FromStr for Label {
         let i = i.parse().map_err(|_| ())?;
         Ok(Label(i))
     }
-}
-
-
-/// Wimpl instructions make the following major changes over high-level Wasm:
-/// - Remove the evaluation/operand stack completely, every instruction takes
-/// explicit arguments and optionally produces a (in the Wasm MVP) single LHS.
-/// - Stratify, i.e., express instructions that add no expressiveness as
-/// combinations of simple instructions, e.g., br_if and select.
-/// - Resolve relative, numerical branch targets to explicitly labeled blocks.
-/// - Represent stack variables, locals, globals, and function parameters with
-/// a single `Variable` construct. As a side-effect of this replaces all
-/// local.* and global.* instructions with a single `Assign` instruction.
-// TODO Optimize this representation, in particular remove redundant assignments
-// between stack variables and locals/globals.
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
-pub enum Stmt {
-
-    Assign {
-        lhs: Var, 
-        expr: Expr,
-        type_ : ValType, 
-    },
-
-    Expr {
-        expr: Expr, 
-    }, 
-
-    // Simplify: nop is not necessary for analysis.
-
-    Unreachable,
-
-    Block {
-        label: Label,
-        body: Body, 
-    },
-
-    Loop {
-        label: Label,
-        body: Body,
-    },
-
-    If {
-        label: Option<Label>,
-        condition: Var,
-        if_body: Body,
-        else_body: Option<Body>,
-    },
-
-    Br {
-        target: Label,
-    },
-
-    // Simplify: Represent br_if as an if (cond) { .. , br @label () }.
-
-    // BrTable {
-    //     idx: Var,
-    //     table: Vec<Label>,
-    //     default: Label,
-    // },
-
-    Switch {  
-        index: Var,
-        cases: Vec<Body>,
-        default: Body,
-    }, 
-
-    Return {
-        value: Option<Var>,
-    },
-
-    Store {
-        op: StoreOp,
-        memarg: Memarg,
-        value: Var,
-        addr: Var,
-    }
-}
-
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
-pub enum Expr {
-
-    Call {
-        func: Func,
-        args: Vec<Var>,
-    },
-
-    CallIndirect {
-        type_: FunctionType,
-        table_idx: Var,
-        args: Vec<Var>,
-    },
-
-    // Simplify: No instruction for drop, this is just a dead variable.
-
-    // Simplify: Encode select as result = if (arg0) { arg1 } else { arg2 }.
-
-    // Simplify: Handles all of local.set, global.set, local.tee, local.get, global.get.
-
-    VarRef {
-        rhs: Var,
-    },
-
-    Load {
-        op: LoadOp,
-        memarg: Memarg,
-        addr: Var,
-    },
-
-    MemorySize, 
-
-    MemoryGrow {
-        pages: Var,
-    },
-
-    Const {
-        val: Val,
-    },
-
-    Numeric {
-        op: NumericOp,
-        rhs: Vec<Var>,
-    },
 }
 
 /// User-facing error for parsing the Wimpl text format.
@@ -746,205 +925,6 @@ impl FromStr for Stmt {
     }
 }
 */
-/// Helper function for `fmt::Display`-ing an arbitrary iterator of `values`,
-/// where each element is separated by `delim` and if the iterator is non-empty
-/// surrounded by `begin` and `end`.
-fn display_delim<T>(
-    f: &mut fmt::Formatter<'_>,
-    values: T,
-    begin: &str,
-    end: &str,
-    delim: &str,
-) -> fmt::Result
-where
-    T: IntoIterator,
-    T::IntoIter: DoubleEndedIterator,
-    T::Item: fmt::Display,
-{
-    let mut iter = values.into_iter();
-    // Get last element:
-    match iter.next_back() {
-        // Empty iterator, don't format anything.
-        None => Ok(()),
-        Some(last) => {
-            f.write_str(begin)?;
-            for item in iter {
-                write!(f, "{}{}", item, delim)?;
-            }
-            write!(f, "{}", last)?;
-            f.write_str(end)
-        }
-    }
-}
-
-// Pretty-prints instructions, including indenting nested blocks.
-// Comments show examples.
-// Conventions for the text format:
-// - Things in parentheses (x, y) signify runtime arguments.
-// - Everything outside of the parentheses is statically encoded into the instruction.
-// - Curly brances { ... } signify block bodies (i.e., instructions and an optional return variable).
-impl fmt::Display for Stmt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Stmt::*;
-        match self {
-            Assign { lhs, expr , type_} => {
-                write!(f, "{}: {} = {}", lhs, type_, expr)?;
-            },
-            Stmt::Expr { expr } => {
-                write!(f, "{}", expr)?;
-            },
-            Unreachable => f.write_str("unreachable")?,
-            // br @label0 (s1)
-            Br { 
-                target, 
-            } => {
-                write!(f, "br {}", target)?;
-                //display_delim(f, value, " (", ")", ", ")?;
-            },
-            // br-table @label0 @label1 @label2 default=@label3 (s0)
-            // BrTable { 
-            //     idx, 
-            //     table, 
-            //     default, 
-            // } => {
-            //     f.write_str("br_table")?;
-            //     display_delim(f, table, " ", "", " ")?;
-            //     write!(f, " default={} ({})", default, idx)?;
-            //     //display_delim(f, value, " (", ")", ", ")?;    
-            // },
-            Switch {
-                index, 
-                cases,
-                default, 
-            } => {
-                writeln!(f, "switch ({}) {{", index)?;
-                for (ind, inst) in cases.iter().enumerate() {
-                    writeln!(f, "  {}", format!("case {}: {}}}", ind, inst).replace("\n", "\n  ")).expect("");  // reindents everything
-                }
-                writeln!(f, "  {}", format!("default: {}", default).replace("\n", "\n  ")).expect("");  // reindents everything
-                f.write_str("}")?;                
-            }, 
-            // return (s1)
-            Return { value } => {
-                f.write_str("return")?;
-                display_delim(f, value, " (", ")", ", ")?;                
-            },
-            // i32.store offset=3 align=4 (s0//addr) (s1//value)
-            Store { 
-                op, 
-                memarg, 
-                value, 
-                addr 
-            } => {
-                write!(f, "{}", op)?;
-                if !memarg.is_default(*op) {
-                    f.write_str(" ")?;
-                    memarg.fmt(f, *op)?;
-                    f.write_str(" ")?;
-                }
-                write!(f, "({}) ({})", addr, value)?;                
-            },
-            // s0 = @label0: block {
-            //   s1 = i32.const 3
-            //   s1
-            // }
-            Block { 
-                label, 
-                body 
-            } => write!(f, "{}: block {}", label, body)?,
-            // s0 = @label0: loop {
-            //     s1 = i32.const 3
-            //     br @label0 (s1)
-            //     s1
-            // }            
-            Loop { 
-                label, 
-                body 
-            } => write!(f, "{}: loop {}", label, body)?,
-            // s0 = @label0: if {
-            //     s1 = i32.const 3
-            //     s1
-            // } else {
-            //     s2 = i32.const 6
-            //     s2
-            // }
-            If { 
-                label, 
-                condition, 
-                if_body, 
-                else_body 
-            } => {
-                if let Some(label) = label {
-                    write!(f, "{}: ", label)?;
-                }
-                write!(f, "if ({}) {}", condition, if_body)?; 
-                if let Some(else_branch) = else_body {
-                    write!(f, " else {}", else_branch)?; 
-                }
-            },
-        }
-        Ok(())
-    }
-}
-
-impl fmt::Display for Expr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            // s2 = s1
-            Expr::VarRef { rhs } => {
-                write!(f, "{}", rhs) 
-            },
-            // s1 = i32.load offset=3 align=4 (s0)
-            Expr::Load { 
-                op, 
-                memarg, 
-                addr 
-            } => {
-                write!(f, "{}", op)?;
-                if !memarg.is_default(*op) {
-                    f.write_str(" ")?;
-                    memarg.fmt(f, *op)?;
-                    f.write_str(" ")?;
-                }
-                write!(f, "({})", addr)
-            },
-            // s1 = memory.size
-            Expr::MemorySize { } => write!(f, "memory.size"),
-            // s1 = memory.grow(s0)
-            Expr::MemoryGrow { pages } => write!(f, "memory.grow({})", pages),
-            // s1 = i32.const 3
-            Expr::Const { val } => write!(f, "{}.const {}", val.to_type(), val),
-            // s2 = i32.add(s0, s1)
-            // s1 = f32.neg(s0)
-            Expr::Numeric { op, rhs } => {
-                write!(f, "{}", op)?;
-                display_delim(f, rhs, "(", ")", ", ")
-            }, 
-
-            
-            // s0 = call f1 (s1)
-            Expr::Call { 
-                func, 
-                args 
-            } => {
-                // Always print the parentheses, even if `args` is empty.
-                write!(f, "call {} (", func)?;
-                display_delim(f, args, "", "", ", ")?;
-                f.write_str(")")
-            },
-            // s2 = call_indirect [] -> [i32] (s0) (s1, s2, s3...)
-            Expr::CallIndirect { 
-                type_, 
-                table_idx, 
-                args 
-            } => {
-                write!(f, "call_indirect {} ({}) (", type_, table_idx)?;
-                display_delim(f, args, "", "", ", ")?;
-                f.write_str(")")
-            },
-        }
-    }
-}
 /* 
 macro_rules! wimpl {
     ($($tokens:tt)+) => {
@@ -1060,6 +1040,7 @@ fn wimplify_instrs(
 
     let lhs_ty = lhs.map(|_|ty.results[0]);
     
+    // TODO RENAME rhs -> args!!
     let mut rhs: Vec<Var> = state.var_stack.split_off(state.var_stack.len()-n_inputs); 
     
     let result_instr: Vec<Stmt> = match instr {
@@ -1082,7 +1063,7 @@ fn wimplify_instrs(
                 state.stack_var_count += 1; 
                 vec![Stmt::Assign { 
                     lhs: result_var.unwrap(), 
-                    expr: Const{ val: Val::get_default_value(btype) } ,  
+                    rhs: Const(Val::get_default_value(btype)) ,  
                     type_: btype,  
                 }]
             } else {
@@ -1121,7 +1102,7 @@ fn wimplify_instrs(
 
             //push block statement into result list 
             res_instr_vec.push(Stmt::Block{
-                label: Label(curr_label_count),
+                end_label: Label(curr_label_count),
                 body: Body(block_body),
             });             
             res_instr_vec 
@@ -1138,7 +1119,7 @@ fn wimplify_instrs(
                 state.stack_var_count += 1;
                 vec![Stmt::Assign { 
                     lhs: result_var.unwrap(), 
-                    expr: Const{ val: Val::get_default_value(btype) } , 
+                    rhs: Const(Val::get_default_value(btype)) , 
                     type_: btype,  
                 }]
             } else {
@@ -1163,41 +1144,44 @@ fn wimplify_instrs(
             }
 
             let if_body = wimplify_instrs(instrs, tys, &mut if_state).unwrap();            
-            
-            res_vec.push(if if_state.else_taken {
-                
-                if_state.else_taken = false; 
 
-                let else_body = wimplify_instrs(instrs, tys, &mut if_state).unwrap(); 
-                
-                state.label_count = if_state.label_count;
-                state.stack_var_count = if_state.stack_var_count; 
-                if let Some(_btype) = blocktype.0 {
-                    state.var_stack.push(result_var.unwrap()); 
-                }
+            res_vec.push(
+                Stmt::Block {
+                    end_label: Label(curr_label_count),
+                    body: Body(vec![if if_state.else_taken {
+                        if_state.else_taken = false; 
 
-                Stmt::If{
-                    label: Some(Label(curr_label_count)),
-                    condition: rhs.pop().unwrap(), 
-                    if_body: Body(if_body),
-                    else_body: Some(Body(else_body)),
-                }
+                        let else_body = wimplify_instrs(instrs, tys, &mut if_state).unwrap(); 
+                        
+                        state.label_count = if_state.label_count;
+                        state.stack_var_count = if_state.stack_var_count; 
+                        if let Some(_btype) = blocktype.0 {
+                            state.var_stack.push(result_var.unwrap()); 
+                        }
 
-            } else {
-                
-                state.label_count = if_state.label_count;
-                state.stack_var_count = if_state.stack_var_count; 
-                if let Some(_btype) = blocktype.0 {
-                    state.var_stack.push(result_var.unwrap()); 
+                        Stmt::If{
+                            condition: rhs.pop().unwrap(), 
+                            if_body: Body(if_body),
+                            else_body: Some(Body(else_body)),
+                        }
+
+                    } else {
+                        // TODO duplicated code!
+
+                        state.label_count = if_state.label_count;
+                        state.stack_var_count = if_state.stack_var_count; 
+                        if let Some(_btype) = blocktype.0 {
+                            state.var_stack.push(result_var.unwrap()); 
+                        }
+                        
+                        Stmt::If {
+                            condition: rhs.pop().unwrap(),
+                            if_body: Body(if_body),
+                            else_body: None,
+                        } 
+                    }])
                 }
-                
-                Stmt::If {
-                    label: Some(Label(curr_label_count)),
-                    condition: rhs.pop().unwrap(),
-                    if_body: Body(if_body),
-                    else_body: None,
-                } 
-            });
+            );
             res_vec            
         },
 
@@ -1210,7 +1194,7 @@ fn wimplify_instrs(
             if let Some((lhs, type_)) = return_info {
                 result_instrs.push(Stmt::Assign{
                     lhs, 
-                    expr: VarRef{ rhs: state.var_stack.pop().unwrap() },
+                    rhs: VarRef(state.var_stack.pop().unwrap()),
                     type_, 
                 })
             }
@@ -1227,7 +1211,7 @@ fn wimplify_instrs(
                 if let Some((ret_var, type_)) = return_info {
                     result_instrs.push(Stmt::Assign{
                         lhs: ret_var,
-                        expr: VarRef{ rhs: state.var_stack.pop().unwrap()}, 
+                        rhs: VarRef(state.var_stack.pop().unwrap()), 
                         type_,
                     });
                 }; 
@@ -1236,7 +1220,7 @@ fn wimplify_instrs(
                 if let Some((lhs, type_)) = return_info {
                     result_instrs.push(Stmt::Assign{
                         lhs, 
-                        expr: VarRef{ rhs: state.var_stack.pop().unwrap()}, 
+                        rhs: VarRef(state.var_stack.pop().unwrap()), 
                         type_, 
                     });
                 }
@@ -1257,7 +1241,7 @@ fn wimplify_instrs(
                 vec![
                     Stmt::Assign{ 
                         lhs, 
-                        expr: VarRef{ rhs: return_val }, 
+                        rhs: VarRef(return_val), 
                         type_, 
                     }, 
                     Stmt::Br {
@@ -1283,12 +1267,11 @@ fn wimplify_instrs(
                 let value = state.var_stack.pop().expect("br_if is expected to produce a value"); 
                 state.var_stack.push(value); //FIXME not neccessary anymore if we don't generate unreachable instruction 
                 vec![Stmt::If{
-                    label: None,
                     condition, 
                     if_body: Body(vec![
                         Stmt::Assign{ 
                             lhs: lhs_, 
-                            expr: VarRef{ rhs: value }, 
+                            rhs: VarRef(value), 
                             type_, 
                         }, 
                         Stmt::Br {
@@ -1299,7 +1282,6 @@ fn wimplify_instrs(
                 }]    
             } else {
                 vec![Stmt::If{
-                    label: None,
                     condition, 
                     if_body: Body(vec![
                         Stmt::Br {
@@ -1328,7 +1310,7 @@ fn wimplify_instrs(
                 if let Some((lhs, type_)) = label_result {
                     body.push(Stmt::Assign{
                         lhs,
-                        expr: VarRef{rhs: val.expect("label_result and val are both either None or Som") },
+                        rhs: VarRef(val.expect("label_result and val are both either None or Som")),
                         type_,
                     }); 
                 }
@@ -1364,11 +1346,11 @@ fn wimplify_instrs(
             if let Some(lhs) = lhs {
                 vec![Stmt::Assign{
                     lhs,
-                    expr: call_rhs,
+                    rhs: call_rhs,
                     type_: lhs_ty.unwrap(), 
                 }]
             } else {
-                vec![Stmt::Expr { expr: call_rhs }]
+                vec![Stmt::Expr(call_rhs)]
             }            
         }, 
 
@@ -1388,11 +1370,11 @@ fn wimplify_instrs(
             if let Some(lhs) = lhs {
                 vec![Stmt::Assign{
                     lhs,
-                    expr: callind_rhs,
+                    rhs: callind_rhs,
                     type_: lhs_ty.unwrap(), 
                 }]
             } else {
-                vec![Stmt::Expr{ expr: callind_rhs}]
+                vec![Stmt::Expr(callind_rhs)]
             }
         }
 
@@ -1410,21 +1392,20 @@ fn wimplify_instrs(
             
                     Stmt::Assign{ 
                         lhs, 
-                        expr: Const{ val: Val::get_default_value(type_) },  
+                        rhs: Const(Val::get_default_value(type_)),  
                         type_ 
                     },
             
                     Stmt::If {
-                        label: None,
                         condition: arg1,
                         if_body: Body(vec![Stmt::Assign{
                             lhs, 
-                            expr: VarRef{rhs: arg2}, 
+                            rhs: VarRef(arg2), 
                             type_ 
                         }]),
                         else_body: Some(Body(vec![Stmt::Assign{ 
                             lhs, 
-                            expr: VarRef{rhs: arg3}, 
+                            rhs: VarRef(arg3), 
                             type_ 
                         }]))
                     }
@@ -1445,9 +1426,7 @@ fn wimplify_instrs(
             if let Some(lhs) = lhs {
                 vec![Stmt::Assign{
                     lhs, 
-                    expr: VarRef {
-                        rhs: local_var,
-                    }, 
+                    rhs: VarRef(local_var), 
                     type_: lhs_ty.unwrap(), 
                 }]
             } else {
@@ -1465,11 +1444,9 @@ fn wimplify_instrs(
             
             panic_if_size_lt(&rhs, 1, "local.set expects a value on the stack"); 
             panic_if_size_lt(&ty.params, 1, "return type of global.set not found"); 
-            vec![Stmt::Assign{
-                lhs : local_var, 
-                expr: VarRef {
-                    rhs: rhs.pop().unwrap(),
-                },
+            vec![Stmt::Assign {
+                lhs: local_var, 
+                rhs: VarRef(rhs.pop().unwrap()),
                 type_: ty.params[0], 
             }]            
         }
@@ -1489,9 +1466,7 @@ fn wimplify_instrs(
             state.var_stack.push(rhs); 
             vec![Stmt::Assign{
                 lhs: local_var,
-                expr: VarRef {
-                    rhs,
-                },
+                rhs: VarRef(rhs),
                 type_: ty.params[0], 
             }]
         }
@@ -1501,9 +1476,7 @@ fn wimplify_instrs(
             if let Some(lhs) = lhs {
                 vec![Stmt::Assign{
                     lhs, 
-                    expr: VarRef {
-                        rhs: global_var,
-                    },
+                    rhs: VarRef(global_var),
                     type_: lhs_ty.unwrap(), 
                 }]
             } else {
@@ -1518,9 +1491,7 @@ fn wimplify_instrs(
             let global_var = Global(global_ind.into_inner());
             vec![Stmt::Assign{
                 lhs: global_var,
-                expr: VarRef {
-                    rhs: rhs.pop().unwrap(),
-                },
+                rhs: VarRef(rhs.pop().unwrap()),
                 type_: ty.params[0], 
             }]
         }
@@ -1536,7 +1507,7 @@ fn wimplify_instrs(
             let rhs = rhs.pop().unwrap();
             vec![Stmt::Assign{
                 lhs,
-                expr: Load {
+                rhs: Load {
                     op: *loadop,
                     memarg: *memarg,
                     addr: rhs,
@@ -1557,7 +1528,7 @@ fn wimplify_instrs(
 
         highlevel::Instr::MemorySize(_) => {
             if let Some(lhs) = lhs {
-                vec![Stmt::Assign{ lhs, expr: MemorySize{}, type_: lhs_ty.unwrap() }]
+                vec![Stmt::Assign{ lhs, rhs: MemorySize{}, type_: lhs_ty.unwrap() }]
             } else {
                 panic!("memory size has to produce a value"); 
             }
@@ -1569,7 +1540,7 @@ fn wimplify_instrs(
             if let Some(lhs) = lhs {
                 vec![Stmt::Assign{
                     lhs, 
-                    expr: MemoryGrow {
+                    rhs: MemoryGrow {
                         pages: rhs.pop().unwrap(),
                     },
                     type_: lhs_ty.unwrap(), 
@@ -1581,19 +1552,19 @@ fn wimplify_instrs(
 
         highlevel::Instr::Const(val) => {
             if let Some(lhs) = lhs {
-                vec![Stmt::Assign{ lhs, expr:Const{ val: *val }, type_: lhs_ty.unwrap()}]
+                vec![Stmt::Assign{ lhs, rhs: Const(*val), type_: lhs_ty.unwrap()}]
             } else {
                 panic!("const has to produce a value "); 
             }
         }
 
-        highlevel::Instr::Numeric(numop) => {
+        highlevel::Instr::Numeric(op) => {
             if let Some(lhs) = lhs {
                 vec![Stmt::Assign{
                     lhs, 
-                    expr: Numeric {
-                        op: *numop,
-                        rhs,
+                    rhs: Numeric {
+                        op: *op,
+                        args: rhs,
                     },
                     type_: lhs_ty.unwrap(), 
                 }]
@@ -1635,7 +1606,7 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
             } else {
                 result_instrs.push(Stmt::Assign{
                     lhs: Var::Local(loc_ind.into_inner()-func.type_.params.len()),
-                    expr: Expr::Const{ val: Val::get_default_value(loc_type) } ,
+                    rhs: Expr::Const(Val::get_default_value(loc_type)),
                     type_: loc_type,
                 })
             }
@@ -1719,14 +1690,12 @@ mod test {
             (Unreachable, "unreachable", ""),
             (Return { value: None }, "return", "return without value"),
             (Return { value: Some(Var::Stack(0)) }, "return (s0)", "with value, with whitespace"),
-            (Assign{ lhs: Var::Stack(0), expr: MemorySize { } , type_: ValType::I32}, "s0: i32 = memory.size", "with lhs"),
-            (Assign{ lhs: Var::Global(0), expr: VarRef { rhs: Var::Local(0) }, type_: ValType::I32 }, "g0: i32 = l0", ""),
+            (Assign{ lhs: Var::Stack(0), rhs: MemorySize { } , type_: ValType::I32}, "s0: i32 = memory.size", "with lhs"),
+            (Assign{ lhs: Var::Global(0), rhs: VarRef(Var::Local(0)), type_: ValType::I32 }, "g0: i32 = l0", ""),
             (
                 Assign{
                     lhs: Var::Stack(0),
-                    expr: Const {
-                        val: I32(1337),
-                    }, 
+                    rhs: Const(I32(1337)), 
                     type_: ValType::I32, 
                 },
                 "s0: i32 = i32.const 1337",
@@ -1735,9 +1704,9 @@ mod test {
             (
                 Assign{
                     lhs: Var::Stack(1),
-                    expr: Numeric {
+                    rhs: Numeric {
                         op: I32Add,
-                        rhs: vec![Var::Stack(2), Var::Stack(3)],
+                        args: vec![Var::Stack(2), Var::Stack(3)],
                     },
                     type_: ValType::I32, 
                 },
@@ -1747,7 +1716,7 @@ mod test {
             (
                 Assign{
                     lhs: Var::Stack(1),
-                    expr: Load {
+                    rhs: Load {
                         op: I32Load,
                         memarg: Memarg::default(I32Load),
                         addr: Var::Stack(0),
@@ -1790,19 +1759,17 @@ mod test {
             //     "br_table with index argument and passed value"
             // ),
             (
-                Stmt::Expr{
-                    expr: Call {
-                        func: Func::Idx(7),
-                        args: Vec::new(),
-                    }
-                },
+                Stmt::Expr(Call {
+                    func: Func::Idx(7),
+                    args: Vec::new(),
+                }),
                 "call f7 ()",
                 "call argument list is always printed, even if empty"
             ),
             (
                 Assign{
                     lhs: Var::Stack(1),
-                    expr: CallIndirect {
+                    rhs: CallIndirect {
                         type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
                         table_idx: Var::Stack(0),
                         args: vec![Var::Stack(2), Var::Stack(3)],
@@ -1814,7 +1781,7 @@ mod test {
             ),
             (
                 Stmt::Block {
-                    label: Label(0),
+                    end_label: Label(0),
                     body: Body (vec![]),
                 },
                 "@label0: block {}", ""
@@ -1835,11 +1802,11 @@ mod test {
             // ),
             (
                 Stmt::Block {
-                    label: Label(1),
+                    end_label: Label(1),
                     body: Body(vec![
                         Assign{
                             lhs: Var::Stack(1),
-                            expr: VarRef { rhs: Var::Stack(0) }, 
+                            rhs: VarRef(Var::Stack(0)), 
                             type_: ValType::I32,
                         }]),
                 },
@@ -1849,7 +1816,6 @@ mod test {
             (
                 Stmt::If {
                         condition: Var::Stack(0),
-                        label: None,
                         if_body: Body (
                             vec![Br {
                                 target: Label(0),
@@ -1906,21 +1872,19 @@ mod test {
         /// They are only used for testing parsing, not pretty-printing.
         static ref WIMPL_ALTERNATIVE_SYNTAX_TESTCASES: Vec<(Stmt, &'static str, &'static str)> = vec![
             (Return { value: Some(Var::Stack(0)) }, "return(s0)", "no space between op and arguments"),
-            (Assign{ lhs: Var::Stack(1), expr: MemoryGrow { pages: Var::Stack(0) }, type_: ValType::I32, }, "s1: i32 = memory.grow ( s0 )", "extra space around arguments"),
+            (Assign{ lhs: Var::Stack(1), rhs: MemoryGrow { pages: Var::Stack(0) }, type_: ValType::I32, }, "s1: i32 = memory.grow ( s0 )", "extra space around arguments"),
             (
-                Stmt::Expr{
-                    expr: Call {
-                        func: Func::Idx(2),
-                        args: vec![Var::Stack(2), Var::Stack(3)],
-                    }
-                },
+                Stmt::Expr(Call {
+                    func: Func::Idx(2),
+                    args: vec![Var::Stack(2), Var::Stack(3)],
+                }),
                 "call f2 ( s2, s3 )",
                 "extra space around call arguments"
             ),
             (
                 Assign{
                     lhs: Var::Stack(1),
-                    expr: CallIndirect {
+                    rhs: CallIndirect {
                         type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
                         table_idx: Var::Stack(0),
                         args: vec![],
@@ -1933,9 +1897,9 @@ mod test {
             (
                 Assign{
                     lhs: Var::Stack(1),
-                    expr: Numeric {
+                    rhs: Numeric {
                         op: I32Add,
-                        rhs: vec![Var::Stack(2), Var::Stack(3)],
+                        args: vec![Var::Stack(2), Var::Stack(3)],
                     }, 
                     type_: ValType::I32,
                 },
@@ -1957,7 +1921,7 @@ mod test {
             ),
             (
                 Stmt::Block {
-                    label: Label(0),
+                    end_label: Label(0),
                     body: Body(vec![]),
                 },
                 "@label0:block{}",
@@ -1965,11 +1929,11 @@ mod test {
             ),
             (
                 Stmt::Block {
-                        label: Label(2),
+                        end_label: Label(2),
                         body: Body (vec![
                                 Assign{
                                     lhs: Var::Stack(1), 
-                                    expr: VarRef { rhs: Var::Stack(0) },
+                                    rhs: VarRef(Var::Stack(0)),
                                     type_: ValType::I32,
                                 }]),
                 },
