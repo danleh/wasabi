@@ -215,6 +215,10 @@ const PRETTY_PRINT_NEWLINE_INDENT: &str = "\n  ";
 
 /// Helper function that indents each line of the `Display` output of `x`.
 fn indent_once(x: &dyn fmt::Display) -> String {
+    // This allocates a new String just for indentation, which seems wasteful. 
+    // But since we pretty-print Wimpl fairly seldom, and even if, it's not performance criticial, 
+    // and there are also other places below where we allocate, let's not optimize this for now.
+    // If it ever really becomes a problem, use the `pad-adapter` crate.
     format!("{}{}", PRETTY_PRINT_INDENT, x).replace("\n", PRETTY_PRINT_NEWLINE_INDENT)
 }
 
@@ -591,7 +595,7 @@ impl fmt::Display for ParseError {
         write!(f, "{}^ error starts around here or later", indent)
     }
 }
-/*
+
 mod parser {
     use nom::{
         branch::alt,
@@ -603,22 +607,22 @@ mod parser {
         AsChar, Finish, IResult,
     };
 
-    /// Type abbreviation for internal nom parser result.
+    /// Type abbreviation for nom's own parser result type.
     type NomResult<'input, O> = IResult<&'input str, O>;
 
-    /// Adapt nom parser such that it returns a standard Rust `Result`.
+    /// Adapt a nom parser such that it returns a standard Rust `Result`.
     fn adapt_nom_parser<'input, O>(
         parser: impl Fn(&'input str) -> NomResult<'input, O>,
         input: &'input str,
     ) -> Result<O, ParseError> {
         match all_consuming(parser)(input).finish() {
             Ok(("", instr)) => Ok(instr),
-            Ok(_) => unreachable!(
-                "successful parse should hould have consumed full input because of all_consuming()"
-            ),
+            Ok(_) => unreachable!("successful parse should hould have consumed full input because of all_consuming()"),
             Err(err) => Err(ParseError::from(err, input)),
         }
     }
+
+    // Utility parsers, used to build more complex ones below.
 
     /// Whitespace and comment parser, both of which are removed (which is why it returns unit).
     fn ws(input: &str) -> NomResult<()> {
@@ -634,11 +638,9 @@ mod parser {
         )(input)
     }
 
-    // Utility parsers, reused in the combined parsers below.
-    //
-    // They all assume only "internal" whitespace, i.e., they assume initial
-    // whitespace is already consumed by the outer parser and the input
-    // directly starts with the first non-whitespace token.
+    // The following utility parsers all assume only "internal" whitespace, i.e., they assume the
+    // initial whitespace is already consumed by the outer parser and the input directly starts with
+    // the first non-whitespace token.
     fn var(input: &str) -> NomResult<Var> {
         map_res(alphanumeric1, Var::from_str)(input)
     }
@@ -713,7 +715,7 @@ mod parser {
 
     /// Parse a single statement, without surrounding whitespace.
     fn stmt(input: &str) -> NomResult<Stmt> {
-        use Stmt::*;
+        // use Stmt::*;
 
         // One parser for each instruction, using the utility parsers from above.
 
@@ -927,7 +929,7 @@ impl FromStr for Stmt {
         adapt_nom_parser(Self::stmt, input)
     }
 }
- */
+
 /* 
 macro_rules! wimpl {
     ($($tokens:tt)+) => {
@@ -1679,7 +1681,7 @@ pub fn wimplify (path: &str) -> Result<Module, String> {
 }
  
 #[cfg(test)]
-mod test {
+mod tests {
     // Convenience imports:
     use super::Body;
     use super::Func;
@@ -1883,7 +1885,14 @@ mod test {
         /// because they contain too little or too much whitespace.
         /// They are only used for testing parsing, not pretty-printing.
         static ref WIMPL_ALTERNATIVE_SYNTAX_TESTCASES: Vec<(Stmt, &'static str, &'static str)> = vec![
-            (Assign{ lhs: Stack(1), rhs: MemoryGrow { pages: Stack(0) }, type_: ValType::I32, }, "s1: i32 = memory.grow ( s0 )", "extra space around arguments"),
+            (
+                Assign {
+                    lhs: Stack(1),
+                    type_: ValType::I32,
+                    rhs: MemoryGrow { pages: Stack(0) },
+                },
+                "s1: i32 = memory.grow ( s0 )",
+                "extra space around arguments"),
             (
                 Expr(Call {
                     func: Func::Idx(2),
@@ -1931,7 +1940,7 @@ mod test {
                 "minimal spacing around arguments"
             ),
             (
-                Stmt::Block {
+                Block {
                     end_label: Label(0),
                     body: Body(vec![]),
                 },
@@ -1939,7 +1948,7 @@ mod test {
                 "minimal space in block"
             ),
             (
-                Stmt::Block {
+                Block {
                         end_label: Label(2),
                         body: Body (vec![
                                 Assign{
