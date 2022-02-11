@@ -38,8 +38,8 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeError(pub Box<TypeErrorRepr>);
 
-// Put error fields behind a pointer to make a `Result<_, TypeError>` only
-// the size of a pointer, not humongously large (>100 bytes!).
+// Put the error fields behind a pointer to make `Result<_, TypeError>` only the size of a pointer,
+// not humongously large (>100 bytes!).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeErrorRepr {
     pub message: String,
@@ -164,8 +164,7 @@ impl InferredValType {
 }
 
 impl ValType {
-    /// Like join on two `InferredValType`, but will never result in an unknown
-    /// type.
+    /// Like join on two `InferredValType`, but will never result in an unknown type.
     pub fn join(self, other: InferredValType) -> Option<ValType> {
         match other.0 {
             None => Some(self),
@@ -341,18 +340,17 @@ pub struct TypeChecker<'module> {
 struct BlockFrame {
     value_stack: Vec<InferredValType>,
 
-    /// This is equivalent to having an "ellipsis" pseudo-type at the bottom
-    /// of the `value_stack`.
+    /// This is equivalent to having an "ellipsis" pseudo-type at the bottom of the `value_stack`.
     unreachable: bool,
 
-    /// Needed to type-check that the correct results are on the current
-    /// sub-stack before leaving a block.
+    /// Needed to type-check that the correct results are on the current sub-stack before leaving a
+    /// block.
     results: Vec<ValType>,
 
-    /// Needed to type-check branches targeting this block: Which values does
-    /// the branch "transport" from the current stack to this one (the target)?
-    /// For loops, these are the inputs to the loop block, for every other block
-    /// (if, else, block) it's the output types.
+    /// Needed to type-check branches targeting this block: Which values does the branch "transport"
+    /// from the current stack to this one (the target)?
+    /// For loops, these are the inputs to the loop block, for every other block (if, else, block),
+    /// it's the output types.
     label_inputs: Vec<ValType>,
 
     // TODO Once we switch `hl::Instr` to use nested blocks, it is no longer
@@ -364,12 +362,10 @@ struct BlockFrame {
 }
 
 impl<'module> TypeChecker<'module> {
-    /*
-    Convenience functions without having to instantiate a type checker.
-
-    They do not return the types for individual instructions, only a result
-    whether overall type checking was successful.
-    */
+    // Convenience functions without having to instantiate a type checker.
+    // 
+    // They do not return the types for individual instructions, only a result
+    // whether overall type checking was successful.
 
     /// Type checks all functions and globals in a `module`.
     pub fn check_module(module: &Module) -> Result<(), TypeError> {
@@ -442,13 +438,11 @@ impl<'module> TypeChecker<'module> {
     }
 
 
-    /*
-    High-level API of the type checker.
-    */
+    // High-level API of the type checker.
 
     /// Begin type checking a function.
-    /// This ensures that the final end instruction and branches/returns out of
-    /// the function are correctly typed.
+    /// This ensures that the final end instruction and branches/returns out of the function are
+    /// correctly typed.
     pub fn begin_function(function: &'module Function, module: &'module Module) -> Self {
         let mut self_ = TypeChecker {
             module,
@@ -461,13 +455,13 @@ impl<'module> TypeChecker<'module> {
 
     /// Check and infer the type for the next instruction.
     pub fn check_next_instr(&mut self, instr: &'_ Instr) -> Result<InferredInstructionType, TypeError> {
-        // Pulled out of the impl only for formatting reasons: put very long 
-        // function after the interface definitions here.
+        // Pulled out of the impl only for formatting reasons: put very long function after the
+        // interface definitions here.
         check_instr(self, instr, self.function, self.module)
     }
 
-    /// Returns the type stack of the current block (without the surrounding
-    /// parent stacks, since they are not accessible from inside anyway).
+    /// Returns the type stack of the current block (without the surrounding parent stacks, since
+    /// they are not accessible from inside anyway).
     pub fn current_block_type_stack(&self) -> Result<StackType, TypeError> {
         let frame = self.top_block()?;
         Ok(if frame.unreachable {
@@ -488,8 +482,8 @@ impl<'module> TypeChecker<'module> {
     fn pop_val(&mut self) -> Result<InferredValType, TypeError> {
         let frame = self.top_block_mut()?;
         if frame.unreachable {
-            // Once we are in unreachable code, the prior stack-polymorphic
-            // instructions can produce necessary value "out of thin air".
+            // Once we are in unreachable code, the prior stack-polymorphic instructions can produce
+            // necessary value "out of thin air".
             if frame.value_stack.is_empty() {
                 return Ok(InferredValType::unknown())
             }
@@ -743,15 +737,15 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
             // Condition.
             state.pop_val_expected(ValType::I32)?;
             
-            let label_inputs = state.get_block(*label)?.label_inputs.clone();
-            state.pop_vals_expected(&label_inputs)?;
-            state.push_vals(&label_inputs)?;
+            let label_input_tys = state.get_block(*label)?.label_inputs.clone();
+            state.pop_vals_expected(&label_input_tys)?;
+            state.push_vals(&label_input_tys)?;
 
             // The input type is the condition, followed by the type from the
             // target label.
             let mut input_tys = vec![ValType::I32];
-            input_tys.extend_from_slice(&label_inputs);
-            to_inferred_type(FunctionType::new(&input_tys, &[]))
+            input_tys.extend_from_slice(&label_input_tys);
+            to_inferred_type(FunctionType::new(&input_tys, &label_input_tys))
         }
 
         // All of these branches are followed by dead code, which makes their
