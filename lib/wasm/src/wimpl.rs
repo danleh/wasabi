@@ -150,17 +150,23 @@ pub enum Stmt {
     // If the if was target of a branch in the original WebAssembly, wrap
     // this in a Wimpl block to have a branch target label available.
     // TODO technically, we could simplify/represent If by Switch as well...
+    // Downside: br_if (which are frequent) would be expanded into a quite complex switch:
+    // br_if (cond) (value) @label 
+    // -> if (cond) { br (value) @label } 
+    // -> if (cond) { b0 = value; br @label }
+    // -> switch (cond) { case 0: {} default: { b0 = value; br @label } }
     If {
         condition: Var,
         if_body: Body,
         else_body: Option<Body>,
     },
 
+    /// Similar to C switch statement, but doesn't fallthrough from one case to the next.
     Switch {  
         index: Var,
         cases: Vec<Body>,
         default: Body,
-    }, 
+    },
 
 }
 
@@ -257,7 +263,7 @@ impl fmt::Display for Module {
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "func {}", self.name)?;
-        write!(f, " (")?; 
+        write!(f, " (")?;
         for (i, ty) in self.type_.params.iter().enumerate() {
             write!(f, "{}: {}", Var::Param(i), ty)?;
             if i < self.type_.params.len() - 1 {
@@ -1013,7 +1019,7 @@ fn wimplify_instrs(
         InferredInstructionType::Reachable(ty) => ty,
     };
 
-    //println!("{}, {}, {:?}", instr, ty, state.var_stack);
+    println!("{}, {}, {:?}", instr, ty, state.var_stack);
 
     let n_inputs = ty.params.len();
     let n_results = ty.results.len();
@@ -1134,6 +1140,11 @@ fn wimplify_instrs(
                 else_taken: false,
                 num_params: state.num_params, 
             }; 
+            // TODO maybe this is better?
+            // state.clone();
+            // if_state.else_take = false;
+            // if_state.var_stack = Vec::new(); 
+
             if let Some(result_var) = result_var {
                 if_state.label_stack.push((curr_label_count, Some((result_var, btype.unwrap()))))                
             } else {
@@ -1233,7 +1244,7 @@ fn wimplify_instrs(
             let val = rhs.pop();
             
             if let Some(return_val) = val {
-                state.var_stack.push(return_val); //FIXME not neccessary anymore if we don't generate unreachable instruction  
+                //state.var_stack.push(return_val); //FIXME not neccessary anymore if we don't generate unreachable instruction  
                 let (lhs, type_) = return_info.expect("br expected to produce a value"); 
                 vec![
                     Stmt::Assign{ 
@@ -1257,11 +1268,11 @@ fn wimplify_instrs(
             
             let (target, return_info) = *state.label_stack.iter().rev().nth(lab.into_inner()).expect("label stack should never be empty"); 
             let target = Label(target); 
-
+            
             let condition = rhs.pop().unwrap(); 
             
             if let Some((lhs_, type_)) = return_info {
-                let value = state.var_stack.pop().expect("br_if is expected to produce a value"); 
+                let value = rhs.pop().expect("br_if is expected to produce a value"); 
                 state.var_stack.push(value); //FIXME not neccessary anymore if we don't generate unreachable instruction 
                 vec![Stmt::If{
                     condition, 
@@ -1424,7 +1435,7 @@ fn wimplify_instrs(
 
         highlevel::Instr::Local(highlevel::LocalOp::Get, local_ind) => {
             let ind = local_ind.into_inner(); 
-            let local_var = if ind > state.num_params - 1 {
+            let local_var = if ind + 1 > state.num_params {
                 Local(local_ind.into_inner()-state.num_params)
             } else {
                 Param(ind)
@@ -1443,12 +1454,13 @@ fn wimplify_instrs(
 
         highlevel::Instr::Local(highlevel::LocalOp::Set, local_ind) => {
             let ind = local_ind.into_inner(); 
-            let local_var = if ind > state.num_params - 1 {
+            let local_var = if ind + 1 > state.num_params {
                 Local(local_ind.into_inner()-state.num_params)
             } else {
                 Param(ind)
             };
             
+            // FIXME global -> local
             panic_if_size_lt(&rhs, 1, "local.set expects a value on the stack"); 
             panic_if_size_lt(&ty.params, 1, "return type of global.set not found"); 
             vec![Stmt::Assign {
@@ -1458,23 +1470,22 @@ fn wimplify_instrs(
             }]            
         }
 
-        highlevel::Instr::Local(highlevel::LocalOp::Tee, local_ind) => {
-            let ind = local_ind.into_inner(); 
-            let local_var = if ind > state.num_params - 1 {
-                Local(local_ind.into_inner()-state.num_params)
+        highlevel::Instr::Local(highlevel::LocalOp::Tee, local_idx) => {
+            // FIXME DRY!! as soon as there are 2 repetitions, or latest if theres 3 
+            // => make a function out of it!
+            let local_idx = local_idx.into_inner(); 
+            let local_var = if local_idx < state.num_params {
+                Param(local_idx)
             } else {
-                Param(ind)
+                Local(local_idx - state.num_params)
             };
-            
-            panic_if_size_lt(&rhs, 1, "local.tee expects a value on the stack"); 
-            panic_if_size_lt(&ty.params, 1, "return type of global.set not found"); 
 
-            let rhs = rhs.pop().unwrap();
+            let rhs = rhs.pop().expect("local.tee expects a value on the stack");
             state.var_stack.push(rhs); 
             vec![Stmt::Assign{
                 lhs: local_var,
                 rhs: VarRef(rhs),
-                type_: ty.params[0], 
+                type_: *ty.params.get(0).expect("return type of local.set not found"), 
             }]
         }
 
@@ -1619,27 +1630,29 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
             }
         }
 
-        let instrs = func.code().unwrap().body.as_slice();
-        // FIXME generate type on-demand inside wimplify, not here beforehand.
-        let mut tys = VecDeque::new();
-        let mut type_checker = TypeChecker::begin_function(func, module);
-        for instr in instrs {
-            let ty = type_checker.check_next_instr(instr).map_err(|e| e.to_string())?;
-            tys.push_back(ty);
-        }
+        if let Some(code) = func.code() {
+            let instrs = code.body.as_slice();
+                    // FIXME generate type on-demand inside wimplify, not here beforehand.
+            let mut tys = VecDeque::new();
+            let mut type_checker = TypeChecker::begin_function(func, module);
+            for instr in instrs {
+                let ty = type_checker.check_next_instr(instr).map_err(|e| e.to_string())?;
+                tys.push_back(ty);
+            }
 
-        let mut instrs = VecDeque::from_iter(instrs); //TODO pass in iterator instead of vecdeque
-        let mut ty = VecDeque::from_iter(tys);
+            let mut instrs = VecDeque::from_iter(instrs); //TODO pass in iterator instead of vecdeque
+            let mut ty = VecDeque::from_iter(tys);
 
-        let mut state = State::new(func.type_.params.len()); 
-        if func.type_.results.len() == 0 { state.label_stack.push((0, None)); } 
-        else { 
-            state.label_stack.push((0, Some((Var::Return(0), func.type_.results[0])))); 
-        }
+            let mut state = State::new(func.type_.params.len()); 
+            if func.type_.results.len() == 0 { state.label_stack.push((0, None)); } 
+            else { 
+                state.label_stack.push((0, Some((Var::Return(0), func.type_.results[0])))); 
+            }
 
-        for inst in wimplify_instrs(&mut instrs, &mut ty, &mut state).unwrap() {
-            result_instrs.push(inst); 
-        }
+            for inst in wimplify_instrs(&mut instrs, &mut ty, &mut state).unwrap() {
+                result_instrs.push(inst); 
+            }
+        } 
         
         let name = if let Some(name) = &func.name {
             Func::Named(name.clone())
@@ -1698,7 +1711,7 @@ mod test {
             (Assign{ lhs: Stack(0), type_: ValType::I32, rhs: MemorySize}, "s0: i32 = memory.size", "with lhs"),
             (Assign{ lhs: Global(0), type_: ValType::I32, rhs: VarRef(Local(0)) }, "g0: i32 = l0", ""),
             (
-                Assign{
+                Assign {
                     lhs: Stack(0),
                     rhs: Const(I32(1337)), 
                     type_: ValType::I32, 
@@ -1707,7 +1720,7 @@ mod test {
                 ""
             ),
             (
-                Assign{
+                Assign {
                     lhs: Stack(1),
                     rhs: Numeric {
                         op: I32Add,
@@ -1719,7 +1732,7 @@ mod test {
                 ""
             ),
             (
-                Assign{
+                Assign {
                     lhs: Stack(1),
                     rhs: Load {
                         op: I32Load,
@@ -1942,10 +1955,20 @@ mod test {
     }
 
     #[test]
-    fn pretty_print() {
+    fn pretty_print_statement() {
         for (i, (wimpl, text, msg)) in WIMPL_CANONICAL_SYNTAX_TESTCASES.iter().enumerate() {
             assert_eq!(&wimpl.to_string(), text, "\ntest #{}\n{}", i, msg);
         }
+    }
+
+    #[test]
+    fn pretty_print_function() {
+        todo!()
+    }
+
+    #[test]
+    fn pretty_print_module() {
+        todo!()
     }
 
     #[test]

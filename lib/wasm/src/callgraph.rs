@@ -130,3 +130,9 @@ fn create_graph() {
     println!("{}", callgraph.to_dot());
     callgraph.to_pdf("tests/wimpl/calc-dce/callgraph.pdf").unwrap();
 }
+
+#[test]
+fn create_graph_() {
+    let wimpl_module = wimpl::wimplify("tests/wimpl/calc-virtual/add.wasm").expect(""); 
+    println!("{}", wimpl_module);     
+}
