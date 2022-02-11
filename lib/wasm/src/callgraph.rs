@@ -1,10 +1,22 @@
+use core::fmt;
 use std::{collections::HashSet, path::Path, io::{self, Write}, process::{Command, Stdio}};
 
 use crate::{wimpl::{Func, self, Expr::Call, Function}, FunctionType};
 
 pub struct CallGraph(HashSet<(Func, Func)>);
 
+impl fmt::Display for CallGraph {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        println!("{:?}", self.0); 
+        for (x, y) in self.0.iter() {
+            writeln!(f, "{} {}", x, y).expect("");
+        }; 
+        Ok(())
+    }
+}
+
 impl CallGraph {
+
     pub fn to_dot(&self) -> String {
         let mut dot_file: String = "".to_owned();
         dot_file.push_str("digraph G {\n"); 
@@ -32,9 +44,11 @@ impl CallGraph {
     }
 }
 
+
+
 pub fn callgraph(module: &wimpl::Module) -> CallGraph {
     // TODO split "collecting constraints" from "solving constraints to a graph"
-
+     
     let mut graph: HashSet<(Func, Func)> = HashSet::new();
     
     for fun in &module.functions {
@@ -92,13 +106,17 @@ pub fn callgraph(module: &wimpl::Module) -> CallGraph {
 
 #[cfg(test)]
 mod tests {
+    use crate::{wimpl::wimplify, callgraph::CallGraph, callgraph};
 
-    #[test]
-    fn create_graph() {
-        // TODO 2-3 function wasm file, 1 direct call, 2 call_indirect, 5 functions in total
-        // parse wasm to hl module
-        // convert hl to wimpl
-        // run callgraph
-        // manual: inspect call graph
-    }
+
+    
+}
+
+#[test]
+fn create_graph() {
+    // TODO 2-3 function wasm file, 1 direct call, 2 call_indirect, 5 functions in total
+    let wimpl_module = wimpl::wimplify("tests/wimpl/calc-dce/add-dce.wasm").expect(""); 
+    println!("{}", wimpl_module); 
+    let val = callgraph(&wimpl_module); 
+    println!("{}", val.to_dot()); 
 }

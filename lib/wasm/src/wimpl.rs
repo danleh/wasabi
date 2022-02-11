@@ -2175,3 +2175,7 @@ fn if_else() {
     test("tests/wimpl/if_else/if_else.wimpl", "tests/wimpl/if_else/if_else.wasm");
 }
 
+#[test]
+fn calc_dce() {
+    test("tests/wimpl/calc-dce/add-dce.wimpl", "tests/wimpl/calc-dce/add-dce.wasm");
+}
