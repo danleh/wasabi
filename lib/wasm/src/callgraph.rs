@@ -38,6 +38,7 @@ impl CallGraph {
                 .spawn()?;
         let mut stdin = child.stdin.take().expect("correctly requested stdin piped above!?");
         stdin.write_all(self.to_dot().as_bytes())?;
+        drop(stdin);
         let status = child.wait()?;
         assert!(status.success(), "should not fail because we always produce valid dot input!?");
         Ok(())
@@ -64,12 +65,6 @@ pub fn callgraph(module: &wimpl::Module) -> CallGraph {
 
                 Assign { lhs: _, rhs: CallIndirect { type_, table_idx: _, args: _ }, type_: _ } |
                 Expr(CallIndirect { type_, table_idx: _, args: _ }) => {
-                    
-                    //OPTION A: trivial, all functions are reachable
-                    for f in &module.functions {
-                        graph.insert((fun.name(), f.name()));
-                    }
-
                     let mut funcs_in_table: HashSet<&Function> = HashSet::new();
                     for tab in &module.tables {
                         // TODO interpret table offset for index-based analysis
@@ -81,12 +76,24 @@ pub fn callgraph(module: &wimpl::Module) -> CallGraph {
                         }
                     } 
                     
-                    // OPTION B 
+                    // All functions, no constraint at all.
+                    // for f in &module.functions {
+                    //     graph.insert((fun.name(), f.name()));
+                    // }
+
+                    // Only functions in table, but no ty constraint.
                     // for func in &funcs_in_table {
                     //     graph.insert((fun.name(), func.name())); 
                     // }
 
-                    // //OPTION C
+                    // All functions, but with ty constraint.
+                    for func in &module.functions {
+                        if &func.type_ == type_ {
+                            graph.insert((fun.name(), func.name())); 
+                        }
+                    }
+
+                    // Functions in table AND type constraint.
                     // for func in &funcs_in_table {
                     //     if &func.type_ == type_ {
                     //         graph.insert((fun.name(), func.name())); 
@@ -119,6 +126,7 @@ fn create_graph() {
     // TODO 2-3 function wasm file, 1 direct call, 2 call_indirect, 5 functions in total
     let wimpl_module = wimpl::wimplify("tests/wimpl/calc-dce/add-dce.wasm").expect(""); 
     println!("{}", wimpl_module); 
-    let val = callgraph(&wimpl_module); 
-    println!("{}", val.to_dot()); 
+    let callgraph = callgraph(&wimpl_module); 
+    println!("{}", callgraph.to_dot());
+    callgraph.to_pdf("tests/wimpl/calc-dce/callgraph.pdf").unwrap();
 }

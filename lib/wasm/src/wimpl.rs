@@ -242,6 +242,7 @@ where
     }
 }
 
+// FIXME add test for this
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "module {{").expect("");
@@ -252,24 +253,25 @@ impl fmt::Display for Module {
     }
 }
 
+// FIXME add test for this
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "func {}", self.name)?;
-        write!(f, " [")?; 
+        write!(f, " (")?; 
         for (i, ty) in self.type_.params.iter().enumerate() {
             write!(f, "{}: {}", Var::Param(i), ty)?;
-            if i < self.type_.params.len() {
+            if i < self.type_.params.len() - 1 {
                 write!(f, ", ")?;
             }
         }
-        write!(f, "] -> [")?;
+        write!(f, ") -> (")?;
         for (i, ty) in self.type_.results.iter().enumerate() {
             write!(f, "{}: {}", Var::Return(i), ty)?;
-            if i < self.type_.results.len() {
+            if i < self.type_.results.len() - 1 {
                 write!(f, ", ")?;
             }
         }
-        write!(f, "] {}: ", Label(0))?;
+        write!(f, ") {}: ", Label(0))?;
         write!(f, "{}", self.body)
     }
 }
@@ -513,7 +515,7 @@ impl FromStr for Func {
         } else {
             // Functions must start with an alphabetic character, to avoid confusion with constants. 
             match s.chars().next() {
-                Some(c) if c.is_alpha() => Func::Named(s.to_string()),
+                Some(c) if c.is_alphabetic() => Func::Named(s.to_string()),
                 _ => return Err(()),
             }
         })
@@ -2065,6 +2067,8 @@ mod test {
 
 #[cfg(test)]
 fn test (path_wimpl: &str, path_wasm: &str) {
+    // FIXME! we cannot just comment out tests that don't run!
+
     // let expected = Stmt::from_file(path_wimpl).unwrap();
     // println!("EXPECTED");
     // for instr in &expected {
