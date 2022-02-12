@@ -16,7 +16,6 @@ impl fmt::Display for CallGraph {
 }
 
 impl CallGraph {
-
     pub fn to_dot(&self) -> String {
         let mut dot_file: String = "".to_owned();
         dot_file.push_str("digraph G {\n"); 
