@@ -1,5 +1,11 @@
-s2: i32 = @label0: block {
-s0: i32 = i32.const 42
-@label1: block { s1: i32 = i32.const 0 br @label0 (s1) } 
-s0
+b1: i32 = i32.const 0
+@label1: block {
+  s1: i32 = i32.const 42
+  @label2: block {
+    s2: i32 = i32.const 0 
+    b1: i32 = s2
+    br @label1 
+  }
+  b1: i32 = s1
 }
+r0: i32 = b1

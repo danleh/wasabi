@@ -1,2 +1,8 @@
-s1 = i32.const 1 
-br_table default=@label0 (s1) 
+s0: i32 = i32.const 42 
+s1: i32 = i32.const 1
+switch (s1) {
+  default: {
+ 	r0: i32 = s0 
+ 	br @label0 
+  }
+}  

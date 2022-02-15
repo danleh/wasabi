@@ -1,6 +1,8 @@
-s0: i32 = i32.const 0 
-@label0: if (s0) {
-	s1: i32 = i32.const 1
-	call f1 (s1) 
-} 
-s2: i32 = i32.const 42 
+s0: i32 = i32.const 0
+@label1: block {
+  if (s0) {
+    s1: i32 = i32.const 1
+    call f1 (s1)
+  }
+}
+s2: i32 = i32.const 42
