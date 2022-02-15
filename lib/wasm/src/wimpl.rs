@@ -952,7 +952,8 @@ pub struct State {
     pub label_count: usize,
     pub stack_var_count: usize,
     pub var_stack: Vec<Var>,
-    pub label_stack: Vec<(usize, Option<(Var, ValType)>)>, 
+    // TODO: change usize to Label
+    pub label_stack: Vec<(usize, Option<(Var, ValType)>)>,  //TODO: label stack needs to flag if block or loop 
     pub else_taken: bool, 
     pub num_params: usize, 
 }
@@ -989,7 +990,16 @@ fn wimplify_instrs(
         let ty = tys.pop_front().expect("type list not expected to be empty");
         
         let ty = match ty {
-            InferredInstructionType::Unreachable => return Ok(Vec::new()),
+            InferredInstructionType::Unreachable => {
+                match instr {
+                    highlevel::Instr::End => return Ok(result_instrs),
+                    highlevel::Instr::Else => {
+                        state.else_taken = true; 
+                        return Ok(result_instrs)
+                    } 
+                    _ => continue  //return Ok(Vec::new())
+                }                
+            },
             InferredInstructionType::Reachable(ty) => ty,
         };
         
@@ -1058,14 +1068,16 @@ fn wimplify_instrs(
                 state.label_count += 1;
                 
                 //create new block state 
+                // TODO split into three parts: one part mutable (label_count, stack_var_count), one
+                // part not mutable ("global constants": num_params), and "local state" var_stack, 
+                // label_stack, else_taken).
                 let mut block_state = State {
-                    label_count: state.label_count,
+                    label_count: state.label_count, // TODO: mut ref and shared so not cloned 
                     stack_var_count: state.stack_var_count,
-                    var_stack: Vec::new(),
-                    label_stack: 
-                        state.label_stack.clone(),
-                    else_taken: false,
-                    num_params: state.num_params,   
+                    var_stack: Vec::new(),  // TODO: -> initialize before while - local var of the function 
+                    label_stack: state.label_stack.clone(), //parameter to the function used to initalize a local version of it - not a mutable reference 
+                    else_taken: false, // TODO: part of the return value of wimplify_instrs
+                    num_params: state.num_params, // TODO: pulled out of state, not mutable -> functtion parameter thats not mutable 
                 }; 
                 if let Some(result_var) = result_var {
                     block_state.label_stack.push((curr_label_count, Some((result_var, btype.expect("block type is expected since the block has a result variable")))))                
@@ -1083,11 +1095,18 @@ fn wimplify_instrs(
                     state.var_stack.push(result_var.expect("block is producing a result but no associated result variable found"));     
                 }
 
-                //push block statement into result list 
-                res_instr_vec.push(Stmt::Block{
-                    end_label: Label(curr_label_count),
-                    body: Body(block_body),
-                });             
+                res_instr_vec.push(match instr {
+                    highlevel::Instr::Block(_) => Stmt::Block{
+                        end_label: Label(curr_label_count),
+                        body: Body(block_body),
+                    },
+                    highlevel::Instr::Loop(_) => Stmt::Loop{
+                        begin_label: Label(curr_label_count),
+                        body: Body(block_body),
+                    },
+                    _ => panic!("should not execute any instruction that is not block or loop at this point")
+                }); 
+
                 res_instr_vec 
             }
             
@@ -1183,10 +1202,10 @@ fn wimplify_instrs(
 
             highlevel::Instr::End => {
                  
-                println!("label stack: {:?}", state.label_stack);
+                //println!("label stack: {:?}", state.label_stack);
                 let (_, return_info) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack"); 
                 //why not args here: else type does not produce a value, we rely on the label stack for that information 
-                println!("return info: {:?}", return_info);  
+                //println!("return info: {:?}", return_info);  
                 if let Some((ret_var, type_)) = return_info {
                     result_instrs.push(Stmt::Assign{
                         lhs: ret_var,
@@ -1194,6 +1213,7 @@ fn wimplify_instrs(
                         type_,
                     });
                 }; 
+                //println!("result instrs: {:?}", result_instrs); 
                 return Ok(result_instrs)
             }
 
@@ -2124,17 +2144,16 @@ fn block_nested() {
 }
 
 #[test]
-fn br_simple() { //interesting case //TODO: bug: end should not be skipped -> is it being marked unreachable? 
+fn br_simple() {  
     test("tests/wimpl/br_simple/br.wimpl", "tests/wimpl/br_simple/br.wasm");
 }
 
-// TODO: does not run
 #[test]
 fn br_nested_simple() {  
     test("tests/wimpl/br_nested_simple/br.wimpl", "tests/wimpl/br_nested_simple/br.wasm");
 }
 
-// TODO: does not run
+// TODO: fix wimpl test 
 #[test]
 fn br_nested() {
     test("tests/wimpl/br_nested/br.wimpl", "tests/wimpl/br_nested/br.wasm");
@@ -2156,7 +2175,6 @@ fn br_if_2() {
     test("tests/wimpl/br_if_2/br_if.wimpl", "tests/wimpl/br_if_2/br_if.wasm");
 }
 
-//TODO: bug - end is unreachable why?? 
 #[test]
 fn br_table() {  
     test("tests/wimpl/br_table/br_table.wimpl", "tests/wimpl/br_table/br_table.wasm");
@@ -2205,6 +2223,10 @@ fn module_8c087e0290bb39f1e090() { //TODO: stack overflow
     println!("{}", wimpl_module);
 }
 
+//br-if line 52241
+//br-if ends ends loop 52039
+// br to a loop restarts the loop -> does not consume the result -> no assign [br] 
+// br to a block ends the block -> consumes the result -> pop from var stack if result is needed [assign, br]
 #[test]
 fn annots() { //TODO: where is the else??
     let wimpl_module = wimplify("tests/wimpl-USENIX/annots/annots.wasm").expect(""); 
