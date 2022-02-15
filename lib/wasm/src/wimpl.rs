@@ -1290,13 +1290,13 @@ fn wimplify_instrs(
 
             highlevel::Instr::Return => {
                 let target = Label(0);
-                if let Some(val) = state.var_stack.pop() {
-                    let return_var = state.label_stack[0].1.expect("mismatch between label stack and rhs");
+                if let (_, Some((return_var, type_, loop_flag))) = state.label_stack.pop().expect("empty label stack, but expected function ") {
+                    let return_val = state.var_stack.pop().expect("return expects a return value");
                     vec![
                         Stmt::Assign{ 
-                            lhs: return_var.0, 
-                            type_: return_var.1, 
-                            rhs: VarRef(val)
+                            lhs: return_var, 
+                            type_,
+                            rhs: VarRef(return_val)
                         }, 
                         Stmt::Br{ target }
                     ]
@@ -2206,7 +2206,7 @@ fn module_8c087e0290bb39f1e090() { //TODO: stack overflow
 // br to a loop restarts the loop -> does not consume the result -> no assign [br] 
 // br to a block ends the block -> consumes the result -> pop from var stack if result is needed [assign, br]
 #[test]
-fn annots() { //TODO: where is the else??
+fn annots() { 
     let wimpl_module = wimplify("tests/wimpl-USENIX/annots/annots.wasm").expect(""); 
     println!("{}", wimpl_module);
 }
