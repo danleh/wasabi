@@ -953,7 +953,9 @@ pub struct State {
     pub stack_var_count: usize,
     pub var_stack: Vec<Var>,
     // TODO: change usize to Label
-    pub label_stack: Vec<(usize, Option<(Var, ValType)>)>,  //TODO: label stack needs to flag if block or loop 
+    // if you are in a block or an if => false 
+    // if you are in a loop => true 
+    pub label_stack: Vec<(usize, Option<(Var, ValType, bool)>)>,  //TODO: label stack needs to flag if block or loop 
     pub else_taken: bool, 
     pub num_params: usize, 
 }
@@ -1026,15 +1028,36 @@ fn wimplify_instrs(
 
         let lhs_ty = lhs.map(|_|ty.results[0]);
         
-        let mut args: Vec<Var> = state.var_stack.split_off(state.var_stack.len()-n_inputs); 
-        
         let resolve_local_idx_to_var = |local_idx| {
             if local_idx < state.num_params {
                 Param(local_idx)
             } else {
                 Local(local_idx - state.num_params)
             }
-        }; 
+        };
+
+        let label_to_instrs = |label_stack: &[_], label: crate::Label, get_value: &mut dyn FnMut() -> Var| -> Vec<Stmt> {
+            let (target, return_info) = *label_stack.iter().rev().nth(label.into_inner()).expect("label stack should never be empty"); 
+            let target = Label(target); 
+            
+            match return_info {
+                // Target block needs a result, and is not a loop.
+                Some((lhs, type_, false)) => vec![
+                    Stmt::Assign{ 
+                        lhs, 
+                        rhs: VarRef(get_value()), 
+                        type_, 
+                    }, 
+                    Stmt::Br {
+                        target,
+                    }
+                ],
+                // Target block either has no result, or is a loop.
+                Some((_, _, true)) | None => vec![Stmt::Br {
+                    target,
+                }]
+            }
+        };
 
         let result_instr: Vec<Stmt> = match instr {
 
@@ -1080,7 +1103,13 @@ fn wimplify_instrs(
                     num_params: state.num_params, // TODO: pulled out of state, not mutable -> functtion parameter thats not mutable 
                 }; 
                 if let Some(result_var) = result_var {
-                    block_state.label_stack.push((curr_label_count, Some((result_var, btype.expect("block type is expected since the block has a result variable")))))                
+                    let loop_flag = match instr {
+                        highlevel::Instr::Loop(_) => true, 
+                        highlevel::Instr::Block(_) => false, 
+                        _ => unreachable!("should only be translating block or loop")                    
+                    };
+                    let block_result = Some((result_var, btype.expect("block type is expected since the block has a result variable"), loop_flag));
+                    block_state.label_stack.push((curr_label_count, block_result))                
                 } else {
                     block_state.label_stack.push((curr_label_count, None)); 
                 }
@@ -1144,7 +1173,7 @@ fn wimplify_instrs(
                 // if_state.var_stack = Vec::new(); 
 
                 if let Some(result_var) = result_var {
-                    if_state.label_stack.push((curr_label_count, Some((result_var, blocktype.expect("block type expected since there is an associated result variable for the block")))))                
+                    if_state.label_stack.push((curr_label_count, Some((result_var, blocktype.expect("block type expected since there is an associated result variable for the block"), false))))                
                 } else {
                     if_state.label_stack.push((curr_label_count, None)); 
                 }
@@ -1167,7 +1196,7 @@ fn wimplify_instrs(
                 res_vec.push(Stmt::Block {
                     end_label: Label(curr_label_count),
                     body: Body(vec![Stmt::If{
-                        condition: args.pop().expect("if expects a condition which was not found on the stack"), 
+                        condition: state.var_stack.pop().expect("if expects a condition which was not found on the stack"), 
                         if_body: Body(if_body),
                         else_body,
                     }])
@@ -1189,7 +1218,8 @@ fn wimplify_instrs(
                 // we use state.var_stack.pop() and not args.pop() here because, else will never produce a value 
                 // or consume it, but here we have to create the assign of the if-block if needed   
                 // hence, args will be [] and the required value should be at the top of the var_stack
-                if let Some((lhs, type_)) = return_info {
+                if let Some((lhs, type_, loop_flag)) = return_info {
+                    assert!(!loop_flag, "if block result should never be have loop_flag set");
                     result_instrs.push(Stmt::Assign{
                         lhs, 
                         rhs: VarRef(state.var_stack.pop().expect("if block is producing a value which is expected on the stack")),  
@@ -1206,7 +1236,7 @@ fn wimplify_instrs(
                 let (_, return_info) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack"); 
                 //why not args here: else type does not produce a value, we rely on the label stack for that information 
                 //println!("return info: {:?}", return_info);  
-                if let Some((ret_var, type_)) = return_info {
+                if let Some((ret_var, type_, _loop_block)) = return_info {
                     result_instrs.push(Stmt::Assign{
                         lhs: ret_var,
                         rhs: VarRef(state.var_stack.pop().expect("the block is producing a value for which it expect a value on the stack")), 
@@ -1217,102 +1247,50 @@ fn wimplify_instrs(
                 return Ok(result_instrs)
             }
 
-            highlevel::Instr::Br(lab) => {                        
-                
-                let (target, return_info) = *state.label_stack.iter().rev().nth(lab.into_inner()).expect("label stack should never be empty"); 
-                let target = Label(target); 
-
-                let val = args.pop();
-                
-                if let Some(return_val) = val {
-                    let (lhs, type_) = return_info.expect("br expected to produce a value"); 
-                    vec![
-                        Stmt::Assign{ 
-                            lhs, 
-                            rhs: VarRef(return_val), 
-                            type_, 
-                        }, 
-                        Stmt::Br {
-                            target,
-                        }
-                    ]
-                } else {
-                    vec![Stmt::Br {
-                        target,
-                    }]
-                }           
+            highlevel::Instr::Br(label) => {
+                let var_stack = &mut state.var_stack;
+                label_to_instrs(&state.label_stack, *label, &mut || var_stack.pop().expect("br expected a value to return"))
             },
 
-            highlevel::Instr::BrIf(lab) => {
-                
-                println!("state label stack: {:?}", state.label_stack); 
-                println!("label num: {}", lab.into_inner());
-                let (target, return_info) = *state.label_stack.iter().rev().nth(lab.into_inner()).expect("label stack should never be empty"); 
-                let target = Label(target); 
-                println!("return info: {:?}", return_info); 
-                
-                let condition = args.pop().expect("if requires a conditional statement"); 
-                
-                let mut body = Vec::new(); 
-                if let Some((lhs_, type_)) = return_info {
-                    let value = args.pop().expect("br_if is expected to produce a value"); 
-                    state.var_stack.push(value); //br_if only pops the condition variable from the evaluation stack   
-                    body.push(Stmt::Assign{ 
-                        lhs: lhs_, 
-                        rhs: VarRef(value), 
-                        type_, 
-                    })
-                }
-        
-                body.push(Stmt::Br {
-                    target,
-                });
-                println!("state var stack: {:?}", state.var_stack); 
+            highlevel::Instr::BrIf(label) => {
+                let condition = state.var_stack.pop().expect("if requires a conditional statement"); 
                 vec![Stmt::If{
                     condition, 
-                    if_body: Body(body), 
+                    if_body: Body(label_to_instrs(&state.label_stack, *label, &mut || {
+                        // TODO fixup var_stack
+                        *state.var_stack.last().expect("br_if expected value to return")
+                    })), 
                     else_body: None,
                 }]
             }
 
             highlevel::Instr::BrTable { table, default } => { 
+                // Index used for br_table.
+                let idx = state.var_stack.pop().expect("br_table requires an index into the table to be supplied"); 
                 
-                let mut res_insts = Vec::new(); 
-                
-                // condition used for br_table
-                let idx = args.pop().expect("br_table requires an index into the table to be supplied"); 
-                
-                //pop a value from rhs since it could be that it needs to be assigned to a result variable 
-                let val = args.pop();
-
-                let label_to_case_body = |label: crate::Label| {
-                    let (label, label_result) = *state.label_stack.iter().rev().nth(label.into_inner()).expect("label stack should never be empty"); 
-                    let mut body = Vec::new();
-                    if let Some((lhs, type_)) = label_result {
-                        body.push(Stmt::Assign{
-                            lhs,
-                            rhs: VarRef(val.expect("label_result and val are both either None or Som")),
-                            type_,
-                        }); 
-                    }
-                    body.push(Stmt::Br { target: Label(label) });
-                    Body(body)
+                let mut should_pop = false;
+                let get_result_val = &mut || {
+                    should_pop = true;
+                    *state.var_stack.last().expect("br_table expected value to return")
                 };
-                let default = label_to_case_body(*default);
-                let cases = table.iter().copied().map(label_to_case_body).collect(); 
+ 
+                let default = Body(label_to_instrs(&state.label_stack, *default, get_result_val));
+                let cases = table.iter().copied().map(|label| Body(label_to_instrs(&state.label_stack, label, get_result_val))).collect(); 
 
-                res_insts.push(Stmt::Switch {
+                if should_pop {
+                    state.var_stack.pop().expect("last succeeded, so pop should as well");
+                }
+                
+                vec![Stmt::Switch {
                     index: idx,
                     cases,
                     default,
-                }); 
-
-                res_insts
+                }]
             }
 
             highlevel::Instr::Return => {
                 let target = Label(0);
-                if let Some(val) = args.pop() {
+                if let Some(val) = state.var_stack.pop() {
                     let return_var = state.label_stack[0].1.expect("mismatch between label stack and rhs");
                     vec![
                         Stmt::Assign{ 
@@ -1330,7 +1308,7 @@ fn wimplify_instrs(
             highlevel::Instr::Call(idx) => {
                 let call_rhs = Call {
                     func: Func::Idx(idx.into_inner()), 
-                    args,
+                    args: state.var_stack.split_off(state.var_stack.len()-n_inputs),
                 }; 
                 if let Some(lhs) = lhs {
                     vec![Stmt::Assign{
@@ -1351,8 +1329,8 @@ fn wimplify_instrs(
                 // the rest (till you collect all the needed parameters are arguments
                 let callind_rhs = CallIndirect{
                     type_: fn_type.clone(), 
-                    table_idx: args.pop().expect("call_indirect requires an index"),
-                    args,
+                    table_idx: state.var_stack.pop().expect("call_indirect requires an index"),
+                    args: state.var_stack.split_off(state.var_stack.len()-fn_type.params.len()),
                 }; 
 
                 if let Some(lhs) = lhs {
@@ -1369,9 +1347,9 @@ fn wimplify_instrs(
             highlevel::Instr::Drop => Vec::new(), 
 
             highlevel::Instr::Select => { 
-                let arg1 = args.pop().expect("select requires a value on the stack for the condition"); //cond  
-                let arg2 = args.pop().expect("select requires a value on the stack for the then case"); //if
-                let arg3 = args.pop().expect("select requires a value on the stack for the else case"); //else
+                let arg1 = state.var_stack.pop().expect("select requires a value on the stack for the condition"); //cond  
+                let arg2 = state.var_stack.pop().expect("select requires a value on the stack for the then case"); //if
+                let arg3 = state.var_stack.pop().expect("select requires a value on the stack for the else case"); //else
                 let type_ = ty.results[0]; 
                 
                 if let Some(lhs) = lhs {
@@ -1419,14 +1397,14 @@ fn wimplify_instrs(
                 let lhs = resolve_local_idx_to_var(local_idx.into_inner()); 
                 vec![Stmt::Assign {
                     lhs, 
-                    rhs: VarRef(args.pop().expect("local.set expects a value on the stack")),
+                    rhs: VarRef(state.var_stack.pop().expect("local.set expects a value on the stack")),
                     type_: *ty.params.get(0).expect("return type of local.set not found"), 
                 }]            
             }
 
             highlevel::Instr::Local(highlevel::LocalOp::Tee, local_idx) => {
                 let lhs = resolve_local_idx_to_var(local_idx.into_inner()); 
-                let rhs = args.pop().expect("local.tee expects a value on the stack");
+                let rhs = state.var_stack.pop().expect("local.tee expects a value on the stack");
                 state.var_stack.push(rhs); 
                 vec![Stmt::Assign{
                     lhs,
@@ -1452,14 +1430,14 @@ fn wimplify_instrs(
                 let global_var = Global(global_ind.into_inner());
                 vec![Stmt::Assign{
                     lhs: global_var,
-                    rhs: VarRef(args.pop().expect("global.set expects a value on the stack")),
+                    rhs: VarRef(state.var_stack.pop().expect("global.set expects a value on the stack")),
                     type_: *ty.params.get(0).expect("return type of global.set not found"), 
                 }]
             }
 
             highlevel::Instr::Load(loadop, memarg) => {
                 let lhs = lhs.expect("Every load produces a value");
-                let rhs = args.pop().expect("Every load consumes a value");
+                let rhs = state.var_stack.pop().expect("Every load consumes a value");
                 vec![Stmt::Assign{
                     lhs,
                     rhs: Load {
@@ -1475,8 +1453,8 @@ fn wimplify_instrs(
                 vec![Stmt::Store {
                     op: *storeop,
                     memarg: *memarg,
-                    addr: args.pop().expect("store consumes a value for address from the stack which was not found"),
-                    value: args.pop().expect("store consumes a value to store at the address from the stack which was not found"),
+                    addr: state.var_stack.pop().expect("store consumes a value for address from the stack which was not found"),
+                    value: state.var_stack.pop().expect("store consumes a value to store at the address from the stack which was not found"),
                 }]
             }
 
@@ -1494,7 +1472,7 @@ fn wimplify_instrs(
                     vec![Stmt::Assign{
                         lhs, 
                         rhs: MemoryGrow {
-                            pages: args.pop().expect("memory_grow has to consume a value from stack"),
+                            pages: state.var_stack.pop().expect("memory_grow has to consume a value from stack"),
                         },
                         type_: lhs_ty.expect("lhs has to have a type"), 
                     }]
@@ -1517,7 +1495,7 @@ fn wimplify_instrs(
                         lhs, 
                         rhs: Numeric {
                             op: *op,
-                            args,
+                            args: state.var_stack.split_off(state.var_stack.len()-n_inputs),
                         },
                         type_: lhs_ty.expect("lhs requires a type"), 
                     }]
@@ -1582,7 +1560,7 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
             let mut state = State::new(func.type_.params.len()); 
             if func.type_.results.len() == 0 { state.label_stack.push((0, None)); } 
             else { 
-                state.label_stack.push((0, Some((Var::Return(0), func.type_.results[0])))); 
+                state.label_stack.push((0, Some((Var::Return(0), func.type_.results[0], false)))); 
             }
 
             for inst in wimplify_instrs(&mut instrs, &mut ty, &mut state).expect("non-empty instruction list for wasm cannot produce an empty list of wimpl instructions") {
