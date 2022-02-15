@@ -123,7 +123,7 @@ mod tests {
 #[test]
 fn create_graph() {
     // TODO 2-3 function wasm file, 1 direct call, 2 call_indirect, 5 functions in total
-    let wimpl_module = wimpl::wimplify("tests/wimpl/calc-dce/add-dce.wasm").expect(""); 
+    let wimpl_module = wimpl::wimplify("tests/wimpl-wasm-handwritten/calc-dce/add-dce.wasm").expect(""); 
     println!("{}", wimpl_module); 
     let callgraph = callgraph(&wimpl_module); 
     println!("{}", callgraph.to_dot());
@@ -132,7 +132,7 @@ fn create_graph() {
 
 #[test]
 fn calc_virtual() {
-    let wimpl_module = wimpl::wimplify("tests/wimpl/calc-virtual/add.wasm").expect(""); 
+    let wimpl_module = wimpl::wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect(""); 
     println!("{}", wimpl_module);     
     let callgraph = callgraph(&wimpl_module); 
     println!("{}", callgraph.to_dot());

@@ -2177,6 +2177,26 @@ fn if_else() {
     test("tests/wimpl/if_else/if_else.wimpl", "tests/wimpl/if_else/if_else.wasm");
 }
 
+//hand written calculator programs 
+
+#[test]
+fn calc() {  
+    let wimpl_module = wimplify("tests/wimpl-wasm-handwritten/calc/add.wasm").expect(""); 
+    println!("{}", wimpl_module);
+}
+
+#[test]
+fn calc_dce() {  
+    let wimpl_module = wimplify("tests/wimpl-wasm-handwritten/calc-dce/add-dce.wasm").expect(""); 
+    println!("{}", wimpl_module);
+}
+
+#[test]
+fn calc_virtual() {  
+    let wimpl_module = wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect(""); 
+    println!("{}", wimpl_module);
+}
+
 //USENIX programs 
 
 #[test]
