@@ -1158,10 +1158,13 @@ fn wimplify_instrs(
             },
 
             highlevel::Instr::Else => {
+                
                 state.else_taken = true; 
                 
                 // cannot pop because you still want it to be on the label stack while processing the else body 
-                let (_, return_info) = *state.label_stack.last().expect("label stack should never be empty");
+                //let (_, return_info) = *state.label_stack.last().expect("label stack should never be empty");
+                let (_, return_info) = state.label_stack[state.label_stack.len()-1]; 
+                
 
                 // assign of the if statement that we just finished processing 
                 // we use state.var_stack.pop() and not args.pop() here because, else will never produce a value 
@@ -1179,8 +1182,11 @@ fn wimplify_instrs(
             },
 
             highlevel::Instr::End => {
+                 
+                println!("label stack: {:?}", state.label_stack);
                 let (_, return_info) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack"); 
                 //why not args here: else type does not produce a value, we rely on the label stack for that information 
+                println!("return info: {:?}", return_info);  
                 if let Some((ret_var, type_)) = return_info {
                     result_instrs.push(Stmt::Assign{
                         lhs: ret_var,
@@ -1219,8 +1225,11 @@ fn wimplify_instrs(
 
             highlevel::Instr::BrIf(lab) => {
                 
+                println!("state label stack: {:?}", state.label_stack); 
+                println!("label num: {}", lab.into_inner());
                 let (target, return_info) = *state.label_stack.iter().rev().nth(lab.into_inner()).expect("label stack should never be empty"); 
                 let target = Label(target); 
+                println!("return info: {:?}", return_info); 
                 
                 let condition = args.pop().expect("if requires a conditional statement"); 
                 
@@ -1238,7 +1247,7 @@ fn wimplify_instrs(
                 body.push(Stmt::Br {
                     target,
                 });
-                
+                println!("state var stack: {:?}", state.var_stack); 
                 vec![Stmt::If{
                     condition, 
                     if_body: Body(body), 
@@ -2168,7 +2177,87 @@ fn if_else() {
     test("tests/wimpl/if_else/if_else.wimpl", "tests/wimpl/if_else/if_else.wasm");
 }
 
+//USENIX programs 
+
 #[test]
-fn calc_dce() {
-    test("tests/wimpl/calc-dce/add-dce.wimpl", "tests/wimpl/calc-dce/add-dce.wasm");
+fn module_8c087e0290bb39f1e090() { //TODO: stack overflow 
+    let wimpl_module = wimplify("tests/wimpl-USENIX/8c087e0290bb39f1e090.module/8c087e0290bb39f1e090.module.wasm").expect(""); 
+    println!("{}", wimpl_module);
 }
+
+#[test]
+fn annots() { //TODO: where is the else??
+    let wimpl_module = wimplify("tests/wimpl-USENIX/annots/annots.wasm").expect(""); 
+    println!("{}", wimpl_module);
+}
+
+#[test]
+fn module_bb9bb638551198cd3a42() { 
+    let wimpl_module = wimplify("tests/wimpl-USENIX/bb9bb638551198cd3a42.module/bb9bb638551198cd3a42.module.wasm").expect(""); 
+    println!("{}", wimpl_module);
+}
+
+#[test]
+fn compiled_wasm() {  //TODO: same error hmm 
+    let wimpl_module = wimplify("tests/wimpl-USENIX/compiled.wasm/compiled.wasm").expect(""); 
+    println!("{}", wimpl_module);
+}
+
+#[test]
+fn module_dac34eee5ed4216c65b2() {   
+    let wimpl_module = wimplify("tests/wimpl-USENIX/dac34eee5ed4216c65b2.module/dac34eee5ed4216c65b2.module.wasm").expect(""); 
+    println!("{}", wimpl_module);
+}
+
+// TODO: br_if line 2344 
+// br_if produces a value 
+// why does br_if produce a value? when the label it is jumping to expects a value as a result 
+#[test]
+fn imagequant_c970f() {  
+    let wimpl_module = wimplify("tests/wimpl-USENIX/imagequant.c970f/imagequant.c970f.wasm").expect(""); 
+    println!("{}", wimpl_module);
+}
+
+
+//TODO: same error as above 
+#[test]
+fn mozjpeg_enc_93395() {  
+    let wimpl_module = wimplify("tests/wimpl-USENIX/mozjpeg_enc.93395/mozjpeg_enc.93395.wasm").expect(""); 
+    println!("{}", wimpl_module);
+}
+
+//TODO: bug
+#[test]
+fn optipng_4e77b() {  
+    let wimpl_module = wimplify("tests/wimpl-USENIX/optipng.4e77b/optipng.4e77b.wasm").expect(""); 
+    println!("{}", wimpl_module);
+}
+
+//TODO: test after that return empty bug is fixed 
+#[test]
+fn rotate_4cdaa() {  
+    let wimpl_module = wimplify("tests/wimpl-USENIX/rotate.4cdaa/rotate.4cdaa.wasm").expect(""); 
+    println!("{}", wimpl_module);
+}
+
+
+#[test]
+fn USENIX_bin_acrobat_wasm() {  
+    let wimpl_module = wimplify("tests/wimpl-USENIX/USENIX_bin_acrobat.wasm/USENIX_bin_acrobat.wasm.wasm").expect(""); 
+    println!("{}", wimpl_module);
+}
+
+//TODO: same bug 
+#[test]
+fn webp_dec_fa0ab() {  
+    let wimpl_module = wimplify("tests/wimpl-USENIX/webp_dec.fa0ab/webp_dec.fa0ab.wasm").expect(""); 
+    println!("{}", wimpl_module);
+}
+
+//TODO: 
+#[test]
+fn webp_enc_ea665() {  
+    let wimpl_module = wimplify("tests/wimpl-USENIX/webp_enc.ea665/webp_enc.ea665.wasm").expect(""); 
+    println!("{}", wimpl_module);
+}
+
