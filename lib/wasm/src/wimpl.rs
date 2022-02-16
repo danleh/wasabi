@@ -975,9 +975,9 @@ impl State {
 
 
 
-fn wimplify_instrs(
-    instrs: &mut VecDeque<&highlevel::Instr>,
-    tys: &mut VecDeque<InferredInstructionType>,
+fn wimplify_instrs<'a>(
+    instrs: &mut impl Iterator<Item=&'a highlevel::Instr>, //&mut VecDeque<&highlevel::Instr>,
+    tys: &mut impl Iterator<Item=&'a InferredInstructionType>, //&mut VecDeque<InferredInstructionType>,
     state: &mut State,
 ) -> Result<Vec<Stmt>, String> {
     
@@ -986,11 +986,18 @@ fn wimplify_instrs(
      
     let mut result_instrs = Vec::new();
 
-    while instrs.len() > 0 {
+    loop {
 
-        let instr = instrs.pop_front().expect("instruction list not expected to be empty");
-        let ty = tys.pop_front().expect("type list not expected to be empty");
-        
+        //TODO: make clean 
+        let instr = instrs.next();
+        let ty = tys.next();         
+
+        let (instr, ty) = if instr.is_some() {
+            (instr.expect("instrs cannot be empty"), ty.expect("instr expects a type"))
+        } else {
+            return Ok(result_instrs);
+        }; 
+
         let ty = match ty {
             InferredInstructionType::Unreachable => {
                 match instr {
@@ -1554,8 +1561,8 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
                 tys.push_back(ty);
             }
 
-            let mut instrs = VecDeque::from_iter(instrs); //TODO: pass in iterator instead of vecdeque
-            let mut ty = VecDeque::from_iter(tys);
+            let mut instrs = instrs.iter(); 
+            let mut ty = tys.iter(); 
 
             let mut state = State::new(func.type_.params.len()); 
             if func.type_.results.len() == 0 { state.label_stack.push((0, None)); } 
@@ -2554,6 +2561,7 @@ fn _fc762c3b4338c7d7a6bb31d478cfbe5717ebefb0e91d6d27b82a21fc169c7afe() {
     println!("{}", wimpl_module); 
 }
 
+// BUG: br expected a value to return 
 #[test]
 fn _fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3/fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3.wasm").expect(""); 
