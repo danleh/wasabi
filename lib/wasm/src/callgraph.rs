@@ -86,18 +86,18 @@ pub fn callgraph(module: &wimpl::Module) -> CallGraph {
                     // }
 
                     // All functions, but with ty constraint.
-                    for func in &module.functions {
-                        if &func.type_ == type_ {
-                            graph.insert((fun.name(), func.name())); 
-                        }
-                    }
-
-                    // Functions in table AND type constraint.
-                    // for func in &funcs_in_table {
+                    // for func in &module.functions {
                     //     if &func.type_ == type_ {
                     //         graph.insert((fun.name(), func.name())); 
                     //     }
                     // }
+
+                    // Functions in table AND type constraint.
+                    for func in &funcs_in_table {
+                        if &func.type_ == type_ {
+                            graph.insert((fun.name(), func.name())); 
+                        }
+                    }
 
                     // TODO Daniel make constraints B & C orthogonal
                 }
@@ -115,9 +115,7 @@ pub fn callgraph(module: &wimpl::Module) -> CallGraph {
 #[cfg(test)]
 mod tests {
     use crate::{wimpl::wimplify, callgraph::CallGraph, callgraph};
-
-
-    
+ 
 }
 
 #[test]
@@ -138,4 +136,14 @@ fn calc_virtual() {
     println!("{}", callgraph.to_dot());
     //TODO: for some reason the to_pdf does not run on my machine 
     //callgraph.to_pdf("tests/wimpl/calc-dce/callgraph.pdf").unwrap();
+}
+
+#[test]
+fn call_indirect() {
+    let wimpl_module = wimpl::wimplify("tests/callgraph.wasm").expect(""); 
+    println!("{}", wimpl_module);     
+    let callgraph = callgraph(&wimpl_module);
+    println!("{}", callgraph.to_dot());
+    //TODO: for some reason the to_pdf does not run on my machine 
+    callgraph.to_pdf("tests/callgraph-constraint-in-table-ty.pdf").unwrap();
 }
