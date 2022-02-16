@@ -18,3 +18,7 @@ thiserror = "1.0.30"
 [dev-dependencies]
 test_utilities = { path = "../test_utilities" }
 bencher = "0.1.5"
+
+[profile.test]
+# Necessary to avoid stack overflow for very deeply nested tests
+opt-level = 2
