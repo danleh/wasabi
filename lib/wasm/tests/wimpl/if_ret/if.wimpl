@@ -1,14 +1,13 @@
 s0: i32 = i32.const 0
 b1: i32 = i32.const 0
 @label1: block {
-  if (s0) { 
-  	s2: i32 = i32.const 1 
-	b1: i32 = s2 
-  } 
-  else {
+  if (b1) {
+    s2: i32 = i32.const 1
+    b1: i32 = s2
+  } else {
     s3: i32 = i32.const 42
     b1: i32 = s3
   }
 }
 s4: i32 = i32.const 42
-s5: i32 = i32.add(b1, s4)
+s5: i32 = i32.add(s0, s4)
