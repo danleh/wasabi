@@ -1,3 +1,176 @@
+
+//! Code for type checking and type inference of WebAssembly instructions.
+//! 
+//! # Introduction to WebAssembly type checking
+//! 
+//! _Type checking_ and _inferring types_ for instructions should not be confused with each other.
+//! In type checking, we make sure the overall module/function/sequence of instructions is valid. 
+//! In type inference, we assign a concrete type for each individual instruction. Successful type
+//! inference thus implies that the program is type correct, but requires more work on top.
+//! The WebAssembly [validation algorithm in the specification](https://webassembly.github.io/spec/core/appendix/algorithm.html#algo-valid)
+//! does only type checking, not inference. This code does both.
+//! 
+//! Having a type for each instruction, i.e., type inference, is useful also for further downstream 
+//! analysis, e.g., for folding expressions as in the `.wat` text format (strictly speaking one only
+//! needs arity for that), when doing static instrumentation (as in 
+//! [Wasabi](http://wasabi.software-lab.org)), or for other transformations on WebAssembly.
+//! 
+//! WebAssembly type checking and type inference can be though of in increasing levels of 
+//! difficulty.
+//! - In the simplest case, the _instruction itself_ already gives you a precise type, e.g., 
+//! `i32.add` takes two `i32` value types as input and returns a single `i32`, the instruction type
+//! would be `[i32, i32] -> [i32]`.
+//! - Next, some instructions require additional _static context_ to infer the type. E.g., the 
+//! return type of `local.get $l0` depends on the type of local `$0`, and the arguments and return 
+//! value of `call f` depends on the called function `f`'s type.
+//! - Some instructions are _value polymorphic_. That is, they can have several different types,
+//! depending on preceding instructions. E.g., the `drop` in `i32.const 0; drop` takes an `i32` as
+//! input, wheras the `drop` in `i64.const 0; drop` takes an `i64`. Type checking value polymorphic
+//! instructions requires modeling an abstract _type stack_, which models the implicit evaluation
+//! stack at the type level.
+//! - Then there are _blocks_ and _branches_, where the branch instruction's type depends on the
+//! targeted block. Blocks are nested and have their own "local" type stack, i.e., instructions 
+//! inside a block cannot access values on the parent stack of their surrounding block.
+//! This requires modeling the type stack as a nested "stack of stacks".
+//! - Finally, there are instructions that are _stack polymorphic_. These can not only have one of
+//! several value types, but even a different _number_ of inputs and outputs. Stack-polymorphism
+//! only appears in instructions that leave the program in an _unreachable_ state, i.e., it is
+//! statically known that following instructions inside the current block will never be executed.
+//! For example any code after an unconditional branch `br` (which leaves the current block) or 
+//! after an `unreachable` instruction (which terminates the program with an error) is unreachable.
+//! 
+//! # Unreachable and stack-polymorphism
+//! 
+//! Unfortunately, in particular the last case (unreachable code / stack-polymorphic instructions)
+//! makes WebAssembly type checking and even more so type inference unusually hard.
+//! Consider for example:
+//! ```wasm
+//! unreachable  ;; stack-polymorphic type as per spec: [t*] -> [t'*]
+//! i32.add      ;; "simple" type: [i32, i32] -> [i32]
+//! ```
+//! This program is well-typed (valid), because you can choose some sequence of types for the output
+//! `t'*` of the unreachable instruction that makes the type stack hold the right inputs for the
+//! next `i32.add` instruction. Effectively, stack-polymorphic instructions can produce an arbitrary
+//! number of values "out of thin air". Only the subsequent instructions then determine how many of
+//! those values are created (to satisfy those instructions' inputs). Since stack polymorphism only 
+//! appears after branches or `unreachable`, the subsequent instructions are always known to be dead 
+//! code, so this doesn't produce a problem, because those values don't actually have to be produced
+//! at runtime, only during type checking.
+//! 
+//! It does however complicate type checking and inference, when the instructions following a 
+//! stack-polymorphic instruction _do not_ constrain the type to a concrete value type. 
+//! Consider the altered example:
+//! ```wasm
+//! unreachable  ;; stack-polymorphic type as per spec: [t*] -> [t'*]
+//! drop         ;; value-polymorphic type as per spec: [t] -> []
+//! ```
+//! Even though the number of outputs for the `unreachable` can be determined (one), the concrete
+//! type in place of the type variable `t` cannot, because `drop` can drop any type.
+//! If we wanted to assign a type for the stack between those two instructions, we could choose any 
+//! concrete type, the stack top is effectively unconstrained.
+//! If we wanted to infer a concrete type for each instruction, we could thus choose:
+//! ```wasm
+//! unreachable  ;; inferred type: [] -> [?]
+//! drop         ;; inferred type: [?] -> []
+//! ```
+//! Where `?` signifies such an unconstrained type. Unfortunately, `?` is not a valid value type
+//! as per the WebAssembly core language. That is, the "most general" or _principal type_ for this
+//! instruction sequence is not expressible in the WebAssembly type language, but instead requires
+//! this additional element `?`. This is why our type checker/inference produces `InferredValType`s.
+//! 
+//! Finally, the last issue from unreachable/stack-polymorphic instructions in WebAssembly is that
+//! while _type checking_ can be performed in a _streaming_ fashion over incoming instructions,
+//! _assigning_ types to those incoming instructions _cannot_ be done streaming!
+//! This is because, as you can see from the `unreachable; i32.add` example, the concrete type for
+//! `unreachable` is only known once the subsequent code is seen.
+//! 
+//! # The problem
+//! 
+//! Ideally, a type inference algorithm for WebAssembly would have all of the following three
+//! characteristics:
+//! - Streaming processing, i.e., it can always immediately produce an answer whenever we get the
+//! next instruction as input.
+//! - Fully concrete types in the surface language, i.e., it can assign/infer concrete instruction 
+//! types that only contain "WebAssembly value types", not "unknown" (`?`) or other escape hatches.
+//! - Assign a type for _all_ instructions in the program, not just a subset.
+//! 
+//! With the current design of WebAssembly, there is no way to get all three at the same time.
+//! You can either decide to have a non-streaming algorithm and assign concrete types for all 
+//! instructions, 
+//! or you can have a streaming algorithm that produces types in a "richer" type language (and which
+//! is thus harder to make use of for downstream analyses), 
+//! or you can have a streaming algorithm that does not assign types to all instructions (e.g., the 
+//! spec validation algorithm, which doesn't assign types at all).
+//! 
+//! There were long discussions as to why WebAssembly is typed this way, see
+//! [this comment](https://github.com/WebAssembly/design/issues/1379#issuecomment-694173065)
+//! and all other comments in that issue thread.
+//! The reasons boil down to:
+//! - They wanted to do _some_ type checking for unreachable code (and not turn the type checker
+//! completely off), as to avoid security bugs in compilers generating native code from such
+//! "unchecked" input.
+//! - They wanted to make sure any individually type-correct instruction sequence can be combined
+//! with another one, if their "input and output types" matched. This makes writing compilers
+//! easier that can glue together any individually to WebAssmebly translated code.
+//! 
+//! While I can sympathize with the first argument, I don't think the second argument justified the
+//! high cost in complexity, especially because all of this complexity is only there for code that
+//! is anyway provably dead.
+//! I personally think this is a big wart in WebAssembly's design and it was a bad idea to allow
+//! for unreachable code and stack-polymorphism in the type system in the first place.
+//! It makes type checking (and even more so type inference) pretty hard to understand and error 
+//! prone to implement.
+//! It would have been better to fully disallow unreachable code, which would be "maximally 
+//! strict" for WebAssembly as an interchange format, and would have allowed extensions (e.g., to 
+//! the current state of affairs, if so desired) later on.
+//! 
+//! # Our algorithm
+//! 
+//! Now that we are stuck with this design and some (few) real-world binaries actually do contain
+//! unreachable code, we need to decide for a type assignment algorithm.
+//! 
+//! One option would have been to implement "relaxed type checking for dead code", as described in
+//! [this proposal](https://github.com/WebAssembly/relaxed-dead-code-validation/blob/main/proposals/relaxed-dead-code-validation/Push-Pop.md).
+//! This effectively goes to the other extreme, by turning off type checking in unreachable code
+//! completely. We did not want that, because our algorithm would then permit WebAssembly programs 
+//! that are invalid as per the current specification (1.1).
+//! 
+//! Instead, we chose the following compromise:
+//! - Our algorithm is streaming.
+//! - We _type check_ all instructions, including unreachable code, as in the spec validation 
+//! algorithm.
+//! - We assign concrete, simple types (i.e., using only WebAssembly core value types, not `?`) for
+//! all instructions that are reachable.
+//! - For all unreachable instructions, we do _not_ assign an instruction type.
+//! 
+// TODO Inspect V8, SpiderMonkey, JSC, Wasmtime, Wasmer, WABT, Binaryen, spec interpreter for how 
+// they do type checking.
+// TODO Measure how many real-world binaries use unreachable code.
+// TODO Prove that a streaming, fully concrete, all instruction algorithm cannot exist; by showing
+// that you can insert always more instructions after an unreachable before its type is fixed.
+// TODO Implement a non-streaming algorithm that assigns concrete types to all instructions;
+// by either doing O(n^2) runtime and scanning for the next end, or using O(n) memory and buffering 
+// types until an end is seen.
+// TODO Measure in pratice how many instructions there are after an unreachable instruction, i.e.,
+// how high the "latency"/memory overhead of such an algorithm would be.
+// TODO Find bugs in WebAssembly type checking implementations by fuzzing, reading source code,
+// constructing examples.
+// TODO Extend the WebAssembly language with instructions dup/pick, subtyping to show difficulties
+// in different type checking algorithms.
+// TODO Lessons learned:
+// - Make interchange formats as strict as possible in the beginning.
+// - Declarative type rules can hide a lot of the implementation choices and difficulties.
+//! 
+//! In terms of type checking implementations, see:
+//! - The reference interpreter, which assigns types, but in a richer type language:
+//! https://github.com/WebAssembly/spec/blob/master/interpreter/valid/valid.ml
+//! - Conrad Watt's paper, page 9, right column:
+//! https://www.cl.cam.ac.uk/~caw77/papers/mechanising-and-verifying-the-webassembly-specification.pdf
+//! - The instruction index in the specification: https://webassembly.github.io/spec/core/valid/instructions.html 
+//! for a good overview of the typing rules for individual and sequences of instructions.
+//! - WABT type checker: https://github.com/WebAssembly/wabt/blob/main/src/type-checker.cc
+//! which follows the validation algorithm closely.
+
 use std::{fmt, convert::TryFrom};
 
 use crate::{
@@ -5,120 +178,15 @@ use crate::{
     FunctionType, Idx, Label, ValType,
 };
 
-// TODO data gathering:
-// for our dataset: how many functions without memory loads/stores
-// how many functions with call_indirect?
-
-
-// TODO module comment: type checking for WebAssembly instruction sequences, functions, whole modules.
-// follows bla, but infers types.
-
-// Implements the relaxed type-checking for dead code from
-// https://github.com/WebAssembly/relaxed-dead-code-validation/blob/main/proposals/relaxed-dead-code-validation/Push-Pop.md
-// In particular, this will admit some instruction sequences that were formerly
-// ill-typed, but only for statically-known dead code.
-// WRONG
-
-/// Strongly inspired by the official type-checking algorithm, as described
-/// in the specification:
-/// https://webassembly.github.io/spec/core/appendix/algorithm.html#algo-valid
-/// We produce types for each
-/// instruction, instead of only checking if they are valid (see `InstructionType`).
-
-// See https://webassembly.github.io/spec/core/valid/instructions.html for a
-// good overview of the typing rules for individual instructions and sequences
-// of instructions.
-// It also introduces the two types of polymorphism in WebAssembly:
-// - value-polymorphic: handled by Wasabi's type stack type.
-// - stack-polymorphic: handled in Wasabi with the unreachable_depth, which
-// is unfortunately NOT enough for here :( FIXME
-// For a good implementation, see the validation algorithm description in the
-// spec: https://webassembly.github.io/spec/core/appendix/algorithm.html#algo-valid
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeError(pub Box<TypeErrorRepr>);
-
-// Put the error fields behind a pointer to make `Result<_, TypeError>` only the size of a pointer,
-// not humongously large (>100 bytes!).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeErrorRepr {
-    pub message: String,
-
-    // Optional type error location information.
-    pub instruction: Option<Instr>,
-    pub instruction_idx: Option<Idx<Instr>>,
-
-    pub function_idx: Option<Idx<Function>>,
-    pub function_name: Option<String>,
-
-    pub global_idx: Option<Idx<Global>>,
-    pub global_name: Option<String>,
-}
-
-impl TypeError {
-    pub fn new(message: impl AsRef<str>) -> Self {
-        Self(Box::new(TypeErrorRepr {
-            message: message.as_ref().to_string(),
-            instruction: None,
-            instruction_idx: None,
-            function_idx: None,
-            function_name: None,
-            global_idx: None,
-            global_name: None,
-        }))
-    }
-}
-
-impl fmt::Display for TypeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("type error")?;
-        if let Some(function_idx) = self.0.function_idx {
-            write!(f, ", function #{}", function_idx.into_inner())?;
-            if let Some(function_name) = &self.0.function_name {
-                write!(f, " ({})", function_name)?;
-            }
-        }
-        if let Some(instruction_idx) = self.0.instruction_idx {
-            write!(f, ", instruction #{}", instruction_idx.into_inner())?;
-            if let Some(instruction) = &self.0.instruction {
-                write!(f, " ({}) ", instruction)?;
-            }
-        }
-        write!(f, ": {}", self.0.message)
-    }
-}
-
-impl<T: AsRef<str>> From<T> for TypeError {
-    #[inline(always)]
-    fn from(str: T) -> Self {
-        Self::new(str.as_ref())
-    }
-}
-
-impl std::error::Error for TypeError {}
-
-
-/// Inferred types for the operand stack and individual instructions can be
-/// "unconstrained" or "unknown" in the sense that a stack slot can be
-/// value-polymorphic, i.e., the concrete type is not known statically. 
-/// We use `None` for such cases here.
+/// Value type inferred by the type checker.
 /// 
-/// Unconstrained types come up due to a combination of stack-polymorphic and 
-/// value-polymorphic instructions. Consider for example:
-/// ```wasm
-/// unreachable  ;; stack polymorphic type as per spec: [t*] -> [t*]
-/// drop         ;; value polymorphic type as per spec: [t] -> []
-/// ```
-/// Unreachable can produce an arbitrary number of values of different types,
-/// whereas drop takes any value as argument. Our type checker thus infers:
-/// ```wasm
-/// unreachable  ;; inferred type: [] -> [?]
-/// drop         ;; inferred type: [?] -> []
-/// Where `?` signifies such an unconstrained type.
+/// Inferred types for the operand stack and individual instructions can be "unconstrained" or 
+/// "unknown" in the sense that the stack slot can be value-polymorphic, i.e., the concrete type is
+/// not known statically. We use `None` to represent such unconstrained value types here.
 /// 
-/// Inferred types form a lattice, where `forall t: ValType. t < ?` with `<`
-/// as the subtyping relation. That is, any regular value type can be used in
-/// place of `?`.
+/// Inferred types form a lattice, where `forall t: ValType. t <= ?` with `<` as the subtyping 
+/// relation and `?` as the symbol for unconstrained types. 
+/// That is, any regular value type can be used in place of `?`.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct InferredValType(Option<ValType>);
 
@@ -137,9 +205,9 @@ impl InferredValType {
         InferredValType(Some(ty))
     }
 
-    /// Computes the join of the two types, i.e., the "least upper bound" type.
-    /// Returns `None` if there is no valid join of the two types, e.g., because
-    /// the two types are incompatible, i.e., different concrete value types.
+    /// Computes the join of two inferred types, i.e., the "least upper bound" type.
+    /// Returns `None` if there is no valid join of the two types, e.g., because the two types are
+    /// incompatible, e.g., an i32 and an i64.
     /// 
     /// Examples:
     /// ```text
@@ -153,11 +221,11 @@ impl InferredValType {
         match (self.0, other.into().0) {
             // Both unconstrained, join is also unconstrained.
             (None, None) => Some(InferredValType::unknown()),
-            // Both equal, return either one is valid join.
+            // Both are concrete and equal, return either one as the valid join.
             (Some(ty1), Some(ty2)) if ty1 == ty2 => Some(InferredValType::from(ty1)),
-            // Join with unconstrained type returns the concrete type.
+            // Join with an unconstrained type returns the concrete type.
             (None, Some(ty)) | (Some(ty), None) => Some(InferredValType::from(ty)),
-            // Incompatible concrete value types, no join.
+            // Incompatible concrete value types don't have a join.
             (Some(_), Some(_)) => None,
         }
     }
@@ -200,38 +268,18 @@ impl fmt::Display for InferredValType {
 }
 
 
-/// Inferred type for the operand stack during type checking.
+/// Type of the operand stack during type checking.
 /// 
-/// WebAssembly has unusual typing rules for checking (statically known) dead
-/// code, i.e., after branches or the unreachable instruction.
-/// It is special because those instructions are stack-polymorphic, i.e., they
-/// cannot just produce an unconstrained (value-polymorphic) single type,
-/// but even an arbitrary _number of_ types.
-/// Those stack-polymorphic instructions can effectively produce arbitrary
-/// values "out of thin air". Only the subsequent instructions then determine
-/// how many of those values are created (to satisfy those instructions' inputs).
-/// Since stack polymorphism only appears after branches or unreachable, the
-/// subsequent instructions are always known to be dead code, so this doesn't
-/// produce a problem at runtime.
-/// 
-/// To account for stack polymorphism, this type distinguishes between
-/// unreachable code (which is stack polymorphic) and regular code (which is not).
-/// 
-/// See the reference interpreter for another possible implementation
-/// https://github.com/WebAssembly/spec/blob/master/interpreter/valid/valid.ml
-/// or Conrad Watt's paper, page 9, right column
-/// https://www.cl.cam.ac.uk/~caw77/papers/mechanising-and-verifying-the-webassembly-specification.pdf
-/// for details.
-/// 
-/// As for a discussion of why WebAssembly is typed this way, see
-/// https://github.com/WebAssembly/design/issues/1379#issuecomment-694173065
-/// and all other comments in this thread.
+/// In reachable code, this is just a stack of `ValType`s. 
+/// However, in unreachable code, the combination of value- and stack-polymorphism (see above) 
+/// can result in unconstrained types that cannot be expressed with WebAssembly's simple `ValType`s.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum StackType {
-    Unreachable,
-    /// Because reachable code never has unconstrained variables, this is a
-    /// stack of `ValType`, not `InferredValType`.
-    Reachable(Vec<ValType>)
+    /// Because reachable code never has unconstrained types, this is a simple stack of `ValType`.
+    Reachable(Vec<ValType>),
+
+    /// Unreachable code can have unconstrained type variables.
+    Unreachable(Vec<InferredValType>),
 }
 
 impl From<Vec<ValType>> for StackType {
@@ -241,25 +289,19 @@ impl From<Vec<ValType>> for StackType {
     }
 }
 
-#[derive(Debug, thiserror::Error, Copy, Clone, Eq, PartialEq)]
-#[error("unreachable code")]
-pub struct UnreachableError;
-
-impl TryFrom<StackType> for Vec<ValType> {
-    type Error = UnreachableError;
-
-    fn try_from(maybe_unreachable: StackType) -> Result<Self, Self::Error> {
-        match maybe_unreachable {
-            StackType::Unreachable => Err(UnreachableError),
-            StackType::Reachable(tys) => Ok(tys)
-        }
-    }
-}
-
 impl fmt::Display for StackType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            StackType::Unreachable => f.write_str("unreachable"),
+            StackType::Unreachable(maybe_unknown_tys) => {
+                f.write_str("[")?;
+                if let Some((last, tys)) = maybe_unknown_tys.split_last() {
+                    for ty in tys {
+                        write!(f, "{}, ", ty)?;
+                    }
+                    write!(f, "{}", last)?;
+                }
+                f.write_str("] (unreachable)")
+            }
             StackType::Reachable(tys) => {
                 f.write_str("[")?;
                 if let Some((last, tys)) = tys.split_last() {
@@ -274,23 +316,41 @@ impl fmt::Display for StackType {
     }
 }
 
+#[derive(Debug, thiserror::Error, Copy, Clone, Eq, PartialEq)]
+#[error("unreachable code does not have a stack that can be typed with only concrete value types")]
+pub struct UnreachableError;
 
-/// Similar to a `FunctionType`, but distinguishes between instructions in
-/// unreachable code, where a fully-constrained type cannot be given due to
-/// value- and stack-polymorphism, and "normal" instructions in reachable code,
-/// which can always be typed with simple `ValType`s.
+/// Convert to a "regular", fully-constrained stack type. This is only possible for reachable code.
+impl TryFrom<StackType> for Vec<ValType> {
+    type Error = UnreachableError;
+
+    fn try_from(maybe_unreachable: StackType) -> Result<Self, Self::Error> {
+        match maybe_unreachable {
+            StackType::Unreachable(_) => Err(UnreachableError),
+            StackType::Reachable(tys) => Ok(tys)
+        }
+    }
+}
+
+
+/// Type inferred for an instruction.
 /// 
-/// A more fully-featured type checker might want to assign types also to the
-/// instructions that are in unreachable code, but those types have two
-/// problems:
-/// 1. They cannot be expressed with the surface WebAssembly type syntax, 
+/// Similar to a `FunctionType`, but distinguishes between instructions in unreachable code, where
+/// a fully-constrained type cannot be given due to value- and stack-polymorphism, and "normal" 
+/// instructions in reachable code, which can always be typed with simple `ValType`s.
+/// 
+/// A more fully-featured type checker might want to assign types also to the instructions that are
+/// in unreachable code, but those instruction types have two problems:
+/// 1. They cannot be expressed with the surface WebAssembly type syntax (i.e., `ValType`s), 
 /// because of unconstrained types, i.e., they would be over `InferredValType`.
-/// 2. They cannot be determined in a streaming, O(1) memory and O(1) runtime
-/// fashion, because it is only clear which values a stack-polymorphic 
-/// instruction produces at the _end_ of blocks.
+/// 2. They cannot be determined in a streaming fashion with O(1) memory and O(1) runtime, because 
+/// it is only clear which values a stack-polymorphic instruction produces at the _end_ of blocks.
+/// 
 /// For these two reasons, we restrict ourselves here to assign only types
-/// for reachable instructions. Note that dead code is still type _checked_ (!)
-/// by our `TypeChecker`, it just doesn't _assign_ types to those instructions.
+/// for reachable instructions. 
+/// 
+/// Note that we still type _check_ dead code exactly as stringently as the spec validation 
+/// algorithm, we just doesn't _assign_ types to those instructions.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum InferredInstructionType {
     Unreachable,
@@ -308,31 +368,99 @@ impl TryFrom<InferredInstructionType> for FunctionType {
     }
 }
 
+/// Error during type checking of a module, function, or instruction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeError(pub Box<TypeErrorRepr>);
 
-/// Holds the state during type checking.
-///
-/// Strongly inspired by the official type-checking algorithm, as described
-/// in the specification: https://webassembly.github.io/spec/core/appendix/algorithm.html#algo-valid
+// Put the error fields behind a pointer to make `Result<_, TypeError>` only the size of a pointer,
+// not humongously large (>100 bytes because of the many fields!).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeErrorRepr {
+    pub message: String,
+
+    // Optional type error location information.
+    pub instruction: Option<Instr>,
+    pub instruction_idx: Option<Idx<Instr>>,
+
+    pub function_idx: Option<Idx<Function>>,
+    pub function_name: Option<String>,
+
+    pub global_idx: Option<Idx<Global>>,
+    pub global_name: Option<String>,
+}
+
+impl fmt::Display for TypeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("type error")?;
+        if let Some(function_idx) = self.0.function_idx {
+            write!(f, ", function #{}", function_idx.into_inner())?;
+            if let Some(function_name) = &self.0.function_name {
+                write!(f, " ({})", function_name)?;
+            }
+        }
+        if let Some(global_idx) = self.0.global_idx {
+            write!(f, ", global init expression #{}", global_idx.into_inner())?;
+            if let Some(global_name) = &self.0.global_name {
+                write!(f, " ({})", global_name)?;
+            }
+        }
+        if let Some(instruction_idx) = self.0.instruction_idx {
+            write!(f, ", instruction #{}", instruction_idx.into_inner())?;
+            if let Some(instruction) = &self.0.instruction {
+                write!(f, " ({}) ", instruction)?;
+            }
+        }
+        write!(f, ": {}", self.0.message)
+    }
+}
+
+impl<T: AsRef<str>> From<T> for TypeError {
+    fn from(message: T) -> Self {
+        Self(Box::new(TypeErrorRepr {
+            message: message.as_ref().to_string(),
+            instruction: None,
+            instruction_idx: None,
+            function_idx: None,
+            function_name: None,
+            global_idx: None,
+            global_name: None,
+        }))
+    }
+}
+
+impl std::error::Error for TypeError {}
+
+
+/// Holds the state during type checking and type inference.
 /// 
-/// There are some differences to the validation algorithm as it is in the spec:
-/// 1. We not only _check_, but also _assign_ types for each (reachable, see 
-/// above) instruction.
-/// 2. We have nested "sub-stacks" for each block, instead of one "flat"
-/// value stack + one control stack. Thus invalid accesses to parent stack
-/// frames and "stack underflow" at block ends are caught through empty stacks
-/// instead of a `height` variable as in the spec algorithm.
-/// 3. We compute the label type for each block (i.e., the values that a branch
-/// to a certain block "transports") once and store them, instead of determining
-/// them anew (loop vs. others) each time they are queried.
+/// See the module comment for general notes on WebAssembly type checking.
+/// 
+/// This implementation is strongly inspired by the official type-checking algorithm, as described
+/// in the specification (https://webassembly.github.io/spec/core/appendix/algorithm.html#algo-valid)
+/// but differs in a couple of ways:
+/// - We produce types for each instruction, instead of only checking if they are valid.
+/// - Minor details, see below, e.g., merged value and control stack, nested stack instead of 
+/// numerical stack height, precomputed label types.
 #[derive(Debug)]
 pub struct TypeChecker<'module> {
     /// For looking up the type of globals and functions.
     module: &'module Module,
-    /// For looking up the type of parameters and locals.
+    /// For looking up the type of the current function's parameters and locals.
     function: &'module Function,
     
     /// Nested sub-stacks for each block.
     /// Merges the value and control stacks in the specification algorithm.
+    /// 
+    /// In my opinion this makes the implementation a bit clearer, less error prone, and closer to
+    /// the abstract machine execution semantics. Instead of manually managing and checking against
+    /// a numerical "stack height" (as in the spec algorithm), stack underflow (that is, popping a 
+    /// value from an empty stack, or attempting to pop from the parent stack of a surrounding 
+    /// block) is automatically detected because `pop()` on an individual block's value stack 
+    /// returns an `Option` that cannot be ignored.
+    /// The downside is that it requires more memory (multiple `Vec`s with capacity and length 
+    /// fields instead of a single stack) and more allocations (as each sub-stack has to grow 
+    /// individually and is not reused).
+    /// I think that's a fair tradeoff for this non-performance critical and education codebase.
     block_stack: Vec<BlockFrame>,
 }
 
@@ -341,16 +469,22 @@ struct BlockFrame {
     value_stack: Vec<InferredValType>,
 
     /// This is equivalent to having an "ellipsis" pseudo-type at the bottom of the `value_stack`.
+    /// (This would be an alternative implementation strategy, but it would require adding another
+    /// kind of value type = val_type | unknown | ellipsis, so this keeps the type ceremony down.)
     unreachable: bool,
 
-    /// Needed to type-check that the correct results are on the current sub-stack before leaving a
-    /// block.
-    results: Vec<ValType>,
+    /// Needed for type-checking that the correct results are on the current sub-stack before 
+    /// leaving a block.
+    expected_results: Vec<ValType>,
 
-    /// Needed to type-check branches targeting this block: Which values does the branch "transport"
-    /// from the current stack to this one (the target)?
+    /// Needed for type-checking branches targeting this block: frame Which values does the branch 
+    /// "transport" from the current stack to the one represented by this frame (the target)?
     /// For loops, these are the inputs to the loop block, for every other block (if, else, block),
     /// it's the output types.
+    /// 
+    /// In the spec algorithm, this is implemented as a function that switches when queried between
+    /// input and result types, depending on the block type. But since the block type is known when
+    /// the frame is created, we can switch there already and store the fixed type here.
     label_inputs: Vec<ValType>,
 
     // TODO Once we switch `hl::Instr` to use nested blocks, it is no longer
@@ -358,11 +492,11 @@ struct BlockFrame {
     // Since we assume we only work on valid Wasm modules anyway, and once that
     // change is made, we don't need to check against the block op anyway,
     // let's not capture it here, unlike in the spec validation algorithm.
-    // op: Instr
+    // block_op: Instr
 }
 
 impl<'module> TypeChecker<'module> {
-    // Convenience functions without having to instantiate a type checker.
+    // Convenience functions for type checking without having to instantiate a type checker.
     // 
     // They do not return the types for individual instructions, only a result
     // whether overall type checking was successful.
@@ -454,20 +588,22 @@ impl<'module> TypeChecker<'module> {
     }
 
     /// Check and infer the type for the next instruction.
+    /// The spec validation algorithm does only checking, not assigning a type.
     pub fn check_next_instr(&mut self, instr: &'_ Instr) -> Result<InferredInstructionType, TypeError> {
         // Pulled out of the impl only for formatting reasons: put very long function after the
         // interface definitions here.
         check_instr(self, instr, self.function, self.module)
     }
 
-    /// Returns the type stack of the current block (without the surrounding parent stacks, since
-    /// they are not accessible from inside anyway).
+    /// Returns the type stack in the current block (without the surrounding parent stacks, since
+    /// they are not accessible from inside the current block anyway).
     pub fn current_block_type_stack(&self) -> Result<StackType, TypeError> {
         let frame = self.top_block()?;
         Ok(if frame.unreachable {
-            StackType::Unreachable
+            StackType::Unreachable(frame.value_stack.clone())
         } else {
-            let tys = frame.value_stack.iter().copied()
+            let tys = frame.value_stack.iter()
+                .copied()
                 .map(ValType::try_from)
                 .collect::<Result<Vec<ValType>, _>>()
                 .expect("unconstrained/unknown types should only appear in unreachable code");
@@ -475,46 +611,39 @@ impl<'module> TypeChecker<'module> {
         })
     }
 
-    /*
-     * Value stack operations:
-     */
+
+    // Low-level API of the type checker.
+
+    // First, value stack operations, i.e., about pushing, popping, and checking individual value
+    // types on the stack.
 
     fn pop_val(&mut self) -> Result<InferredValType, TypeError> {
         let frame = self.top_block_mut()?;
         if frame.unreachable {
             // Once we are in unreachable code, the prior stack-polymorphic instructions can produce
-            // necessary value "out of thin air".
+            // necessary values "out of thin air", matching any possible type.
             if frame.value_stack.is_empty() {
                 return Ok(InferredValType::unknown())
             }
-            // However, if there are already concrete types pushed onto the
-            // stack, produce those first (i.e., proceed with the following,
-            // "regular" logic).
+            // However, if there are already concrete types pushed onto the stack, produce those 
+            // first (i.e., proceed with the following, "regular" logic).
         }
 
         frame.value_stack.pop().ok_or_else(|| "expected a value, but value stack was empty".into())
     }
 
-    fn pop_val_expected(&mut self, expected: ValType) -> Result<ValType, TypeError> {
+    fn pop_val_expected(&mut self, expected: ValType) -> Result<(), TypeError> {
         let actual = self.pop_val()?;
-        expected.join(actual)
-            .ok_or_else(|| format!("expected type {}, but got {}", expected, actual).into())
+        expected.join(actual).ok_or_else(|| TypeError::from(format!("expected type {}, but got {}", expected, actual)))?;
+        Ok(())
     }
 
-    fn pop_vals_expected(
-        &mut self,
-        expected: &[ValType],
-    ) -> Result<Vec<ValType>, TypeError> {
-        let actual: Result<Vec<_>, _> = expected
-            .iter()
-            // The expected types must be checked in reverse order...
-            .rev()
-            .map(|&expected| self.pop_val_expected(expected))
-            .collect();
-        // ...and the result must be reversed again for it to be correct.
-        let mut actual = actual?;
-        actual.reverse();
-        Ok(actual)
+    fn pop_vals_expected(&mut self, expected: &[ValType]) -> Result<(), TypeError> {
+        // The expected types must be checked in reverse order.
+        for &expected in expected.iter().rev() {
+            self.pop_val_expected(expected)?;
+        }
+        Ok(())
     }
 
     fn push_val(&mut self, type_: impl Into<InferredValType>) -> Result<(), TypeError> {
@@ -529,14 +658,13 @@ impl<'module> TypeChecker<'module> {
         Ok(())
     }
 
-    /*
-     * Control stack operations:
-     */
+    // Control stack operations, i.e., when starting, leaving, or jumping to a block.
+
     fn push_func_block(&mut self, results: Vec<ValType>) {
         self.block_stack.push(BlockFrame {
             value_stack: Vec::new(),
             unreachable: false,
-            results: results.clone(),
+            expected_results: results.clone(),
             label_inputs: results,
         })
     }
@@ -550,7 +678,7 @@ impl<'module> TypeChecker<'module> {
         self.block_stack.push(BlockFrame {
             value_stack: inputs.iter().cloned().map(InferredValType::from).collect(),
             unreachable: false,
-            results,
+            expected_results: results,
             label_inputs: label_types
         });
     }
@@ -585,7 +713,7 @@ impl<'module> TypeChecker<'module> {
         // `block_stack.pop()`, otherwise `pop_vals_expected()` will pop WRONGLY
         // from the parent (outer) stack.
         let frame = self.top_block()?;
-        let results = frame.results.clone();
+        let results = frame.expected_results.clone();
         self.pop_vals_expected(&results)?;
         
         Ok(self
@@ -594,33 +722,32 @@ impl<'module> TypeChecker<'module> {
             .expect("already checked with top_block()"))
     }
 
-    /// Switches to "unreachable mode" for this block, i.e., allows 
-    /// stack-polymorphic instructions to produce an arbitrary number of values.
+    /// Switches to "unreachable mode" for the current block, i.e., allows stack-polymorphic 
+    /// instructions to produce an arbitrary number of values.
     /// 
-    /// Like the spec algorithm, we make the unreachable instructions consume
-    /// all remaining values on the stack, even though the typing rules would
-    /// actually permit it to not do that. This results in an instruction
-    /// type for unreachable that is not always "stack-minimal", i.e., the
-    /// unreachable might first clear values from the stack that in then 
-    /// produces immediately again for the subsequent instructions.
-    /// 
-    /// Also, we don't return the cleared values from the stack here, because
-    /// we return the "non-consuming" type for unreachable instructions, i.e.,
-    /// we simplify the assigned instruction type to never consume anything.
-    fn unreachable(&mut self) -> Result<(), TypeError> {
+    /// Like the spec algorithm, we let unreachable instructions consume all remaining values on 
+    /// the stack, even though the declarative typing rules do not require this behavior.
+    /// (It's just the easiest way to avoid that remaining values on the stack can make dead code
+    /// type incorrect. Instead, it clears everything and then recovers what is required again.)
+    /// This results in a type for the unreachable instruction that is not "stack-minimal", i.e.,
+    /// unreachable might first clear values from the stack that it then produces immediately again 
+    /// for the subsequent instructions. Because we do not assign types for instructions in dead 
+    /// code anyway, this "stack non-minimalism" isn't observable.
+    /// Even though internally we clear the current value stack, the returned type is still 
+    /// "non-consuming"
+    fn unreachable(&mut self) -> Result<Vec<InferredValType>, TypeError> {
         let frame = self.top_block_mut()?;
-        frame.value_stack.clear();
         frame.unreachable = true;
-        Ok(())
+        let cleared_values = std::mem::take(&mut frame.value_stack);
+        Ok(cleared_values)
     }
 }
 
 #[inline(always)]
 fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, module: &Module) -> Result<InferredInstructionType, TypeError> {
-    // If we are already in dead code, do not return a concrete instruction 
-    // type, because it could contain unconstrained types (which we don't want)
-    // and we also would not be able to produce a type in O(1) runtime/memory
-    // (which we also don't want).
+    // If we are already in dead code, do not return a concrete instruction type, because it could
+    // contain unconstrained types (which we don't want), and we also would not be able to produce a
+    // type in O(1) runtime/memory (which we also don't want).
     let was_unreachable = state.top_block()?.unreachable;
     let to_inferred_type = |func_ty| {
         if was_unreachable {
@@ -637,10 +764,11 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
         return Ok(to_inferred_type(ty))
     }
 
+    // The other cases are a bit more complex:
     use Instr::*;
     Ok(match instr {
-        // Cases which are still monomorphic, but where we need additional 
-        // information from the context (function, module) for typing.
+        // Instructions which are still monomorphic, but where we need additional information from
+        // the context (current function, module, etc.) for typing.
         Local(op, idx) => {
             let local_ty = function.param_or_local_type(*idx);
             let op_ty = op.to_type(local_ty);
@@ -662,13 +790,13 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
             to_inferred_type(function_ty)
         }
 
-        // Value-polymorphic:
+        // Value-polymorphic instructions:
         Drop => {
             let ty = state.pop_val()?;
             match (ValType::try_from(ty), was_unreachable) {
                 (_, true) => InferredInstructionType::Unreachable,
                 (Ok(ty), false) => InferredInstructionType::Reachable(FunctionType::new(&[ty], &[])),
-                (Err(UnconstrainedTypeError), false) => unreachable!("unconstrained stack type should never appear in reachable code"),
+                (Err(UnconstrainedTypeError), false) => unreachable!("unconstrained value type should never appear in reachable code"),
             }
         }
         Select => {
@@ -676,12 +804,12 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
             let ty1 = state.pop_val()?;
             let ty2 = state.pop_val()?;
             let ty = ty1.join(ty2)
-                .ok_or_else(|| TypeError::new(format!("incompatible types {} and {} for select arguments", ty1, ty2)))?;
+                .ok_or_else(|| TypeError::from(format!("incompatible types {} and {} for select arguments", ty1, ty2)))?;
             state.push_val(ty)?;
             match (ValType::try_from(ty), was_unreachable) {
                 (_, true) => InferredInstructionType::Unreachable,
                 (Ok(ty), false) => InferredInstructionType::Reachable(FunctionType::new(&[ValType::I32, ty, ty], &[ty])),
-                (Err(UnconstrainedTypeError), false) => unreachable!("unconstrained stack type should never appear in reachable code"),
+                (Err(UnconstrainedTypeError), false) => unreachable!("unconstrained value type should never appear in reachable code"),
             }
         }
 
@@ -705,31 +833,30 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
         }
         End => {
             let frame = state.pop_block()?;
-            // If the block stack is emtpy after the end, then this end was for
-            // the whole function, so there is no parent stack to push the 
-            // results to.
+            // If the block stack is emtpy after the end, then this end was for the whole function, 
+            // so there is no parent stack to push the results to and `push_vals` would panic.
             let is_function_end = state.block_stack.is_empty();
             if !is_function_end {
-                state.push_vals(&frame.results)?;
+                state.push_vals(&frame.expected_results)?;
             }
-            to_inferred_type(FunctionType::new(&[], &frame.results))
+            to_inferred_type(FunctionType::new(&[], &frame.expected_results))
         }
         Else => {
-            let frame = state.pop_block()?;
+            let if_frame = state.pop_block()?;
             
-            // TODO We don't do this check here, because once `hl::Instr` is 
-            // nested, this invariant will be true by construction of the AST.
+            // TODO We don't do this check here, because it would require to a block_instr field
+            // in `BlockFrame`. Once `hl::Instr` is nested, this invariant will be true by 
+            // construction of the AST anyway and this code and comment can be removed.
             // if frame.block_instr != BlockInstr::If {
             //     Err("else instruction not matching if")?
             // }
 
-            // Because in the MVP blocks have no inputs, assume empty as the 
-            // input type here. However, once we handle the multi-value 
-            // extension, we need to get the if's input type from either the
-            // type checker (i.e., a `frame.inputs` field), or if we have a 
-            // nested `hl::Instr` AST from the AST node directly.
-            state.push_block(instr, Vec::new(), frame.results.clone());
-            to_inferred_type(FunctionType::new(&[], &frame.results))
+            // Because in the MVP blocks have no inputs, assume empty as the input type here. 
+            // However, once we handle the multi-value extension, we need to get the if's input type
+            // from either the type checker (i.e., a `frame.inputs` field), or if we have a nested
+            // `hl::Instr` AST from the AST node directly.
+            state.push_block(instr, Vec::new(), if_frame.expected_results.clone());
+            to_inferred_type(FunctionType::new(&[], &if_frame.expected_results))
         }
 
         // Branches: br_if is the only branch that is not followed by dead code.

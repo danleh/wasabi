@@ -11,7 +11,7 @@ pub use crate::binary::DecodeState;
 mod error;
 pub use crate::error::{Error, ErrorKind};
 
-mod types;
+pub mod types;
 mod folding;
 pub mod wimpl;
 
