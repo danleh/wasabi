@@ -357,6 +357,15 @@ pub enum InferredInstructionType {
     Reachable(FunctionType)
 }
 
+impl fmt::Display for InferredInstructionType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InferredInstructionType::Unreachable => f.write_str("unreachable"),
+            InferredInstructionType::Reachable(ty) => ty.fmt(f)
+        }
+    }
+}
+
 impl TryFrom<InferredInstructionType> for FunctionType {
     type Error = UnreachableError;
 
@@ -367,6 +376,8 @@ impl TryFrom<InferredInstructionType> for FunctionType {
         }
     }
 }
+
+
 
 /// Error during type checking of a module, function, or instruction.
 #[derive(Debug, Clone, PartialEq, Eq)]
