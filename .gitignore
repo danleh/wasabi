@@ -15,5 +15,6 @@ out/
 # generated browser tests
 *_out/
 
-#USENIX .wat files 
+#.wat files of tests  
 lib/wasm/tests/wimpl-USENIX/**/*.wat
+lib/wasm/tests/wimpl-filtered-binaries/**/*.wat
