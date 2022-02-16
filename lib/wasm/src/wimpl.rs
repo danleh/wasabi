@@ -998,7 +998,7 @@ fn wimplify_instrs<'a>(
             return Ok(result_instrs);
         }; 
 
-        // println!("{}, {:?}, {:?}", instr, ty, state.var_stack);
+        // println!("{}, {}, {:?}", instr, ty, state.var_stack);
 
         let ty = match ty {
             InferredInstructionType::Unreachable => {
@@ -1302,8 +1302,13 @@ fn wimplify_instrs<'a>(
             }
 
             highlevel::Instr::Return => {
+                // This points to the block for the overall function body.
                 let target = Label(0);
-                if let (_, Some((return_var, type_, loop_flag))) = *state.label_stack.last().expect("empty label stack, but expected function ") {
+                
+                // println!("function ty: {:?}", function);
+                // println!("label stack: {:?}", state.label_stack);
+                if let (_, Some((return_var, type_, loop_flag))) = *state.label_stack.first().expect("empty label stack, but expected function ") {
+                    assert!(!loop_flag, "function should not have loop flag set");
                     let return_val = state.var_stack.pop().expect("return expects a return value");
                     vec![
                         Stmt::Assign{ 
@@ -1311,10 +1316,10 @@ fn wimplify_instrs<'a>(
                             type_,
                             rhs: VarRef(return_val)
                         }, 
-                        Stmt::Br{ target }
+                        Stmt::Br { target }
                     ]
                 } else {
-                    vec![Stmt::Br{ target }]
+                    vec![Stmt::Br { target }]
                 }
             }
 
@@ -1575,7 +1580,6 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
             else { 
                 state.label_stack.push((0, Some((Var::Return(0), func.type_.results[0], false)))); 
             }
-
             for inst in wimplify_instrs(&mut instrs, &mut ty, &mut state).expect("non-empty instruction list for wasm cannot produce an empty list of wimpl instructions") {
                 result_instrs.push(inst); 
             }
@@ -2024,7 +2028,6 @@ mod tests {
 
     #[test]
     fn parse_file() {
-        // FIXME update test input
         let instrs = Stmt::from_text_file("tests/wimpl/syntax.wimpl");
         assert!(instrs.is_ok());
     }
@@ -2052,19 +2055,18 @@ mod tests {
 }
 
 #[cfg(test)]
-fn test (path_wimpl: &str, path_wasm: &str) {
+fn test(path_wimpl: &str, path_wasm: &str) {
     // FIXME:! we cannot just comment out tests that don't run!
 
     let wimpl_module = wimplify(path_wasm).expect(""); 
-    println!("ACTUAL");
-    println!("{}", wimpl_module);
+    // println!("ACTUAL");
+    // println!("{}", wimpl_module);
 
     let expected = Stmt::from_text_file(path_wimpl).unwrap();
-    println!("EXPECTED");
-    for instr in &expected {
-        println!("{}", instr);
-    }
-
+    // println!("EXPECTED");
+    // for instr in &expected {
+    //     println!("{}", instr);
+    // }
      
     assert_eq!(wimpl_module.functions[0].body.0, expected);
 }
@@ -2144,13 +2146,11 @@ fn br_nested_simple() {
     test("tests/wimpl/br_nested_simple/br.wimpl", "tests/wimpl/br_nested_simple/br.wasm");
 }
 
-// TODO: fix wimpl test 
 #[test]
 fn br_nested() {
     test("tests/wimpl/br_nested/br.wimpl", "tests/wimpl/br_nested/br.wasm");
 }
 
-//TODO: fix wimpl test 
 #[test]
 fn br_triple_nested() {  
     test("tests/wimpl/br_triple_nested/br.wimpl", "tests/wimpl/br_triple_nested/br.wasm");
@@ -2191,99 +2191,93 @@ fn if_else() {
 #[test]
 fn calc() {  
     let wimpl_module = wimplify("tests/wimpl-wasm-handwritten/calc/add.wasm").expect(""); 
-    println!("{}", wimpl_module);
+    //println!("{}", wimpl_module);
 }
 
 #[test]
 fn calc_dce() {  
     let wimpl_module = wimplify("tests/wimpl-wasm-handwritten/calc-dce/add-dce.wasm").expect(""); 
-    println!("{}", wimpl_module);
+    //println!("{}", wimpl_module);
 }
 
 #[test]
 fn calc_virtual() {  
     let wimpl_module = wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect(""); 
-    println!("{}", wimpl_module);
+    //println!("{}", wimpl_module);
 }
 
 //USENIX programs 
 
 #[test]
-fn module_8c087e0290bb39f1e090() { //BUG: stack overflow 
+fn module_8c087e0290bb39f1e090() {
     let wimpl_module = wimplify("tests/wimpl-USENIX/8c087e0290bb39f1e090.module/8c087e0290bb39f1e090.module.wasm").expect(""); 
-    println!("{}", wimpl_module);
+    //println!("{}", wimpl_module);
 }
 
-//br-if line 52241
-//br-if ends ends loop 52039
-// br to a loop restarts the loop -> does not consume the result -> no assign [br] 
-// br to a block ends the block -> consumes the result -> pop from var stack if result is needed [assign, br]
 #[test]
 fn annots() { 
     let wimpl_module = wimplify("tests/wimpl-USENIX/annots/annots.wasm").expect(""); 
-    println!("{}", wimpl_module);
+    //println!("{}", wimpl_module);
 }
 
 #[test]
 fn module_bb9bb638551198cd3a42() { 
     let wimpl_module = wimplify("tests/wimpl-USENIX/bb9bb638551198cd3a42.module/bb9bb638551198cd3a42.module.wasm").expect(""); 
-    println!("{}", wimpl_module);
+    //println!("{}", wimpl_module);
 }
 
-//BUG: stackoverflow error 
 #[test]
 fn compiled_wasm() {  
     let wimpl_module = wimplify("tests/wimpl-USENIX/compiled.wasm/compiled.wasm").expect(""); 
-    println!("{}", wimpl_module);
+    //println!("{}", wimpl_module);
 }
 
 #[test]
 fn module_dac34eee5ed4216c65b2() {   
     let wimpl_module = wimplify("tests/wimpl-USENIX/dac34eee5ed4216c65b2.module/dac34eee5ed4216c65b2.module.wasm").expect(""); 
-    println!("{}", wimpl_module);
+    //println!("{}", wimpl_module);
 }
 
 #[test]
 fn imagequant_c970f() {  
     let wimpl_module = wimplify("tests/wimpl-USENIX/imagequant.c970f/imagequant.c970f.wasm").expect(""); 
-    println!("{}", wimpl_module);
+    //println!("{}", wimpl_module);
 }
 
 #[test]
 fn mozjpeg_enc_93395() {  
     let wimpl_module = wimplify("tests/wimpl-USENIX/mozjpeg_enc.93395/mozjpeg_enc.93395.wasm").expect(""); 
-    println!("{}", wimpl_module);
+    //println!("{}", wimpl_module);
 }
 
 #[test]
 fn optipng_4e77b() {  
     let wimpl_module = wimplify("tests/wimpl-USENIX/optipng.4e77b/optipng.4e77b.wasm").expect(""); 
-    println!("{}", wimpl_module);
+    //println!("{}", wimpl_module);
 }
 
 #[test]
 fn rotate_4cdaa() {  
     let wimpl_module = wimplify("tests/wimpl-USENIX/rotate.4cdaa/rotate.4cdaa.wasm").expect(""); 
-    println!("{}", wimpl_module);
+    //println!("{}", wimpl_module);
 }
 
-//BUG: return expects a value 
 #[test]
 fn USENIX_bin_acrobat_wasm() {  
     let wimpl_module = wimplify("tests/wimpl-USENIX/USENIX_bin_acrobat.wasm/USENIX_bin_acrobat.wasm.wasm").expect(""); 
-    println!("{}", wimpl_module);
+    //println!("{}", wimpl_module);
 }
 
 #[test]
 fn webp_dec_fa0ab() {  
     let wimpl_module = wimplify("tests/wimpl-USENIX/webp_dec.fa0ab/webp_dec.fa0ab.wasm").expect(""); 
-    println!("{}", wimpl_module);
+    //println!("{}", wimpl_module);
 }
 
 #[test]
 fn webp_enc_ea665() {  
     let wimpl_module = wimplify("tests/wimpl-USENIX/webp_enc.ea665/webp_enc.ea665.wasm").expect(""); 
-    println!("{}", wimpl_module);
+    //println!("{}", wimpl_module);
 }
 
 // filtered wasm binaries
@@ -2291,286 +2285,281 @@ fn webp_enc_ea665() {
 #[test]
 fn _07735b34f092d6e63c397dfb583b64ceca84c595d13c6912f8b0d414b0f01da9() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/07735b34f092d6e63c397dfb583b64ceca84c595d13c6912f8b0d414b0f01da9/07735b34f092d6e63c397dfb583b64ceca84c595d13c6912f8b0d414b0f01da9.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _14ee85873e07b6226d416a1fc3bfc2aeae9c44700eac316a04bb6d98b95b605c() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/14ee85873e07b6226d416a1fc3bfc2aeae9c44700eac316a04bb6d98b95b605c/14ee85873e07b6226d416a1fc3bfc2aeae9c44700eac316a04bb6d98b95b605c.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _1cbe05896a7233e4a5679d69b4fb4e04b3857b50b1a0fc0d1a34054ff40e39bb() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/1cbe05896a7233e4a5679d69b4fb4e04b3857b50b1a0fc0d1a34054ff40e39bb/1cbe05896a7233e4a5679d69b4fb4e04b3857b50b1a0fc0d1a34054ff40e39bb.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _1e9df781a23d49aaf1e10abc4db11cde4c31e07d9cee2568d723b27bbeff515b() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/1e9df781a23d49aaf1e10abc4db11cde4c31e07d9cee2568d723b27bbeff515b/1e9df781a23d49aaf1e10abc4db11cde4c31e07d9cee2568d723b27bbeff515b.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _2449e3cbacf8bc6fd02a09b5b2a0f7ad4555046f7afba480d29f4929d39e4b04() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/2449e3cbacf8bc6fd02a09b5b2a0f7ad4555046f7afba480d29f4929d39e4b04/2449e3cbacf8bc6fd02a09b5b2a0f7ad4555046f7afba480d29f4929d39e4b04.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _32e1e40f2bc99176f2ede6999af1681b9893fca63db2f87ef2d274cd43f1d3e3() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/32e1e40f2bc99176f2ede6999af1681b9893fca63db2f87ef2d274cd43f1d3e3/32e1e40f2bc99176f2ede6999af1681b9893fca63db2f87ef2d274cd43f1d3e3.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _381e5189553901c1649b5093758fee36b338ee7fcd211a20b1b6e6d374e53bce() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/381e5189553901c1649b5093758fee36b338ee7fcd211a20b1b6e6d374e53bce/381e5189553901c1649b5093758fee36b338ee7fcd211a20b1b6e6d374e53bce.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _3deb83bb20eccb638a2fbbe09ba323a472654552f8bcd93611e1d4ba20a67ea4() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/3deb83bb20eccb638a2fbbe09ba323a472654552f8bcd93611e1d4ba20a67ea4/3deb83bb20eccb638a2fbbe09ba323a472654552f8bcd93611e1d4ba20a67ea4.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _3f8cf6588c2ed1e7f92ef8f3c37cbb0a0294a9b2a0b330ecd087cff985b34689() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/3f8cf6588c2ed1e7f92ef8f3c37cbb0a0294a9b2a0b330ecd087cff985b34689/3f8cf6588c2ed1e7f92ef8f3c37cbb0a0294a9b2a0b330ecd087cff985b34689.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _419963e6d5166128b11ce6eb7138fe6b5c81694196882cba034f296d613d9d0f() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/419963e6d5166128b11ce6eb7138fe6b5c81694196882cba034f296d613d9d0f/419963e6d5166128b11ce6eb7138fe6b5c81694196882cba034f296d613d9d0f.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _4666a4a9c39036d84f70ebb3e2cb476cff2549377ced946618b293fc6552aae8() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/4666a4a9c39036d84f70ebb3e2cb476cff2549377ced946618b293fc6552aae8/4666a4a9c39036d84f70ebb3e2cb476cff2549377ced946618b293fc6552aae8.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _4696f2d4f93b20b80cb53d0ead51ebacefd3f407654878578374133e630a1fff() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/4696f2d4f93b20b80cb53d0ead51ebacefd3f407654878578374133e630a1fff/4696f2d4f93b20b80cb53d0ead51ebacefd3f407654878578374133e630a1fff.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _4ca2a66a0c64388ded652fc19aab816513782fcd86d57862abc35a0d25861314() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/4ca2a66a0c64388ded652fc19aab816513782fcd86d57862abc35a0d25861314/4ca2a66a0c64388ded652fc19aab816513782fcd86d57862abc35a0d25861314.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _524b1b048e588dc5a207e342503b454641f32ecafcb4d48d7d526bdeea6f5e98() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/524b1b048e588dc5a207e342503b454641f32ecafcb4d48d7d526bdeea6f5e98/524b1b048e588dc5a207e342503b454641f32ecafcb4d48d7d526bdeea6f5e98.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _57dee2a170d275e099b953a8fdafde6f5becea8a0a2202de68254ad74dfd6fd5() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/57dee2a170d275e099b953a8fdafde6f5becea8a0a2202de68254ad74dfd6fd5/57dee2a170d275e099b953a8fdafde6f5becea8a0a2202de68254ad74dfd6fd5.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _58fd82e10ee3f41aef7088281c2747eb4aa07300b4eefbc566080a074f6e9f3c() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/58fd82e10ee3f41aef7088281c2747eb4aa07300b4eefbc566080a074f6e9f3c/58fd82e10ee3f41aef7088281c2747eb4aa07300b4eefbc566080a074f6e9f3c.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _616140f09fb1466810df2b2bb70a5d4d692581d5c50985d58b66b23537ece6cb() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/616140f09fb1466810df2b2bb70a5d4d692581d5c50985d58b66b23537ece6cb/616140f09fb1466810df2b2bb70a5d4d692581d5c50985d58b66b23537ece6cb.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _6a0160516ec0012faf38d1a1e138806fc3085e956498e049276341e67eb63648() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/6a0160516ec0012faf38d1a1e138806fc3085e956498e049276341e67eb63648/6a0160516ec0012faf38d1a1e138806fc3085e956498e049276341e67eb63648.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _6c2ed8ebb8fe662fe7e0675e45dea2dbcdb387ce8367809390f58a1bcb63f3a8() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/6c2ed8ebb8fe662fe7e0675e45dea2dbcdb387ce8367809390f58a1bcb63f3a8/6c2ed8ebb8fe662fe7e0675e45dea2dbcdb387ce8367809390f58a1bcb63f3a8.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _7165c282edac43a4731b7aaae47e049de200dd1b5cc3c7710a5b57989927b394() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/7165c282edac43a4731b7aaae47e049de200dd1b5cc3c7710a5b57989927b394/7165c282edac43a4731b7aaae47e049de200dd1b5cc3c7710a5b57989927b394.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
-//BUG
 #[test]
 fn _77b3e5c5903371f52b3a829f889349d4ccee4f82fa2791325e5e4aea89efd793() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/77b3e5c5903371f52b3a829f889349d4ccee4f82fa2791325e5e4aea89efd793/77b3e5c5903371f52b3a829f889349d4ccee4f82fa2791325e5e4aea89efd793.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _787959bde2695ac32a0ee4bb92350f6568139c75f120012770fb3de012919736() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/787959bde2695ac32a0ee4bb92350f6568139c75f120012770fb3de012919736/787959bde2695ac32a0ee4bb92350f6568139c75f120012770fb3de012919736.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _835d0731f9ae86c0147196aeed12f6967e3886edd4d0b85637bb37a2f02b4875() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/835d0731f9ae86c0147196aeed12f6967e3886edd4d0b85637bb37a2f02b4875/835d0731f9ae86c0147196aeed12f6967e3886edd4d0b85637bb37a2f02b4875.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _88c0ee6c82e21d686b0ca9ab15c7fa6c551bd49dcfb6493d59a845ccd9cfc88e() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/88c0ee6c82e21d686b0ca9ab15c7fa6c551bd49dcfb6493d59a845ccd9cfc88e/88c0ee6c82e21d686b0ca9ab15c7fa6c551bd49dcfb6493d59a845ccd9cfc88e.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _8a5f2590830612d57d229c543645e64db599c1b2ea975b78a86c9ac5d6e5d88a() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/8a5f2590830612d57d229c543645e64db599c1b2ea975b78a86c9ac5d6e5d88a/8a5f2590830612d57d229c543645e64db599c1b2ea975b78a86c9ac5d6e5d88a.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _8ae683329370c6a0d5e5cd533ea34ae6fe17433ad0106524397448539dc0a14f() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/8ae683329370c6a0d5e5cd533ea34ae6fe17433ad0106524397448539dc0a14f/8ae683329370c6a0d5e5cd533ea34ae6fe17433ad0106524397448539dc0a14f.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _8ebf4e44c47b6b61d313bd2580bd788a1daa029541fe210cccfa13d1bb66cc89() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/8ebf4e44c47b6b61d313bd2580bd788a1daa029541fe210cccfa13d1bb66cc89/8ebf4e44c47b6b61d313bd2580bd788a1daa029541fe210cccfa13d1bb66cc89.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _9073aea62a25c574c19a69ed7232d6abf666cccb190e485a9860ce8fa244bd5b() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/9073aea62a25c574c19a69ed7232d6abf666cccb190e485a9860ce8fa244bd5b/9073aea62a25c574c19a69ed7232d6abf666cccb190e485a9860ce8fa244bd5b.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _9110face5f3ebd6d321619a8c5378c64e1ad159b0d4ce7fc31ee7b4702e013d8() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/9110face5f3ebd6d321619a8c5378c64e1ad159b0d4ce7fc31ee7b4702e013d8/9110face5f3ebd6d321619a8c5378c64e1ad159b0d4ce7fc31ee7b4702e013d8.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _921b6ab9805103b1bdca68f0e705cb80b499a24fce4e74943fd9e0b36ea0910c() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/921b6ab9805103b1bdca68f0e705cb80b499a24fce4e74943fd9e0b36ea0910c/921b6ab9805103b1bdca68f0e705cb80b499a24fce4e74943fd9e0b36ea0910c.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _92d3be911b9e7a6a5293c6ccedfcb734f5a35adba6ea7b9ced1a810e9716092f() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/92d3be911b9e7a6a5293c6ccedfcb734f5a35adba6ea7b9ced1a810e9716092f/92d3be911b9e7a6a5293c6ccedfcb734f5a35adba6ea7b9ced1a810e9716092f.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _9813df4ed1e42ea1cd0ec3b43d51a0beb80518980eb269c5bb35062710d4edee() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/9813df4ed1e42ea1cd0ec3b43d51a0beb80518980eb269c5bb35062710d4edee/9813df4ed1e42ea1cd0ec3b43d51a0beb80518980eb269c5bb35062710d4edee.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
-//BUG: stack overflow
 #[test]
 fn _a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _a8f75a78f2ef9f331c1d7e1327d90ea0c3a198e09d792c9bd7e0ca43d362f725() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/a8f75a78f2ef9f331c1d7e1327d90ea0c3a198e09d792c9bd7e0ca43d362f725/a8f75a78f2ef9f331c1d7e1327d90ea0c3a198e09d792c9bd7e0ca43d362f725.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _b6736dcdf2ff1eae4b54839fc3c25cef63ea4f3900acfed203c0bf692a771d60() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/b6736dcdf2ff1eae4b54839fc3c25cef63ea4f3900acfed203c0bf692a771d60/b6736dcdf2ff1eae4b54839fc3c25cef63ea4f3900acfed203c0bf692a771d60.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _bc3b3bf954993dc4914c3e924f4587b260680e8249d5f44f6be2eecae94082da() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/bc3b3bf954993dc4914c3e924f4587b260680e8249d5f44f6be2eecae94082da/bc3b3bf954993dc4914c3e924f4587b260680e8249d5f44f6be2eecae94082da.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _c0d83afa613ef8df9dd24c3b8737c8bdde493524b8ec0f7c5a928b7fe765fa73() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/c0d83afa613ef8df9dd24c3b8737c8bdde493524b8ec0f7c5a928b7fe765fa73/c0d83afa613ef8df9dd24c3b8737c8bdde493524b8ec0f7c5a928b7fe765fa73.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _c46e332b470498643fadd1d598b0285bd44c1f60204321ad4c01a5a3a5e22338() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/c46e332b470498643fadd1d598b0285bd44c1f60204321ad4c01a5a3a5e22338/c46e332b470498643fadd1d598b0285bd44c1f60204321ad4c01a5a3a5e22338.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _d25b99a719fef7cc681c79e8a77e17e87e6f7a3c423032f9b962f62c003dc38d() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/d25b99a719fef7cc681c79e8a77e17e87e6f7a3c423032f9b962f62c003dc38d/d25b99a719fef7cc681c79e8a77e17e87e6f7a3c423032f9b962f62c003dc38d.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _d49d001de11a69755e3b9014bcdc88c1ba77eeafc8b4e8db0f92fe31e8e6aee2() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/d49d001de11a69755e3b9014bcdc88c1ba77eeafc8b4e8db0f92fe31e8e6aee2/d49d001de11a69755e3b9014bcdc88c1ba77eeafc8b4e8db0f92fe31e8e6aee2.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _d70070b5a582d75eaa0d5896e56ca67a5399ab43c9e830791f1e2e8334404c90() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/d70070b5a582d75eaa0d5896e56ca67a5399ab43c9e830791f1e2e8334404c90/d70070b5a582d75eaa0d5896e56ca67a5399ab43c9e830791f1e2e8334404c90.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _e6b183e40f2671dc0f87e6d85070077e9bea18e7ad50cd7e7cd31e2a9ade937b() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/e6b183e40f2671dc0f87e6d85070077e9bea18e7ad50cd7e7cd31e2a9ade937b/e6b183e40f2671dc0f87e6d85070077e9bea18e7ad50cd7e7cd31e2a9ade937b.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _ec2393766f8f2a21803b4a062f1d71c184f6eae0be60f13703e3a43e5fa493b0() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/ec2393766f8f2a21803b4a062f1d71c184f6eae0be60f13703e3a43e5fa493b0/ec2393766f8f2a21803b4a062f1d71c184f6eae0be60f13703e3a43e5fa493b0.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _f2943fa8ae6133fb532fa9b036ba81342828b2e1e78b3ae47731619edcbca4dd() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/f2943fa8ae6133fb532fa9b036ba81342828b2e1e78b3ae47731619edcbca4dd/f2943fa8ae6133fb532fa9b036ba81342828b2e1e78b3ae47731619edcbca4dd.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _f4cd145be9df9b4b35e2ba3a95c6a6f0f5f8284a03de77c0e627a78d97fdaea2() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/f4cd145be9df9b4b35e2ba3a95c6a6f0f5f8284a03de77c0e627a78d97fdaea2/f4cd145be9df9b4b35e2ba3a95c6a6f0f5f8284a03de77c0e627a78d97fdaea2.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _fc762c3b4338c7d7a6bb31d478cfbe5717ebefb0e91d6d27b82a21fc169c7afe() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/fc762c3b4338c7d7a6bb31d478cfbe5717ebefb0e91d6d27b82a21fc169c7afe/fc762c3b4338c7d7a6bb31d478cfbe5717ebefb0e91d6d27b82a21fc169c7afe.wasm").expect("");
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
 
 #[test]
 fn _fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3/fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3.wasm").expect(""); 
-    println!("{}", wimpl_module); 
+    //println!("{}", wimpl_module); 
 }
-
-// label stack, before if: [(0, Some((Return(0), F32, false))), (7, None), (8, None)]
-// label stack, before else: [(0, Some((Return(0), F32, false))), (7, None)]
