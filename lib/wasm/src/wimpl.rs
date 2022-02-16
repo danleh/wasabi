@@ -998,6 +998,8 @@ fn wimplify_instrs<'a>(
             return Ok(result_instrs);
         }; 
 
+        // println!("{}, {:?}, {:?}", instr, ty, state.var_stack);
+
         let ty = match ty {
             InferredInstructionType::Unreachable => {
                 match instr {
@@ -1011,8 +1013,6 @@ fn wimplify_instrs<'a>(
             },
             InferredInstructionType::Reachable(ty) => ty,
         };
-        
-        println!("{}, {}, {:?}", instr, ty, state.var_stack);
 
         let n_inputs = ty.params.len();
         let n_results = ty.results.len();
@@ -1045,6 +1045,9 @@ fn wimplify_instrs<'a>(
 
         let label_to_instrs = |label_stack: &[_], label: crate::Label, get_value: &mut dyn FnMut() -> Var| -> Vec<Stmt> {
             let (target, return_info) = *label_stack.iter().rev().nth(label.into_inner()).expect("label stack should never be empty"); 
+            
+            // println!("{:?}\n{:?} {:?} {:?}", label_stack, label, target, return_info);
+            
             let target = Label(target); 
             
             match return_info {
@@ -1184,11 +1187,16 @@ fn wimplify_instrs<'a>(
                 } else {
                     if_state.label_stack.push((curr_label_count, None)); 
                 }
+
+                // println!("label stack, before if: {:?}", if_state.label_stack);
                 
                 let if_body = wimplify_instrs(instrs, tys, &mut if_state).expect("if_body in wasm should not return an empty list of instructions for wimpl");            
 
                 let else_body = if if_state.else_taken {
                     if_state.else_taken = false; 
+
+                    // println!("label stack, before else: {:?}", if_state.label_stack);
+
                     Some(Body(wimplify_instrs(instrs, tys, &mut if_state).expect("else_body in wasm should not return an empty list of wimpl instructions")))       
                 } else {
                     None
@@ -1217,9 +1225,7 @@ fn wimplify_instrs<'a>(
                 state.else_taken = true; 
                 
                 // cannot pop because you still want it to be on the label stack while processing the else body 
-                //let (_, return_info) = *state.label_stack.last().expect("label stack should never be empty");
-                let (_, return_info) = state.label_stack[state.label_stack.len()-1]; 
-                
+                let (_, return_info) = *state.label_stack.last().expect("label stack should include if label");
 
                 // assign of the if statement that we just finished processing 
                 // we use state.var_stack.pop() and not args.pop() here because, else will never produce a value 
@@ -1297,7 +1303,7 @@ fn wimplify_instrs<'a>(
 
             highlevel::Instr::Return => {
                 let target = Label(0);
-                if let (_, Some((return_var, type_, loop_flag))) = state.label_stack.pop().expect("empty label stack, but expected function ") {
+                if let (_, Some((return_var, type_, loop_flag))) = *state.label_stack.last().expect("empty label stack, but expected function ") {
                     let return_val = state.var_stack.pop().expect("return expects a return value");
                     vec![
                         Stmt::Assign{ 
@@ -2280,7 +2286,7 @@ fn webp_enc_ea665() {
     println!("{}", wimpl_module);
 }
 
-// filtered wasm binaries s
+// filtered wasm binaries
 
 #[test]
 fn _07735b34f092d6e63c397dfb583b64ceca84c595d13c6912f8b0d414b0f01da9() {
@@ -2518,7 +2524,6 @@ fn _d25b99a719fef7cc681c79e8a77e17e87e6f7a3c423032f9b962f62c003dc38d() {
     println!("{}", wimpl_module); 
 }
 
-//BUG: br expected a value to return
 #[test]
 fn _d49d001de11a69755e3b9014bcdc88c1ba77eeafc8b4e8db0f92fe31e8e6aee2() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/d49d001de11a69755e3b9014bcdc88c1ba77eeafc8b4e8db0f92fe31e8e6aee2/d49d001de11a69755e3b9014bcdc88c1ba77eeafc8b4e8db0f92fe31e8e6aee2.wasm").expect("");
@@ -2561,9 +2566,11 @@ fn _fc762c3b4338c7d7a6bb31d478cfbe5717ebefb0e91d6d27b82a21fc169c7afe() {
     println!("{}", wimpl_module); 
 }
 
-// BUG: br expected a value to return 
 #[test]
 fn _fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3() {
     let wimpl_module = wimplify("tests/wimpl-filtered-binaries/fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3/fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3.wasm").expect(""); 
     println!("{}", wimpl_module); 
 }
+
+// label stack, before if: [(0, Some((Return(0), F32, false))), (7, None), (8, None)]
+// label stack, before else: [(0, Some((Return(0), F32, false))), (7, None)]
