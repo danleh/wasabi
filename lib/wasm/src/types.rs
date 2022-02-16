@@ -969,3 +969,43 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
 //         Some((instr, ty))
 //     }
 // }
+
+#[cfg(test)]
+mod tests {
+    use crate::{highlevel::{Function, Module, Code, Instr, Instr::*, NumericOp::*}, FunctionType, ValType, Val, ValType::*};
+
+    use super::TypeChecker;
+
+    fn init_type_checker() -> TypeChecker<'static> {
+        // Not clean, but good enough for testing.
+        let function = Box::leak(Box::new(Function::new(FunctionType::new(&[], &[]), Code {
+                locals: Vec::new(),
+                body: Vec::new(),
+            }, Vec::new())
+        ));
+        let module = Box::leak(Box::new(Module::default()));
+        TypeChecker::begin_function(function, module)
+    }
+
+    fn assert_reachable_type(type_checker: &mut TypeChecker, instr: Instr, inputs: &[ValType], results: &[ValType]) {
+        let ty = type_checker.check_next_instr(&instr).expect("type checking failed");
+        use crate::types::InferredInstructionType::*;
+        match ty {
+            Unreachable => panic!("type checking produced unreachable type"),
+            Reachable(ty) => {
+                assert_eq!(&&*ty.params, &inputs);
+                assert_eq!(&&*ty.results, &results);
+            },
+        }
+    }
+
+    #[test]
+    pub fn simple_type() {
+        let mut type_checker = init_type_checker();
+        assert_reachable_type(&mut type_checker, Const(Val::I32(0)), &[], &[I32]);
+        assert_reachable_type(&mut type_checker, Const(Val::I32(0)), &[], &[I32]);
+        assert_reachable_type(&mut type_checker, Numeric(I32Add), &[I32, I32], &[I32]);
+    }
+    
+    // TODO add regression tests
+}
