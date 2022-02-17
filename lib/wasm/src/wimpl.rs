@@ -973,7 +973,8 @@ impl State {
 
 fn wimplify_instrs<'a>(
     instrs: &mut impl Iterator<Item=&'a highlevel::Instr>, 
-    tys: &mut impl Iterator<Item=&'a InferredInstructionType>, 
+    typechecker: &mut TypeChecker, 
+    //tys: &mut impl Iterator<Item=&'a InferredInstructionType>, 
     state: &mut State,
 ) -> Result<Vec<Stmt>, String> {
     
@@ -984,14 +985,15 @@ fn wimplify_instrs<'a>(
 
     loop {
 
+        //TODO: Daniel code review 
+        
         let instr = instrs.next();
-        let ty = tys.next();         
-
         let (instr, ty) = if instr.is_some() {
-            (instr.expect("instrs cannot be empty"), ty.expect("instr expects a type"))
+            (instr.expect("instrs should not be empty"), 
+            typechecker.check_next_instr(instr.unwrap()).map_err(|e| e.to_string())?)
         } else {
             return Ok(result_instrs);
-        }; 
+        };
 
         // println!("{}, {}, {:?}", instr, ty, state.var_stack);
 
@@ -1118,7 +1120,7 @@ fn wimplify_instrs<'a>(
                 }
 
                 //call wimplify on remaining instructions with new block state 
-                let block_body = wimplify_instrs(instrs, tys, &mut block_state).expect("a non-empty instruction list in wasm cannot produce an empty list of instructions for wimpl");
+                let block_body = wimplify_instrs(instrs, typechecker, &mut block_state).expect("a non-empty instruction list in wasm cannot produce an empty list of instructions for wimpl");
                 
                 //update block state
                 state.label_count = block_state.label_count;
@@ -1181,11 +1183,11 @@ fn wimplify_instrs<'a>(
                     if_state.label_stack.push((Label(curr_label_count), None)); 
                 }
 
-                let if_body = wimplify_instrs(instrs, tys, &mut if_state).expect("if_body in wasm should not return an empty list of instructions for wimpl");            
+                let if_body = wimplify_instrs(instrs, typechecker, &mut if_state).expect("if_body in wasm should not return an empty list of instructions for wimpl");            
 
                 let else_body = if if_state.else_taken {
                     if_state.else_taken = false; 
-                    Some(Body(wimplify_instrs(instrs, tys, &mut if_state).expect("else_body in wasm should not return an empty list of wimpl instructions")))       
+                    Some(Body(wimplify_instrs(instrs, typechecker, &mut if_state).expect("else_body in wasm should not return an empty list of wimpl instructions")))       
                 } else {
                     None
                 }; 
@@ -1534,24 +1536,17 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
         }
 
         if let Some(code) = func.code() {
-            let instrs = code.body.as_slice();
-                    // FIXME: generate type on-demand inside wimplify, not here beforehand.
-            let mut tys = Vec::new();
+
+            let mut instrs = code.body.as_slice().iter(); 
             let mut type_checker = TypeChecker::begin_function(func, module);
-            for instr in instrs {
-                let ty = type_checker.check_next_instr(instr).map_err(|e| e.to_string())?;
-                tys.push(ty);
-            }
-
-            let mut instrs = instrs.iter(); 
-            let mut ty = tys.iter(); 
-
             let mut state = State::new(func.type_.params.len()); 
+
             if func.type_.results.len() == 0 { state.label_stack.push((Label(0), None)); } 
             else { 
                 state.label_stack.push((Label(0), Some((Var::Return(0), func.type_.results[0], false)))); 
             }
-            for inst in wimplify_instrs(&mut instrs, &mut ty, &mut state).expect("non-empty instruction list for wasm cannot produce an empty list of wimpl instructions") {
+
+            for inst in wimplify_instrs(&mut instrs, &mut type_checker, &mut state).expect("non-empty instruction list for wasm cannot produce an empty list of wimpl instructions") {
                 result_instrs.push(inst); 
             }
         } 
