@@ -1,10 +1,8 @@
 use std::{
-    collections::VecDeque,
     fmt::{self, Write},
     io::{self, ErrorKind},
-    iter::FromIterator,
     path::Path,
-    str::FromStr, slice::Iter,
+    str::FromStr, 
 };
 
 use crate::{highlevel::{MemoryOp, Global, Table}, types::{InferredInstructionType, TypeChecker}, Val, ValType, Idx};
@@ -85,9 +83,8 @@ pub enum Var {
 }
 
 /// An absolute block label, NOT to be confused with the relative branch labels of WebAssembly!
-#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, Default)]
 pub struct Label(usize);
-
 
 /// Wimpl instructions make the following major changes over high-level Wasm:
 /// - Remove the evaluation/operand stack completely, every instruction takes
@@ -885,7 +882,7 @@ impl Stmt {
     }
 
     /// Convenience function to parse Wimpl from a filename.
-    // FIXME wimpl file should be a module, no?
+    // FIXME: wimpl file should be a module, no?
     pub fn from_text_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
         let str = std::fs::read_to_string(filename)?;
         Self::from_str_multiple(&str).map_err(|e| io::Error::new(ErrorKind::Other, e))
@@ -944,18 +941,17 @@ macro_rules! wimpl {
 }
 
 // Export macros.
-// pub(crate) use wimpl;
-// pub(crate) use wimpls;
+pub(crate) use wimpl;
+pub(crate) use wimpls;
 
 #[derive(Clone, Default)]
 pub struct State {
     pub label_count: usize,
     pub stack_var_count: usize,
     pub var_stack: Vec<Var>,
-    // TODO: change usize to Label
     // if you are in a block or an if => false 
     // if you are in a loop => true 
-    pub label_stack: Vec<(usize, Option<(Var, ValType, bool)>)>,  //TODO: label stack needs to flag if block or loop 
+    pub label_stack: Vec<(Label, Option<(Var, ValType, bool)>)>,   
     pub else_taken: bool, 
     pub num_params: usize, 
 }
@@ -976,8 +972,8 @@ impl State {
 
 
 fn wimplify_instrs<'a>(
-    instrs: &mut impl Iterator<Item=&'a highlevel::Instr>, //&mut VecDeque<&highlevel::Instr>,
-    tys: &mut impl Iterator<Item=&'a InferredInstructionType>, //&mut VecDeque<InferredInstructionType>,
+    instrs: &mut impl Iterator<Item=&'a highlevel::Instr>, 
+    tys: &mut impl Iterator<Item=&'a InferredInstructionType>, 
     state: &mut State,
 ) -> Result<Vec<Stmt>, String> {
     
@@ -988,7 +984,6 @@ fn wimplify_instrs<'a>(
 
     loop {
 
-        //TODO: make clean 
         let instr = instrs.next();
         let ty = tys.next();         
 
@@ -1008,7 +1003,7 @@ fn wimplify_instrs<'a>(
                         state.else_taken = true; 
                         return Ok(result_instrs)
                     } 
-                    _ => continue  //return Ok(Vec::new())
+                    _ => continue  
                 }                
             },
             InferredInstructionType::Reachable(ty) => ty,
@@ -1025,7 +1020,7 @@ fn wimplify_instrs<'a>(
                 highlevel::Instr::Local(highlevel::LocalOp::Tee,_) => None, 
                 // end does not produce a value, it indicates that you have to save var_stack top into the return variable 
                 highlevel::Instr::End => None,
-                // brif does not produce a value, the returned value is stored in the label's return variable 
+                // brif does not produce a value, the returned value is stored in the label's result variable 
                 highlevel::Instr::BrIf(_) => None,  
                 _ => Some(Stack(state.stack_var_count)) 
             }
@@ -1048,8 +1043,6 @@ fn wimplify_instrs<'a>(
             
             // println!("{:?}\n{:?} {:?} {:?}", label_stack, label, target, return_info);
             
-            let target = Label(target); 
-            
             match return_info {
                 // Target block needs a result, and is not a loop.
                 Some((lhs, type_, false)) => vec![
@@ -1069,7 +1062,7 @@ fn wimplify_instrs<'a>(
             }
         };
 
-        let result_instr: Vec<Stmt> = match instr {
+        result_instrs.append(&mut match instr {
 
             highlevel::Instr::Unreachable => vec![Stmt::Unreachable],
 
@@ -1080,9 +1073,9 @@ fn wimplify_instrs<'a>(
                 
                 let btype = blocktype.0; 
 
-                //first, if the block returns a value, create a variable that will store the return and keep track of the variable 
-                //if it doesn't return anything, create an empty vector  
-                //block variable has same usize as the labelnumber!
+                // first, if the block returns a value, create a variable that will store the return and keep track of the variable 
+                // if it doesn't return anything, create an empty vector  
+                // block variable has same usize as the label number!
                 let mut result_var = None; 
                 let mut res_instr_vec = if let Some(btype) = btype {
                     result_var = Some(BlockResult(state.label_count)); 
@@ -1096,11 +1089,11 @@ fn wimplify_instrs<'a>(
                     Vec::new()
                 }; 
                 
-                //save current stack state and prepare to go into a new block 
+                // save current stack state and prepare to go into a new block 
                 let curr_label_count = state.label_count;
                 state.label_count += 1;
                 
-                //create new block state 
+                // create new block state 
                 // TODO split into three parts: one part mutable (label_count, stack_var_count), one
                 // part not mutable ("global constants": num_params), and "local state" var_stack, 
                 // label_stack, else_taken).
@@ -1119,9 +1112,9 @@ fn wimplify_instrs<'a>(
                         _ => unreachable!("should only be translating block or loop")                    
                     };
                     let block_result = Some((result_var, btype.expect("block type is expected since the block has a result variable"), loop_flag));
-                    block_state.label_stack.push((curr_label_count, block_result))                
+                    block_state.label_stack.push((Label(curr_label_count), block_result))                
                 } else {
-                    block_state.label_stack.push((curr_label_count, None)); 
+                    block_state.label_stack.push((Label(curr_label_count), None)); 
                 }
 
                 //call wimplify on remaining instructions with new block state 
@@ -1183,20 +1176,15 @@ fn wimplify_instrs<'a>(
                 // if_state.var_stack = Vec::new(); 
 
                 if let Some(result_var) = result_var {
-                    if_state.label_stack.push((curr_label_count, Some((result_var, blocktype.expect("block type expected since there is an associated result variable for the block"), false))))                
+                    if_state.label_stack.push((Label(curr_label_count), Some((result_var, blocktype.expect("block type expected since there is an associated result variable for the block"), false))))                
                 } else {
-                    if_state.label_stack.push((curr_label_count, None)); 
+                    if_state.label_stack.push((Label(curr_label_count), None)); 
                 }
 
-                // println!("label stack, before if: {:?}", if_state.label_stack);
-                
                 let if_body = wimplify_instrs(instrs, tys, &mut if_state).expect("if_body in wasm should not return an empty list of instructions for wimpl");            
 
                 let else_body = if if_state.else_taken {
                     if_state.else_taken = false; 
-
-                    // println!("label stack, before else: {:?}", if_state.label_stack);
-
                     Some(Body(wimplify_instrs(instrs, tys, &mut if_state).expect("else_body in wasm should not return an empty list of wimpl instructions")))       
                 } else {
                     None
@@ -1228,9 +1216,7 @@ fn wimplify_instrs<'a>(
                 let (_, return_info) = *state.label_stack.last().expect("label stack should include if label");
 
                 // assign of the if statement that we just finished processing 
-                // we use state.var_stack.pop() and not args.pop() here because, else will never produce a value 
-                // or consume it, but here we have to create the assign of the if-block if needed   
-                // hence, args will be [] and the required value should be at the top of the var_stack
+                // the required value returned by if (if any) should be at the top of the var_stack
                 if let Some((lhs, type_, loop_flag)) = return_info {
                     assert!(!loop_flag, "if block result should never be have loop_flag set");
                     result_instrs.push(Stmt::Assign{
@@ -1245,10 +1231,8 @@ fn wimplify_instrs<'a>(
 
             highlevel::Instr::End => {
                  
-                //println!("label stack: {:?}", state.label_stack);
                 let (_, return_info) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack"); 
-                //why not args here: else type does not produce a value, we rely on the label stack for that information 
-                //println!("return info: {:?}", return_info);  
+
                 if let Some((ret_var, type_, _loop_block)) = return_info {
                     result_instrs.push(Stmt::Assign{
                         lhs: ret_var,
@@ -1256,7 +1240,7 @@ fn wimplify_instrs<'a>(
                         type_,
                     });
                 }; 
-                //println!("result instrs: {:?}", result_instrs); 
+
                 return Ok(result_instrs)
             }
 
@@ -1270,7 +1254,7 @@ fn wimplify_instrs<'a>(
                 vec![Stmt::If{
                     condition, 
                     if_body: Body(label_to_instrs(&state.label_stack, *label, &mut || {
-                        // TODO fixup var_stack
+                        // TODO: fixup var_stack
                         *state.var_stack.last().expect("br_if expected value to return")
                     })), 
                     else_body: None,
@@ -1305,8 +1289,6 @@ fn wimplify_instrs<'a>(
                 // This points to the block for the overall function body.
                 let target = Label(0);
                 
-                // println!("function ty: {:?}", function);
-                // println!("label stack: {:?}", state.label_stack);
                 if let (_, Some((return_var, type_, loop_flag))) = *state.label_stack.first().expect("empty label stack, but expected function ") {
                     assert!(!loop_flag, "function should not have loop flag set");
                     let return_val = state.var_stack.pop().expect("return expects a return value");
@@ -1344,7 +1326,7 @@ fn wimplify_instrs<'a>(
 
                 // in call_indirect,
                 // the last variable on the stack is the index value
-                // the rest (till you collect all the needed parameters are arguments
+                // the rest (till you collect all the needed parameters) are arguments
                 let callind_rhs = CallIndirect{
                     type_: fn_type.clone(), 
                     table_idx: state.var_stack.pop().expect("call_indirect requires an index"),
@@ -1365,9 +1347,9 @@ fn wimplify_instrs<'a>(
             highlevel::Instr::Drop => Vec::new(), 
 
             highlevel::Instr::Select => { 
-                let arg1 = state.var_stack.pop().expect("select requires a value on the stack for the condition"); //cond  
-                let arg2 = state.var_stack.pop().expect("select requires a value on the stack for the then case"); //if
-                let arg3 = state.var_stack.pop().expect("select requires a value on the stack for the else case"); //else
+                let condition       = state.var_stack.pop().expect("select requires a value on the stack for the condition");   
+                let if_result_val   = state.var_stack.pop().expect("select requires a value on the stack for the then case"); 
+                let else_result_val = state.var_stack.pop().expect("select requires a value on the stack for the else case");  
                 let type_ = ty.results[0]; 
                 
                 if let Some(lhs) = lhs {
@@ -1380,15 +1362,15 @@ fn wimplify_instrs<'a>(
                         },
                 
                         Stmt::If {
-                            condition: arg1,
+                            condition,
                             if_body: Body(vec![Stmt::Assign{
                                 lhs, 
-                                rhs: VarRef(arg2), 
+                                rhs: VarRef(if_result_val), 
                                 type_ 
                             }]),
                             else_body: Some(Body(vec![Stmt::Assign{ 
                                 lhs, 
-                                rhs: VarRef(arg3), 
+                                rhs: VarRef(else_result_val), 
                                 type_ 
                             }]))
                         }
@@ -1521,26 +1503,15 @@ fn wimplify_instrs<'a>(
                     panic!("numeric op has to produce a value "); 
                 }
             }
-        };
+        });
     
-        for ins in result_instr {
-            result_instrs.push(ins);
-        }
-
-        //if !instrs.is_empty() {
         if let Some(lhs) = lhs { 
             state.var_stack.push(lhs); 
             if let Stack(_) = lhs {
                 state.stack_var_count += 1;
             }
-        }
-        //let res = wimplify_instrs(instrs, tys, state).expect("non-empty instruction list in wasm cannot produce an empty list of wimpl instructions");
-        //for inst in res {
-        //    result_instrs.push(inst); 
-        //}
-       // } 
+        }        
     }
-    Ok(result_instrs)
 }
 
 pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
@@ -1565,20 +1536,20 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
         if let Some(code) = func.code() {
             let instrs = code.body.as_slice();
                     // FIXME: generate type on-demand inside wimplify, not here beforehand.
-            let mut tys = VecDeque::new();
+            let mut tys = Vec::new();
             let mut type_checker = TypeChecker::begin_function(func, module);
             for instr in instrs {
                 let ty = type_checker.check_next_instr(instr).map_err(|e| e.to_string())?;
-                tys.push_back(ty);
+                tys.push(ty);
             }
 
             let mut instrs = instrs.iter(); 
             let mut ty = tys.iter(); 
 
             let mut state = State::new(func.type_.params.len()); 
-            if func.type_.results.len() == 0 { state.label_stack.push((0, None)); } 
+            if func.type_.results.len() == 0 { state.label_stack.push((Label(0), None)); } 
             else { 
-                state.label_stack.push((0, Some((Var::Return(0), func.type_.results[0], false)))); 
+                state.label_stack.push((Label(0), Some((Var::Return(0), func.type_.results[0], false)))); 
             }
             for inst in wimplify_instrs(&mut instrs, &mut ty, &mut state).expect("non-empty instruction list for wasm cannot produce an empty list of wimpl instructions") {
                 result_instrs.push(inst); 
@@ -2056,9 +2027,8 @@ mod tests {
 
 #[cfg(test)]
 fn test(path_wimpl: &str, path_wasm: &str) {
-    // FIXME:! we cannot just comment out tests that don't run!
 
-    let wimpl_module = wimplify(path_wasm).expect(""); 
+    let wimpl_module = wimplify(path_wasm).expect("wasm file does not exist"); 
     // println!("ACTUAL");
     // println!("{}", wimpl_module);
 
@@ -2190,376 +2160,328 @@ fn if_else() {
 
 #[test]
 fn calc() {  
-    let wimpl_module = wimplify("tests/wimpl-wasm-handwritten/calc/add.wasm").expect(""); 
-    //println!("{}", wimpl_module);
+    wimplify("tests/wimpl-wasm-handwritten/calc/add.wasm").expect("error while translating wasm file to wimpl"); 
 }
 
 #[test]
 fn calc_dce() {  
-    let wimpl_module = wimplify("tests/wimpl-wasm-handwritten/calc-dce/add-dce.wasm").expect(""); 
-    //println!("{}", wimpl_module);
+    wimplify("tests/wimpl-wasm-handwritten/calc-dce/add-dce.wasm").expect("error while translating wasm file to wimpl"); 
+
 }
 
 #[test]
 fn calc_virtual() {  
-    let wimpl_module = wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect(""); 
-    //println!("{}", wimpl_module);
+    wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect("error while translating wasm file to wimpl"); 
+
 }
 
 //USENIX programs 
 
 #[test]
 fn module_8c087e0290bb39f1e090() {
-    let wimpl_module = wimplify("tests/wimpl-USENIX/8c087e0290bb39f1e090.module/8c087e0290bb39f1e090.module.wasm").expect(""); 
-    //println!("{}", wimpl_module);
+    wimplify("tests/wimpl-USENIX/8c087e0290bb39f1e090.module/8c087e0290bb39f1e090.module.wasm").expect("error while translating wasm file to wimpl"); 
+
 }
 
 #[test]
 fn annots() { 
-    let wimpl_module = wimplify("tests/wimpl-USENIX/annots/annots.wasm").expect(""); 
-    //println!("{}", wimpl_module);
+    wimplify("tests/wimpl-USENIX/annots/annots.wasm").expect("error while translating wasm file to wimpl"); 
+
 }
 
 #[test]
 fn module_bb9bb638551198cd3a42() { 
-    let wimpl_module = wimplify("tests/wimpl-USENIX/bb9bb638551198cd3a42.module/bb9bb638551198cd3a42.module.wasm").expect(""); 
-    //println!("{}", wimpl_module);
+    wimplify("tests/wimpl-USENIX/bb9bb638551198cd3a42.module/bb9bb638551198cd3a42.module.wasm").expect("error while translating wasm file to wimpl"); 
+
 }
 
 #[test]
 fn compiled_wasm() {  
-    let wimpl_module = wimplify("tests/wimpl-USENIX/compiled.wasm/compiled.wasm").expect(""); 
-    //println!("{}", wimpl_module);
+    wimplify("tests/wimpl-USENIX/compiled.wasm/compiled.wasm").expect("error while translating wasm file to wimpl"); 
+
 }
 
 #[test]
 fn module_dac34eee5ed4216c65b2() {   
-    let wimpl_module = wimplify("tests/wimpl-USENIX/dac34eee5ed4216c65b2.module/dac34eee5ed4216c65b2.module.wasm").expect(""); 
-    //println!("{}", wimpl_module);
+    wimplify("tests/wimpl-USENIX/dac34eee5ed4216c65b2.module/dac34eee5ed4216c65b2.module.wasm").expect("error while translating wasm file to wimpl"); 
+
 }
 
 #[test]
 fn imagequant_c970f() {  
-    let wimpl_module = wimplify("tests/wimpl-USENIX/imagequant.c970f/imagequant.c970f.wasm").expect(""); 
-    //println!("{}", wimpl_module);
+    wimplify("tests/wimpl-USENIX/imagequant.c970f/imagequant.c970f.wasm").expect("error while translating wasm file to wimpl"); 
+
 }
 
 #[test]
 fn mozjpeg_enc_93395() {  
-    let wimpl_module = wimplify("tests/wimpl-USENIX/mozjpeg_enc.93395/mozjpeg_enc.93395.wasm").expect(""); 
-    //println!("{}", wimpl_module);
+    wimplify("tests/wimpl-USENIX/mozjpeg_enc.93395/mozjpeg_enc.93395.wasm").expect("error while translating wasm file to wimpl"); 
+
 }
 
 #[test]
 fn optipng_4e77b() {  
-    let wimpl_module = wimplify("tests/wimpl-USENIX/optipng.4e77b/optipng.4e77b.wasm").expect(""); 
-    //println!("{}", wimpl_module);
+    wimplify("tests/wimpl-USENIX/optipng.4e77b/optipng.4e77b.wasm").expect("error while translating wasm file to wimpl"); 
+
 }
 
 #[test]
 fn rotate_4cdaa() {  
-    let wimpl_module = wimplify("tests/wimpl-USENIX/rotate.4cdaa/rotate.4cdaa.wasm").expect(""); 
-    //println!("{}", wimpl_module);
+    wimplify("tests/wimpl-USENIX/rotate.4cdaa/rotate.4cdaa.wasm").expect("error while translating wasm file to wimpl"); 
+
 }
 
 #[test]
-fn USENIX_bin_acrobat_wasm() {  
-    let wimpl_module = wimplify("tests/wimpl-USENIX/USENIX_bin_acrobat.wasm/USENIX_bin_acrobat.wasm.wasm").expect(""); 
-    //println!("{}", wimpl_module);
+fn usenix_bin_acrobat_wasm() {  
+    wimplify("tests/wimpl-USENIX/USENIX_bin_acrobat.wasm/USENIX_bin_acrobat.wasm.wasm").expect("error while translating wasm file to wimpl"); 
+
 }
 
 #[test]
 fn webp_dec_fa0ab() {  
-    let wimpl_module = wimplify("tests/wimpl-USENIX/webp_dec.fa0ab/webp_dec.fa0ab.wasm").expect(""); 
-    //println!("{}", wimpl_module);
+    wimplify("tests/wimpl-USENIX/webp_dec.fa0ab/webp_dec.fa0ab.wasm").expect("error while translating wasm file to wimpl"); 
+
 }
 
 #[test]
 fn webp_enc_ea665() {  
-    let wimpl_module = wimplify("tests/wimpl-USENIX/webp_enc.ea665/webp_enc.ea665.wasm").expect(""); 
-    //println!("{}", wimpl_module);
+    wimplify("tests/wimpl-USENIX/webp_enc.ea665/webp_enc.ea665.wasm").expect("error while translating wasm file to wimpl"); 
+
 }
 
 // filtered wasm binaries
 
 #[test]
 fn _07735b34f092d6e63c397dfb583b64ceca84c595d13c6912f8b0d414b0f01da9() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/07735b34f092d6e63c397dfb583b64ceca84c595d13c6912f8b0d414b0f01da9/07735b34f092d6e63c397dfb583b64ceca84c595d13c6912f8b0d414b0f01da9.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/07735b34f092d6e63c397dfb583b64ceca84c595d13c6912f8b0d414b0f01da9/07735b34f092d6e63c397dfb583b64ceca84c595d13c6912f8b0d414b0f01da9.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _14ee85873e07b6226d416a1fc3bfc2aeae9c44700eac316a04bb6d98b95b605c() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/14ee85873e07b6226d416a1fc3bfc2aeae9c44700eac316a04bb6d98b95b605c/14ee85873e07b6226d416a1fc3bfc2aeae9c44700eac316a04bb6d98b95b605c.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/14ee85873e07b6226d416a1fc3bfc2aeae9c44700eac316a04bb6d98b95b605c/14ee85873e07b6226d416a1fc3bfc2aeae9c44700eac316a04bb6d98b95b605c.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _1cbe05896a7233e4a5679d69b4fb4e04b3857b50b1a0fc0d1a34054ff40e39bb() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/1cbe05896a7233e4a5679d69b4fb4e04b3857b50b1a0fc0d1a34054ff40e39bb/1cbe05896a7233e4a5679d69b4fb4e04b3857b50b1a0fc0d1a34054ff40e39bb.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/1cbe05896a7233e4a5679d69b4fb4e04b3857b50b1a0fc0d1a34054ff40e39bb/1cbe05896a7233e4a5679d69b4fb4e04b3857b50b1a0fc0d1a34054ff40e39bb.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _1e9df781a23d49aaf1e10abc4db11cde4c31e07d9cee2568d723b27bbeff515b() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/1e9df781a23d49aaf1e10abc4db11cde4c31e07d9cee2568d723b27bbeff515b/1e9df781a23d49aaf1e10abc4db11cde4c31e07d9cee2568d723b27bbeff515b.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/1e9df781a23d49aaf1e10abc4db11cde4c31e07d9cee2568d723b27bbeff515b/1e9df781a23d49aaf1e10abc4db11cde4c31e07d9cee2568d723b27bbeff515b.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _2449e3cbacf8bc6fd02a09b5b2a0f7ad4555046f7afba480d29f4929d39e4b04() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/2449e3cbacf8bc6fd02a09b5b2a0f7ad4555046f7afba480d29f4929d39e4b04/2449e3cbacf8bc6fd02a09b5b2a0f7ad4555046f7afba480d29f4929d39e4b04.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/2449e3cbacf8bc6fd02a09b5b2a0f7ad4555046f7afba480d29f4929d39e4b04/2449e3cbacf8bc6fd02a09b5b2a0f7ad4555046f7afba480d29f4929d39e4b04.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _32e1e40f2bc99176f2ede6999af1681b9893fca63db2f87ef2d274cd43f1d3e3() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/32e1e40f2bc99176f2ede6999af1681b9893fca63db2f87ef2d274cd43f1d3e3/32e1e40f2bc99176f2ede6999af1681b9893fca63db2f87ef2d274cd43f1d3e3.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/32e1e40f2bc99176f2ede6999af1681b9893fca63db2f87ef2d274cd43f1d3e3/32e1e40f2bc99176f2ede6999af1681b9893fca63db2f87ef2d274cd43f1d3e3.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _381e5189553901c1649b5093758fee36b338ee7fcd211a20b1b6e6d374e53bce() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/381e5189553901c1649b5093758fee36b338ee7fcd211a20b1b6e6d374e53bce/381e5189553901c1649b5093758fee36b338ee7fcd211a20b1b6e6d374e53bce.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/381e5189553901c1649b5093758fee36b338ee7fcd211a20b1b6e6d374e53bce/381e5189553901c1649b5093758fee36b338ee7fcd211a20b1b6e6d374e53bce.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _3deb83bb20eccb638a2fbbe09ba323a472654552f8bcd93611e1d4ba20a67ea4() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/3deb83bb20eccb638a2fbbe09ba323a472654552f8bcd93611e1d4ba20a67ea4/3deb83bb20eccb638a2fbbe09ba323a472654552f8bcd93611e1d4ba20a67ea4.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/3deb83bb20eccb638a2fbbe09ba323a472654552f8bcd93611e1d4ba20a67ea4/3deb83bb20eccb638a2fbbe09ba323a472654552f8bcd93611e1d4ba20a67ea4.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _3f8cf6588c2ed1e7f92ef8f3c37cbb0a0294a9b2a0b330ecd087cff985b34689() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/3f8cf6588c2ed1e7f92ef8f3c37cbb0a0294a9b2a0b330ecd087cff985b34689/3f8cf6588c2ed1e7f92ef8f3c37cbb0a0294a9b2a0b330ecd087cff985b34689.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/3f8cf6588c2ed1e7f92ef8f3c37cbb0a0294a9b2a0b330ecd087cff985b34689/3f8cf6588c2ed1e7f92ef8f3c37cbb0a0294a9b2a0b330ecd087cff985b34689.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _419963e6d5166128b11ce6eb7138fe6b5c81694196882cba034f296d613d9d0f() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/419963e6d5166128b11ce6eb7138fe6b5c81694196882cba034f296d613d9d0f/419963e6d5166128b11ce6eb7138fe6b5c81694196882cba034f296d613d9d0f.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/419963e6d5166128b11ce6eb7138fe6b5c81694196882cba034f296d613d9d0f/419963e6d5166128b11ce6eb7138fe6b5c81694196882cba034f296d613d9d0f.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _4666a4a9c39036d84f70ebb3e2cb476cff2549377ced946618b293fc6552aae8() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/4666a4a9c39036d84f70ebb3e2cb476cff2549377ced946618b293fc6552aae8/4666a4a9c39036d84f70ebb3e2cb476cff2549377ced946618b293fc6552aae8.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/4666a4a9c39036d84f70ebb3e2cb476cff2549377ced946618b293fc6552aae8/4666a4a9c39036d84f70ebb3e2cb476cff2549377ced946618b293fc6552aae8.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _4696f2d4f93b20b80cb53d0ead51ebacefd3f407654878578374133e630a1fff() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/4696f2d4f93b20b80cb53d0ead51ebacefd3f407654878578374133e630a1fff/4696f2d4f93b20b80cb53d0ead51ebacefd3f407654878578374133e630a1fff.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/4696f2d4f93b20b80cb53d0ead51ebacefd3f407654878578374133e630a1fff/4696f2d4f93b20b80cb53d0ead51ebacefd3f407654878578374133e630a1fff.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _4ca2a66a0c64388ded652fc19aab816513782fcd86d57862abc35a0d25861314() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/4ca2a66a0c64388ded652fc19aab816513782fcd86d57862abc35a0d25861314/4ca2a66a0c64388ded652fc19aab816513782fcd86d57862abc35a0d25861314.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/4ca2a66a0c64388ded652fc19aab816513782fcd86d57862abc35a0d25861314/4ca2a66a0c64388ded652fc19aab816513782fcd86d57862abc35a0d25861314.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _524b1b048e588dc5a207e342503b454641f32ecafcb4d48d7d526bdeea6f5e98() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/524b1b048e588dc5a207e342503b454641f32ecafcb4d48d7d526bdeea6f5e98/524b1b048e588dc5a207e342503b454641f32ecafcb4d48d7d526bdeea6f5e98.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/524b1b048e588dc5a207e342503b454641f32ecafcb4d48d7d526bdeea6f5e98/524b1b048e588dc5a207e342503b454641f32ecafcb4d48d7d526bdeea6f5e98.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _57dee2a170d275e099b953a8fdafde6f5becea8a0a2202de68254ad74dfd6fd5() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/57dee2a170d275e099b953a8fdafde6f5becea8a0a2202de68254ad74dfd6fd5/57dee2a170d275e099b953a8fdafde6f5becea8a0a2202de68254ad74dfd6fd5.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/57dee2a170d275e099b953a8fdafde6f5becea8a0a2202de68254ad74dfd6fd5/57dee2a170d275e099b953a8fdafde6f5becea8a0a2202de68254ad74dfd6fd5.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _58fd82e10ee3f41aef7088281c2747eb4aa07300b4eefbc566080a074f6e9f3c() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/58fd82e10ee3f41aef7088281c2747eb4aa07300b4eefbc566080a074f6e9f3c/58fd82e10ee3f41aef7088281c2747eb4aa07300b4eefbc566080a074f6e9f3c.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/58fd82e10ee3f41aef7088281c2747eb4aa07300b4eefbc566080a074f6e9f3c/58fd82e10ee3f41aef7088281c2747eb4aa07300b4eefbc566080a074f6e9f3c.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _616140f09fb1466810df2b2bb70a5d4d692581d5c50985d58b66b23537ece6cb() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/616140f09fb1466810df2b2bb70a5d4d692581d5c50985d58b66b23537ece6cb/616140f09fb1466810df2b2bb70a5d4d692581d5c50985d58b66b23537ece6cb.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/616140f09fb1466810df2b2bb70a5d4d692581d5c50985d58b66b23537ece6cb/616140f09fb1466810df2b2bb70a5d4d692581d5c50985d58b66b23537ece6cb.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _6a0160516ec0012faf38d1a1e138806fc3085e956498e049276341e67eb63648() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/6a0160516ec0012faf38d1a1e138806fc3085e956498e049276341e67eb63648/6a0160516ec0012faf38d1a1e138806fc3085e956498e049276341e67eb63648.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/6a0160516ec0012faf38d1a1e138806fc3085e956498e049276341e67eb63648/6a0160516ec0012faf38d1a1e138806fc3085e956498e049276341e67eb63648.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _6c2ed8ebb8fe662fe7e0675e45dea2dbcdb387ce8367809390f58a1bcb63f3a8() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/6c2ed8ebb8fe662fe7e0675e45dea2dbcdb387ce8367809390f58a1bcb63f3a8/6c2ed8ebb8fe662fe7e0675e45dea2dbcdb387ce8367809390f58a1bcb63f3a8.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/6c2ed8ebb8fe662fe7e0675e45dea2dbcdb387ce8367809390f58a1bcb63f3a8/6c2ed8ebb8fe662fe7e0675e45dea2dbcdb387ce8367809390f58a1bcb63f3a8.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _7165c282edac43a4731b7aaae47e049de200dd1b5cc3c7710a5b57989927b394() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/7165c282edac43a4731b7aaae47e049de200dd1b5cc3c7710a5b57989927b394/7165c282edac43a4731b7aaae47e049de200dd1b5cc3c7710a5b57989927b394.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/7165c282edac43a4731b7aaae47e049de200dd1b5cc3c7710a5b57989927b394/7165c282edac43a4731b7aaae47e049de200dd1b5cc3c7710a5b57989927b394.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _77b3e5c5903371f52b3a829f889349d4ccee4f82fa2791325e5e4aea89efd793() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/77b3e5c5903371f52b3a829f889349d4ccee4f82fa2791325e5e4aea89efd793/77b3e5c5903371f52b3a829f889349d4ccee4f82fa2791325e5e4aea89efd793.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/77b3e5c5903371f52b3a829f889349d4ccee4f82fa2791325e5e4aea89efd793/77b3e5c5903371f52b3a829f889349d4ccee4f82fa2791325e5e4aea89efd793.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _787959bde2695ac32a0ee4bb92350f6568139c75f120012770fb3de012919736() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/787959bde2695ac32a0ee4bb92350f6568139c75f120012770fb3de012919736/787959bde2695ac32a0ee4bb92350f6568139c75f120012770fb3de012919736.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/787959bde2695ac32a0ee4bb92350f6568139c75f120012770fb3de012919736/787959bde2695ac32a0ee4bb92350f6568139c75f120012770fb3de012919736.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _835d0731f9ae86c0147196aeed12f6967e3886edd4d0b85637bb37a2f02b4875() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/835d0731f9ae86c0147196aeed12f6967e3886edd4d0b85637bb37a2f02b4875/835d0731f9ae86c0147196aeed12f6967e3886edd4d0b85637bb37a2f02b4875.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/835d0731f9ae86c0147196aeed12f6967e3886edd4d0b85637bb37a2f02b4875/835d0731f9ae86c0147196aeed12f6967e3886edd4d0b85637bb37a2f02b4875.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _88c0ee6c82e21d686b0ca9ab15c7fa6c551bd49dcfb6493d59a845ccd9cfc88e() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/88c0ee6c82e21d686b0ca9ab15c7fa6c551bd49dcfb6493d59a845ccd9cfc88e/88c0ee6c82e21d686b0ca9ab15c7fa6c551bd49dcfb6493d59a845ccd9cfc88e.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/88c0ee6c82e21d686b0ca9ab15c7fa6c551bd49dcfb6493d59a845ccd9cfc88e/88c0ee6c82e21d686b0ca9ab15c7fa6c551bd49dcfb6493d59a845ccd9cfc88e.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _8a5f2590830612d57d229c543645e64db599c1b2ea975b78a86c9ac5d6e5d88a() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/8a5f2590830612d57d229c543645e64db599c1b2ea975b78a86c9ac5d6e5d88a/8a5f2590830612d57d229c543645e64db599c1b2ea975b78a86c9ac5d6e5d88a.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/8a5f2590830612d57d229c543645e64db599c1b2ea975b78a86c9ac5d6e5d88a/8a5f2590830612d57d229c543645e64db599c1b2ea975b78a86c9ac5d6e5d88a.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _8ae683329370c6a0d5e5cd533ea34ae6fe17433ad0106524397448539dc0a14f() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/8ae683329370c6a0d5e5cd533ea34ae6fe17433ad0106524397448539dc0a14f/8ae683329370c6a0d5e5cd533ea34ae6fe17433ad0106524397448539dc0a14f.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/8ae683329370c6a0d5e5cd533ea34ae6fe17433ad0106524397448539dc0a14f/8ae683329370c6a0d5e5cd533ea34ae6fe17433ad0106524397448539dc0a14f.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _8ebf4e44c47b6b61d313bd2580bd788a1daa029541fe210cccfa13d1bb66cc89() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/8ebf4e44c47b6b61d313bd2580bd788a1daa029541fe210cccfa13d1bb66cc89/8ebf4e44c47b6b61d313bd2580bd788a1daa029541fe210cccfa13d1bb66cc89.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/8ebf4e44c47b6b61d313bd2580bd788a1daa029541fe210cccfa13d1bb66cc89/8ebf4e44c47b6b61d313bd2580bd788a1daa029541fe210cccfa13d1bb66cc89.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _9073aea62a25c574c19a69ed7232d6abf666cccb190e485a9860ce8fa244bd5b() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/9073aea62a25c574c19a69ed7232d6abf666cccb190e485a9860ce8fa244bd5b/9073aea62a25c574c19a69ed7232d6abf666cccb190e485a9860ce8fa244bd5b.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/9073aea62a25c574c19a69ed7232d6abf666cccb190e485a9860ce8fa244bd5b/9073aea62a25c574c19a69ed7232d6abf666cccb190e485a9860ce8fa244bd5b.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _9110face5f3ebd6d321619a8c5378c64e1ad159b0d4ce7fc31ee7b4702e013d8() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/9110face5f3ebd6d321619a8c5378c64e1ad159b0d4ce7fc31ee7b4702e013d8/9110face5f3ebd6d321619a8c5378c64e1ad159b0d4ce7fc31ee7b4702e013d8.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/9110face5f3ebd6d321619a8c5378c64e1ad159b0d4ce7fc31ee7b4702e013d8/9110face5f3ebd6d321619a8c5378c64e1ad159b0d4ce7fc31ee7b4702e013d8.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _921b6ab9805103b1bdca68f0e705cb80b499a24fce4e74943fd9e0b36ea0910c() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/921b6ab9805103b1bdca68f0e705cb80b499a24fce4e74943fd9e0b36ea0910c/921b6ab9805103b1bdca68f0e705cb80b499a24fce4e74943fd9e0b36ea0910c.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/921b6ab9805103b1bdca68f0e705cb80b499a24fce4e74943fd9e0b36ea0910c/921b6ab9805103b1bdca68f0e705cb80b499a24fce4e74943fd9e0b36ea0910c.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _92d3be911b9e7a6a5293c6ccedfcb734f5a35adba6ea7b9ced1a810e9716092f() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/92d3be911b9e7a6a5293c6ccedfcb734f5a35adba6ea7b9ced1a810e9716092f/92d3be911b9e7a6a5293c6ccedfcb734f5a35adba6ea7b9ced1a810e9716092f.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/92d3be911b9e7a6a5293c6ccedfcb734f5a35adba6ea7b9ced1a810e9716092f/92d3be911b9e7a6a5293c6ccedfcb734f5a35adba6ea7b9ced1a810e9716092f.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _9813df4ed1e42ea1cd0ec3b43d51a0beb80518980eb269c5bb35062710d4edee() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/9813df4ed1e42ea1cd0ec3b43d51a0beb80518980eb269c5bb35062710d4edee/9813df4ed1e42ea1cd0ec3b43d51a0beb80518980eb269c5bb35062710d4edee.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/9813df4ed1e42ea1cd0ec3b43d51a0beb80518980eb269c5bb35062710d4edee/9813df4ed1e42ea1cd0ec3b43d51a0beb80518980eb269c5bb35062710d4edee.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _a8f75a78f2ef9f331c1d7e1327d90ea0c3a198e09d792c9bd7e0ca43d362f725() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/a8f75a78f2ef9f331c1d7e1327d90ea0c3a198e09d792c9bd7e0ca43d362f725/a8f75a78f2ef9f331c1d7e1327d90ea0c3a198e09d792c9bd7e0ca43d362f725.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/a8f75a78f2ef9f331c1d7e1327d90ea0c3a198e09d792c9bd7e0ca43d362f725/a8f75a78f2ef9f331c1d7e1327d90ea0c3a198e09d792c9bd7e0ca43d362f725.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _b6736dcdf2ff1eae4b54839fc3c25cef63ea4f3900acfed203c0bf692a771d60() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/b6736dcdf2ff1eae4b54839fc3c25cef63ea4f3900acfed203c0bf692a771d60/b6736dcdf2ff1eae4b54839fc3c25cef63ea4f3900acfed203c0bf692a771d60.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/b6736dcdf2ff1eae4b54839fc3c25cef63ea4f3900acfed203c0bf692a771d60/b6736dcdf2ff1eae4b54839fc3c25cef63ea4f3900acfed203c0bf692a771d60.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _bc3b3bf954993dc4914c3e924f4587b260680e8249d5f44f6be2eecae94082da() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/bc3b3bf954993dc4914c3e924f4587b260680e8249d5f44f6be2eecae94082da/bc3b3bf954993dc4914c3e924f4587b260680e8249d5f44f6be2eecae94082da.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/bc3b3bf954993dc4914c3e924f4587b260680e8249d5f44f6be2eecae94082da/bc3b3bf954993dc4914c3e924f4587b260680e8249d5f44f6be2eecae94082da.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _c0d83afa613ef8df9dd24c3b8737c8bdde493524b8ec0f7c5a928b7fe765fa73() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/c0d83afa613ef8df9dd24c3b8737c8bdde493524b8ec0f7c5a928b7fe765fa73/c0d83afa613ef8df9dd24c3b8737c8bdde493524b8ec0f7c5a928b7fe765fa73.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/c0d83afa613ef8df9dd24c3b8737c8bdde493524b8ec0f7c5a928b7fe765fa73/c0d83afa613ef8df9dd24c3b8737c8bdde493524b8ec0f7c5a928b7fe765fa73.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _c46e332b470498643fadd1d598b0285bd44c1f60204321ad4c01a5a3a5e22338() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/c46e332b470498643fadd1d598b0285bd44c1f60204321ad4c01a5a3a5e22338/c46e332b470498643fadd1d598b0285bd44c1f60204321ad4c01a5a3a5e22338.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/c46e332b470498643fadd1d598b0285bd44c1f60204321ad4c01a5a3a5e22338/c46e332b470498643fadd1d598b0285bd44c1f60204321ad4c01a5a3a5e22338.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _d25b99a719fef7cc681c79e8a77e17e87e6f7a3c423032f9b962f62c003dc38d() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/d25b99a719fef7cc681c79e8a77e17e87e6f7a3c423032f9b962f62c003dc38d/d25b99a719fef7cc681c79e8a77e17e87e6f7a3c423032f9b962f62c003dc38d.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/d25b99a719fef7cc681c79e8a77e17e87e6f7a3c423032f9b962f62c003dc38d/d25b99a719fef7cc681c79e8a77e17e87e6f7a3c423032f9b962f62c003dc38d.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _d49d001de11a69755e3b9014bcdc88c1ba77eeafc8b4e8db0f92fe31e8e6aee2() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/d49d001de11a69755e3b9014bcdc88c1ba77eeafc8b4e8db0f92fe31e8e6aee2/d49d001de11a69755e3b9014bcdc88c1ba77eeafc8b4e8db0f92fe31e8e6aee2.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/d49d001de11a69755e3b9014bcdc88c1ba77eeafc8b4e8db0f92fe31e8e6aee2/d49d001de11a69755e3b9014bcdc88c1ba77eeafc8b4e8db0f92fe31e8e6aee2.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _d70070b5a582d75eaa0d5896e56ca67a5399ab43c9e830791f1e2e8334404c90() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/d70070b5a582d75eaa0d5896e56ca67a5399ab43c9e830791f1e2e8334404c90/d70070b5a582d75eaa0d5896e56ca67a5399ab43c9e830791f1e2e8334404c90.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/d70070b5a582d75eaa0d5896e56ca67a5399ab43c9e830791f1e2e8334404c90/d70070b5a582d75eaa0d5896e56ca67a5399ab43c9e830791f1e2e8334404c90.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _e6b183e40f2671dc0f87e6d85070077e9bea18e7ad50cd7e7cd31e2a9ade937b() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/e6b183e40f2671dc0f87e6d85070077e9bea18e7ad50cd7e7cd31e2a9ade937b/e6b183e40f2671dc0f87e6d85070077e9bea18e7ad50cd7e7cd31e2a9ade937b.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/e6b183e40f2671dc0f87e6d85070077e9bea18e7ad50cd7e7cd31e2a9ade937b/e6b183e40f2671dc0f87e6d85070077e9bea18e7ad50cd7e7cd31e2a9ade937b.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _ec2393766f8f2a21803b4a062f1d71c184f6eae0be60f13703e3a43e5fa493b0() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/ec2393766f8f2a21803b4a062f1d71c184f6eae0be60f13703e3a43e5fa493b0/ec2393766f8f2a21803b4a062f1d71c184f6eae0be60f13703e3a43e5fa493b0.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/ec2393766f8f2a21803b4a062f1d71c184f6eae0be60f13703e3a43e5fa493b0/ec2393766f8f2a21803b4a062f1d71c184f6eae0be60f13703e3a43e5fa493b0.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _f2943fa8ae6133fb532fa9b036ba81342828b2e1e78b3ae47731619edcbca4dd() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/f2943fa8ae6133fb532fa9b036ba81342828b2e1e78b3ae47731619edcbca4dd/f2943fa8ae6133fb532fa9b036ba81342828b2e1e78b3ae47731619edcbca4dd.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/f2943fa8ae6133fb532fa9b036ba81342828b2e1e78b3ae47731619edcbca4dd/f2943fa8ae6133fb532fa9b036ba81342828b2e1e78b3ae47731619edcbca4dd.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _f4cd145be9df9b4b35e2ba3a95c6a6f0f5f8284a03de77c0e627a78d97fdaea2() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/f4cd145be9df9b4b35e2ba3a95c6a6f0f5f8284a03de77c0e627a78d97fdaea2/f4cd145be9df9b4b35e2ba3a95c6a6f0f5f8284a03de77c0e627a78d97fdaea2.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/f4cd145be9df9b4b35e2ba3a95c6a6f0f5f8284a03de77c0e627a78d97fdaea2/f4cd145be9df9b4b35e2ba3a95c6a6f0f5f8284a03de77c0e627a78d97fdaea2.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _fc762c3b4338c7d7a6bb31d478cfbe5717ebefb0e91d6d27b82a21fc169c7afe() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/fc762c3b4338c7d7a6bb31d478cfbe5717ebefb0e91d6d27b82a21fc169c7afe/fc762c3b4338c7d7a6bb31d478cfbe5717ebefb0e91d6d27b82a21fc169c7afe.wasm").expect("");
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/fc762c3b4338c7d7a6bb31d478cfbe5717ebefb0e91d6d27b82a21fc169c7afe/fc762c3b4338c7d7a6bb31d478cfbe5717ebefb0e91d6d27b82a21fc169c7afe.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
 fn _fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3() {
-    let wimpl_module = wimplify("tests/wimpl-filtered-binaries/fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3/fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3.wasm").expect(""); 
-    //println!("{}", wimpl_module); 
+    wimplify("tests/wimpl-filtered-binaries/fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3/fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3.wasm").expect("error while translating wasm file to wimpl"); 
 }
