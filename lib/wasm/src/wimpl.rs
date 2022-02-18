@@ -66,6 +66,15 @@ pub enum Func {
     Idx(usize),
 }
 
+impl Func {
+    pub fn from_idx(idx: Idx<highlevel::Function>, module: &highlevel::Module) -> Self {
+        match module.function(idx).name.clone() {
+            Some(name) => Func::Named(name),
+            None => Func::Idx(idx.into_inner()),
+        }
+    }
+}
+
 /// A sequence of instructions, typically as the body of a function or block.
 #[derive(Debug, Eq, PartialEq, Clone, Default, Hash)]
 pub struct Body(pub Vec<Stmt>); 
@@ -882,13 +891,13 @@ mod parser {
 // Adapt the nom parsers above such that they can be used with Rust `parse()` / `from_str`.
 
 impl Stmt {
-    // TODO move to impl Body FromStr?
     pub fn from_str_multiple(input: &str) -> Result<Vec<Self>, ParseError> {
         parser::adapt_nom_parser(parser::stmts_ws, input)
     }
 
     /// Convenience function to parse Wimpl from a filename.
-    // FIXME: wimpl file should be a module, no?
+    // TODO Implement parser for wimpl::Module, Function. 
+    // TODO Once parsing is implemented, add from_text_file to wimpl::Module and return Module there.
     pub fn from_text_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
         let str = std::fs::read_to_string(filename)?;
         Self::from_str_multiple(&str).map_err(|e| io::Error::new(ErrorKind::Other, e))
@@ -912,6 +921,7 @@ impl FromStr for Stmt {
 }
 
 /// Convenience macro to write Wimpl statements in Rust.
+#[cfg(test)]
 macro_rules! wimpls {
     ($($tokens:tt)*) => {
         {
@@ -934,6 +944,7 @@ macro_rules! wimpls {
 }
 
 /// Macro for a single Wimpl statement, see `wimpls!`.
+#[cfg(test)]
 macro_rules! wimpl {
     ($($tokens:tt)+) => {
         {
@@ -946,10 +957,6 @@ macro_rules! wimpl {
     }
 }
 
-// Export macros.
-pub(crate) use wimpl;
-pub(crate) use wimpls;
-
 #[derive(Clone, Default)]
 pub struct State {
     pub label_count: usize,
@@ -957,6 +964,7 @@ pub struct State {
     pub var_stack: Vec<Var>,
     // if you are in a block or an if => false 
     // if you are in a loop => true 
+    #[allow(clippy::type_complexity)]
     pub label_stack: Vec<(Label, Option<(Var, ValType, bool)>)>,   
     pub else_taken: bool, 
     pub num_params: usize, 
@@ -975,10 +983,9 @@ impl State {
     }
 }
 
-
-
 fn wimplify_instrs<'a>(
-    instrs: &mut impl Iterator<Item=&'a highlevel::Instr>, 
+    instrs: &mut impl Iterator<Item=&'a highlevel::Instr>,
+    module: &highlevel::Module,
     typechecker: &mut TypeChecker, 
     state: &mut State,
 ) -> Result<Vec<Stmt>, String> {
@@ -988,16 +995,8 @@ fn wimplify_instrs<'a>(
      
     let mut result_instrs = Vec::new();
 
-    loop {
-
-        //TODO: Daniel code review         
-        let instr = instrs.next();
-        let (instr, ty) = if instr.is_some() {
-            (instr.expect("instrs should not be empty"), 
-            typechecker.check_next_instr(instr.unwrap()).map_err(|e| e.to_string())?)
-        } else {
-            return Ok(result_instrs);
-        };
+    while let Some(instr) = instrs.next() {
+        let ty = typechecker.check_next_instr(instr).map_err(|e| e.to_string())?; 
 
         // println!("{}, {}, {:?}", instr, ty, state.var_stack);
 
@@ -1124,7 +1123,7 @@ fn wimplify_instrs<'a>(
                 }
 
                 //call wimplify on remaining instructions with new block state 
-                let block_body = wimplify_instrs(instrs, typechecker, &mut block_state).expect("a non-empty instruction list in wasm cannot produce an empty list of instructions for wimpl");
+                let block_body = wimplify_instrs(instrs, module, typechecker, &mut block_state).expect("a non-empty instruction list in wasm cannot produce an empty list of instructions for wimpl");
                 
                 //update block state
                 state.label_count = block_state.label_count;
@@ -1187,11 +1186,11 @@ fn wimplify_instrs<'a>(
                     if_state.label_stack.push((Label(curr_label_count), None)); 
                 }
 
-                let if_body = wimplify_instrs(instrs, typechecker, &mut if_state).expect("if_body in wasm should not return an empty list of instructions for wimpl");            
+                let if_body = wimplify_instrs(instrs, module, typechecker, &mut if_state).expect("if_body in wasm should not return an empty list of instructions for wimpl");            
 
                 let else_body = if if_state.else_taken {
                     if_state.else_taken = false; 
-                    Some(Body(wimplify_instrs(instrs, typechecker, &mut if_state).expect("else_body in wasm should not return an empty list of wimpl instructions")))       
+                    Some(Body(wimplify_instrs(instrs, module, typechecker, &mut if_state).expect("else_body in wasm should not return an empty list of wimpl instructions")))       
                 } else {
                     None
                 }; 
@@ -1263,7 +1262,6 @@ fn wimplify_instrs<'a>(
                 vec![Stmt::If{
                     condition, 
                     if_body: Body(label_to_instrs(&state.label_stack, *label, &mut || {
-                        // TODO: fixup var_stack 
                         *state.var_stack.last().expect("br_if expected value to return")
                     })), 
                     else_body: None,
@@ -1297,8 +1295,10 @@ fn wimplify_instrs<'a>(
                 // This points to the block for the overall function body.
                 let target = Label(0);
                 
-                if let (_, Some((return_var, type_, loop_flag))) = *state.label_stack.first().expect("empty label stack, but expected function ") {
+                if let (target_from_stack, Some((return_var, type_, loop_flag))) = *state.label_stack.first().expect("empty label stack, but expected function ") {
+                    assert_eq!(target, target_from_stack, "label stack is invalid, should have been the function label");
                     assert!(!loop_flag, "function should not have loop flag set");
+
                     let return_val = state.var_stack.pop().expect("return expects a return value");
                     vec![
                         Stmt::Assign{ 
@@ -1313,11 +1313,11 @@ fn wimplify_instrs<'a>(
                 }
             }
 
-            highlevel::Instr::Call(idx) => {  //TODO: what happens if function is named?
+            highlevel::Instr::Call(index) => {
                 let call_rhs = Call {
-                    func: Func::Idx(idx.into_inner()), 
+                    func: Func::from_idx(*index, module),  
                     args: state.var_stack.split_off(state.var_stack.len()-n_inputs),
-                }; 
+                };
                 if let Some(lhs) = lhs {
                     vec![Stmt::Assign{
                         lhs,
@@ -1355,8 +1355,8 @@ fn wimplify_instrs<'a>(
             highlevel::Instr::Drop => Vec::new(), 
 
             highlevel::Instr::Select => { 
-                let condition       = state.var_stack.pop().expect("select requires a value on the stack for the condition");   
-                let if_result_val   = state.var_stack.pop().expect("select requires a value on the stack for the then case"); 
+                let condition = state.var_stack.pop().expect("select requires a value on the stack for the condition");  
+                let if_result_val = state.var_stack.pop().expect("select requires a value on the stack for the then case"); 
                 let else_result_val = state.var_stack.pop().expect("select requires a value on the stack for the else case");  
                 let type_ = ty.results[0]; 
                 
@@ -1520,21 +1520,23 @@ fn wimplify_instrs<'a>(
             }
         }        
     }
+
+    Ok(result_instrs)
 }
 
-pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
+pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
     let mut wimpl_funcs = Vec::new(); 
-    for (ind, func) in module.functions() {
+    for (idx, func) in module.functions() {
         
         //initialize the local variables 
         let mut result_instrs = Vec::new(); 
-        for (loc_ind, loc) in func.locals() {
+        for (loc_index, loc) in func.locals() {
             let (loc_name, loc_type) = (&loc.name, loc.type_); 
             if let Some(_loc_name) = loc_name {
                 todo!("you haven't yet implemented locals having names");     
             } else {
                 result_instrs.push(Stmt::Assign{
-                    lhs: Var::Local(loc_ind.into_inner()-func.type_.params.len()),
+                    lhs: Var::Local(loc_index.into_inner()-func.type_.params.len()),
                     rhs: Expr::Const(Val::get_default_value(loc_type)),
                     type_: loc_type,
                 })
@@ -1552,22 +1554,15 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
                 state.label_stack.push((Label(0), Some((Var::Return(0), func.type_.results[0], false)))); 
             }
 
-            for inst in wimplify_instrs(&mut instrs, &mut type_checker, &mut state).expect("non-empty instruction list for wasm cannot produce an empty list of wimpl instructions") {
+            for inst in wimplify_instrs(&mut instrs, module, &mut type_checker, &mut state).expect("non-empty instruction list for wasm cannot produce an empty list of wimpl instructions") {
                 result_instrs.push(inst); 
             }
         } 
         
-        // get the appropriate name of the function 
-        let name = if let Some(name) = &func.name {
-            Func::Named(name.clone())
-        } else {
-            Func::Idx(ind.into_inner())
-        }; 
-
         wimpl_funcs.push(Function{
             type_: func.type_.clone(),
             body: Body(result_instrs), 
-            name,
+            name: Func::from_idx(idx, module)
         }); 
     }
 
@@ -1578,7 +1573,7 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
     })
 }
 
-pub fn wimplify (path: &str) -> Result<Module, String> {
+pub fn wimplify(path: &str) -> Result<Module, String> {
     wimplify_module(&highlevel::Module::from_file(path).expect("path should point to a valid wasm file"))
 }
  
