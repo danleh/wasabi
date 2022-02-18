@@ -249,7 +249,6 @@ where
     }
 }
 
-// FIXME: add test for this
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "module {{").expect("");
@@ -260,7 +259,6 @@ impl fmt::Display for Module {
     }
 }
 
-// FIXME: add test for this
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "func {}", self.name)?;
@@ -1210,6 +1208,7 @@ fn wimplify_instrs<'a>(
 
             highlevel::Instr::Else => {
                 
+                // this variable tells the if that it has a else branch which has to be processed 
                 state.else_taken = true; 
                 
                 // cannot pop because you still want it to be on the label stack while processing the else body 
@@ -1230,7 +1229,9 @@ fn wimplify_instrs<'a>(
             },
 
             highlevel::Instr::End => {
-                 
+                
+                // the pop isn't really important because the block label stack has a clone of the parent label stack 
+                // and the blocks label stack is thrown away after its translation is done
                 let (_, return_info) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack"); 
 
                 if let Some((ret_var, type_, _loop_block)) = return_info {
@@ -1262,8 +1263,7 @@ fn wimplify_instrs<'a>(
             }
 
             highlevel::Instr::BrTable { table, default } => { 
-                // Index used for br_table.
-                let idx = state.var_stack.pop().expect("br_table requires an index into the table to be supplied"); 
+                let index = state.var_stack.pop().expect("br_table requires an index into the table to be supplied"); 
                 
                 let mut should_pop = false;
                 let get_result_val = &mut || {
@@ -1279,7 +1279,7 @@ fn wimplify_instrs<'a>(
                 }
                 
                 vec![Stmt::Switch {
-                    index: idx,
+                    index, 
                     cases,
                     default,
                 }]
@@ -1305,7 +1305,7 @@ fn wimplify_instrs<'a>(
                 }
             }
 
-            highlevel::Instr::Call(idx) => {
+            highlevel::Instr::Call(idx) => {  //TODO: what happens if function is named?
                 let call_rhs = Call {
                     func: Func::Idx(idx.into_inner()), 
                     args: state.var_stack.split_off(state.var_stack.len()-n_inputs),
@@ -1533,8 +1533,8 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
             }
         }
 
+        //translate the instructions in the function 
         if let Some(code) = func.code() {
-
             let mut instrs = code.body.as_slice().iter(); 
             let mut type_checker = TypeChecker::begin_function(func, module);
             let mut state = State::new(func.type_.params.len()); 
@@ -1549,6 +1549,7 @@ pub fn wimplify_module (module: &highlevel::Module) -> Result<Module, String> {
             }
         } 
         
+        // get the appropriate name of the function 
         let name = if let Some(name) = &func.name {
             Func::Named(name.clone())
         } else {
@@ -1576,6 +1577,7 @@ pub fn wimplify (path: &str) -> Result<Module, String> {
 #[cfg(test)]
 mod tests {
     // Convenience imports:
+    use super::Module; 
     use super::Function; 
     use super::Body;
     use super::Func;
@@ -1597,6 +1599,82 @@ mod tests {
 
     lazy_static! {
         
+        static ref WIMPL_MODULE_SYNTAX_TESTCASES: Vec<(Module, &'static str, &'static str)> = vec![
+            (
+                Module {
+                    functions: Vec::new(), 
+                    globals: Vec::new(), 
+                    tables: Vec::new(), 
+                }, 
+                "module {
+}
+", 
+                "empty module"
+            ),
+            (
+                Module {
+                    functions: vec![
+                        Function {
+                            name: Func::Idx(0), 
+                            type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() }, 
+                            body: Body(Vec::new())
+                        },
+                        Function {
+                            name: Func::Idx(1), 
+                            type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() }, 
+                            body: Body(Vec::new())
+                        },    
+                    ], 
+                    globals: Vec::new(), 
+                    tables: Vec::new(), 
+                }, 
+                "module {
+  func f0 () -> () @label0: {}
+  func f1 () -> () @label0: {}
+}
+", 
+                "module with several empty fuctions"
+            ),
+            (
+                Module {
+                    functions: vec![
+                        Function {
+                            name: Func::Idx(0), 
+                            type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() }, 
+                            body: Body(Vec::new())
+                        },
+                        Function {
+                            name: Func::Idx(1), 
+                            type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() }, 
+                            body: Body(vec![
+                                Assign {
+                                    lhs: Stack(0),
+                                    rhs: Const(I32(3)), 
+                                    type_: ValType::I32, 
+                                }, 
+                                Assign {
+                                    lhs: Stack(1),
+                                    rhs: Const(I32(4)), 
+                                    type_: ValType::I32, 
+                                },
+                            ])
+                        },    
+                    ], 
+                    globals: Vec::new(), 
+                    tables: Vec::new(), 
+                }, 
+                "module {
+  func f0 () -> () @label0: {}
+  func f1 (p0: i32) -> (r0: f64) @label0: {
+    s0: i32 = i32.const 3
+    s1: i32 = i32.const 4
+  }
+}
+", 
+                "module with several empty fuctions"
+            ),
+        ];
+
         static ref WIMPL_FUNCTION_SYNTAX_TESTCASES: Vec<(Function, &'static str, &'static str)> = vec![
             (
                 Function {
@@ -1951,7 +2029,9 @@ mod tests {
 
     #[test]
     fn pretty_print_module() {
-        todo!()
+        for (i, (wimpl, text, msg)) in WIMPL_MODULE_SYNTAX_TESTCASES.iter().enumerate() {
+            assert_eq!(&wimpl.to_string(), text, "\ntest #{}\n{}", i, msg);
+        } 
     }
 
     #[test]
