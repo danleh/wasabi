@@ -990,6 +990,7 @@ fn wimplify_instrs<'module>(
     while let Some(instr) = instrs.next() {
         let ty = state.type_checker.check_next_instr(instr).map_err(|e| e.to_string())?;
 
+        // DEBUG
         // println!("{}, {}, {:?}", instr, ty, var_stack);
 
         let ty = match ty {
@@ -1113,6 +1114,8 @@ fn wimplify_instrs<'module>(
             }
             
             highlevel::Instr::If(BlockType(blocktype)) => {
+                let condition = var_stack.pop().expect("if expects a condition which was not found on the stack");
+
                 // TODO refactor result_var and if lets below
                 let mut result_var = None; 
                 let mut res_vec = if let Some(btype) = blocktype {
@@ -1135,65 +1138,67 @@ fn wimplify_instrs<'module>(
                     state.label_stack.push((label, None)); 
                 }
 
-                let (if_body, else_taken) = wimplify_instrs(instrs, context, state)?;
+                let (if_body, has_else) = wimplify_instrs(instrs, context, state)?;
 
-                let else_body = if else_taken {
+                let else_body = if has_else {
                     Some(Body(wimplify_instrs(instrs, context, state)?.0))       
                 } else {
                     None
                 }; 
 
-                if let Some(_btype) = blocktype {
-                    var_stack.push(result_var.expect("block produces a result but associated result variable not found")); 
-                }
-
+                // TODO do not generate the surrounding block if no branch targets it
+                // -> requires a precomputed map from branches to targets
                 res_vec.push(Stmt::Block {
                     end_label: label,
                     body: Body(vec![Stmt::If{
-                        condition: var_stack.pop().expect("if expects a condition which was not found on the stack"), 
+                        condition, 
                         if_body: Body(if_body),
                         else_body,
                     }])
                 }); 
 
+                if let Some(_btype) = blocktype {
+                    var_stack.push(result_var.expect("block produces a result but associated result variable not found")); 
+                }
+
                 res_vec            
             },
 
             highlevel::Instr::Else => {
-                // cannot pop because you still want it to be on the label stack while processing the else body 
-                let (_, return_info) = *state.label_stack.last().expect("label stack should include if label");
+                // Cannot pop because you still want it to be on the label stack while processing the else body.
+                let (_, result_info) = *state.label_stack.last().expect("label stack should include if label");
 
                 // assign of the if statement that we just finished processing 
                 // the required value returned by if (if any) should be at the top of the var_stack
-                if let Some((lhs, type_, loop_flag)) = return_info {
-                    assert!(!loop_flag, "if block result should never be have loop_flag set");
+                if let Some((if_result_var, type_, is_loop_block)) = result_info {
+                    assert!(!is_loop_block, "if block result should never be have loop flag set");
                     result_instrs.push(Stmt::Assign {
-                        lhs, 
+                        lhs: if_result_var, 
                         rhs: VarRef(var_stack.pop().expect("if block is producing a value which is expected on the stack")),  
                         type_, 
                     })
                 }
 
+                // End recursive invocation and return converted body of the current block.
                 return Ok((result_instrs, true)); 
             },
 
             highlevel::Instr::End => {
-                
                 let (_, result_info) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack"); 
 
-                if let Some((ret_var, type_, _loop_block)) = result_info {
+                if let Some((block_result_var, type_, _is_loop_block)) = result_info {
                     result_instrs.push(Stmt::Assign{
-                        lhs: ret_var,
+                        lhs: block_result_var,
                         rhs: VarRef(var_stack.pop().expect("the block is producing a value for which it expect a value on the stack")), 
                         type_,
                     });
                 }; 
 
+                // End recursive invocation and return converted body of the current block.
                 return Ok((result_instrs, false))
             }
 
             highlevel::Instr::Br(label) => {
-                let var_stack = &mut var_stack;
                 label_to_instrs(&state.label_stack, *label, &mut || var_stack.pop().expect("br expected a value to return"))
             },
 
@@ -1466,7 +1471,7 @@ pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
             let mut state = State {
                 type_checker: TypeChecker::begin_function(func, module),
                 label_stack: Vec::new(),
-                label_count: 1,
+                label_count: 1, // 0 is already used by the function body block.
                 stack_var_count: 0,
             };
 
