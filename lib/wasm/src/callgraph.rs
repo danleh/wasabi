@@ -27,6 +27,7 @@ impl CallGraph {
         dot_file
     }
 
+    /// Requires `dot` on `PATH`.
     pub fn to_pdf(&self, path: impl AsRef<Path>) -> io::Result<()> {
         // Invoke Graphviz CLI tool with path as argument and to_dot() as stdin.
         // Command line: dot -Tpdf -o outfile.pdf < stdin
@@ -44,7 +45,114 @@ impl CallGraph {
     }
 }
 
+pub enum Edge {
+    Direct(Func, Func),
+    Constrained(Func, HashSet<Constraint>)
+}
 
+impl fmt::Display for Edge {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // match self {
+        //     Edge::Direct(from, to) => write!(f, "{} -> {}", from, to),
+        //     // Edge::Constrained(from, to) => write!(f, "∀ f ∈ module.funcs with  .idx ∈ init(table_elements)"),
+        // }
+        todo!()
+    }
+}
+
+pub enum Constraint {
+    Type(FunctionType),
+    InTable,
+    // TableIndex(wimpl::Expr),
+}
+
+impl fmt::Display for Constraint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Constraint::Type(ty) => write!(f, ".type == {}", ty),
+            Constraint::InTable => write!(f, ".idx ∈ init(table_elements)"),
+        }
+    }
+}
+
+pub struct CallGraphOptions {
+    with_type_constraint: bool,
+    with_in_table_constraint: bool,
+}
+
+pub fn collect_reachable_constraints(
+    module: &wimpl::Module,
+    mut reachable: HashSet<Func>,
+    options: CallGraphOptions
+) -> HashSet<Edge> {
+    let mut edges = HashSet::new();
+
+    for func in reachable {
+        let func = module.function(func).expect("function name not found in module");
+
+        // TODO how to handle imported functions? Can they each every exported function?
+        // Do we add a direct edge there? Or do we add an abstract "host" node? 
+        // Do we merge with a JavaScript call-graph analysis?
+        let body = func.body;
+
+        for stmt in body.0 {
+            
+            use wimpl::Stmt::*;
+            use wimpl::Expr::*;
+            // match stmt {
+                
+            //     Assign { lhs: _, rhs: Call{ func, args: _}, type_: _ } |
+            //     Expr(Call { func, args: _}) => {
+            //         edges.insert((fun.name(), func.clone()));
+            //     }
+
+            //     Assign { lhs: _, rhs: CallIndirect { type_, table_idx: _, args: _ }, type_: _ } |
+            //     Expr(CallIndirect { type_, table_idx: _, args: _ }) => {
+            //     }
+            // }
+        }
+
+    }
+
+    // edges
+
+    todo!()
+}
+
+pub fn solve_constraints(
+    module: &wimpl::Module, 
+    constraints: &HashSet<Constraint>
+) -> HashSet<Func> {
+
+    let mut funcs_in_table: HashSet<&Function> = HashSet::new();
+    for table in &module.tables {
+        // TODO interpret table offset for index-based analysis
+        for element in &table.elements {
+            for func_idx in &element.functions {
+                let func = module.function_by_idx(*func_idx);
+                funcs_in_table.insert(func); 
+            }
+        }
+    } 
+
+    let mut valid_funcs = module.functions.iter().collect::<Vec<_>>();
+    for constraint in constraints {
+        match constraint {
+            Constraint::Type(ty) => valid_funcs.retain(|f| &f.type_ == ty),
+            Constraint::InTable => valid_funcs.retain(|f| funcs_in_table.contains(f)),
+        }
+    }
+    valid_funcs.into_iter().map(|f| f.name.clone()).collect()
+}
+
+#[test]
+fn main() {
+    let wimpl_module = wimpl::wimplify("tests/callgraph.wasm").expect(""); 
+    println!("{}", wimpl_module);     
+    let callgraph = callgraph(&wimpl_module);
+    println!("{}", callgraph.to_dot());
+    callgraph.to_pdf("tests/callgraph-constraint-in-table-ty.pdf").unwrap();
+}
 
 pub fn callgraph(module: &wimpl::Module) -> CallGraph {
     // TODO split "collecting constraints" from "solving constraints to a graph"
@@ -69,7 +177,7 @@ pub fn callgraph(module: &wimpl::Module) -> CallGraph {
                         // TODO interpret table offset for index-based analysis
                         for elem in &tab.elements {
                             for func_idx in &elem.functions {
-                                let func = module.function(*func_idx);
+                                let func = module.function_by_idx(*func_idx);
                                 funcs_in_table.insert(func); 
                             }
                         }
@@ -135,13 +243,4 @@ fn calc_virtual() {
     let callgraph = callgraph(&wimpl_module); 
     println!("{}", callgraph.to_dot());
     callgraph.to_pdf("tests/wimpl/calc-dce/callgraph.pdf").unwrap();
-}
-
-#[test]
-fn call_indirect() {
-    let wimpl_module = wimpl::wimplify("tests/callgraph.wasm").expect(""); 
-    println!("{}", wimpl_module);     
-    let callgraph = callgraph(&wimpl_module);
-    println!("{}", callgraph.to_dot());
-    callgraph.to_pdf("tests/callgraph-constraint-in-table-ty.pdf").unwrap();
 }

@@ -26,7 +26,14 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn function(&self, idx: Idx<highlevel::Function>) -> &Function {
+    pub fn function(&self, name: Func) -> Option<&Function> {
+        let mut functions = &self.functions.iter().filter(|f| f.name == name);
+        let function = functions.next();
+        assert!(functions.next().is_none(), "more than one matching function for name {}", name);
+        function
+    }
+
+    pub fn function_by_idx(&self, idx: Idx<highlevel::Function>) -> &Function {
         &self.functions[idx.into_inner()]
     }
 }
@@ -37,6 +44,7 @@ pub struct Function {
     /// numerical index.
     pub name: Func,
     pub type_: FunctionType,
+    // TODO what about imported functions? I think we should make body an Option.
     pub body: Body,
 
     //pub export: Vec<String>,
