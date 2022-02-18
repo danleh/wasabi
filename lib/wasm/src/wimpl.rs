@@ -2,7 +2,7 @@ use std::{
     fmt::{self, Write},
     io::{self, ErrorKind},
     path::Path,
-    str::FromStr, 
+    str::FromStr,
 };
 
 use crate::{highlevel::{MemoryOp, Global, Table}, types::{InferredInstructionType, TypeChecker}, Val, ValType, Idx, BlockType};
@@ -40,7 +40,7 @@ impl Module {
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub struct Function {
-    /// Either the name of a function (from debug info originally), or a 
+    /// Either the name of a function (from debug info originally), or a
     /// numerical index.
     pub name: Func,
     pub type_: FunctionType,
@@ -61,7 +61,7 @@ impl Function {
 pub enum Func {
     /// If the function had a debug name attached to it (from the `name` custom section).
     Named(String),
-    /// Otherwise, just refer to the function via its index, which is the same as in the original 
+    /// Otherwise, just refer to the function via its index, which is the same as in the original
     /// WebAssembly module.
     Idx(usize),
 }
@@ -77,7 +77,7 @@ impl Func {
 
 /// A sequence of instructions, typically as the body of a function or block.
 #[derive(Debug, Eq, PartialEq, Clone, Default, Hash)]
-pub struct Body(pub Vec<Stmt>); 
+pub struct Body(pub Vec<Stmt>);
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 pub enum Var {
@@ -89,7 +89,7 @@ pub enum Var {
 
     /// Originally an (implicit) stack slot in the WebAssembly operand stack.
     Stack(usize),
-    /// Originally a parameter to the current function (which would have been accessed via 
+    /// Originally a parameter to the current function (which would have been accessed via
     /// `local.get` and was in the same index space as locals).
     Param(usize),
     /// Originally the result value of a block with non-empty block type.
@@ -116,7 +116,7 @@ pub struct Label(usize);
 // between stack variables and locals/globals.
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Stmt {
-    
+
     // Simplify nop: Not necessary for analysis.
 
     Unreachable,
@@ -127,8 +127,8 @@ pub enum Stmt {
     /// This unifies all local.set, global.set, local.tee, local.get, and global.get,
     /// and data-flow before branches ("br with value" in Wasm).
     Assign {
-        lhs: Var, 
-        type_ : ValType, 
+        lhs: Var,
+        type_ : ValType,
         rhs: Expr,
     },
 
@@ -152,7 +152,7 @@ pub enum Stmt {
     },
 
     Block {
-        body: Body, 
+        body: Body,
         end_label: Label,
     },
 
@@ -165,8 +165,8 @@ pub enum Stmt {
     // this in a Wimpl block to have a branch target label available.
     // TODO technically, we could simplify/represent If by Switch as well...
     // Downside: br_if (which are frequent) would be expanded into a quite complex switch:
-    // br_if (cond) (value) @label 
-    // -> if (cond) { br (value) @label } 
+    // br_if (cond) (value) @label
+    // -> if (cond) { br (value) @label }
     // -> if (cond) { b0 = value; br @label }
     // -> switch (cond) { case 0: {} default: { b0 = value; br @label } }
     If {
@@ -176,7 +176,7 @@ pub enum Stmt {
     },
 
     /// Similar to C switch statement, but doesn't fallthrough from one case to the next.
-    Switch {  
+    Switch {
         index: Var,
         cases: Vec<Body>,
         default: Body,
@@ -200,7 +200,7 @@ pub enum Expr {
         addr: Var,
     },
 
-    MemorySize, 
+    MemorySize,
     MemoryGrow { pages: Var },
 
     Numeric {
@@ -229,8 +229,8 @@ const PRETTY_PRINT_NEWLINE_INDENT: &str = "\n  ";
 
 /// Helper function that indents each line of the `Display` output of `x`.
 fn indent_once(x: &dyn fmt::Display) -> String {
-    // This allocates a new String just for indentation, which seems wasteful. 
-    // But since we pretty-print Wimpl fairly seldom, and even if, it's not performance criticial, 
+    // This allocates a new String just for indentation, which seems wasteful.
+    // But since we pretty-print Wimpl fairly seldom, and even if, it's not performance criticial,
     // and there are also other places below where we allocate, let's not optimize this for now.
     // If it ever really becomes a problem, use the `pad-adapter` crate.
     format!("{}{}", PRETTY_PRINT_INDENT, x).replace("\n", PRETTY_PRINT_NEWLINE_INDENT)
@@ -355,7 +355,7 @@ impl fmt::Display for Label {
 // Comments show examples.
 // Conventions for the text format:
 // - Things in parentheses (x, y) signify runtime arguments.
-// - Everything outside of the parentheses is statically encoded into the 
+// - Everything outside of the parentheses is statically encoded into the
 //   instruction.
 // - Curly braces { ... } for nesting.
 impl fmt::Display for Stmt {
@@ -364,7 +364,7 @@ impl fmt::Display for Stmt {
         match self {
 
             Unreachable => f.write_str("unreachable")?,
-            
+
             Expr(expr) => write!(f, "{}", expr)?,
 
             Assign { lhs, rhs , type_} => {
@@ -373,11 +373,11 @@ impl fmt::Display for Stmt {
 
             // i32.store offset=3 align=4 (s0) (s1)
             // The first argument is addr, second is value.
-            Store { 
-                op, 
-                memarg, 
+            Store {
+                op,
+                memarg,
                 addr,
-                value, 
+                value,
             } => {
                 write!(f, "{}", op)?;
                 if !memarg.is_default(*op) {
@@ -385,32 +385,32 @@ impl fmt::Display for Stmt {
                     memarg.fmt(f, *op)?;
                     f.write_str(" ")?;
                 }
-                write!(f, "({}) ({})", addr, value)?;                
+                write!(f, "({}) ({})", addr, value)?;
             },
-            
+
             Br { target } => write!(f, "br {}", target)?,
 
             // @label0: block {
             //   s1 = i32.const 3
             // }
-            Block { 
-                end_label, 
-                body 
+            Block {
+                end_label,
+                body
             } => write!(f, "{}: block {}", end_label, body)?,
 
-            Loop { 
-                begin_label, 
-                body 
+            Loop {
+                begin_label,
+                body
             } => write!(f, "{}: loop {}", begin_label, body)?,
 
-            If { 
-                condition, 
-                if_body, 
-                else_body 
+            If {
+                condition,
+                if_body,
+                else_body
             } => {
-                write!(f, "if ({}) {}", condition, if_body)?; 
+                write!(f, "if ({}) {}", condition, if_body)?;
                 if let Some(else_body) = else_body {
-                    write!(f, " else {}", else_body)?; 
+                    write!(f, " else {}", else_body)?;
                 }
             },
 
@@ -422,9 +422,9 @@ impl fmt::Display for Stmt {
             //   ...
             // }
             Switch {
-                index, 
+                index,
                 cases,
-                default, 
+                default,
             } => {
                 writeln!(f, "switch ({}) {{", index)?;
                 for (i, case) in cases.iter().enumerate() {
@@ -445,15 +445,15 @@ impl fmt::Display for Expr {
         match self {
 
             VarRef(var) => write!(f, "{}", var),
-            
+
             // i32.const 3
             Const(val) => write!(f, "{}.const {}", val.to_type(), val),
 
             // i32.load offset=3 align=4 (s0)
-            Load { 
-                op, 
-                memarg, 
-                addr 
+            Load {
+                op,
+                memarg,
+                addr
             } => {
                 write!(f, "{}", op)?;
                 if !memarg.is_default(*op) {
@@ -472,25 +472,25 @@ impl fmt::Display for Expr {
             Numeric { op, args } => {
                 write!(f, "{}", op)?;
                 display_delim(f, args, "(", ")", ", ")
-            }, 
-                        
+            },
+
             // call f1 (s1, s2)
-            Call { 
-                func, 
-                args 
+            Call {
+                func,
+                args
             } => {
                 // Always print the parentheses, even if `args` is empty.
                 write!(f, "call {} (", func)?;
                 display_delim(f, args, "", "", ", ")?;
                 f.write_str(")")
             },
-            
+
             // call_indirect [] -> [i32] (s0) (s1, s2, s3...)
             // The first argument is the table index, the others the args.
-            CallIndirect { 
-                type_, 
-                table_idx, 
-                args 
+            CallIndirect {
+                type_,
+                table_idx,
+                args
             } => {
                 write!(f, "call_indirect {} ({}) (", type_, table_idx)?;
                 display_delim(f, args, "", "", ", ")?;
@@ -512,7 +512,7 @@ impl FromStr for Var {
         if s.is_empty() {
             return Err(());
         }
-        
+
         let (letter, i) = s.split_at(1);
         let i = i.parse().map_err(|_| ())?;
 
@@ -537,7 +537,7 @@ impl FromStr for Func {
             let idx = idx.parse().map_err(|_| ())?;
             Func::Idx(idx)
         } else {
-            // Functions must start with an alphabetic character, to avoid confusion with constants. 
+            // Functions must start with an alphabetic character, to avoid confusion with constants.
             match s.chars().next() {
                 Some(c) if c.is_alphabetic() => Func::Named(s.to_string()),
                 _ => return Err(()),
@@ -678,7 +678,7 @@ mod parser {
             T::from_str
         )(input)
     }
-    
+
     fn arg_single(input: &str) -> NomResult<Var> {
         delimited(
             pair(tag("("), ws), var, pair(ws, tag(")"))
@@ -714,7 +714,7 @@ mod parser {
             },
         ))
     }
-    
+
     fn store(input: &str) -> NomResult<Stmt> {
         let (input, op) = op::<StoreOp>(input)?;
         let (input, memarg) = memarg(op)(input)?;
@@ -751,7 +751,7 @@ mod parser {
             |(ty, _, (), number)| Val::from_str(number, ty).map(Const),
         );
 
-        let memory_size = map(tag("memory.size"), |_| MemorySize); 
+        let memory_size = map(tag("memory.size"), |_| MemorySize);
         let memory_grow = map(
             tuple((tag("memory.grow"), ws, arg_single)),
             |(_, (), pages)| MemoryGrow { pages },
@@ -781,7 +781,7 @@ mod parser {
                 ws,
                 arg_list,
             )),
-            |(_, (), type_, (), table_idx, (), args)| 
+            |(_, (), type_, (), table_idx, (), args)|
                 CallIndirect { type_, table_idx, args }
         );
 
@@ -879,7 +879,7 @@ mod parser {
             if_,
             switch,
 
-            // HACK Order this case below assign, because otherwise the parser parses a LHS 
+            // HACK Order this case below assign, because otherwise the parser parses a LHS
             // variable as an `Stmt::Expr(Expr::VarRef(...))`, continues, and fails with the rest.
             // Otherwise
             expr_stmt,
@@ -896,7 +896,7 @@ impl Stmt {
     }
 
     /// Convenience function to parse Wimpl from a filename.
-    // TODO Implement parser for wimpl::Module, Function. 
+    // TODO Implement parser for wimpl::Module, Function.
     // TODO Once parsing is implemented, add from_text_file to wimpl::Module and return Module there.
     pub fn from_text_file(filename: impl AsRef<Path>) -> io::Result<Vec<Self>> {
         let str = std::fs::read_to_string(filename)?;
@@ -929,8 +929,8 @@ macro_rules! wimpls {
                 // std::stringify somehow re-wraps the input tokens to 80 columns.
                 // Replace those inserted newlines, also to make the following easier.
                 .replace("\n", " ")
-                // HACK Because the input `tokens` are tokenized by rustc's 
-                // lexer, it inserts whitespace sometimes where Wimpl/Wasm 
+                // HACK Because the input `tokens` are tokenized by rustc's
+                // lexer, it inserts whitespace sometimes where Wimpl/Wasm
                 // syntax doesn't accept it. Fix those cases here.
                 .replace("offset = ", "offset=")
                 .replace("align = ", "align=")
@@ -965,7 +965,7 @@ pub struct State<'module> {
 
     // The bool is `true` if the label is for a `loop` block, and false for `block` and `if`.
     #[allow(clippy::type_complexity)]
-    label_stack: Vec<(Label, Option<(Var, ValType, bool)>)>,   
+    label_stack: Vec<(Label, Option<(Var, ValType, bool)>)>,
 }
 
 #[derive(Clone, Copy)]
@@ -976,17 +976,17 @@ pub struct Context<'module> {
 
 fn wimplify_instrs<'module>(
     instrs: &mut impl Iterator<Item=&'module highlevel::Instr>,
-    context: Context<'module>, 
+    context: Context<'module>,
     state: &mut State,
 ) -> Result<(Vec<Stmt>, /* was_else */ bool), String> {
-    
-    use Expr::*; 
-    use Var::*; 
-     
+
+    use Expr::*;
+    use Var::*;
+
     // State that is "local" to this nested block (unlike `state`, which is for the whole function).
-    let mut var_stack = Vec::new(); 
+    let mut var_stack = Vec::new();
     let mut result_instrs = Vec::new();
-    
+
     while let Some(instr) = instrs.next() {
         let ty = state.type_checker.check_next_instr(instr).map_err(|e| e.to_string())?;
 
@@ -998,30 +998,30 @@ fn wimplify_instrs<'module>(
             InferredInstructionType::Unreachable => {
                 match instr {
                     highlevel::Instr::End => {
-                        state.label_stack.pop(); 
+                        state.label_stack.pop();
                         return Ok((result_instrs, false))
-                    }, 
+                    },
                     highlevel::Instr::Else => {
                         return Ok((result_instrs, true))
-                    } 
-                    _ => continue  
-                }                
+                    }
+                    _ => continue
+                }
             },
             InferredInstructionType::Reachable(ty) => ty,
         };
-        
+
         // Only call this function when you have finished translating the instructions, i.e., after
-        // you have popped all inputs from the `var_stack`, since this changes `var_stack`.   
+        // you have popped all inputs from the `var_stack`, since this changes `var_stack`.
         let mut fresh_stack_var = |var_stack: &mut Vec<_>| {
             let var = Stack(state.stack_var_count);
-            state.stack_var_count += 1; 
-            var_stack.push(var); 
+            state.stack_var_count += 1;
+            var_stack.push(var);
             var
         };
 
         let local_idx_to_var = |local_idx: Idx<highlevel::Local>| {
             let local_idx = local_idx.into_inner();
-            let num_params = context.func_ty.params.len(); 
+            let num_params = context.func_ty.params.len();
             if local_idx < num_params {
                 Param(local_idx)
             } else {
@@ -1030,18 +1030,18 @@ fn wimplify_instrs<'module>(
         };
 
         let label_to_instrs = |label_stack: &[_], label: crate::Label, get_value: &mut dyn FnMut() -> Var| -> Vec<Stmt> {
-            let (target, block_result) = *label_stack.iter().rev().nth(label.into_inner()).expect("invalid branch label, not in label stack"); 
-            
+            let (target, block_result) = *label_stack.iter().rev().nth(label.into_inner()).expect("invalid branch label, not in label stack");
+
             // println!("{:?}\n{:?} {:?} {:?}", label_stack, label, target, return_info);
-            
+
             match block_result {
                 // Target block needs a result, and is not a loop.
                 Some((lhs, type_, false)) => vec![
-                    Stmt::Assign{ 
-                        lhs, 
-                        rhs: VarRef(get_value()), 
-                        type_, 
-                    }, 
+                    Stmt::Assign{
+                        lhs,
+                        rhs: VarRef(get_value()),
+                        type_,
+                    },
                     Stmt::Br {
                         target,
                     }
@@ -1061,41 +1061,41 @@ fn wimplify_instrs<'module>(
 
             highlevel::Instr::Block(BlockType(blocktype)) |
             highlevel::Instr::Loop(BlockType(blocktype)) => {
-                // first, if the block returns a value, create a variable that will store the return and keep track of the variable 
-                // if it doesn't return anything, create an empty vector  
+                // first, if the block returns a value, create a variable that will store the return and keep track of the variable
+                // if it doesn't return anything, create an empty vector
                 // block variable has same usize as the label number!
-                let mut result_var = None; 
+                let mut result_var = None;
                 let mut res_instr_vec = if let Some(btype) = blocktype {
-                    result_var = Some(BlockResult(state.label_count)); 
-                    vec![Stmt::Assign { 
-                        lhs: result_var.expect("result variable expected since block is producing a value"), 
-                        rhs: Const(Val::get_default_value(*btype)) ,  
-                        type_: *btype,  
+                    result_var = Some(BlockResult(state.label_count));
+                    vec![Stmt::Assign {
+                        lhs: result_var.expect("result variable expected since block is producing a value"),
+                        rhs: Const(Val::get_default_value(*btype)) ,
+                        type_: *btype,
                     }]
                 } else {
                     Vec::new()
-                }; 
-                
+                };
+
                 let label = Label(state.label_count);
                 state.label_count += 1;
 
                 if let Some(result_var) = result_var {
                     let loop_flag = match instr {
-                        highlevel::Instr::Loop(_) => true, 
-                        highlevel::Instr::Block(_) => false, 
-                        _ => unreachable!("should only be translating block or loop")                    
+                        highlevel::Instr::Loop(_) => true,
+                        highlevel::Instr::Block(_) => false,
+                        _ => unreachable!("should only be translating block or loop")
                     };
                     let block_result = Some((result_var, blocktype.expect("block type is expected since the block has a result variable"), loop_flag));
-                    state.label_stack.push((label, block_result))                
+                    state.label_stack.push((label, block_result))
                 } else {
-                    state.label_stack.push((label, None)); 
+                    state.label_stack.push((label, None));
                 }
 
                 let (block_body, was_else) = wimplify_instrs(instrs, context, state)?;
                 assert!(!was_else, "block and loop are terminated by end, not else");
-                
+
                 if blocktype.is_some() {
-                    var_stack.push(result_var.expect("block is producing a result but no associated result variable found"));     
+                    var_stack.push(result_var.expect("block is producing a result but no associated result variable found"));
                 }
 
                 res_instr_vec.push(match instr {
@@ -1108,22 +1108,22 @@ fn wimplify_instrs<'module>(
                         body: Body(block_body),
                     },
                     _ => panic!("should not execute any instruction that is not block or loop at this point")
-                }); 
+                });
 
-                res_instr_vec 
+                res_instr_vec
             }
-            
+
             highlevel::Instr::If(BlockType(blocktype)) => {
                 let condition = var_stack.pop().expect("if expects a condition which was not found on the stack");
 
                 // TODO refactor result_var and if lets below
-                let mut result_var = None; 
+                let mut result_var = None;
                 let mut res_vec = if let Some(btype) = blocktype {
-                    result_var = Some(BlockResult(state.label_count)); 
-                    vec![Stmt::Assign { 
-                        lhs: result_var.expect("if produces a result but associated result variable not found"), 
-                        rhs: Const(Val::get_default_value(*btype)) , 
-                        type_: *btype,  
+                    result_var = Some(BlockResult(state.label_count));
+                    vec![Stmt::Assign {
+                        lhs: result_var.expect("if produces a result but associated result variable not found"),
+                        rhs: Const(Val::get_default_value(*btype)) ,
+                        type_: *btype,
                     }]
                 } else {
                     Vec::new()
@@ -1131,68 +1131,68 @@ fn wimplify_instrs<'module>(
 
                 let label = Label(state.label_count);
                 state.label_count += 1;
-                
+
                 if let Some(result_var) = result_var {
-                    state.label_stack.push((label, Some((result_var, blocktype.expect("block type expected since there is an associated result variable for the block"), false))))                
+                    state.label_stack.push((label, Some((result_var, blocktype.expect("block type expected since there is an associated result variable for the block"), false))))
                 } else {
-                    state.label_stack.push((label, None)); 
+                    state.label_stack.push((label, None));
                 }
 
                 let (if_body, has_else) = wimplify_instrs(instrs, context, state)?;
 
                 let else_body = if has_else {
-                    Some(Body(wimplify_instrs(instrs, context, state)?.0))       
+                    Some(Body(wimplify_instrs(instrs, context, state)?.0))
                 } else {
                     None
-                }; 
+                };
 
                 // TODO do not generate the surrounding block if no branch targets it
                 // -> requires a precomputed map from branches to targets
                 res_vec.push(Stmt::Block {
                     end_label: label,
                     body: Body(vec![Stmt::If{
-                        condition, 
+                        condition,
                         if_body: Body(if_body),
                         else_body,
                     }])
-                }); 
+                });
 
                 if let Some(_btype) = blocktype {
-                    var_stack.push(result_var.expect("block produces a result but associated result variable not found")); 
+                    var_stack.push(result_var.expect("block produces a result but associated result variable not found"));
                 }
 
-                res_vec            
+                res_vec
             },
 
             highlevel::Instr::Else => {
                 // Cannot pop because you still want it to be on the label stack while processing the else body.
                 let (_, result_info) = *state.label_stack.last().expect("label stack should include if label");
 
-                // assign of the if statement that we just finished processing 
+                // assign of the if statement that we just finished processing
                 // the required value returned by if (if any) should be at the top of the var_stack
                 if let Some((if_result_var, type_, is_loop_block)) = result_info {
                     assert!(!is_loop_block, "if block result should never be have loop flag set");
                     result_instrs.push(Stmt::Assign {
-                        lhs: if_result_var, 
-                        rhs: VarRef(var_stack.pop().expect("if block is producing a value which is expected on the stack")),  
-                        type_, 
+                        lhs: if_result_var,
+                        rhs: VarRef(var_stack.pop().expect("if block is producing a value which is expected on the stack")),
+                        type_,
                     })
                 }
 
                 // End recursive invocation and return converted body of the current block.
-                return Ok((result_instrs, true)); 
+                return Ok((result_instrs, true));
             },
 
             highlevel::Instr::End => {
-                let (_, result_info) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack"); 
+                let (_, result_info) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack");
 
                 if let Some((block_result_var, type_, _is_loop_block)) = result_info {
                     result_instrs.push(Stmt::Assign{
                         lhs: block_result_var,
-                        rhs: VarRef(var_stack.pop().expect("the block is producing a value for which it expect a value on the stack")), 
+                        rhs: VarRef(var_stack.pop().expect("the block is producing a value for which it expect a value on the stack")),
                         type_,
                     });
-                }; 
+                };
 
                 // End recursive invocation and return converted body of the current block.
                 return Ok((result_instrs, false))
@@ -1203,34 +1203,34 @@ fn wimplify_instrs<'module>(
             },
 
             highlevel::Instr::BrIf(label) => {
-                let condition = var_stack.pop().expect("if requires a conditional statement"); 
+                let condition = var_stack.pop().expect("if requires a conditional statement");
                 vec![Stmt::If{
-                    condition, 
+                    condition,
                     if_body: Body(label_to_instrs(&state.label_stack, *label, &mut || {
                         *var_stack.last().expect("br_if expected value to return")
-                    })), 
+                    })),
                     else_body: None,
                 }]
             }
 
-            highlevel::Instr::BrTable { table, default } => { 
-                let index = var_stack.pop().expect("br_table requires an index into the table to be supplied"); 
-                
+            highlevel::Instr::BrTable { table, default } => {
+                let index = var_stack.pop().expect("br_table requires an index into the table to be supplied");
+
                 let mut should_pop = false;
                 let get_result_val = &mut || {
                     should_pop = true;
                     *var_stack.last().expect("br_table expected value to return")
                 };
- 
+
                 let default = Body(label_to_instrs(&state.label_stack, *default, get_result_val));
-                let cases = table.iter().copied().map(|label| Body(label_to_instrs(&state.label_stack, label, get_result_val))).collect(); 
+                let cases = table.iter().copied().map(|label| Body(label_to_instrs(&state.label_stack, label, get_result_val))).collect();
 
                 if should_pop {
                     var_stack.pop().expect("last succeeded, so pop should as well");
                 }
-                
+
                 vec![Stmt::Switch {
-                    index, 
+                    index,
                     cases,
                     default,
                 }]
@@ -1239,18 +1239,18 @@ fn wimplify_instrs<'module>(
             highlevel::Instr::Return => {
                 // This points to the block for the overall function body.
                 let target = Label(0);
-                
+
                 if let (target_from_stack, Some((return_var, type_, loop_flag))) = *state.label_stack.first().expect("empty label stack, but expected function ") {
                     assert_eq!(target, target_from_stack, "label stack is invalid, should have been the function label");
                     assert!(!loop_flag, "function should not have loop flag set");
 
                     let return_val = var_stack.pop().expect("return expects a return value");
                     vec![
-                        Stmt::Assign{ 
-                            lhs: return_var, 
+                        Stmt::Assign{
+                            lhs: return_var,
                             type_,
                             rhs: VarRef(return_val)
-                        }, 
+                        },
                         Stmt::Br { target }
                     ]
                 } else {
@@ -1261,77 +1261,77 @@ fn wimplify_instrs<'module>(
             highlevel::Instr::Call(func_index) => {
                 let n_args = context.module.function(*func_index).type_.params.len();
                 let rhs = Call {
-                    func: Func::from_idx(*func_index, context.module),  
+                    func: Func::from_idx(*func_index, context.module),
                     args: var_stack.split_off(var_stack.len() - n_args),
                 };
                 match &ty.results[..] {
-                    [] => vec![Stmt::Expr(rhs)], 
+                    [] => vec![Stmt::Expr(rhs)],
                     [type_] => {
                         vec![Stmt::Assign {
                             lhs: fresh_stack_var(&mut var_stack),
                             rhs,
-                            type_: *type_, 
+                            type_: *type_,
                         }]
                     }
                     _ => panic!("WebAssembly multi-value extension")
                 }
-            }, 
+            },
 
             highlevel::Instr::CallIndirect(func_type, table_index) => {
-                assert_eq!(table_index.into_inner(), 0, "WebAssembly MVP must always have a single table"); 
-                
+                assert_eq!(table_index.into_inner(), 0, "WebAssembly MVP must always have a single table");
+
                 let rhs = CallIndirect{
-                    type_: func_type.clone(), 
+                    type_: func_type.clone(),
                     table_idx: var_stack.pop().expect("call_indirect requires an index"),
                     args: var_stack.split_off(var_stack.len() - func_type.params.len()),
-                }; 
+                };
                 match &ty.results[..] {
-                    [] => vec![Stmt::Expr(rhs)], 
+                    [] => vec![Stmt::Expr(rhs)],
                     [type_] => {
                         vec![Stmt::Assign {
                             lhs: fresh_stack_var(&mut var_stack),
                             rhs,
-                            type_: *type_ 
+                            type_: *type_
                         }]
                     }
                     _ => panic!("WebAssembly multi-value extension")
                 }
             }
 
-            highlevel::Instr::Drop => Vec::new(), 
+            highlevel::Instr::Drop => Vec::new(),
 
-            highlevel::Instr::Select => { 
-                let condition = var_stack.pop().expect("select requires a value on the stack for the condition");  
-                let if_result_val = var_stack.pop().expect("select requires a value on the stack for the then case"); 
-                let else_result_val = var_stack.pop().expect("select requires a value on the stack for the else case");  
-                let type_ = ty.results[0]; 
+            highlevel::Instr::Select => {
+                let condition = var_stack.pop().expect("select requires a value on the stack for the condition");
+                let if_result_val = var_stack.pop().expect("select requires a value on the stack for the then case");
+                let else_result_val = var_stack.pop().expect("select requires a value on the stack for the else case");
+                let type_ = ty.results[0];
                 let lhs = fresh_stack_var(&mut var_stack);
                 vec![
-                    Stmt::Assign{ 
-                        lhs, 
-                        rhs: Const(Val::get_default_value(type_)),  
-                        type_ 
+                    Stmt::Assign{
+                        lhs,
+                        rhs: Const(Val::get_default_value(type_)),
+                        type_
                     },
                     Stmt::If {
                         condition,
                         if_body: Body(vec![Stmt::Assign {
-                            lhs, 
-                            rhs: VarRef(if_result_val), 
-                            type_ 
+                            lhs,
+                            rhs: VarRef(if_result_val),
+                            type_
                         }]),
-                        else_body: Some(Body(vec![Stmt::Assign { 
-                            lhs, 
-                            rhs: VarRef(else_result_val), 
-                            type_ 
+                        else_body: Some(Body(vec![Stmt::Assign {
+                            lhs,
+                            rhs: VarRef(else_result_val),
+                            type_
                         }]))
                     }
-                ]     
-                
+                ]
+
             }
 
             highlevel::Instr::Local(highlevel::LocalOp::Get, local_idx) => {
                 vec![Stmt::Assign{
-                    rhs: VarRef(local_idx_to_var(*local_idx)), 
+                    rhs: VarRef(local_idx_to_var(*local_idx)),
                     lhs: fresh_stack_var(&mut var_stack),
                     type_: ty.results[0],
                 }]
@@ -1339,10 +1339,10 @@ fn wimplify_instrs<'module>(
 
             highlevel::Instr::Local(highlevel::LocalOp::Set, local_idx) => {
                 vec![Stmt::Assign {
-                    lhs: local_idx_to_var(*local_idx), 
-                    type_: ty.params[0], 
+                    lhs: local_idx_to_var(*local_idx),
+                    type_: ty.params[0],
                     rhs: VarRef(var_stack.pop().expect("local.set expects a value on the stack")),
-                }]            
+                }]
             }
 
             highlevel::Instr::Local(highlevel::LocalOp::Tee, local_idx) => {
@@ -1357,10 +1357,10 @@ fn wimplify_instrs<'module>(
                 let global_var = Global(global_ind.into_inner());
                 vec![Stmt::Assign{
                     rhs: VarRef(global_var),
-                    lhs: fresh_stack_var(&mut var_stack), 
-                    type_: ty.results[0], 
+                    lhs: fresh_stack_var(&mut var_stack),
+                    type_: ty.results[0],
                 }]
-            
+
             }
 
             highlevel::Instr::Global(highlevel::GlobalOp::Set, global_ind) => {
@@ -1368,7 +1368,7 @@ fn wimplify_instrs<'module>(
                 vec![Stmt::Assign{
                     lhs: global_var,
                     rhs: VarRef(var_stack.pop().expect("global.set expects a value on the stack")),
-                    type_: *ty.params.get(0).expect("return type of global.set not found"), 
+                    type_: *ty.params.get(0).expect("return type of global.set not found"),
                 }]
             }
 
@@ -1380,8 +1380,8 @@ fn wimplify_instrs<'module>(
                         memarg: *memarg,
                         addr: rhs,
                     },
-                    lhs: fresh_stack_var(&mut var_stack), 
-                    type_: ty.results[0], 
+                    lhs: fresh_stack_var(&mut var_stack),
+                    type_: ty.results[0],
                 }]
             }
 
@@ -1397,11 +1397,11 @@ fn wimplify_instrs<'module>(
             highlevel::Instr::MemorySize(memory_idx) => {
                 assert_eq!(memory_idx.into_inner(), 0, "wasm mvp only has single memory");
 
-                vec![Stmt::Assign{ 
-                    rhs: MemorySize{}, 
-                    lhs: fresh_stack_var(&mut var_stack), 
-                    type_: ty.results[0],  
-                }]                
+                vec![Stmt::Assign{
+                    rhs: MemorySize{},
+                    lhs: fresh_stack_var(&mut var_stack),
+                    type_: ty.results[0],
+                }]
             }
 
             highlevel::Instr::MemoryGrow(memory_idx) => {
@@ -1412,14 +1412,14 @@ fn wimplify_instrs<'module>(
                         pages: var_stack.pop().expect("memory.grow has to consume a value from stack"),
                     },
                     lhs: fresh_stack_var(&mut var_stack),
-                    type_: ty.results[0], 
-                }]            
+                    type_: ty.results[0],
+                }]
             }
 
             highlevel::Instr::Const(val) => {
-                vec![Stmt::Assign{ 
-                    rhs: Const(*val), 
-                    lhs: fresh_stack_var(&mut var_stack), 
+                vec![Stmt::Assign{
+                    rhs: Const(*val),
+                    lhs: fresh_stack_var(&mut var_stack),
                     type_: ty.results[0],
                 }]
             }
@@ -1430,8 +1430,8 @@ fn wimplify_instrs<'module>(
                         op: *op,
                         args: var_stack.split_off(var_stack.len() - ty.params.len()),
                     },
-                    lhs: fresh_stack_var(&mut var_stack), 
-                    type_: ty.results[0], 
+                    lhs: fresh_stack_var(&mut var_stack),
+                    type_: ty.results[0],
                 }]
             }
         });
@@ -1441,15 +1441,15 @@ fn wimplify_instrs<'module>(
 }
 
 pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
-    let mut wimpl_funcs = Vec::new(); 
+    let mut wimpl_funcs = Vec::new();
     for (idx, func) in module.functions() {
-        
-        //initialize the local variables 
-        let mut result_instrs = Vec::new(); 
+
+        //initialize the local variables
+        let mut result_instrs = Vec::new();
         for (loc_index, loc) in func.locals() {
-            let (loc_name, loc_type) = (&loc.name, loc.type_); 
+            let (loc_name, loc_type) = (&loc.name, loc.type_);
             if let Some(_loc_name) = loc_name {
-                todo!("you haven't yet implemented locals having names");     
+                todo!("you haven't yet implemented locals having names");
             } else {
                 result_instrs.push(Stmt::Assign{
                     lhs: Var::Local(loc_index.into_inner()-func.type_.params.len()),
@@ -1459,9 +1459,9 @@ pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
             }
         }
 
-        //translate the instructions in the function 
+        //translate the instructions in the function
         if let Some(code) = func.code() {
-            let mut instrs = code.body.as_slice().iter(); 
+            let mut instrs = code.body.as_slice().iter();
 
             let context = Context {
                 module,
@@ -1480,17 +1480,17 @@ pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
                 [ty] => Some((Var::Return(0), ty, false)),
                 _ => unimplemented!("only WebAssembly MVP is supported, not multi-value extension")
             };
-            state.label_stack.push((Label(0), return_var)); 
+            state.label_stack.push((Label(0), return_var));
 
             let (mut stmts, _) = wimplify_instrs(&mut instrs, context, &mut state)?;
-            result_instrs.append(&mut stmts); 
+            result_instrs.append(&mut stmts);
         }
-        
+
         wimpl_funcs.push(Function{
             type_: func.type_.clone(),
-            body: Body(result_instrs), 
+            body: Body(result_instrs),
             name: Func::from_idx(idx, module)
-        }); 
+        });
     }
 
     Ok(Module{
@@ -1503,12 +1503,12 @@ pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
 pub fn wimplify(path: &str) -> Result<Module, String> {
     wimplify_module(&highlevel::Module::from_file(path).expect("path should point to a valid wasm file"))
 }
- 
+
 #[cfg(test)]
 mod tests {
     // Convenience imports:
-    use super::Module; 
-    use super::Function; 
+    use super::Module;
+    use super::Function;
     use super::Body;
     use super::Func;
     use super::Stmt::{self, *};
@@ -1528,71 +1528,71 @@ mod tests {
     use std::str::FromStr;
 
     lazy_static! {
-        
+
         static ref WIMPL_MODULE_SYNTAX_TESTCASES: Vec<(Module, &'static str, &'static str)> = vec![
             (
                 Module {
-                    functions: Vec::new(), 
-                    globals: Vec::new(), 
-                    tables: Vec::new(), 
-                }, 
+                    functions: Vec::new(),
+                    globals: Vec::new(),
+                    tables: Vec::new(),
+                },
                 "module {
 }
-", 
+",
                 "empty module"
             ),
             (
                 Module {
                     functions: vec![
                         Function {
-                            name: Func::Idx(0), 
-                            type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() }, 
+                            name: Func::Idx(0),
+                            type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
                             body: Body(Vec::new())
                         },
                         Function {
-                            name: Func::Idx(1), 
-                            type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() }, 
+                            name: Func::Idx(1),
+                            type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
                             body: Body(Vec::new())
-                        },    
-                    ], 
-                    globals: Vec::new(), 
-                    tables: Vec::new(), 
-                }, 
+                        },
+                    ],
+                    globals: Vec::new(),
+                    tables: Vec::new(),
+                },
                 "module {
   func f0 () -> () @label0: {}
   func f1 () -> () @label0: {}
 }
-", 
+",
                 "module with several empty fuctions"
             ),
             (
                 Module {
                     functions: vec![
                         Function {
-                            name: Func::Idx(0), 
-                            type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() }, 
+                            name: Func::Idx(0),
+                            type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
                             body: Body(Vec::new())
                         },
                         Function {
-                            name: Func::Idx(1), 
-                            type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() }, 
+                            name: Func::Idx(1),
+                            type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() },
                             body: Body(vec![
                                 Assign {
                                     lhs: Stack(0),
-                                    rhs: Const(I32(3)), 
-                                    type_: ValType::I32, 
-                                }, 
+                                    rhs: Const(I32(3)),
+                                    type_: ValType::I32,
+                                },
                                 Assign {
                                     lhs: Stack(1),
-                                    rhs: Const(I32(4)), 
-                                    type_: ValType::I32, 
+                                    rhs: Const(I32(4)),
+                                    type_: ValType::I32,
                                 },
                             ])
-                        },    
-                    ], 
-                    globals: Vec::new(), 
-                    tables: Vec::new(), 
-                }, 
+                        },
+                    ],
+                    globals: Vec::new(),
+                    tables: Vec::new(),
+                },
                 "module {
   func f0 () -> () @label0: {}
   func f1 (p0: i32) -> (r0: f64) @label0: {
@@ -1600,7 +1600,7 @@ mod tests {
     s1: i32 = i32.const 4
   }
 }
-", 
+",
                 "module with several empty fuctions"
             ),
         ];
@@ -1608,62 +1608,62 @@ mod tests {
         static ref WIMPL_FUNCTION_SYNTAX_TESTCASES: Vec<(Function, &'static str, &'static str)> = vec![
             (
                 Function {
-                    name: Func::Idx(0), 
-                    type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() }, 
+                    name: Func::Idx(0),
+                    type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
                     body: Body(Vec::new())
-                }, 
-                "func f0 () -> () @label0: {}", 
+                },
+                "func f0 () -> () @label0: {}",
                 "empty function"
             ),
             (
                 Function {
-                    name: Func::Idx(1), 
-                    type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() }, 
+                    name: Func::Idx(1),
+                    type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() },
                     body: Body(Vec::new())
-                }, 
-                "func f1 (p0: i32) -> (r0: f64) @label0: {}", 
+                },
+                "func f1 (p0: i32) -> (r0: f64) @label0: {}",
                 "empty function with types"
             ),
             (
                 Function {
-                    name: Func::Idx(1), 
-                    type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() }, 
+                    name: Func::Idx(1),
+                    type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() },
                     body: Body(vec![
                         Assign {
                             lhs: Stack(0),
-                            rhs: Const(I32(3)), 
-                            type_: ValType::I32, 
+                            rhs: Const(I32(3)),
+                            type_: ValType::I32,
                         }
                     ])
-                }, 
-                "func f1 (p0: i32) -> (r0: f64) @label0: { s0: i32 = i32.const 3 }", 
+                },
+                "func f1 (p0: i32) -> (r0: f64) @label0: { s0: i32 = i32.const 3 }",
                 "function with i32.const in body"
             ),
             (
                 Function {
-                    name: Func::Idx(1), 
-                    type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() }, 
+                    name: Func::Idx(1),
+                    type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() },
                     body: Body(vec![
                         Assign {
                             lhs: Stack(0),
-                            rhs: Const(I32(3)), 
-                            type_: ValType::I32, 
-                        }, 
+                            rhs: Const(I32(3)),
+                            type_: ValType::I32,
+                        },
                         Assign {
                             lhs: Stack(1),
-                            rhs: Const(I32(4)), 
-                            type_: ValType::I32, 
+                            rhs: Const(I32(4)),
+                            type_: ValType::I32,
                         },
                     ])
-                }, 
+                },
                 "func f1 (p0: i32) -> (r0: f64) @label0: {
   s0: i32 = i32.const 3
   s1: i32 = i32.const 4
-}", 
+}",
                 "function with multiple statements"
             ),
-        ]; 
-        
+        ];
+
         /// Pairs of Wimpl AST with concrete syntax, and optionally a comment what is
         /// "special" about this testcase. This is used for testing both parsing and
         /// pretty-printing of Wimpl, just in different directions.
@@ -1673,28 +1673,28 @@ mod tests {
         static ref WIMPL_CANONICAL_SYNTAX_TESTCASES: Vec<(Stmt, &'static str, &'static str)> = vec![
             (Unreachable, "unreachable", ""),
             (
-                Assign { 
-                    lhs: Stack(0), 
-                    type_: ValType::I32, 
+                Assign {
+                    lhs: Stack(0),
+                    type_: ValType::I32,
                     rhs: MemorySize
-                }, 
-                "s0: i32 = memory.size", 
+                },
+                "s0: i32 = memory.size",
                 ""
             ),
-            (   
-                Assign { 
-                    lhs: Global(0), 
-                    type_: ValType::I32, 
-                    rhs: VarRef(Local(0)) 
-                }, 
-                "g0: i32 = l0", 
+            (
+                Assign {
+                    lhs: Global(0),
+                    type_: ValType::I32,
+                    rhs: VarRef(Local(0))
+                },
+                "g0: i32 = l0",
                 "var ref on rhs"
             ),
             (
                 Assign {
                     lhs: Stack(0),
-                    rhs: Const(I32(1337)), 
-                    type_: ValType::I32, 
+                    rhs: Const(I32(1337)),
+                    type_: ValType::I32,
                 },
                 "s0: i32 = i32.const 1337",
                 ""
@@ -1706,7 +1706,7 @@ mod tests {
                         op: I32Add,
                         args: vec![Stack(2), Stack(3)],
                     },
-                    type_: ValType::I32, 
+                    type_: ValType::I32,
                 },
                 "s1: i32 = i32.add(s2, s3)",
                 ""
@@ -1718,8 +1718,8 @@ mod tests {
                         op: I32Load,
                         memarg: Memarg::default(I32Load),
                         addr: Stack(0),
-                    }, 
-                    type_: ValType::I32, 
+                    },
+                    type_: ValType::I32,
                 },
                 "s1: i32 = i32.load(s0)",
                 ""
@@ -1759,7 +1759,7 @@ mod tests {
                         type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
                         table_idx: Stack(0),
                         args: vec![Stack(2), Stack(3)],
-                    }, 
+                    },
                     type_: ValType::I32,
                 },
                 "s1: i32 = call_indirect [i32] -> [i32] (s0) (s2, s3)",
@@ -1770,7 +1770,7 @@ mod tests {
                     end_label: Label(0),
                     body: Body (vec![]),
                 },
-                "@label0: block {}", 
+                "@label0: block {}",
                 "empty block"
             ),
             (
@@ -1780,7 +1780,7 @@ mod tests {
                         Assign{
                             lhs: Stack(1),
                             type_: ValType::I32,
-                            rhs: VarRef(Stack(0)), 
+                            rhs: VarRef(Stack(0)),
                         }]),
                 },
                 "@label1: block { s1: i32 = s0 }",
@@ -1797,7 +1797,7 @@ mod tests {
                 r"@label0: loop {
   br @label0
   unreachable
-}", 
+}",
                 "loop with multiple instructions, indentation"
             ),
             (
@@ -1806,7 +1806,7 @@ mod tests {
                         if_body: Body (
                             vec![Br {
                                 target: Label(0),
-                            }]), 
+                            }]),
                         else_body: None,
                 },
                 "if (s0) { br @label0 }",
@@ -1815,7 +1815,7 @@ mod tests {
             (
                 Switch {
                         index: Stack(0),
-                        cases: vec![ 
+                        cases: vec![
                             Body(vec![Unreachable]),
                             Body(vec![Expr(MemorySize), Br { target: Label(1) }]),
                         ],
@@ -1898,7 +1898,7 @@ mod tests {
                     rhs: Numeric {
                         op: I32Add,
                         args: vec![Stack(2), Stack(3)],
-                    }, 
+                    },
                     type_: ValType::I32,
                 },
                 "s1: i32 = i32.add (s2,s3)",
@@ -1930,7 +1930,7 @@ mod tests {
                         end_label: Label(2),
                         body: Body(vec![
                             Assign {
-                                lhs: Stack(1), 
+                                lhs: Stack(1),
                                 rhs: VarRef(Stack(0)),
                                 type_: ValType::I32,
                             },
@@ -1954,14 +1954,14 @@ mod tests {
     fn pretty_print_function() {
         for (i, (wimpl, text, msg)) in WIMPL_FUNCTION_SYNTAX_TESTCASES.iter().enumerate() {
             assert_eq!(&wimpl.to_string(), text, "\ntest #{}\n{}", i, msg);
-        }        
+        }
     }
 
     #[test]
     fn pretty_print_module() {
         for (i, (wimpl, text, msg)) in WIMPL_MODULE_SYNTAX_TESTCASES.iter().enumerate() {
             assert_eq!(&wimpl.to_string(), text, "\ntest #{}\n{}", i, msg);
-        } 
+        }
     }
 
     #[test]
@@ -2012,13 +2012,13 @@ mod tests {
         assert_eq!(Ok(MemorySize), "memory.size".parse());
         assert_eq!(Ok(MemoryGrow { pages: Local(0) }), "memory.grow (l0)".parse());
         assert_eq!(Ok(VarRef(Global(1))), "g1".parse());
-        assert_eq!(Ok(Numeric { 
-            op: I32Add, 
+        assert_eq!(Ok(Numeric {
+            op: I32Add,
             args: vec![Stack(0), Local(1)]
         }), "i32.add(s0, l1)".parse());
         // More complex expressions are tested in the statements.
     }
-    
+
     #[test]
     fn parse_stmt() {
         let parse_testcases = WIMPL_CANONICAL_SYNTAX_TESTCASES
@@ -2068,7 +2068,7 @@ mod tests {
         let instrs = Stmt::from_text_file("tests/wimpl/syntax.wimpl");
         assert!(instrs.is_ok());
     }
-    
+
     #[test]
     fn macros() {
         let _ = wimpl!(g0: f32 = f32.const 1.1);
@@ -2101,7 +2101,7 @@ fn test(path_wimpl: &str, path_wasm: &str) {
 
 #[test]
 fn constant() {
-    test("tests/wimpl/const/const.wimpl", "tests/wimpl/const/const.wasm"); 
+    test("tests/wimpl/const/const.wimpl", "tests/wimpl/const/const.wasm");
 }
 
 #[test]
@@ -2135,8 +2135,8 @@ fn global() {
 }
 
 #[test]
-fn load_store() { 
-    test("tests/wimpl/load_store/load_store.wimpl", "tests/wimpl/load_store/load_store.wasm"); 
+fn load_store() {
+    test("tests/wimpl/load_store/load_store.wimpl", "tests/wimpl/load_store/load_store.wasm");
 }
 
 #[test]
@@ -2165,12 +2165,12 @@ fn block_nested() {
 }
 
 #[test]
-fn br_simple() {  
+fn br_simple() {
     test("tests/wimpl/br_simple/br.wimpl", "tests/wimpl/br_simple/br.wasm");
 }
 
 #[test]
-fn br_nested_simple() {  
+fn br_nested_simple() {
     test("tests/wimpl/br_nested_simple/br.wimpl", "tests/wimpl/br_nested_simple/br.wasm");
 }
 
@@ -2180,22 +2180,22 @@ fn br_nested() {
 }
 
 #[test]
-fn br_triple_nested() {  
+fn br_triple_nested() {
     test("tests/wimpl/br_triple_nested/br.wimpl", "tests/wimpl/br_triple_nested/br.wasm");
 }
 
 #[test]
-fn br_if() {   
+fn br_if() {
     test("tests/wimpl/br_if/br_if.wimpl", "tests/wimpl/br_if/br_if.wasm");
 }
 
 #[test]
-fn br_if_2() { 
+fn br_if_2() {
     test("tests/wimpl/br_if_2/br_if.wimpl", "tests/wimpl/br_if_2/br_if.wasm");
 }
 
 #[test]
-fn br_table() {  
+fn br_table() {
     test("tests/wimpl/br_table/br_table.wimpl", "tests/wimpl/br_table/br_table.wasm");
 }
 
@@ -2210,100 +2210,100 @@ fn if_ret() {
 }
 
 #[test]
-fn if_else() { 
+fn if_else() {
     test("tests/wimpl/if_else/if_else.wimpl", "tests/wimpl/if_else/if_else.wasm");
 }
 
-//hand written calculator programs 
+//hand written calculator programs
 
 #[test]
-fn calc() {  
-    wimplify("tests/wimpl-wasm-handwritten/calc/add.wasm").expect("error while translating wasm file to wimpl"); 
+fn calc() {
+    wimplify("tests/wimpl-wasm-handwritten/calc/add.wasm").expect("error while translating wasm file to wimpl");
 }
 
 #[test]
-fn calc_dce() {  
-    wimplify("tests/wimpl-wasm-handwritten/calc-dce/add-dce.wasm").expect("error while translating wasm file to wimpl"); 
+fn calc_dce() {
+    wimplify("tests/wimpl-wasm-handwritten/calc-dce/add-dce.wasm").expect("error while translating wasm file to wimpl");
 
 }
 
 #[test]
-fn calc_virtual() {  
-    wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect("error while translating wasm file to wimpl"); 
+fn calc_virtual() {
+    wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect("error while translating wasm file to wimpl");
 
 }
 
-//USENIX programs 
+//USENIX programs
 
 #[test]
 fn module_8c087e0290bb39f1e090() {
-    wimplify("tests/wimpl-USENIX/8c087e0290bb39f1e090.module/8c087e0290bb39f1e090.module.wasm").expect("error while translating wasm file to wimpl"); 
+    wimplify("tests/wimpl-USENIX/8c087e0290bb39f1e090.module/8c087e0290bb39f1e090.module.wasm").expect("error while translating wasm file to wimpl");
 
 }
 
 #[test]
-fn annots() { 
-    wimplify("tests/wimpl-USENIX/annots/annots.wasm").expect("error while translating wasm file to wimpl"); 
+fn annots() {
+    wimplify("tests/wimpl-USENIX/annots/annots.wasm").expect("error while translating wasm file to wimpl");
 
 }
 
 #[test]
-fn module_bb9bb638551198cd3a42() { 
-    wimplify("tests/wimpl-USENIX/bb9bb638551198cd3a42.module/bb9bb638551198cd3a42.module.wasm").expect("error while translating wasm file to wimpl"); 
+fn module_bb9bb638551198cd3a42() {
+    wimplify("tests/wimpl-USENIX/bb9bb638551198cd3a42.module/bb9bb638551198cd3a42.module.wasm").expect("error while translating wasm file to wimpl");
 
 }
 
 #[test]
-fn compiled_wasm() {  
-    wimplify("tests/wimpl-USENIX/compiled.wasm/compiled.wasm").expect("error while translating wasm file to wimpl"); 
+fn compiled_wasm() {
+    wimplify("tests/wimpl-USENIX/compiled.wasm/compiled.wasm").expect("error while translating wasm file to wimpl");
 
 }
 
 #[test]
-fn module_dac34eee5ed4216c65b2() {   
-    wimplify("tests/wimpl-USENIX/dac34eee5ed4216c65b2.module/dac34eee5ed4216c65b2.module.wasm").expect("error while translating wasm file to wimpl"); 
+fn module_dac34eee5ed4216c65b2() {
+    wimplify("tests/wimpl-USENIX/dac34eee5ed4216c65b2.module/dac34eee5ed4216c65b2.module.wasm").expect("error while translating wasm file to wimpl");
 
 }
 
 #[test]
-fn imagequant_c970f() {  
-    wimplify("tests/wimpl-USENIX/imagequant.c970f/imagequant.c970f.wasm").expect("error while translating wasm file to wimpl"); 
+fn imagequant_c970f() {
+    wimplify("tests/wimpl-USENIX/imagequant.c970f/imagequant.c970f.wasm").expect("error while translating wasm file to wimpl");
 
 }
 
 #[test]
-fn mozjpeg_enc_93395() {  
-    wimplify("tests/wimpl-USENIX/mozjpeg_enc.93395/mozjpeg_enc.93395.wasm").expect("error while translating wasm file to wimpl"); 
+fn mozjpeg_enc_93395() {
+    wimplify("tests/wimpl-USENIX/mozjpeg_enc.93395/mozjpeg_enc.93395.wasm").expect("error while translating wasm file to wimpl");
 
 }
 
 #[test]
-fn optipng_4e77b() {  
-    wimplify("tests/wimpl-USENIX/optipng.4e77b/optipng.4e77b.wasm").expect("error while translating wasm file to wimpl"); 
+fn optipng_4e77b() {
+    wimplify("tests/wimpl-USENIX/optipng.4e77b/optipng.4e77b.wasm").expect("error while translating wasm file to wimpl");
 
 }
 
 #[test]
-fn rotate_4cdaa() {  
-    wimplify("tests/wimpl-USENIX/rotate.4cdaa/rotate.4cdaa.wasm").expect("error while translating wasm file to wimpl"); 
+fn rotate_4cdaa() {
+    wimplify("tests/wimpl-USENIX/rotate.4cdaa/rotate.4cdaa.wasm").expect("error while translating wasm file to wimpl");
 
 }
 
 #[test]
-fn usenix_bin_acrobat_wasm() {  
-    wimplify("tests/wimpl-USENIX/USENIX_bin_acrobat.wasm/USENIX_bin_acrobat.wasm.wasm").expect("error while translating wasm file to wimpl"); 
+fn usenix_bin_acrobat_wasm() {
+    wimplify("tests/wimpl-USENIX/USENIX_bin_acrobat.wasm/USENIX_bin_acrobat.wasm.wasm").expect("error while translating wasm file to wimpl");
 
 }
 
 #[test]
-fn webp_dec_fa0ab() {  
-    wimplify("tests/wimpl-USENIX/webp_dec.fa0ab/webp_dec.fa0ab.wasm").expect("error while translating wasm file to wimpl"); 
+fn webp_dec_fa0ab() {
+    wimplify("tests/wimpl-USENIX/webp_dec.fa0ab/webp_dec.fa0ab.wasm").expect("error while translating wasm file to wimpl");
 
 }
 
 #[test]
-fn webp_enc_ea665() {  
-    wimplify("tests/wimpl-USENIX/webp_enc.ea665/webp_enc.ea665.wasm").expect("error while translating wasm file to wimpl"); 
+fn webp_enc_ea665() {
+    wimplify("tests/wimpl-USENIX/webp_enc.ea665/webp_enc.ea665.wasm").expect("error while translating wasm file to wimpl");
 
 }
 
@@ -2541,5 +2541,5 @@ fn _fc762c3b4338c7d7a6bb31d478cfbe5717ebefb0e91d6d27b82a21fc169c7afe() {
 
 #[test]
 fn _fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3() {
-    wimplify("tests/wimpl-filtered-binaries/fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3/fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3.wasm").expect("error while translating wasm file to wimpl"); 
+    wimplify("tests/wimpl-filtered-binaries/fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3/fd6372aef6ff7d9ecffcc7f3d8d00963bebf39d68451c5ef36c039616ccbded3.wasm").expect("error while translating wasm file to wimpl");
 }
