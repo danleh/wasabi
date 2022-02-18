@@ -974,7 +974,6 @@ impl State {
 fn wimplify_instrs<'a>(
     instrs: &mut impl Iterator<Item=&'a highlevel::Instr>, 
     typechecker: &mut TypeChecker, 
-    //tys: &mut impl Iterator<Item=&'a InferredInstructionType>, 
     state: &mut State,
 ) -> Result<Vec<Stmt>, String> {
     
@@ -985,8 +984,7 @@ fn wimplify_instrs<'a>(
 
     loop {
 
-        //TODO: Daniel code review 
-        
+        //TODO: Daniel code review         
         let instr = instrs.next();
         let (instr, ty) = if instr.is_some() {
             (instr.expect("instrs should not be empty"), 
@@ -1256,7 +1254,7 @@ fn wimplify_instrs<'a>(
                 vec![Stmt::If{
                     condition, 
                     if_body: Body(label_to_instrs(&state.label_stack, *label, &mut || {
-                        // TODO: fixup var_stack
+                        // TODO: fixup var_stack 
                         *state.var_stack.last().expect("br_if expected value to return")
                     })), 
                     else_body: None,
@@ -1578,6 +1576,7 @@ pub fn wimplify (path: &str) -> Result<Module, String> {
 #[cfg(test)]
 mod tests {
     // Convenience imports:
+    use super::Function; 
     use super::Body;
     use super::Func;
     use super::Stmt::{self, *};
@@ -1597,6 +1596,66 @@ mod tests {
     use std::str::FromStr;
 
     lazy_static! {
+        
+        static ref WIMPL_FUNCTION_SYNTAX_TESTCASES: Vec<(Function, &'static str, &'static str)> = vec![
+            (
+                Function {
+                    name: Func::Idx(0), 
+                    type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() }, 
+                    body: Body(Vec::new())
+                }, 
+                "func f0 () -> () @label0: {}", 
+                "empty function"
+            ),
+            (
+                Function {
+                    name: Func::Idx(1), 
+                    type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() }, 
+                    body: Body(Vec::new())
+                }, 
+                "func f1 (p0: i32) -> (r0: f64) @label0: {}", 
+                "empty function with types"
+            ),
+            (
+                Function {
+                    name: Func::Idx(1), 
+                    type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() }, 
+                    body: Body(vec![
+                        Assign {
+                            lhs: Stack(0),
+                            rhs: Const(I32(3)), 
+                            type_: ValType::I32, 
+                        }
+                    ])
+                }, 
+                "func f1 (p0: i32) -> (r0: f64) @label0: { s0: i32 = i32.const 3 }", 
+                "function with i32.const in body"
+            ),
+            (
+                Function {
+                    name: Func::Idx(1), 
+                    type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() }, 
+                    body: Body(vec![
+                        Assign {
+                            lhs: Stack(0),
+                            rhs: Const(I32(3)), 
+                            type_: ValType::I32, 
+                        }, 
+                        Assign {
+                            lhs: Stack(1),
+                            rhs: Const(I32(4)), 
+                            type_: ValType::I32, 
+                        },
+                    ])
+                }, 
+                "func f1 (p0: i32) -> (r0: f64) @label0: {
+  s0: i32 = i32.const 3
+  s1: i32 = i32.const 4
+}", 
+                "function with multiple statements"
+            ),
+        ]; 
+        
         /// Pairs of Wimpl AST with concrete syntax, and optionally a comment what is
         /// "special" about this testcase. This is used for testing both parsing and
         /// pretty-printing of Wimpl, just in different directions.
@@ -1885,7 +1944,9 @@ mod tests {
 
     #[test]
     fn pretty_print_function() {
-        todo!()
+        for (i, (wimpl, text, msg)) in WIMPL_FUNCTION_SYNTAX_TESTCASES.iter().enumerate() {
+            assert_eq!(&wimpl.to_string(), text, "\ntest #{}\n{}", i, msg);
+        }        
     }
 
     #[test]
@@ -2024,8 +2085,8 @@ mod tests {
 fn test(path_wimpl: &str, path_wasm: &str) {
 
     let wimpl_module = wimplify(path_wasm).expect("wasm file does not exist"); 
-    // println!("ACTUAL");
-    // println!("{}", wimpl_module);
+    println!("ACTUAL");
+    println!("{}", wimpl_module);
 
     let expected = Stmt::from_text_file(path_wimpl).unwrap();
     // println!("EXPECTED");
