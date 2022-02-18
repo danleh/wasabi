@@ -963,8 +963,7 @@ pub struct State<'module> {
     label_count: usize,
     stack_var_count: usize,
 
-    // if you are in a block or an if => false 
-    // if you are in a loop => true 
+    // The bool is `true` if the label is for a `loop` block, and false for `block` and `if`.
     #[allow(clippy::type_complexity)]
     label_stack: Vec<(Label, Option<(Var, ValType, bool)>)>,   
 }
@@ -984,6 +983,7 @@ fn wimplify_instrs<'module>(
     use Expr::*; 
     use Var::*; 
      
+    // State that is "local" to this nested block (unlike `state`, which is for the whole function).
     let mut var_stack = Vec::new(); 
     let mut result_instrs = Vec::new();
     
@@ -1029,11 +1029,11 @@ fn wimplify_instrs<'module>(
         };
 
         let label_to_instrs = |label_stack: &[_], label: crate::Label, get_value: &mut dyn FnMut() -> Var| -> Vec<Stmt> {
-            let (target, return_info) = *label_stack.iter().rev().nth(label.into_inner()).expect("label stack should never be empty"); 
+            let (target, block_result) = *label_stack.iter().rev().nth(label.into_inner()).expect("invalid branch label, not in label stack"); 
             
             // println!("{:?}\n{:?} {:?} {:?}", label_stack, label, target, return_info);
             
-            match return_info {
+            match block_result {
                 // Target block needs a result, and is not a loop.
                 Some((lhs, type_, false)) => vec![
                     Stmt::Assign{ 
@@ -1112,17 +1112,15 @@ fn wimplify_instrs<'module>(
                 res_instr_vec 
             }
             
-            highlevel::Instr::If(blocktype) => {
-                
-                let blocktype = blocktype.0; 
-
+            highlevel::Instr::If(BlockType(blocktype)) => {
+                // TODO refactor result_var and if lets below
                 let mut result_var = None; 
                 let mut res_vec = if let Some(btype) = blocktype {
                     result_var = Some(BlockResult(state.label_count)); 
                     vec![Stmt::Assign { 
                         lhs: result_var.expect("if produces a result but associated result variable not found"), 
-                        rhs: Const(Val::get_default_value(btype)) , 
-                        type_: btype,  
+                        rhs: Const(Val::get_default_value(*btype)) , 
+                        type_: *btype,  
                     }]
                 } else {
                     Vec::new()
@@ -1162,7 +1160,6 @@ fn wimplify_instrs<'module>(
             },
 
             highlevel::Instr::Else => {
-                
                 // cannot pop because you still want it to be on the label stack while processing the else body 
                 let (_, return_info) = *state.label_stack.last().expect("label stack should include if label");
 
@@ -1170,7 +1167,7 @@ fn wimplify_instrs<'module>(
                 // the required value returned by if (if any) should be at the top of the var_stack
                 if let Some((lhs, type_, loop_flag)) = return_info {
                     assert!(!loop_flag, "if block result should never be have loop_flag set");
-                    result_instrs.push(Stmt::Assign{
+                    result_instrs.push(Stmt::Assign {
                         lhs, 
                         rhs: VarRef(var_stack.pop().expect("if block is producing a value which is expected on the stack")),  
                         type_, 
@@ -1256,10 +1253,10 @@ fn wimplify_instrs<'module>(
                 }
             }
 
-            highlevel::Instr::Call(index) => {
-                let n_args = context.module.function(*index).type_.params.len();
+            highlevel::Instr::Call(func_index) => {
+                let n_args = context.module.function(*func_index).type_.params.len();
                 let rhs = Call {
-                    func: Func::from_idx(*index, context.module),  
+                    func: Func::from_idx(*func_index, context.module),  
                     args: var_stack.split_off(var_stack.len() - n_args),
                 };
                 match &ty.results[..] {
@@ -1275,8 +1272,8 @@ fn wimplify_instrs<'module>(
                 }
             }, 
 
-            highlevel::Instr::CallIndirect(func_type, index) => {
-                assert_eq!(index.into_inner(), 0, "WebAssembly MVP must always have a single table"); 
+            highlevel::Instr::CallIndirect(func_type, table_index) => {
+                assert_eq!(table_index.into_inner(), 0, "WebAssembly MVP must always have a single table"); 
                 
                 let rhs = CallIndirect{
                     type_: func_type.clone(), 
@@ -1330,24 +1327,24 @@ fn wimplify_instrs<'module>(
             highlevel::Instr::Local(highlevel::LocalOp::Get, local_idx) => {
                 vec![Stmt::Assign{
                     rhs: VarRef(local_idx_to_var(*local_idx)), 
-                    type_: ty.results[0],
                     lhs: fresh_stack_var(&mut var_stack),
+                    type_: ty.results[0],
                 }]
             }
 
             highlevel::Instr::Local(highlevel::LocalOp::Set, local_idx) => {
                 vec![Stmt::Assign {
                     lhs: local_idx_to_var(*local_idx), 
-                    rhs: VarRef(var_stack.pop().expect("local.set expects a value on the stack")),
                     type_: ty.params[0], 
+                    rhs: VarRef(var_stack.pop().expect("local.set expects a value on the stack")),
                 }]            
             }
 
             highlevel::Instr::Local(highlevel::LocalOp::Tee, local_idx) => {
                 vec![Stmt::Assign{
                     lhs: local_idx_to_var(*local_idx),
-                    rhs: VarRef(*var_stack.last().expect("local.tee expects a value on the stack")),
                     type_: ty.params[0],
+                    rhs: VarRef(*var_stack.last().expect("local.tee expects a value on the stack")),
                 }]
             }
 
@@ -1355,8 +1352,8 @@ fn wimplify_instrs<'module>(
                 let global_var = Global(global_ind.into_inner());
                 vec![Stmt::Assign{
                     rhs: VarRef(global_var),
-                    type_: ty.results[0], 
                     lhs: fresh_stack_var(&mut var_stack), 
+                    type_: ty.results[0], 
                 }]
             
             }
@@ -1378,44 +1375,47 @@ fn wimplify_instrs<'module>(
                         memarg: *memarg,
                         addr: rhs,
                     },
-                    type_: ty.results[0], 
                     lhs: fresh_stack_var(&mut var_stack), 
+                    type_: ty.results[0], 
                 }]
             }
 
-            highlevel::Instr::Store(storeop, memarg) => {
+            highlevel::Instr::Store(op, memarg) => {
                 vec![Stmt::Store {
-                    op: *storeop,
+                    op: *op,
                     memarg: *memarg,
                     addr: var_stack.pop().expect("store consumes a value for address from the stack which was not found"),
                     value: var_stack.pop().expect("store consumes a value to store at the address from the stack which was not found"),
                 }]
             }
 
-            highlevel::Instr::MemorySize(_) => {
+            highlevel::Instr::MemorySize(memory_idx) => {
+                assert_eq!(memory_idx.into_inner(), 0, "wasm mvp only has single memory");
+
                 vec![Stmt::Assign{ 
                     rhs: MemorySize{}, 
-                    type_: ty.results[0],  
                     lhs: fresh_stack_var(&mut var_stack), 
+                    type_: ty.results[0],  
                 }]                
             }
 
-            highlevel::Instr::MemoryGrow(ind) => {
-                assert_eq!(ind.into_inner(), 0, "wasm mvp only has single memory");
-                vec![Stmt::Assign{
+            highlevel::Instr::MemoryGrow(memory_idx) => {
+                assert_eq!(memory_idx.into_inner(), 0, "wasm mvp only has single memory");
+
+                vec![Stmt::Assign {
                     rhs: MemoryGrow {
-                        pages: var_stack.pop().expect("memory_grow has to consume a value from stack"),
+                        pages: var_stack.pop().expect("memory.grow has to consume a value from stack"),
                     },
+                    lhs: fresh_stack_var(&mut var_stack),
                     type_: ty.results[0], 
-                    lhs: fresh_stack_var(&mut var_stack)  
                 }]            
             }
 
             highlevel::Instr::Const(val) => {
                 vec![Stmt::Assign{ 
                     rhs: Const(*val), 
-                    type_: ty.results[0],
                     lhs: fresh_stack_var(&mut var_stack), 
+                    type_: ty.results[0],
                 }]
             }
 
@@ -1423,15 +1423,13 @@ fn wimplify_instrs<'module>(
                 vec![Stmt::Assign{
                     rhs: Numeric {
                         op: *op,
-                        args: var_stack.split_off(var_stack.len()-ty.params.len()),
+                        args: var_stack.split_off(var_stack.len() - ty.params.len()),
                     },
-                    type_: ty.results[0], 
                     lhs: fresh_stack_var(&mut var_stack), 
+                    type_: ty.results[0], 
                 }]
             }
         });
-
-        // TODO create Stmt::Assign, create lhs here
     }
 
     Ok((result_instrs, false))
