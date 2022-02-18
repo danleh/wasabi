@@ -27,7 +27,7 @@ pub struct Module {
 
 impl Module {
     pub fn function(&self, name: Func) -> Option<&Function> {
-        let mut functions = &self.functions.iter().filter(|f| f.name == name);
+        let mut functions = self.functions.iter().filter(|f| f.name == name);
         let function = functions.next();
         assert!(functions.next().is_none(), "more than one matching function for name {}", name);
         function

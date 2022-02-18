@@ -85,7 +85,7 @@ pub fn collect_reachable_constraints(
     mut reachable: HashSet<Func>,
     options: CallGraphOptions
 ) -> HashSet<Edge> {
-    let mut edges = HashSet::new();
+    // let mut edges = HashSet::new();
 
     for func in reachable {
         let func = module.function(func).expect("function name not found in module");
@@ -93,9 +93,9 @@ pub fn collect_reachable_constraints(
         // TODO how to handle imported functions? Can they each every exported function?
         // Do we add a direct edge there? Or do we add an abstract "host" node? 
         // Do we merge with a JavaScript call-graph analysis?
-        let body = func.body;
+        // let body = func.body;
 
-        for stmt in body.0 {
+        // for stmt in body.0 {
             
             use wimpl::Stmt::*;
             use wimpl::Expr::*;
@@ -110,7 +110,7 @@ pub fn collect_reachable_constraints(
             //     Expr(CallIndirect { type_, table_idx: _, args: _ }) => {
             //     }
             // }
-        }
+        // }
 
     }
 
