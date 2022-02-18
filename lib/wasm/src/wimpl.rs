@@ -1008,30 +1008,18 @@ fn wimplify_instrs<'module>(
             },
             InferredInstructionType::Reachable(ty) => ty,
         };
-
-        let n_inputs = ty.params.len();
-        let n_results = ty.results.len();
-    
-        // TODO move this into a function and call only on demand in each case
-        let lhs = if n_results == 0 {
-            None
-        } else if n_results == 1 {
-            match instr {
-                // tee lhs is the argument itself, ie, rhs which is handled in the match arm for it below
-                highlevel::Instr::Local(highlevel::LocalOp::Tee,_) => None, 
-                // end does not produce a value, it indicates that you have to save var_stack top into the return variable 
-                highlevel::Instr::End => None,
-                // brif does not produce a value, the returned value is stored in the label's result variable 
-                highlevel::Instr::BrIf(_) => None,  
-                _ => Some(Stack(state.stack_var_count)) 
-            }
-        } else {
-            panic!("cannot return more than one value in wasm1.0")
+        
+        // Only call this function when you have finished translating the instructions, i.e., after
+        // you have popped all inputs from the `var_stack`, since this changes `var_stack`.   
+        let mut fresh_stack_var = |var_stack: &mut Vec<_>| {
+            let var = Stack(state.stack_var_count);
+            state.stack_var_count += 1; 
+            var_stack.push(var); 
+            var
         };
 
-        let lhs_ty = lhs.map(|_|ty.results[0]);
-        
-        let resolve_local_idx_to_var = |local_idx| {
+        let local_idx_to_var = |local_idx: Idx<highlevel::Local>| {
+            let local_idx = local_idx.into_inner();
             let num_params = context.func_ty.params.len(); 
             if local_idx < num_params {
                 Param(local_idx)
@@ -1131,7 +1119,6 @@ fn wimplify_instrs<'module>(
                 let mut result_var = None; 
                 let mut res_vec = if let Some(btype) = blocktype {
                     result_var = Some(BlockResult(state.label_count)); 
-                    // state.stack_var_count += 1;
                     vec![Stmt::Assign { 
                         lhs: result_var.expect("if produces a result but associated result variable not found"), 
                         rhs: Const(Val::get_default_value(btype)) , 
@@ -1270,41 +1257,42 @@ fn wimplify_instrs<'module>(
             }
 
             highlevel::Instr::Call(index) => {
-                let call_rhs = Call {
+                let n_args = context.module.function(*index).type_.params.len();
+                let rhs = Call {
                     func: Func::from_idx(*index, context.module),  
-                    args: var_stack.split_off(var_stack.len()-n_inputs),
+                    args: var_stack.split_off(var_stack.len() - n_args),
                 };
-                if let Some(lhs) = lhs {
-                    vec![Stmt::Assign{
-                        lhs,
-                        rhs: call_rhs,
-                        type_: lhs_ty.expect("lhs has to have a type"), 
-                    }]
-                } else {
-                    vec![Stmt::Expr(call_rhs)]
-                }            
+                match &ty.results[..] {
+                    [] => vec![Stmt::Expr(rhs)], 
+                    [type_] => {
+                        vec![Stmt::Assign {
+                            lhs: fresh_stack_var(&mut var_stack),
+                            rhs,
+                            type_: *type_, 
+                        }]
+                    }
+                    _ => panic!("WebAssembly multi-value extension")
+                }
             }, 
 
-            highlevel::Instr::CallIndirect(fn_type, index) => {
-                assert_eq!(index.into_inner(), 0, "wasm mvp must always have a single table"); 
-
-                // in call_indirect,
-                // the last variable on the stack is the index value
-                // the rest (till you collect all the needed parameters) are arguments
-                let callind_rhs = CallIndirect{
-                    type_: fn_type.clone(), 
+            highlevel::Instr::CallIndirect(func_type, index) => {
+                assert_eq!(index.into_inner(), 0, "WebAssembly MVP must always have a single table"); 
+                
+                let rhs = CallIndirect{
+                    type_: func_type.clone(), 
                     table_idx: var_stack.pop().expect("call_indirect requires an index"),
-                    args: var_stack.split_off(var_stack.len()-fn_type.params.len()),
+                    args: var_stack.split_off(var_stack.len() - func_type.params.len()),
                 }; 
-
-                if let Some(lhs) = lhs {
-                    vec![Stmt::Assign{
-                        lhs,
-                        rhs: callind_rhs,
-                        type_: lhs_ty.expect("lhs has to have a type"), 
-                    }]
-                } else {
-                    vec![Stmt::Expr(callind_rhs)]
+                match &ty.results[..] {
+                    [] => vec![Stmt::Expr(rhs)], 
+                    [type_] => {
+                        vec![Stmt::Assign {
+                            lhs: fresh_stack_var(&mut var_stack),
+                            rhs,
+                            type_: *type_ 
+                        }]
+                    }
+                    _ => panic!("WebAssembly multi-value extension")
                 }
             }
 
@@ -1315,79 +1303,62 @@ fn wimplify_instrs<'module>(
                 let if_result_val = var_stack.pop().expect("select requires a value on the stack for the then case"); 
                 let else_result_val = var_stack.pop().expect("select requires a value on the stack for the else case");  
                 let type_ = ty.results[0]; 
-                
-                if let Some(lhs) = lhs {
-                    vec![
-                
-                        Stmt::Assign{ 
+                let lhs = fresh_stack_var(&mut var_stack);
+                vec![
+                    Stmt::Assign{ 
+                        lhs, 
+                        rhs: Const(Val::get_default_value(type_)),  
+                        type_ 
+                    },
+                    Stmt::If {
+                        condition,
+                        if_body: Body(vec![Stmt::Assign {
                             lhs, 
-                            rhs: Const(Val::get_default_value(type_)),  
+                            rhs: VarRef(if_result_val), 
                             type_ 
-                        },
+                        }]),
+                        else_body: Some(Body(vec![Stmt::Assign { 
+                            lhs, 
+                            rhs: VarRef(else_result_val), 
+                            type_ 
+                        }]))
+                    }
+                ]     
                 
-                        Stmt::If {
-                            condition,
-                            if_body: Body(vec![Stmt::Assign{
-                                lhs, 
-                                rhs: VarRef(if_result_val), 
-                                type_ 
-                            }]),
-                            else_body: Some(Body(vec![Stmt::Assign{ 
-                                lhs, 
-                                rhs: VarRef(else_result_val), 
-                                type_ 
-                            }]))
-                        }
-                    ]     
-                } else {
-                    panic!("select has to produce a value")
-                }
             }
 
             highlevel::Instr::Local(highlevel::LocalOp::Get, local_idx) => {
-                let rhs = resolve_local_idx_to_var(local_idx.into_inner()); 
-                if let Some(lhs) = lhs {
-                    vec![Stmt::Assign{
-                        lhs, 
-                        rhs: VarRef(rhs), 
-                        type_: lhs_ty.expect("variable that local.get is saving a value into has to have a type"), 
-                    }]
-                } else {
-                    panic!("local.get requires a local variable to save a value into");
-                }
+                vec![Stmt::Assign{
+                    rhs: VarRef(local_idx_to_var(*local_idx)), 
+                    type_: ty.results[0],
+                    lhs: fresh_stack_var(&mut var_stack),
+                }]
             }
 
             highlevel::Instr::Local(highlevel::LocalOp::Set, local_idx) => {
-                let lhs = resolve_local_idx_to_var(local_idx.into_inner()); 
                 vec![Stmt::Assign {
-                    lhs, 
+                    lhs: local_idx_to_var(*local_idx), 
                     rhs: VarRef(var_stack.pop().expect("local.set expects a value on the stack")),
-                    type_: *ty.params.get(0).expect("return type of local.set not found"), 
+                    type_: ty.params[0], 
                 }]            
             }
 
             highlevel::Instr::Local(highlevel::LocalOp::Tee, local_idx) => {
-                let lhs = resolve_local_idx_to_var(local_idx.into_inner()); 
-                let rhs = var_stack.pop().expect("local.tee expects a value on the stack");
-                var_stack.push(rhs); 
                 vec![Stmt::Assign{
-                    lhs,
-                    rhs: VarRef(rhs),
-                    type_: *ty.params.get(0).expect("return type of local.set not found"), 
+                    lhs: local_idx_to_var(*local_idx),
+                    rhs: VarRef(*var_stack.last().expect("local.tee expects a value on the stack")),
+                    type_: ty.params[0],
                 }]
             }
 
             highlevel::Instr::Global(highlevel::GlobalOp::Get, global_ind) => {
                 let global_var = Global(global_ind.into_inner());
-                if let Some(lhs) = lhs {
-                    vec![Stmt::Assign{
-                        lhs, 
-                        rhs: VarRef(global_var),
-                        type_: lhs_ty.expect("return type of global.get not found"), 
-                    }]
-                } else {
-                    panic!("global.get requires a local variable to save a value into");
-                }
+                vec![Stmt::Assign{
+                    rhs: VarRef(global_var),
+                    type_: ty.results[0], 
+                    lhs: fresh_stack_var(&mut var_stack), 
+                }]
+            
             }
 
             highlevel::Instr::Global(highlevel::GlobalOp::Set, global_ind) => {
@@ -1400,16 +1371,15 @@ fn wimplify_instrs<'module>(
             }
 
             highlevel::Instr::Load(loadop, memarg) => {
-                let lhs = lhs.expect("Every load produces a value");
                 let rhs = var_stack.pop().expect("Every load consumes a value");
                 vec![Stmt::Assign{
-                    lhs,
                     rhs: Load {
                         op: *loadop,
                         memarg: *memarg,
                         addr: rhs,
                     },
-                    type_: lhs_ty.expect("return type of load not found"), 
+                    type_: ty.results[0], 
+                    lhs: fresh_stack_var(&mut var_stack), 
                 }]
             }
 
@@ -1423,58 +1393,45 @@ fn wimplify_instrs<'module>(
             }
 
             highlevel::Instr::MemorySize(_) => {
-                if let Some(lhs) = lhs {
-                    vec![Stmt::Assign{ lhs, rhs: MemorySize{}, type_: lhs_ty.expect("lhs requires a type") }]
-                } else {
-                    panic!("memory size has to produce a value"); 
-                }
+                vec![Stmt::Assign{ 
+                    rhs: MemorySize{}, 
+                    type_: ty.results[0],  
+                    lhs: fresh_stack_var(&mut var_stack), 
+                }]                
             }
 
             highlevel::Instr::MemoryGrow(ind) => {
                 assert_eq!(ind.into_inner(), 0, "wasm mvp only has single memory");
-                if let Some(lhs) = lhs {
-                    vec![Stmt::Assign{
-                        lhs, 
-                        rhs: MemoryGrow {
-                            pages: var_stack.pop().expect("memory_grow has to consume a value from stack"),
-                        },
-                        type_: lhs_ty.expect("lhs has to have a type"), 
-                    }]
-                } else {
-                    panic!("memory grow has to produce a value"); 
-                }
+                vec![Stmt::Assign{
+                    rhs: MemoryGrow {
+                        pages: var_stack.pop().expect("memory_grow has to consume a value from stack"),
+                    },
+                    type_: ty.results[0], 
+                    lhs: fresh_stack_var(&mut var_stack)  
+                }]            
             }
 
             highlevel::Instr::Const(val) => {
-                if let Some(lhs) = lhs {
-                    vec![Stmt::Assign{ lhs, rhs: Const(*val), type_: lhs_ty.expect("lhs has to have a type")}]
-                } else {
-                    panic!("const has to produce a value "); 
-                }
+                vec![Stmt::Assign{ 
+                    rhs: Const(*val), 
+                    type_: ty.results[0],
+                    lhs: fresh_stack_var(&mut var_stack), 
+                }]
             }
 
             highlevel::Instr::Numeric(op) => {
-                if let Some(lhs) = lhs {
-                    vec![Stmt::Assign{
-                        lhs, 
-                        rhs: Numeric {
-                            op: *op,
-                            args: var_stack.split_off(var_stack.len()-n_inputs),
-                        },
-                        type_: lhs_ty.expect("lhs requires a type"), 
-                    }]
-                } else {
-                    panic!("numeric op has to produce a value "); 
-                }
+                vec![Stmt::Assign{
+                    rhs: Numeric {
+                        op: *op,
+                        args: var_stack.split_off(var_stack.len()-ty.params.len()),
+                    },
+                    type_: ty.results[0], 
+                    lhs: fresh_stack_var(&mut var_stack), 
+                }]
             }
         });
-    
-        if let Some(lhs) = lhs { 
-            var_stack.push(lhs); 
-            if let Stack(_) = lhs {
-                state.stack_var_count += 1;
-            }
-        }        
+
+        // TODO create Stmt::Assign, create lhs here
     }
 
     Ok((result_instrs, false))
