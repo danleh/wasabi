@@ -57,7 +57,7 @@ impl Function {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash, Ord, PartialOrd)]
 pub enum Func {
     /// If the function had a debug name attached to it (from the `name` custom section).
     Named(String),

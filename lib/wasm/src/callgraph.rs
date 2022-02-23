@@ -41,7 +41,9 @@ impl CallGraph {
         let mut dot_file: String = "".to_owned();
         dot_file.push_str("digraph G {\n"); 
         dot_file.push_str("\trankdir=\"LR\";\n"); 
-        for (from_fn, to_fn) in &self.0 {
+        let mut edges = self.0.iter().collect::<Vec<_>>();
+        edges.sort();
+        for (from_fn, to_fn) in edges {
             dot_file.push_str(&format!("\t\"{}\"->\"{}\";\n", from_fn, to_fn)); 
         }
         dot_file.push_str("}\n");         
@@ -97,7 +99,7 @@ impl fmt::Display for Constraint {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct Options {
     with_type_constraint: bool,
     with_in_table_constraint: bool,
@@ -142,7 +144,7 @@ pub fn collect_target_constraints(
 ) -> Vec<Target> {
     let mut targets = Vec::new();
 
-    let src = module.function(src).expect("source function not found in module");
+    let src = module.function(src.clone()).expect(&format!("source function not found in module: {:?}", src));
 
     // TODO how to handle imported functions? Can they each every exported function?
     // Do we add a direct edge there? Or do we add an abstract "host" node? 
@@ -219,10 +221,11 @@ fn main() {
     println!("{}", wimpl_module);     
 
     let options = Options {
-        with_in_table_constraint: true,
-        with_type_constraint: true,
+        with_type_constraint: true, // Always true.
+        with_in_table_constraint: true, // Assumption: table doesn't change at runtime (by host).
+        ..Options::default()
     };
-    let reachable = vec![Func::Idx(0)].into_iter().collect::<HashSet<_>>();
+    let reachable = vec![Func::Named("main".to_string())].into_iter().collect::<HashSet<_>>();
     let callgraph = reachable_callgraph(&wimpl_module, reachable, options).unwrap();
 
     println!("{}", callgraph.to_dot());
