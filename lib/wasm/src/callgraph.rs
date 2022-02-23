@@ -426,14 +426,15 @@ fn data_gathering () {
             }
         }
 
-        // let reachable_funcs = &wimpl_module
-        // let callgraph_trivial = reachable_callgraph(&wimpl_module, , options)
         fn callgraph_reachable_funcs_avg(path: impl AsRef<Path>, options: Options) -> f64 {
             let wimpl_module = wimpl::wimplify(&path).unwrap();
-            // FIXME add exported flag/name to wimpl function
-            let hl_module = crate::highlevel::Module::from_file(&path).unwrap();
-            let exported_funcs = hl_module.functions().filter(|(_idx, func)| !func.export.is_empty()).map(|(idx, func)| Func::from_idx(idx, &hl_module)).collect::<Vec<_>>();
+            let exported_funcs = wimpl_module.functions.iter()
+                .filter(|func| !func.export.is_empty())
+                .map(|func| func.name())
+                .collect::<HashSet<_>>();
             
+            // TODO imprecise, but sound: assume all exported_funcs as reachable.
+
             let sum_reachable_count: u64 = exported_funcs.iter().map(|f| {
                 let mut reachable = HashSet::new();
                 reachable.insert(f.clone());
