@@ -16,6 +16,27 @@ impl fmt::Display for CallGraph {
 }
 
 impl CallGraph {
+    // pub fn reachable_funcs(&self, initially: HashSet<Func>) -> HashSet<Func> {
+    //     let mut reachable = initially;
+
+    //     for (src, dest) in &self.0 {
+    //         if reachable.contains(src) {
+    //             reachable.insert(dest.clone());
+    //         }
+    //     }
+
+    //     reachable
+    // }
+
+    pub fn all(&self) -> HashSet<Func> {
+        let mut all = HashSet::new();
+        for (src, dest) in &self.0 {
+            all.insert(src.clone());
+            all.insert(dest.clone());
+        }
+        all
+    }
+
     pub fn to_dot(&self) -> String {
         let mut dot_file: String = "".to_owned();
         dot_file.push_str("digraph G {\n"); 
@@ -45,21 +66,22 @@ impl CallGraph {
     }
 }
 
-pub enum Edge {
-    Direct(Func, Func),
-    Constrained(Func, HashSet<Constraint>)
+pub enum Target {
+    Direct(Func),
+    Constrained(HashSet<Constraint>)
 }
 
-impl fmt::Display for Edge {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // match self {
-        //     Edge::Direct(from, to) => write!(f, "{} -> {}", from, to),
-        //     // Edge::Constrained(from, to) => write!(f, "∀ f ∈ module.funcs with  .idx ∈ init(table_elements)"),
-        // }
-        todo!()
-    }
-}
+// impl fmt::Display for Target {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         match self {
+//             Edge::Direct(from, to) => write!(f, "{} -> {}", from, to),
+//             Edge::Constrained(from, to) => write!(f, "∀ f ∈ module.funcs with  .idx ∈ init(table_elements)"),
+//         }
+//         todo!()
+//     }
+// }
 
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub enum Constraint {
     Type(FunctionType),
     InTable,
@@ -75,58 +97,104 @@ impl fmt::Display for Constraint {
     }
 }
 
-pub struct CallGraphOptions {
+#[derive(Clone, Copy)]
+pub struct Options {
     with_type_constraint: bool,
     with_in_table_constraint: bool,
 }
 
-pub fn collect_reachable_constraints(
+pub fn reachable_callgraph(
     module: &wimpl::Module,
     mut reachable: HashSet<Func>,
-    options: CallGraphOptions
-) -> HashSet<Edge> {
-    // let mut edges = HashSet::new();
+    options: Options,
+) -> anyhow::Result<CallGraph> {
+    
+    let mut callgraph_edges = CallGraph(HashSet::new());
 
-    for func in reachable {
-        let func = module.function(func).expect("function name not found in module");
+    // TODO use worklist algorithm, keep track of added edges.
+    let mut changed = true;
+    while changed {
+        for func in &reachable {
+            // Collect constraints for all (currently) reachable functions.
+            let target_constraints = collect_target_constraints(module, func.clone(), options);
+    
+            for target_constraints in target_constraints {
+                // Solve the constraints to concrete edges.
+                let targets = solve_constraints(module, &target_constraints);
+    
+                // Add those as edges to the concrete call graph.
+                callgraph_edges.0.extend(targets.into_iter().map(|target| (func.clone(), target)));
+            }
+        }
 
-        // TODO how to handle imported functions? Can they each every exported function?
-        // Do we add a direct edge there? Or do we add an abstract "host" node? 
-        // Do we merge with a JavaScript call-graph analysis?
-        // let body = func.body;
-
-        // for stmt in body.0 {
-            
-            use wimpl::Stmt::*;
-            use wimpl::Expr::*;
-            // match stmt {
-                
-            //     Assign { lhs: _, rhs: Call{ func, args: _}, type_: _ } |
-            //     Expr(Call { func, args: _}) => {
-            //         edges.insert((fun.name(), func.clone()));
-            //     }
-
-            //     Assign { lhs: _, rhs: CallIndirect { type_, table_idx: _, args: _ }, type_: _ } |
-            //     Expr(CallIndirect { type_, table_idx: _, args: _ }) => {
-            //     }
-            // }
-        // }
-
+        let old_reachable = reachable.clone();
+        reachable = callgraph_edges.all();
+        changed = old_reachable != reachable;
     }
 
-    // edges
-
-    todo!()
+    Ok(callgraph_edges)
 }
 
+pub fn collect_target_constraints(
+    module: &wimpl::Module,
+    src: Func,
+    options: Options
+) -> Vec<Target> {
+    let mut targets = Vec::new();
+
+    let src = module.function(src).expect("source function not found in module");
+
+    // TODO how to handle imported functions? Can they each every exported function?
+    // Do we add a direct edge there? Or do we add an abstract "host" node? 
+    // Do we merge with a JavaScript call-graph analysis?
+    let body = &src.body;
+
+    for stmt in &body.0 {
+        
+        use wimpl::Stmt::*;
+        use wimpl::Expr::*;
+        match stmt {
+            
+            Assign { lhs: _, rhs: Call{ func, args: _}, type_: _ } |
+            Expr(Call { func, args: _}) => targets.push(Target::Direct(func.clone())),
+
+            Assign { lhs: _, rhs: CallIndirect { type_, table_idx: _, args: _ }, type_: _ } |
+            Expr(CallIndirect { type_, table_idx: _, args: _ }) => {
+                let mut constraints = HashSet::new();
+                if options.with_in_table_constraint {
+                    constraints.insert(Constraint::InTable);
+                }
+                if options.with_type_constraint {
+                    constraints.insert(Constraint::Type(type_.clone()));
+                }
+                targets.push(Target::Constrained(constraints));
+            }
+
+            _ => {}
+
+        }
+    }
+
+    targets
+}
+
+/// _All_ constraints must be satisfied, i.e., conjunction over all constraints.
 pub fn solve_constraints(
-    module: &wimpl::Module, 
-    constraints: &HashSet<Constraint>
-) -> HashSet<Func> {
+    module: &wimpl::Module,
+    target_constraints: &Target
+) -> Vec<Func> {
+    let constraints = match target_constraints {
+        Target::Direct(f) => return vec![f.clone()],
+        Target::Constrained(constraints) => constraints,
+    };
+
+    // Start with all functions initially, and remove those not matching a particular constraint.
+    let mut valid_funcs = module.functions.iter().collect::<Vec<_>>();
 
     let mut funcs_in_table: HashSet<&Function> = HashSet::new();
     for table in &module.tables {
-        // TODO interpret table offset for index-based analysis
+        // TODO interpret `table.offset` for index-based analysis, i.e., to get a map from table
+        // index to function index after table initialization (assumption: table stays constant).
         for element in &table.elements {
             for func_idx in &element.functions {
                 let func = module.function_by_idx(*func_idx);
@@ -135,13 +203,13 @@ pub fn solve_constraints(
         }
     } 
 
-    let mut valid_funcs = module.functions.iter().collect::<Vec<_>>();
     for constraint in constraints {
         match constraint {
             Constraint::Type(ty) => valid_funcs.retain(|f| &f.type_ == ty),
             Constraint::InTable => valid_funcs.retain(|f| funcs_in_table.contains(f)),
         }
     }
+
     valid_funcs.into_iter().map(|f| f.name.clone()).collect()
 }
 
@@ -149,9 +217,16 @@ pub fn solve_constraints(
 fn main() {
     let wimpl_module = wimpl::wimplify("tests/callgraph.wasm").expect(""); 
     println!("{}", wimpl_module);     
-    let callgraph = callgraph(&wimpl_module);
+
+    let options = Options {
+        with_in_table_constraint: true,
+        with_type_constraint: true,
+    };
+    let reachable = vec![Func::Idx(0)].into_iter().collect::<HashSet<_>>();
+    let callgraph = reachable_callgraph(&wimpl_module, reachable, options).unwrap();
+
     println!("{}", callgraph.to_dot());
-    callgraph.to_pdf("tests/callgraph-constraint-in-table-ty.pdf").unwrap();
+    callgraph.to_pdf("tests/callgraph.pdf").unwrap();
 }
 
 pub fn callgraph(module: &wimpl::Module) -> CallGraph {
