@@ -1,7 +1,7 @@
 use core::fmt;
-use std::{collections::HashSet, path::Path, io::{self, Write}, process::{Command, Stdio}};
+use std::{collections::{HashSet, HashMap, hash_map::Entry}, path::Path, io::{self, Write}, process::{Command, Stdio}};
 
-use crate::{wimpl::{Func, self, Expr::Call, Function}, FunctionType};
+use crate::{wimpl::{Func, self, Expr::Call, Function, Var}, FunctionType};
 
 pub struct CallGraph(HashSet<(Func, Func)>);
 
@@ -87,22 +87,23 @@ pub enum Target {
 pub enum Constraint {
     Type(FunctionType),
     InTable,
-    // TableIndex(wimpl::Expr),
+    TableIndexExpr(wimpl::Expr),
 }
 
-impl fmt::Display for Constraint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Constraint::Type(ty) => write!(f, ".type == {}", ty),
-            Constraint::InTable => write!(f, ".idx ∈ init(table_elements)"),
-        }
-    }
-}
+// impl fmt::Display for Constraint {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         match self {
+//             Constraint::Type(ty) => write!(f, "type == {}", ty),
+//             Constraint::InTable => write!(f, "idx ∈ init(table_elements)"),
+//         }
+//     }
+// }
 
 #[derive(Clone, Copy, Default)]
 pub struct Options {
     with_type_constraint: bool,
     with_in_table_constraint: bool,
+    with_index_constraint: bool,
 }
 
 pub fn reachable_callgraph(
@@ -155,13 +156,16 @@ pub fn collect_target_constraints(
         
         use wimpl::Stmt::*;
         use wimpl::Expr::*;
+
+        let mut var_expr: HashMap<Var, Option<wimpl::Expr>> = HashMap::new();
+
         match stmt {
             
             Assign { lhs: _, rhs: Call{ func, args: _}, type_: _ } |
             Expr(Call { func, args: _}) => targets.push(Target::Direct(func.clone())),
 
-            Assign { lhs: _, rhs: CallIndirect { type_, table_idx: _, args: _ }, type_: _ } |
-            Expr(CallIndirect { type_, table_idx: _, args: _ }) => {
+            Assign { lhs: _, rhs: CallIndirect { type_, table_idx, args: _ }, type_: _ } |
+            Expr(CallIndirect { type_, table_idx, args: _ }) => {
                 let mut constraints = HashSet::new();
                 if options.with_in_table_constraint {
                     constraints.insert(Constraint::InTable);
@@ -169,7 +173,27 @@ pub fn collect_target_constraints(
                 if options.with_type_constraint {
                     constraints.insert(Constraint::Type(type_.clone()));
                 }
+                if options.with_index_constraint {
+                    match var_expr.get(table_idx) {
+                        Some(Some(expr)) => {
+                            constraints.insert(Constraint::TableIndexExpr(expr.clone()));
+                        }
+                        // Over-approximation.
+                        Some(None) => {},
+                        None => unreachable!("uninitialized variable {}", table_idx),
+                    }
+                }
                 targets.push(Target::Constrained(constraints));
+            }
+
+            // Update variables
+            // FIXME call_indirect itself might be a RHS of an assign, then this case doesn't match.
+            // FIXME assignment of variable textually AFTER the call_indirect usage, might still
+            // flow into the variable in case of loops -> need to do variable map before.
+            Assign { lhs: var, type_, rhs: expr } => {
+                var_expr.entry(*var)
+                    .and_modify(|old_expr| *old_expr = None)
+                    .or_insert(Some(expr.clone()));
             }
 
             _ => {}
@@ -209,6 +233,7 @@ pub fn solve_constraints(
         match constraint {
             Constraint::Type(ty) => valid_funcs.retain(|f| &f.type_ == ty),
             Constraint::InTable => valid_funcs.retain(|f| funcs_in_table.contains(f)),
+            Constraint::TableIndexExpr(expr) => todo!("{}", expr),
         }
     }
 
@@ -223,6 +248,7 @@ fn main() {
     let options = Options {
         with_type_constraint: true, // Always true.
         with_in_table_constraint: true, // Assumption: table doesn't change at runtime (by host).
+        with_index_constraint: true,
         ..Options::default()
     };
     let reachable = vec![Func::Named("main".to_string())].into_iter().collect::<HashSet<_>>();
