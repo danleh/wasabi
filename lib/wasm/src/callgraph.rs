@@ -7,9 +7,9 @@ use test_utilities::*;
 
 pub struct CallGraph(HashSet<(Func, Func)>);
 
-impl fmt::Display for CallGraph {
+impl fmt::Debug for CallGraph {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        println!("{:?}", self.0); 
+        writeln!(f, "{:?}", self.0); 
         for (x, y) in self.0.iter() {
             writeln!(f, "{} {}", x, y).expect("");
         }; 
@@ -20,13 +20,13 @@ impl fmt::Display for CallGraph {
 impl CallGraph {
     // pub fn reachable_funcs(&self, initially: HashSet<Func>) -> HashSet<Func> {
     //     let mut reachable = initially;
-
+    //
     //     for (src, dest) in &self.0 {
     //         if reachable.contains(src) {
     //             reachable.insert(dest.clone());
     //         }
     //     }
-
+    //
     //     reachable
     // }
 
@@ -75,16 +75,6 @@ pub enum Target {
     Constrained(HashSet<Constraint>)
 }
 
-// impl fmt::Display for Target {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         match self {
-//             Edge::Direct(from, to) => write!(f, "{} -> {}", from, to),
-//             Edge::Constrained(from, to) => write!(f, "∀ f ∈ module.funcs with  .idx ∈ init(table_elements)"),
-//         }
-//         todo!()
-//     }
-// }
-
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub enum Constraint {
     Type(FunctionType),
@@ -92,15 +82,6 @@ pub enum Constraint {
     // Exported
     TableIndexExpr(wimpl::Expr),
 }
-
-// impl fmt::Display for Constraint {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         match self {
-//             Constraint::Type(ty) => write!(f, "type == {}", ty),
-//             Constraint::InTable => write!(f, "idx ∈ init(table_elements)"),
-//         }
-//     }
-// }
 
 #[derive(Clone, Copy, Default)]
 pub struct Options {
@@ -163,6 +144,8 @@ pub fn collect_target_constraints(
         use wimpl::Expr::*;
 
         match stmt {
+
+            // FIXME recursively go into block, loop, if bodies!
             
             Assign { lhs: _, rhs: Call{ func, args: _}, type_: _ } |
             Expr(Call { func, args: _}) => targets.push(Target::Direct(func.clone())),
@@ -193,6 +176,7 @@ pub fn collect_target_constraints(
             // FIXME call_indirect itself might be a RHS of an assign, then this case doesn't match.
             // FIXME assignment of variable textually AFTER the call_indirect usage, might still
             // flow into the variable in case of loops -> need to do variable map before.
+            // TODO fix both issues by pulling var_expr updating up into a separate forward traversal that gives a var_expr_map
             Assign { lhs: var, type_, rhs: expr } => {
                 // println!("{}\nbefore {:?}", stmt, var_expr);
                 var_expr.entry(*var)
@@ -265,102 +249,30 @@ fn main() {
     callgraph.to_pdf("tests/callgraph.pdf").unwrap();
 }
 
-pub fn callgraph(module: &wimpl::Module) -> CallGraph {
-    // TODO split "collecting constraints" from "solving constraints to a graph"
-     
-    let mut graph: HashSet<(Func, Func)> = HashSet::new();
-    
-    for fun in &module.functions {
-        for instr in &fun.body.0 {
-            use wimpl::Stmt::*;
-            use wimpl::Expr::*;
-            match instr {
-                
-                Assign { lhs: _, rhs: Call{ func, args: _}, type_: _ } |
-                Expr(Call { func, args: _}) => {
-                    graph.insert((fun.name(), func.clone()));
-                }
+// #[test]
+// fn create_graph() {
+//     // TODO 2-3 function wasm file, 1 direct call, 2 call_indirect, 5 functions in total
+//     let wimpl_module = wimpl::wimplify("tests/wimpl-wasm-handwritten/calc-dce/add-dce.wasm").expect(""); 
+//     println!("{}", wimpl_module); 
+//     let callgraph = callgraph(&wimpl_module); 
+//     println!("{}", callgraph.to_dot());
+//     callgraph.to_pdf("tests/wimpl/calc-dce/callgraph.pdf").unwrap();
+// }
 
-                Assign { lhs: _, rhs: CallIndirect { type_, table_idx: _, args: _ }, type_: _ } |
-                Expr(CallIndirect { type_, table_idx: _, args: _ }) => {
-                    let mut funcs_in_table: HashSet<&Function> = HashSet::new();
-                    for tab in &module.tables {
-                        // TODO interpret table offset for index-based analysis
-                        for elem in &tab.elements {
-                            for func_idx in &elem.functions {
-                                let func = module.function_by_idx(*func_idx);
-                                funcs_in_table.insert(func); 
-                            }
-                        }
-                    } 
-                    
-                    // All functions, no constraint at all.
-                    // for f in &module.functions {
-                    //     graph.insert((fun.name(), f.name()));
-                    // }
-
-                    // Only functions in table, but no ty constraint.
-                    // for func in &funcs_in_table {
-                    //     graph.insert((fun.name(), func.name())); 
-                    // }
-
-                    // All functions, but with ty constraint.
-                    // for func in &module.functions {
-                    //     if &func.type_ == type_ {
-                    //         graph.insert((fun.name(), func.name())); 
-                    //     }
-                    // }
-
-                    // Functions in table AND type constraint.
-                    for func in &funcs_in_table {
-                        if &func.type_ == type_ {
-                            graph.insert((fun.name(), func.name())); 
-                        }
-                    }
-
-                    // TODO Daniel make constraints B & C orthogonal
-                }
-                _ => (), 
-                
-            }
-        }
-    }
-
-    // Option D): index based analysis???
-    CallGraph(graph) 
-    //graph
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{wimpl::wimplify, callgraph::CallGraph, callgraph};
- 
-}
-
-#[test]
-fn create_graph() {
-    // TODO 2-3 function wasm file, 1 direct call, 2 call_indirect, 5 functions in total
-    let wimpl_module = wimpl::wimplify("tests/wimpl-wasm-handwritten/calc-dce/add-dce.wasm").expect(""); 
-    println!("{}", wimpl_module); 
-    let callgraph = callgraph(&wimpl_module); 
-    println!("{}", callgraph.to_dot());
-    callgraph.to_pdf("tests/wimpl/calc-dce/callgraph.pdf").unwrap();
-}
-
-#[test]
-fn calc_virtual() {
-    let wimpl_module = wimpl::wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect(""); 
-    println!("{}", wimpl_module);     
-    let callgraph = callgraph(&wimpl_module); 
-    println!("{}", callgraph.to_dot());
-    callgraph.to_pdf("tests/wimpl/calc-dce/callgraph.pdf").unwrap();
-}
+// #[test]
+// fn calc_virtual() {
+//     let wimpl_module = wimpl::wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect(""); 
+//     println!("{}", wimpl_module);     
+//     let callgraph = callgraph(&wimpl_module); 
+//     println!("{}", callgraph.to_dot());
+//     callgraph.to_pdf("tests/wimpl/calc-dce/callgraph.pdf").unwrap();
+// }
 
 #[test]
 fn data_gathering () {
     
     let mut file = File::create("data.csv").unwrap();
-    writeln!(file, "path, num_functions, num_calls, num_ind_calls, unq functions in elem, num_funcs_with_call_ind, num_funcs_with_memory_access, reachable_count_trivial, reachable_count_ty_only, reachable_count_in_table_only, reachable_count_ty_and_in_table").unwrap(); 
+    writeln!(file, "path, num_functions, num_functions_exported, num_calls, num_ind_calls, unq functions in elem, num_funcs_with_call_ind, num_funcs_with_memory_access, reachable_ratio_trivial, reachable_ratio_ty_only, reachable_ratio_in_table_only, reachable_ratio_ty_and_in_table").unwrap(); 
     
     const WASM_TEST_INPUTS_DIR: &str = "tests/";
 
@@ -372,6 +284,7 @@ fn data_gathering () {
         // let callgraph = callgraph(&wimpl_module); 
 
         let num_functions = wimpl_module.functions.len(); 
+        let num_functions_exported = wimpl_module.functions.iter().filter(|func| !func.export.is_empty()).count();
         let mut num_calls = 0; 
         let mut num_ind_calls = 0; 
         let mut num_funcs_with_call_ind = 0; 
@@ -426,6 +339,18 @@ fn data_gathering () {
             }
         }
 
+        fn callgraph_reachable_funcs_ratio(path: impl AsRef<Path>, options: Options) -> f64 {
+            let wimpl_module = wimpl::wimplify(&path).unwrap();
+            let exported_funcs = wimpl_module.functions.iter()
+                .filter(|func| !func.export.is_empty())
+                .map(|func| func.name())
+                .collect::<HashSet<_>>();
+            
+            reachable_callgraph(&wimpl_module, exported_funcs, options).unwrap().all().len() as f64 
+                / wimpl_module.functions.len() as f64
+        }
+        
+        // TODO: remove because (i) not comparable number (not a percentage) (ii) super slow.
         fn callgraph_reachable_funcs_avg(path: impl AsRef<Path>, options: Options) -> f64 {
             let wimpl_module = wimpl::wimplify(&path).unwrap();
             let exported_funcs = wimpl_module.functions.iter()
@@ -433,8 +358,6 @@ fn data_gathering () {
                 .map(|func| func.name())
                 .collect::<HashSet<_>>();
             
-            // TODO imprecise, but sound: assume all exported_funcs as reachable.
-
             let sum_reachable_count: u64 = exported_funcs.iter().map(|f| {
                 let mut reachable = HashSet::new();
                 reachable.insert(f.clone());
@@ -443,24 +366,25 @@ fn data_gathering () {
             }).sum();
             (sum_reachable_count as f64) / (exported_funcs.len() as f64)
         }
-        let reachable_count_trivial = callgraph_reachable_funcs_avg(&path, Options {
+        
+        let reachable_ratio_trivial = callgraph_reachable_funcs_ratio(&path, Options {
             with_type_constraint: false,
             with_in_table_constraint: false,
             with_index_constraint: false,
         });
-        let reachable_count_ty_only = callgraph_reachable_funcs_avg(&path, Options {
+        let reachable_ratio_ty_only = callgraph_reachable_funcs_ratio(&path, Options {
             with_type_constraint: true,
             with_in_table_constraint: false,
             with_index_constraint: false,
         });
-        let reachable_count_in_table_only = callgraph_reachable_funcs_avg(&path, Options {
+        let reachable_ratio_in_table_only = callgraph_reachable_funcs_ratio(&path, Options {
             with_type_constraint: false,
             with_in_table_constraint: true,
             with_index_constraint: false,
         });
         // I believe this is what Wassail does
         // https://github.com/acieroid/wassail/blob/3187d8f2e3ffbbc2b3d90233da6cd25589110038/lib/analysis/call_graph/call_graph.ml#L16
-        let reachable_count_ty_and_in_table = callgraph_reachable_funcs_avg(&path, Options {
+        let reachable_ratio_ty_and_in_table = callgraph_reachable_funcs_ratio(&path, Options {
             with_type_constraint: true,
             with_in_table_constraint: true,
             with_index_constraint: false,
@@ -481,11 +405,11 @@ fn data_gathering () {
         
         // wasp does also neither of the above, they (unsoundly) disregard all call_indirects
 
-        writeln!(file, "\"{}\",{},{},{},{},{},{},{},{},{},{}", 
-            path.display(), num_functions, num_calls, num_ind_calls, 
+        writeln!(file, "\"{}\",{},{},{},{},{},{},{},{},{},{},{}", 
+            path.display(), num_functions, num_functions_exported, num_calls, num_ind_calls, 
             element_funcs.len(), num_funcs_with_call_ind, 
-            num_funcs_with_memory_access,
-            reachable_count_trivial, reachable_count_ty_only, reachable_count_in_table_only, reachable_count_ty_and_in_table
+            num_funcs_with_memory_access, 
+            reachable_ratio_trivial, reachable_ratio_ty_only, reachable_ratio_in_table_only, reachable_ratio_ty_and_in_table
         ).unwrap();
     }
 }
