@@ -32,8 +32,10 @@ pub fn wasm_files(root_dir: impl AsRef<Path>) -> Result<Vec<PathBuf>, String> {
     for entry in WalkDir::new(&root_dir) {
         let path = entry.map_err(|err| err.to_string())?.path().to_owned();
         if let Some("wasm") = path.extension().and_then(|os_str| os_str.to_str()) {
-            if !path.components().flat_map(|comp| comp.as_os_str().to_str()).any(|dir| dir == "out") {
-                wasm_files.push(path);
+            if std::fs::metadata(&path).map_err(|err| err.to_string())?.is_dir() {
+                if !path.components().flat_map(|comp| comp.as_os_str().to_str()).any(|dir| dir == "out") {
+                    wasm_files.push(path);
+                }
             }
         }
     }
