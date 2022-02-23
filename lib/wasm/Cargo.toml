@@ -14,6 +14,7 @@ ordered-float = "1"
 nom = "7.1.0"
 lazy_static = "1.4.0"
 thiserror = "1.0.30"
+anyhow = "1.0.55"
 
 [dev-dependencies]
 test_utilities = { path = "../test_utilities" }
