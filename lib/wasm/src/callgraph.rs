@@ -1,7 +1,9 @@
 use core::fmt;
-use std::{collections::{HashSet, HashMap, hash_map::Entry}, path::Path, io::{self, Write}, process::{Command, Stdio}};
+use std::{collections::{HashSet, HashMap, hash_map::Entry}, path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File};
 
 use crate::{wimpl::{Func, self, Expr::Call, Function, Var}, FunctionType};
+
+// use test_utilities::*; 
 
 pub struct CallGraph(HashSet<(Func, Func)>);
 
@@ -349,4 +351,76 @@ fn calc_virtual() {
     let callgraph = callgraph(&wimpl_module); 
     println!("{}", callgraph.to_dot());
     callgraph.to_pdf("tests/wimpl/calc-dce/callgraph.pdf").unwrap();
+}
+
+#[test]
+fn data_gathering () {
+    
+    let mut file = File::create("data.csv").unwrap();
+        
+    let name = "add.wasm";
+    let wimpl_module = wimpl::wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect(""); 
+    let callgraph = callgraph(&wimpl_module); 
+
+    let num_functions = wimpl_module.functions.len(); 
+    let mut num_calls = 0; 
+    let mut num_ind_calls = 0; 
+    let mut num_funcs_with_call_ind = 0; 
+    let mut num_funcs_with_memory_access = 0; //why is this important 
+
+    for fun in wimpl_module.functions {
+        let mut flag_call_ind = false; 
+        let mut flag_load_store = false; 
+        
+        for stmt in fun.body.0 {
+            use wimpl::Stmt::*;
+            use wimpl::Expr::*;
+            match stmt {
+                Assign { lhs: _, rhs: Call{ func: _, args: _}, type_: _ } |
+                Expr(Call { func: _, args: _}) => {
+                    num_calls += 1; 
+                }, 
+
+                Assign { lhs: _, rhs: CallIndirect { type_: _, table_idx: _, args: _ }, type_: _ } |
+                Expr(CallIndirect { type_: _, table_idx: _, args: _ }) => {
+                    num_ind_calls += 1;
+                    flag_call_ind = true; 
+                },
+                
+                Store { op: _, memarg: _, addr: _, value: _ } |
+                Assign { lhs:_, type_:_, rhs: Load{op:_, memarg:_, addr:_} } => {
+                    flag_load_store = true; 
+                }, 
+
+                _ => (), 
+                
+            }
+        }
+        
+        if flag_call_ind {
+            num_funcs_with_call_ind += 1; 
+        }
+
+        if flag_load_store {
+            num_funcs_with_memory_access += 1; 
+        }
+    } 
+
+    let mut element_funcs = HashSet::new(); 
+    for tab in &wimpl_module.tables {
+        for elem in &tab.elements {
+            for func_idx in &elem.functions {
+                //let func = wimpl_module.function_by_idx(*func_idx);
+                element_funcs.insert(func_idx.into_inner()); 
+            }
+        }
+    }
+    
+    let csv_row = format!("{},{},{},{},{},{},{}", 
+        name, num_functions, num_calls, num_ind_calls, 
+        element_funcs.len(), num_funcs_with_call_ind, 
+        num_funcs_with_memory_access
+    ); 
+    file.write_all(csv_row.as_bytes()); 
+
 }
