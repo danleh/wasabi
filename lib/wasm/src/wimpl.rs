@@ -47,7 +47,7 @@ pub struct Function {
     // TODO what about imported functions? I think we should make body an Option.
     pub body: Body,
 
-    //pub export: Vec<String>,
+    pub export: Vec<String>,
     //pub param_names: Vec<Option<String>>,
 }
 
@@ -278,6 +278,13 @@ impl fmt::Display for Module {
 
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some((last, rest)) = self.export.split_last() {
+            write!(f, "export ")?;
+            for name in rest {
+                write!(f, "{:?}, ", name)?;
+            }
+            writeln!(f, "{:?}", last)?;
+        }
         write!(f, "func {}", self.name)?;
         write!(f, " (")?;
         for (i, ty) in self.type_.params.iter().enumerate() {
@@ -1469,10 +1476,11 @@ pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
             result_instrs.append(&mut stmts);
         }
 
-        wimpl_funcs.push(Function{
+        wimpl_funcs.push(Function {
             type_: func.type_.clone(),
             body: Body(result_instrs),
-            name: Func::from_idx(idx, module)
+            name: Func::from_idx(idx, module),
+            export: func.export.clone(), 
         });
     }
 
@@ -1483,8 +1491,9 @@ pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
     })
 }
 
-pub fn wimplify(path: &str) -> Result<Module, String> {
-    wimplify_module(&highlevel::Module::from_file(path).expect("path should point to a valid wasm file"))
+// TODO add that as an impl to wimpl::Module as Module::from_file
+pub fn wimplify(path: impl AsRef<Path>) -> Result<Module, String> {
+    wimplify_module(&highlevel::Module::from_file(path.as_ref()).expect("path should point to a valid wasm file"))
 }
 
 #[cfg(test)]
@@ -1530,12 +1539,14 @@ mod tests {
                         Function {
                             name: Func::Idx(0),
                             type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
-                            body: Body(Vec::new())
+                            body: Body(Vec::new()), 
+                            export: Vec::new()
                         },
                         Function {
                             name: Func::Idx(1),
                             type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
-                            body: Body(Vec::new())
+                            body: Body(Vec::new()), 
+                            export: Vec::new()
                         },
                     ],
                     globals: Vec::new(),
@@ -1547,6 +1558,33 @@ mod tests {
 }
 ",
                 "module with several empty fuctions"
+            ),(
+                Module {
+                    functions: vec![
+                        Function {
+                            name: Func::Idx(0),
+                            type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
+                            body: Body(Vec::new()), 
+                            export: vec!["name1".to_string(), "name2".to_string()],                        
+                        },
+                        Function {
+                            name: Func::Idx(1),
+                            type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
+                            body: Body(Vec::new()), 
+                            export: vec!["name3".to_string()],
+                        },
+                    ],
+                    globals: Vec::new(),
+                    tables: Vec::new(),
+                },
+                r#"module {
+  export "name1", "name2"
+  func f0 () -> () @label0: {}
+  export "name3"
+  func f1 () -> () @label0: {}
+}
+"#,
+                "module with several empty fuctions"
             ),
             (
                 Module {
@@ -1554,7 +1592,8 @@ mod tests {
                         Function {
                             name: Func::Idx(0),
                             type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
-                            body: Body(Vec::new())
+                            body: Body(Vec::new()), 
+                            export: Vec::new()
                         },
                         Function {
                             name: Func::Idx(1),
@@ -1570,7 +1609,8 @@ mod tests {
                                     rhs: Const(I32(4)),
                                     type_: ValType::I32,
                                 },
-                            ])
+                            ]), 
+                            export: Vec::new()
                         },
                     ],
                     globals: Vec::new(),
@@ -1593,7 +1633,8 @@ mod tests {
                 Function {
                     name: Func::Idx(0),
                     type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
-                    body: Body(Vec::new())
+                    body: Body(Vec::new()), 
+                    export: Vec::new()
                 },
                 "func f0 () -> () @label0: {}",
                 "empty function"
@@ -1602,7 +1643,8 @@ mod tests {
                 Function {
                     name: Func::Idx(1),
                     type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() },
-                    body: Body(Vec::new())
+                    body: Body(Vec::new()), 
+                    export: Vec::new()
                 },
                 "func f1 (p0: i32) -> (r0: f64) @label0: {}",
                 "empty function with types"
@@ -1617,7 +1659,8 @@ mod tests {
                             rhs: Const(I32(3)),
                             type_: ValType::I32,
                         }
-                    ])
+                    ]), 
+                    export: Vec::new()
                 },
                 "func f1 (p0: i32) -> (r0: f64) @label0: { s0: i32 = i32.const 3 }",
                 "function with i32.const in body"
@@ -1637,7 +1680,8 @@ mod tests {
                             rhs: Const(I32(4)),
                             type_: ValType::I32,
                         },
-                    ])
+                    ]), 
+                    export: Vec::new()
                 },
                 "func f1 (p0: i32) -> (r0: f64) @label0: {
   s0: i32 = i32.const 3
