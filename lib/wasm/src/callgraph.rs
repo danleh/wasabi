@@ -3,7 +3,7 @@ use std::{collections::{HashSet, HashMap, hash_map::Entry}, path::Path, io::{sel
 
 use crate::{wimpl::{Func, self, Expr::Call, Function, Var}, FunctionType};
 
-// use test_utilities::*; 
+use test_utilities::*; 
 
 pub struct CallGraph(HashSet<(Func, Func)>);
 
@@ -89,6 +89,7 @@ pub enum Target {
 pub enum Constraint {
     Type(FunctionType),
     InTable,
+    // Exported
     TableIndexExpr(wimpl::Expr),
 }
 
@@ -195,6 +196,7 @@ pub fn collect_target_constraints(
             Assign { lhs: var, type_, rhs: expr } => {
                 // println!("{}\nbefore {:?}", stmt, var_expr);
                 var_expr.entry(*var)
+                    // Overapproximate if there is more than one assignment to a variable.
                     .and_modify(|old_expr| *old_expr = None)
                     .or_insert(Some(expr.clone()));
                 // println!("after {:?}", var_expr);
@@ -237,6 +239,7 @@ pub fn solve_constraints(
         match constraint {
             Constraint::Type(ty) => valid_funcs.retain(|f| &f.type_ == ty),
             Constraint::InTable => valid_funcs.retain(|f| funcs_in_table.contains(f)),
+            Constraint::TableIndexExpr(wimpl::Expr::Const(val)) => todo!("constant: {}", val),
             Constraint::TableIndexExpr(expr) => todo!("{}", expr),
         }
     }
@@ -252,7 +255,7 @@ fn main() {
     let options = Options {
         with_type_constraint: true, // Always true.
         with_in_table_constraint: true, // Assumption: table doesn't change at runtime (by host).
-        with_index_constraint: true,
+        // with_index_constraint: true,
         ..Options::default()
     };
     let reachable = vec![Func::Named("main".to_string())].into_iter().collect::<HashSet<_>>();
@@ -357,70 +360,131 @@ fn calc_virtual() {
 fn data_gathering () {
     
     let mut file = File::create("data.csv").unwrap();
-        
-    let name = "add.wasm";
-    let wimpl_module = wimpl::wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect(""); 
-    let callgraph = callgraph(&wimpl_module); 
-
-    let num_functions = wimpl_module.functions.len(); 
-    let mut num_calls = 0; 
-    let mut num_ind_calls = 0; 
-    let mut num_funcs_with_call_ind = 0; 
-    let mut num_funcs_with_memory_access = 0; //why is this important 
-
-    for fun in wimpl_module.functions {
-        let mut flag_call_ind = false; 
-        let mut flag_load_store = false; 
-        
-        for stmt in fun.body.0 {
-            use wimpl::Stmt::*;
-            use wimpl::Expr::*;
-            match stmt {
-                Assign { lhs: _, rhs: Call{ func: _, args: _}, type_: _ } |
-                Expr(Call { func: _, args: _}) => {
-                    num_calls += 1; 
-                }, 
-
-                Assign { lhs: _, rhs: CallIndirect { type_: _, table_idx: _, args: _ }, type_: _ } |
-                Expr(CallIndirect { type_: _, table_idx: _, args: _ }) => {
-                    num_ind_calls += 1;
-                    flag_call_ind = true; 
-                },
-                
-                Store { op: _, memarg: _, addr: _, value: _ } |
-                Assign { lhs:_, type_:_, rhs: Load{op:_, memarg:_, addr:_} } => {
-                    flag_load_store = true; 
-                }, 
-
-                _ => (), 
-                
-            }
-        }
-        
-        if flag_call_ind {
-            num_funcs_with_call_ind += 1; 
-        }
-
-        if flag_load_store {
-            num_funcs_with_memory_access += 1; 
-        }
-    } 
-
-    let mut element_funcs = HashSet::new(); 
-    for tab in &wimpl_module.tables {
-        for elem in &tab.elements {
-            for func_idx in &elem.functions {
-                //let func = wimpl_module.function_by_idx(*func_idx);
-                element_funcs.insert(func_idx.into_inner()); 
-            }
-        }
-    }
+    writeln!(file, "path, num_functions, num_calls, num_ind_calls, unq functions in elem, num_funcs_with_call_ind, num_funcs_with_memory_access, reachable_count_trivial, reachable_count_ty_only, reachable_count_in_table_only, reachable_count_ty_and_in_table").unwrap(); 
     
-    let csv_row = format!("{},{},{},{},{},{},{}", 
-        name, num_functions, num_calls, num_ind_calls, 
-        element_funcs.len(), num_funcs_with_call_ind, 
-        num_funcs_with_memory_access
-    ); 
-    file.write_all(csv_row.as_bytes()); 
+    const WASM_TEST_INPUTS_DIR: &str = "tests/";
 
+    for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
+        println!("{}", path.display());
+        let wimpl_module = wimpl::wimplify(&path).expect(&format!("could not decode valid wasm file '{}'", path.display()));
+        
+        // let wimpl_module = wimpl::wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect(""); 
+        // let callgraph = callgraph(&wimpl_module); 
+
+        let num_functions = wimpl_module.functions.len(); 
+        let mut num_calls = 0; 
+        let mut num_ind_calls = 0; 
+        let mut num_funcs_with_call_ind = 0; 
+        let mut num_funcs_with_memory_access = 0; 
+
+        for fun in wimpl_module.functions {
+            let mut flag_call_ind = false; 
+            let mut flag_load_store = false; 
+            
+            for stmt in fun.body.0 {
+                use wimpl::Stmt::*;
+                use wimpl::Expr::*;
+                match stmt {
+                    Assign { lhs: _, rhs: Call{ func: _, args: _}, type_: _ } |
+                    Expr(Call { func: _, args: _}) => {
+                        num_calls += 1; 
+                    }, 
+
+                    Assign { lhs: _, rhs: CallIndirect { type_: _, table_idx: _, args: _ }, type_: _ } |
+                    Expr(CallIndirect { type_: _, table_idx: _, args: _ }) => {
+                        num_ind_calls += 1;
+                        flag_call_ind = true; 
+                    },
+                    
+                    Store { op: _, memarg: _, addr: _, value: _ } |
+                    Assign { lhs:_, type_:_, rhs: Load{op:_, memarg:_, addr:_} } |
+                    Expr(Load{op:_, memarg:_, addr:_}) => {
+                        flag_load_store = true; 
+                    }, 
+
+                    _ => (), 
+                    
+                }
+            }
+            
+            if flag_call_ind {
+                num_funcs_with_call_ind += 1; 
+                if flag_load_store {
+                    num_funcs_with_memory_access += 1; 
+                }
+            }
+
+        } 
+
+        let mut element_funcs = HashSet::new(); 
+        for tab in &wimpl_module.tables {
+            for elem in &tab.elements {
+                for func_idx in &elem.functions {
+                    //let func = wimpl_module.function_by_idx(*func_idx);
+                    element_funcs.insert(func_idx.into_inner()); 
+                }
+            }
+        }
+
+        // let reachable_funcs = &wimpl_module
+        // let callgraph_trivial = reachable_callgraph(&wimpl_module, , options)
+        fn callgraph_reachable_funcs_avg(path: impl AsRef<Path>, options: Options) -> f64 {
+            let wimpl_module = wimpl::wimplify(&path).unwrap();
+            // FIXME add exported flag/name to wimpl function
+            let hl_module = crate::highlevel::Module::from_file(&path).unwrap();
+            let exported_funcs = hl_module.functions().filter(|(_idx, func)| !func.export.is_empty()).map(|(idx, func)| Func::from_idx(idx, &hl_module)).collect::<Vec<_>>();
+            
+            let sum_reachable_count: u64 = exported_funcs.iter().map(|f| {
+                let mut reachable = HashSet::new();
+                reachable.insert(f.clone());
+                let reachable_funcs_count = reachable_callgraph(&wimpl_module, reachable, options).unwrap().all().len();
+                reachable_funcs_count as u64
+            }).sum();
+            (sum_reachable_count as f64) / (exported_funcs.len() as f64)
+        }
+        let reachable_count_trivial = callgraph_reachable_funcs_avg(&path, Options {
+            with_type_constraint: false,
+            with_in_table_constraint: false,
+            with_index_constraint: false,
+        });
+        let reachable_count_ty_only = callgraph_reachable_funcs_avg(&path, Options {
+            with_type_constraint: true,
+            with_in_table_constraint: false,
+            with_index_constraint: false,
+        });
+        let reachable_count_in_table_only = callgraph_reachable_funcs_avg(&path, Options {
+            with_type_constraint: false,
+            with_in_table_constraint: true,
+            with_index_constraint: false,
+        });
+        // I believe this is what Wassail does
+        // https://github.com/acieroid/wassail/blob/3187d8f2e3ffbbc2b3d90233da6cd25589110038/lib/analysis/call_graph/call_graph.ml#L16
+        let reachable_count_ty_and_in_table = callgraph_reachable_funcs_avg(&path, Options {
+            with_type_constraint: true,
+            with_in_table_constraint: true,
+            with_index_constraint: false,
+        });
+
+        // Binaryen meta-DCE does none of the above, instead (citing my email from July 2021)
+        // indirect calls just adds all functions in the indirect function call table initializer ("elements section") as reachability roots, no further analysis
+        // see https://github.com/WebAssembly/binaryen/blob/11ada63fbb7ba982c92f22fa1fb0e39cebe3f194/src/tools/wasm-metadce.cpp#L228
+        // so it is neither dependent on the set of reachable functions at the start
+        // nor type based
+        // so roughly like in_table_only, but without the iterative part of our algorithm
+
+        // Twiggy: essentially equivalent to Binaryen meta-DCE
+        // adds one reachability root for the whole indirect call table and adds outgoing edges from that pseudo node to all functions in the table. I.e., all indirect calls are collapsed into one reachability class, not type-aware for indirect calls
+        // https://github.com/rustwasm/twiggy/blob/195feee4045f0b89d7cba7492900131ac89803dd/parser/wasm_parse/mod.rs#L664 (table as root)
+        // https://github.com/rustwasm/twiggy/blob/195feee4045f0b89d7cba7492900131ac89803dd/parser/wasm_parse/mod.rs#L858 (table -> element)
+        // https://github.com/rustwasm/twiggy/blob/195feee4045f0b89d7cba7492900131ac89803dd/parser/wasm_parse/mod.rs#L864 (edge from element -> concrete func idx)
+        
+        // wasp does also neither of the above, they (unsoundly) disregard all call_indirects
+
+        writeln!(file, "\"{}\",{},{},{},{},{},{},{},{},{},{}", 
+            path.display(), num_functions, num_calls, num_ind_calls, 
+            element_funcs.len(), num_funcs_with_call_ind, 
+            num_funcs_with_memory_access,
+            reachable_count_trivial, reachable_count_ty_only, reachable_count_in_table_only, reachable_count_ty_and_in_table
+        ).unwrap();
+    }
 }

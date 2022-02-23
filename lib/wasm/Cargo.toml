@@ -15,9 +15,10 @@ nom = "7.1.0"
 lazy_static = "1.4.0"
 thiserror = "1.0.30"
 anyhow = "1.0.55"
+# TODO move to dev-dependencies by moving imports into blocks of #[cfg(test)]
+test_utilities = { path = "../test_utilities" }
 
 [dev-dependencies]
-test_utilities = { path = "../test_utilities" }
 bencher = "0.1.5"
 
 [profile.test]
