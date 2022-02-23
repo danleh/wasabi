@@ -152,12 +152,12 @@ pub fn collect_target_constraints(
     // Do we merge with a JavaScript call-graph analysis?
     let body = &src.body;
 
+    let mut var_expr: HashMap<Var, Option<wimpl::Expr>> = HashMap::new();
+
     for stmt in &body.0 {
         
         use wimpl::Stmt::*;
         use wimpl::Expr::*;
-
-        let mut var_expr: HashMap<Var, Option<wimpl::Expr>> = HashMap::new();
 
         match stmt {
             
@@ -180,7 +180,7 @@ pub fn collect_target_constraints(
                         }
                         // Over-approximation.
                         Some(None) => {},
-                        None => unreachable!("uninitialized variable {}", table_idx),
+                        None => unreachable!("uninitialized variable `{}`\nin: {}\nvariable map: {:?}", table_idx, src, var_expr),
                     }
                 }
                 targets.push(Target::Constrained(constraints));
@@ -191,9 +191,11 @@ pub fn collect_target_constraints(
             // FIXME assignment of variable textually AFTER the call_indirect usage, might still
             // flow into the variable in case of loops -> need to do variable map before.
             Assign { lhs: var, type_, rhs: expr } => {
+                // println!("{}\nbefore {:?}", stmt, var_expr);
                 var_expr.entry(*var)
                     .and_modify(|old_expr| *old_expr = None)
                     .or_insert(Some(expr.clone()));
+                // println!("after {:?}", var_expr);
             }
 
             _ => {}
