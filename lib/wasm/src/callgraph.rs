@@ -102,7 +102,7 @@ pub fn reachable_callgraph(
 
     // Collect "declarative constraints" once per function.
     // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
-    let function_targets_constraints: HashMap<Func, HashSet<Target>> = module.functions.iter()
+    let call_target_constraints: HashMap<Func, HashSet<Target>> = module.functions.iter()
         .map(|func| {
             (func.name(), collect_target_constraints(module, func.name(), options))
         })
@@ -111,6 +111,7 @@ pub fn reachable_callgraph(
     // println!("constraints: {:?}", function_targets_constraints);
 
 
+    // TODO use bitset for speedup?
     let mut funcs_in_table: HashSet<&Function> = HashSet::new();
     for table in &module.tables {
         // TODO interpret `table.offset` for index-based analysis, i.e., to get a map from table
@@ -132,15 +133,11 @@ pub fn reachable_callgraph(
     let mut worklist = reachable.iter().cloned().collect::<Vec<_>>();
     let mut i = 0;
     while let Some(func) = worklist.pop() {
-        let target_constraints = function_targets_constraints.get(&func).expect("all functions should have been constraints computed for");            
+        let calls = call_target_constraints.get(&func).expect("all functions should have been constraints computed for");            
         
-        // DEBUG
-        i += 1;
-        // println!("iteration {i}\nfunc: {func}\nconstraints: {target_constraints:?}\nreachable: {reachable:?}\nrest of worklist: {worklist:?}\n");
-
-        for target_constraints in target_constraints {
+        for call in calls {
             // Solve the constraints to concrete edges.
-            let targets = solve_constraints(module, &funcs_in_table, target_constraints);
+            let targets = solve_constraints(module, &funcs_in_table, call);
 
             // Add those as edges to the concrete call graph.
             // -> O(N^2)!
@@ -149,14 +146,17 @@ pub fn reachable_callgraph(
 
                 // Add target to worklist, if it wasn't already processed 
                 // (and everything reachable was processed).
+                // TODO Is this check expensive? If yes, can we use a bit set for the set of reachable functions?
                 if reachable.insert(target.clone()) {
                     worklist.push(target);
                 }
             }
         }
 
+        // DEBUG
+        i += 1;
         if i % 1000 == 0 {
-            println!("[DONE] iteration {i}")
+            println!("[DONE] processing {} functions", i);
         }
     }
 
