@@ -127,6 +127,7 @@ pub fn reachable_callgraph(
 
     // Solve constraints for all functions in "worklist" and add their targets to worklist, until
     // this is empty.
+    // TODO this is still quite slow, why?
 
     let mut worklist = reachable.iter().cloned().collect::<Vec<_>>();
     let mut i = 0;
@@ -142,6 +143,7 @@ pub fn reachable_callgraph(
             let targets = solve_constraints(module, &funcs_in_table, target_constraints);
 
             // Add those as edges to the concrete call graph.
+            // -> O(N^2)!
             for target in targets {
                 callgraph_edges.0.insert((func.clone(), target.clone()));
 

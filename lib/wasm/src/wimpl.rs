@@ -60,6 +60,7 @@ impl Function {
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Ord, PartialOrd)]
 pub enum Func {
     /// If the function had a debug name attached to it (from the `name` custom section).
+    // TODO use string interner? make this copy?
     Named(String),
     /// Otherwise, just refer to the function via its index, which is the same as in the original
     /// WebAssembly module.
