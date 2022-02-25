@@ -311,7 +311,7 @@ pub fn solve_constraints<'a, Hasher: BuildHasher>(
                 // Build up filtering iterator at runtime, adding all constraints from before.
                 // TODO Speed up with bloom filter?
                 filtered_iter = match constraint {
-                    Constraint::Type(ty) => Box::new(filtered_iter.filter(move |f| f.type_ == ty.clone())),
+                    Constraint::Type(ty) => Box::new(filtered_iter.filter(move |f| &f.type_ == ty)),
                     Constraint::InTable => Box::new(filtered_iter.filter(move |f| funcs_in_table.contains(&f.name))),
                     Constraint::TableIndexExpr(wimpl::Expr::Const(val)) => todo!("constant: {}", val),
                     Constraint::TableIndexExpr(expr) => todo!("{}", expr),
