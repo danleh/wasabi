@@ -19,6 +19,7 @@ anyhow = "1.0.55"
 test_utilities = { path = "../test_utilities" }
 
 [dev-dependencies]
+walkdir = "2.3.2"
 bencher = "0.1.5"
 
 [profile.test]

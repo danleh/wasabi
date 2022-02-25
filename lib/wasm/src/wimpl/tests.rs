@@ -591,13 +591,13 @@ fn parse_pretty_print_roundtrips() {
 }
 
 #[test]
-fn parse_file() {
+fn parse_wimpl_text_file() {
     let instrs = Stmt::from_text_file("tests/wimpl/syntax.wimpl");
     assert!(instrs.is_ok());
 }
 
 #[test]
-fn macros() {
+fn macros_should_compile_and_not_fail_at_runtime() {
     let _ = wimpl!(g0: f32 = f32.const 1.1);
     let _ = wimpl!(s2: i32 = i32.add (s0, s1));
     let _ = wimpl!(call_indirect [ ] ->[] (s1) ());
@@ -617,128 +617,50 @@ fn macros() {
     };
 }
 
-#[cfg(test)]
-fn test(path_wimpl: &str, path_wasm: &str) {
-    let wimpl_module = wimplify(path_wasm).unwrap();
-    let actual = wimpl_module.functions[0].clone().body;
-    let expected = Body(Stmt::from_text_file(path_wimpl).unwrap());
-    assert_eq!(actual, expected, "\nACTUAL: {}\nEXPECTED: {}\n", actual, expected);
+#[test]
+fn wimplify_with_expected_output() {
+    use walkdir::WalkDir;
+    
+    const WIMPL_TEST_INPUTS_DIR: &str = "tests/wimpl/wimplify_expected/";
+    for entry in WalkDir::new(&WIMPL_TEST_INPUTS_DIR) {
+        let wimpl_path = entry.unwrap().path().to_owned();
+
+        // Find all files, where a <name>.wimpl file and a <name>.wasm file are next to each other.
+        if let Some("wimpl") = wimpl_path.extension().and_then(|os_str| os_str.to_str()) {
+            let wasm_path = wimpl_path.with_extension("wasm");
+            if wasm_path.exists() {
+
+                println!("{}", wimpl_path.display());
+                
+                let wimpl_module = wimplify(wasm_path).unwrap();
+
+                // Every wimpl file contains only a sequence of statements, not a whole module.
+                // Compare the first function from the .wasm binary, with all instructions of the
+                // .wimpl text file.
+                let actual = wimpl_module.functions[0].clone().body;
+                let expected = Body(Stmt::from_text_file(&wimpl_path).unwrap());
+
+                assert_eq!(actual, expected, "testcase: {}\nexpected Wimpl: {}\nproduced Wimpl: {}\n", wimpl_path.display(), expected, actual);
+                
+            }
+        }
+    }
 }
 
-#[test]
-fn constant() {
-    test("tests/wimpl/const/const.wimpl", "tests/wimpl/const/const.wasm");
-}
+// #[test]
+// fn wimplify_should_not_crash() {
+    
+//     const WASM_TEST_INPUTS_DIR: &str = "tests/";
 
-#[test]
-fn add() {
-    test("tests/wimpl/add/add.wimpl", "tests/wimpl/add/add.wasm");
-}
+//     for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
+    
+//     }
+    
+// }
+// const WASM_TEST_INPUTS_DIR: &str = "tests/";
 
-#[test]
-fn call_ind() {
-    test("tests/wimpl/call_ind/call_ind.wimpl", "tests/wimpl/call_ind/call_ind.wasm");
-}
+//     for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
 
-#[test]
-fn multiple_expr() {
-    test("tests/wimpl/multiple_expr/multiple_expr.wimpl", "tests/wimpl/multiple_expr/multiple_expr.wasm");
-}
-
-#[test]
-fn call() {
-    test("tests/wimpl/call/call.wimpl","tests/wimpl/call/call.wasm");
-}
-
-#[test]
-fn local() {
-    test("tests/wimpl/local/local.wimpl", "tests/wimpl/local/local.wasm");
-}
-
-#[test]
-fn global() {
-    test("tests/wimpl/global/global.wimpl", "tests/wimpl/global/global.wasm");
-}
-
-#[test]
-fn load_store() {
-    test("tests/wimpl/load_store/load_store.wimpl", "tests/wimpl/load_store/load_store.wasm");
-}
-
-#[test]
-fn load_store_qs() {
-    test("tests/wimpl/qs1/qs1.wimpl", "tests/wimpl/qs1/qs1.wasm");
-}
-
-#[test]
-fn memory() {
-    test("tests/wimpl/memory/memory.wimpl", "tests/wimpl/memory/memory.wasm");
-}
-
-#[test]
-fn select() {
-    test("tests/wimpl/select/select.wimpl", "tests/wimpl/select/select.wasm");
-}
-
-#[test]
-fn select_diff_types() {
-    test("tests/wimpl/select_diff_types/select.wimpl", "tests/wimpl/select_diff_types/select.wasm");
-}
-
-#[test]
-fn block_nested() {
-    test("tests/wimpl/block_nested/block.wimpl", "tests/wimpl/block_nested/block.wasm");
-}
-
-#[test]
-fn br_simple() {
-    test("tests/wimpl/br_simple/br.wimpl", "tests/wimpl/br_simple/br.wasm");
-}
-
-#[test]
-fn br_nested_simple() {
-    test("tests/wimpl/br_nested_simple/br.wimpl", "tests/wimpl/br_nested_simple/br.wasm");
-}
-
-#[test]
-fn br_nested() {
-    test("tests/wimpl/br_nested/br.wimpl", "tests/wimpl/br_nested/br.wasm");
-}
-
-#[test]
-fn br_triple_nested() {
-    test("tests/wimpl/br_triple_nested/br.wimpl", "tests/wimpl/br_triple_nested/br.wasm");
-}
-
-#[test]
-fn br_if() {
-    test("tests/wimpl/br_if/br_if.wimpl", "tests/wimpl/br_if/br_if.wasm");
-}
-
-#[test]
-fn br_if_2() {
-    test("tests/wimpl/br_if_2/br_if.wimpl", "tests/wimpl/br_if_2/br_if.wasm");
-}
-
-#[test]
-fn br_table() {
-    test("tests/wimpl/br_table/br_table.wimpl", "tests/wimpl/br_table/br_table.wasm");
-}
-
-#[test]
-fn if_() {
-    test("tests/wimpl/if/if.wimpl", "tests/wimpl/if/if.wasm");
-}
-
-#[test]
-fn if_ret() {
-    test("tests/wimpl/if_ret/if.wimpl", "tests/wimpl/if_ret/if.wasm");
-}
-
-#[test]
-fn if_else() {
-    test("tests/wimpl/if_else/if_else.wimpl", "tests/wimpl/if_else/if_else.wasm");
-}
 
 //hand written calculator programs
 
