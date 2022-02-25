@@ -153,10 +153,7 @@ pub fn reachable_callgraph(
             }
         }
 
-        // if i > 100 {
-        //     panic!("DEBUG")
-        // }
-        if i % 100 == 0 {
+        if i % 1000 == 0 {
             println!("[DONE] iteration {i}")
         }
     }
@@ -296,25 +293,26 @@ pub fn collect_target_constraints(
 }
 
 /// _All_ constraints must be satisfied, i.e., conjunction over all constraints.
-pub fn solve_constraints(
-    module: &wimpl::Module,
-    funcs_in_table: &HashSet<&Function>,
-    target_constraints: &Target
-) -> Vec<Func> {
+pub fn solve_constraints<'a>(
+    module: &'a wimpl::Module,
+    funcs_in_table: &'a HashSet<&'a Function>,
+    target_constraints: &'a Target
+) -> Box<dyn Iterator<Item=Func> + 'a> {
     match target_constraints {
-        Target::Direct(f) => vec![f.clone()],
+        Target::Direct(f) => Box::new(std::iter::once(f.clone())),
         Target::Constrained(constraints) => {
             let mut filtered_iter: Box<dyn Iterator<Item=&Function>> = Box::new(module.functions.iter());
             for constraint in constraints {
                 // Build up filtering iterator at runtime, adding all constraints from before.
+                // TODO Speed up with bloom filter?
                 filtered_iter = match constraint {
                     Constraint::Type(ty) => Box::new(filtered_iter.filter(move |f| f.type_ == ty.clone())),
-                    Constraint::InTable => Box::new(filtered_iter.filter(|f| funcs_in_table.contains(f))),
+                    Constraint::InTable => Box::new(filtered_iter.filter(move |f| funcs_in_table.contains(f))),
                     Constraint::TableIndexExpr(wimpl::Expr::Const(val)) => todo!("constant: {}", val),
                     Constraint::TableIndexExpr(expr) => todo!("{}", expr),
                 }
             }
-            filtered_iter.map(|f| f.name()).collect()
+            Box::new(filtered_iter.map(|f| f.name()))
         },
     }
 
