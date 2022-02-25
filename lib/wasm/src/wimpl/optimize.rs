@@ -1,4 +1,7 @@
-use crate::wimpl::Var;
+use std::collections::HashMap;
+
+use crate::wimpl::*;
+use crate::wimpl::wimplify::*;
 
 #[derive(Debug)]
 enum Value {
@@ -335,6 +338,6 @@ pub fn wimpl_optimize (path: impl AsRef<Path>) -> Result<Module, String> {
 #[test]
 fn opt_test() {
     //let module = wimpl_optimize("tests/wimpl/local/local.wasm");
-    let module = wimpl_optimize("tests/wimpl/global/global.wasm");
+    let module = wimpl_optimize("tests/wimpl/wimplify_expected/global/global.wasm");
     println!("{}", module.unwrap()); 
 }
