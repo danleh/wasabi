@@ -76,10 +76,10 @@ impl Func {
 }
 
 /// A sequence of instructions, typically as the body of a function or block.
-#[derive(Debug, Eq, PartialEq, Clone, Default, Hash)]
+#[derive(Debug, Eq, PartialEq, Clone, Default, Hash, Ord, PartialOrd)]
 pub struct Body(pub Vec<Stmt>);
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, Ord, PartialOrd)]
 pub enum Var {
     // These two correspond to the WebAssembly constructs of the same name.
     // Note that the index of locals in WebAssembly does not have to match the local numbering here,
@@ -100,7 +100,7 @@ pub enum Var {
 }
 
 /// An absolute block label, NOT to be confused with the relative branch labels of WebAssembly!
-#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, Default)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, Ord, PartialOrd, Default)]
 pub struct Label(usize);
 
 /// Wimpl instructions make the following major changes over high-level Wasm:
@@ -114,7 +114,7 @@ pub struct Label(usize);
 /// local.* and global.* instructions with a single `Assign` instruction.
 // TODO Optimize this representation, in particular remove redundant assignments
 // between stack variables and locals/globals.
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash, Ord, PartialOrd)]
 pub enum Stmt {
 
     // Simplify nop: Not necessary for analysis.
@@ -184,7 +184,7 @@ pub enum Stmt {
 
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash, Ord, PartialOrd)]
 pub enum Expr {
 
     VarRef(Var),
