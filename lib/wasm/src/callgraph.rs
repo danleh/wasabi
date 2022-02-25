@@ -3,6 +3,8 @@ use std::{collections::{HashSet, HashMap, hash_map::Entry, BTreeSet}, path::Path
 
 use crate::{wimpl::{Func, self, Expr::Call, Function, Var, Body}, FunctionType};
 
+use crate::wimpl::wimplify::*;  
+
 use test_utilities::*; 
 
 pub struct CallGraph(HashSet<(Func, Func)>);
@@ -317,12 +319,11 @@ pub fn solve_constraints<'a>(
             Box::new(filtered_iter.map(|f| f.name()))
         },
     }
-
 }
 
 #[test]
 fn main() {
-    let wimpl_module = wimpl::wimplify("tests/callgraph.wasm").expect(""); 
+    let wimpl_module = wimpl::wimplify::wimplify("tests/callgraph.wasm").expect(""); 
     println!("{}", wimpl_module);     
 
     let options = Options {
@@ -367,7 +368,7 @@ fn data_gathering () {
 
     for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
         println!("{}", path.display());
-        let wimpl_module = wimpl::wimplify(&path).expect(&format!("could not decode valid wasm file '{}'", path.display()));
+        let wimpl_module = wimpl::wimplify::wimplify(&path).expect(&format!("could not decode valid wasm file '{}'", path.display()));
         
         // let wimpl_module = wimpl::wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect(""); 
         // let callgraph = callgraph(&wimpl_module); 
@@ -429,7 +430,7 @@ fn data_gathering () {
         }
 
         fn callgraph_reachable_funcs_ratio(path: impl AsRef<Path>, options: Options) -> f64 {
-            let wimpl_module = wimpl::wimplify(&path).unwrap();
+            let wimpl_module = wimpl::wimplify::wimplify(&path).unwrap();
             let exported_funcs = wimpl_module.functions.iter()
                 .filter(|func| !func.export.is_empty())
                 .map(|func| func.name())
@@ -441,7 +442,7 @@ fn data_gathering () {
         
         // TODO: remove because (i) not comparable number (not a percentage) (ii) super slow.
         fn callgraph_reachable_funcs_avg(path: impl AsRef<Path>, options: Options) -> f64 {
-            let wimpl_module = wimpl::wimplify(&path).unwrap();
+            let wimpl_module = wimpl::wimplify::wimplify(&path).unwrap();
             let exported_funcs = wimpl_module.functions.iter()
                 .filter(|func| !func.export.is_empty())
                 .map(|func| func.name())

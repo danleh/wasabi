@@ -14,8 +14,6 @@ pub use crate::error::{Error, ErrorKind};
 pub mod types;
 mod folding;
 pub mod wimpl;
-// TODO(Michelle): fix compile errors in wimpl_opt, add tests, only then include in module hierarchy.
-// pub mod wimpl_opt;
 
 pub mod callgraph;
 
