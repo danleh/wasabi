@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{collections::{HashSet, HashMap, hash_map::Entry}, path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File};
+use std::{collections::{HashSet, HashMap, hash_map::Entry, BTreeSet}, path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File};
 
 use crate::{wimpl::{Func, self, Expr::Call, Function, Var, Body}, FunctionType};
 
@@ -70,12 +70,13 @@ impl CallGraph {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Target {
     Direct(Func),
-    Constrained(HashSet<Constraint>)
+    Constrained(BTreeSet<Constraint>)
 }
 
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Constraint {
     Type(FunctionType),
     InTable,
@@ -98,30 +99,51 @@ pub fn reachable_callgraph(
     
     let mut callgraph_edges = CallGraph(HashSet::new());
 
-    // TODO collect "declarative constraints" once, and do not 
-    // TODO use worklist algorithm, keep track of added edges.
-    let mut changed = true;
-    let mut i = 0;
-    while changed {
-        i += 1;
-        println!("iteration {i}");
+    // Collect "declarative constraints" once per function.
+    // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
+    let function_targets_constraints: HashMap<Func, HashSet<Target>> = module.functions.iter()
+        .map(|func| {
+            (func.name(), collect_target_constraints(module, func.name(), options))
+        })
+        .collect();
 
-        for func in &reachable {
-            // Collect constraints for all (currently) reachable functions.
-            let target_constraints = collect_target_constraints(module, func.clone(), options);
-    
-            for target_constraints in target_constraints {
-                // Solve the constraints to concrete edges.
-                let targets = solve_constraints(module, &target_constraints);
-    
-                // Add those as edges to the concrete call graph.
-                callgraph_edges.0.extend(targets.into_iter().map(|target| (func.clone(), target)));
+    println!("collect constraints done");
+    // println!("constraints: {:?}", function_targets_constraints);
+
+    // Solve constraints for all functions in "worklist" and add their targets to worklist, until
+    // this is empty.
+
+    let mut worklist = reachable.iter().cloned().collect::<Vec<_>>();
+    let mut i = 0;
+    while let Some(func) = worklist.pop() {
+        let target_constraints = function_targets_constraints.get(&func).expect("all functions should have been constraints computed for");            
+        
+        // DEBUG
+        i += 1;
+        // println!("iteration {i}\nfunc: {func}\nconstraints: {target_constraints:?}\nreachable: {reachable:?}\nrest of worklist: {worklist:?}\n");
+
+        for target_constraints in target_constraints {
+            // Solve the constraints to concrete edges.
+            let targets = solve_constraints(module, target_constraints);
+
+            // Add those as edges to the concrete call graph.
+            for target in targets {
+                callgraph_edges.0.insert((func.clone(), target.clone()));
+
+                // Add target to worklist, if it wasn't already processed 
+                // (and everything reachable was processed).
+                if reachable.insert(target.clone()) {
+                    worklist.push(target);
+                }
             }
         }
 
-        let old_reachable = reachable.clone();
-        reachable = callgraph_edges.all();
-        changed = old_reachable != reachable;
+        // if i > 100 {
+        //     panic!("DEBUG")
+        // }
+        if i % 100 == 0 {
+            println!("done iteration {i}")
+        }
     }
 
     Ok(callgraph_edges)
@@ -131,8 +153,8 @@ pub fn collect_target_constraints(
     module: &wimpl::Module,
     src: Func,
     options: Options
-) -> Vec<Target> {
-    let mut targets = Vec::new();
+) -> HashSet<Target> {
+    let mut targets = HashSet::new();
 
     let src = module.function(src.clone()).expect(&format!("source function not found in module: {:?}", src));
 
@@ -157,7 +179,7 @@ pub fn collect_target_constraints(
             self.0.entry(*var)
                 // Overapproximate if there was already a prior assignment to that variable.
                 .and_modify(|old_expr| *old_expr = None)
-                .or_insert(Some(expr.clone()));
+                .or_insert_with(|| Some(expr.clone()));
         }
         /// Returns `None` if variable expression was over approximated.
         fn get(&self, var: &Var) -> Option<&wimpl::Expr> {
@@ -205,17 +227,19 @@ pub fn collect_target_constraints(
     // Step 2:
     // Collect one set of constraints (conjuncts) per call/call_indirect.
 
-    fn collect_call_constraints(body: &Body, targets: &mut Vec<Target>, var_expr: &VarExprMap, options: Options) {
+    fn collect_call_constraints(body: &Body, targets: &mut HashSet<Target>, var_expr: &VarExprMap, options: Options) {
         for stmt in &body.0 {
             match stmt {
                 // Direct calls:
                 Assign { lhs: _, rhs: Call{ func, args: _}, type_: _ } |
-                Expr(Call { func, args: _}) => targets.push(Target::Direct(func.clone())),
+                Expr(Call { func, args: _}) => {
+                    targets.insert(Target::Direct(func.clone()));
+                },
     
                 // Indirect calls:
                 Assign { lhs: _, rhs: CallIndirect { type_, table_idx, args: _ }, type_: _ } |
                 Expr(CallIndirect { type_, table_idx, args: _ }) => {
-                    let mut constraints = HashSet::new();
+                    let mut constraints = BTreeSet::new();
                     if options.with_in_table_constraint {
                         constraints.insert(Constraint::InTable);
                     }
@@ -227,7 +251,7 @@ pub fn collect_target_constraints(
                             constraints.insert(Constraint::TableIndexExpr(precise_expr.clone()));
                         }
                     }
-                    targets.push(Target::Constrained(constraints));
+                    targets.insert(Target::Constrained(constraints));
                 }
 
                 // Recursive cases:
