@@ -14,10 +14,3 @@ out/
 
 # generated browser tests
 *_out/
-
-#.wat files of tests  
-lib/wasm/tests/wimpl-USENIX/**/*.wat
-lib/wasm/tests/wimpl-filtered-binaries/**/*.wat
-
-#evaluation csv 
-lib/wasm/data.csv
