@@ -17,11 +17,22 @@ thiserror = "1.0.30"
 anyhow = "1.0.55"
 # TODO move to dev-dependencies by moving imports into blocks of #[cfg(test)]
 test_utilities = { path = "../test_utilities" }
+# For faster HashSet and HashMap in callgraph etc.
+rustc-hash = "1.1.0"
 
 [dev-dependencies]
 walkdir = "2.3.2"
 bencher = "0.1.5"
 
+# Necessary to avoid stack overflow for very deeply nested tests.
 [profile.test]
-# Necessary to avoid stack overflow for very deeply nested tests
 opt-level = 2
+lto = "thin"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+overflow-checks = true
+# For profiling with debug info.
+debug = 1
+

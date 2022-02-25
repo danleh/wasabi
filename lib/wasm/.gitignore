@@ -3,8 +3,13 @@
 /target/
 /Cargo.lock
 
-# .wat files of .wasm test binaries can be very large
-tests/wasm/*.wat
+# .wat files of .wasm test binaries can be very large.
+/tests/wasm/*.wat
 
-# evaluation csv 
-data.csv
+# Callgraph evaluation table.
+/data.csv
+
+# Data from profiling / performance analysis.
+/flamegraph.svg
+/perf.data
+/perf.data.old

@@ -1,13 +1,14 @@
 use core::fmt;
-use std::{collections::{HashSet, HashMap, hash_map::Entry, BTreeSet}, path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File};
+use std::{collections::{HashSet, HashMap, hash_map::Entry, BTreeSet}, path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, hash::BuildHasher};
 
 use crate::{wimpl::{Func, self, Expr::Call, Function, Var, Body}, FunctionType};
 
 use crate::wimpl::wimplify::*;  
 
+use rustc_hash::FxHashSet;
 use test_utilities::*; 
 
-pub struct CallGraph(HashSet<(Func, Func)>);
+pub struct CallGraph(FxHashSet<(Func, Func)>);
 
 impl fmt::Debug for CallGraph {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -88,9 +89,9 @@ pub enum Constraint {
 
 #[derive(Clone, Copy, Default)]
 pub struct Options {
-    with_type_constraint: bool,
-    with_in_table_constraint: bool,
-    with_index_constraint: bool,
+    pub with_type_constraint: bool,
+    pub with_in_table_constraint: bool,
+    pub with_index_constraint: bool,
 }
 
 pub fn reachable_callgraph(
@@ -99,7 +100,7 @@ pub fn reachable_callgraph(
     options: Options,
 ) -> anyhow::Result<CallGraph> {
     
-    let mut callgraph_edges = CallGraph(HashSet::new());
+    let mut callgraph_edges = CallGraph(FxHashSet::default());
 
 
     // Collect "declarative constraints" once per function.
@@ -114,14 +115,14 @@ pub fn reachable_callgraph(
 
 
     // TODO use bitset for speedup?
-    let mut funcs_in_table: HashSet<&Function> = HashSet::new();
+    let mut funcs_in_table = FxHashSet::default();
     for table in &module.tables {
         // TODO interpret `table.offset` for index-based analysis, i.e., to get a map from table
         // index to function index after table initialization (assumption: table stays constant).
         for element in &table.elements {
             for func_idx in &element.functions {
                 let func = module.function_by_idx(*func_idx);
-                funcs_in_table.insert(func); 
+                funcs_in_table.insert(func.name()); 
             }
         }
     }
@@ -297,9 +298,9 @@ pub fn collect_target_constraints(
 }
 
 /// _All_ constraints must be satisfied, i.e., conjunction over all constraints.
-pub fn solve_constraints<'a>(
+pub fn solve_constraints<'a, Hasher: BuildHasher>(
     module: &'a wimpl::Module,
-    funcs_in_table: &'a HashSet<&'a Function>,
+    funcs_in_table: &'a HashSet<Func, Hasher>,
     target_constraints: &'a Target
 ) -> Box<dyn Iterator<Item=Func> + 'a> {
     match target_constraints {
@@ -311,7 +312,7 @@ pub fn solve_constraints<'a>(
                 // TODO Speed up with bloom filter?
                 filtered_iter = match constraint {
                     Constraint::Type(ty) => Box::new(filtered_iter.filter(move |f| f.type_ == ty.clone())),
-                    Constraint::InTable => Box::new(filtered_iter.filter(move |f| funcs_in_table.contains(f))),
+                    Constraint::InTable => Box::new(filtered_iter.filter(move |f| funcs_in_table.contains(&f.name))),
                     Constraint::TableIndexExpr(wimpl::Expr::Const(val)) => todo!("constant: {}", val),
                     Constraint::TableIndexExpr(expr) => todo!("{}", expr),
                 }

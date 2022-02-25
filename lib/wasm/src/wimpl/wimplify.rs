@@ -122,7 +122,8 @@ fn wimplify_instrs<'module>(
 
 
         // Conversion of each WebAssembly instruction to (one or more) Wimpl statements:
-
+        // FIXME optimize, makes up about 20% of overall wimplify cost!
+        // TODO push to result_instrs directly, instead of allocating a vector
         result_instrs.append(&mut match instr {
 
             highlevel::Instr::Unreachable => vec![Stmt::Unreachable],
