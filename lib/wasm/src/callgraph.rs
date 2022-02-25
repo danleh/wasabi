@@ -323,7 +323,7 @@ pub fn solve_constraints<'a>(
 
 #[test]
 fn main() {
-    let wimpl_module = wimpl::wimplify::wimplify("tests/callgraph.wasm").expect(""); 
+    let wimpl_module = wimpl::wimplify::wimplify("tests/callgraph/callgraph.wasm").expect(""); 
     println!("{}", wimpl_module);     
 
     let options = Options {
@@ -336,7 +336,7 @@ fn main() {
     let callgraph = reachable_callgraph(&wimpl_module, reachable, options).unwrap();
 
     println!("{}", callgraph.to_dot());
-    callgraph.to_pdf("tests/callgraph.pdf").unwrap();
+    callgraph.to_pdf("tests/callgraph/out/callgraph.pdf").unwrap();
 }
 
 // #[test]

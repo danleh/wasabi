@@ -4,7 +4,7 @@
 /Cargo.lock
 
 # .wat files of .wasm test binaries can be very large
-tests/**/*.wat
+tests/wasm/*.wat
 
 # evaluation csv 
 data.csv
