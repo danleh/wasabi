@@ -8,6 +8,7 @@ use crate::wimpl::wimplify::*;
 use rustc_hash::FxHashSet;
 use test_utilities::*; 
 
+// TODO perf: change from edge list to adjacency list, i.e., HashMap<Func, HashSet<Func>>
 pub struct CallGraph(FxHashSet<(Func, Func)>);
 
 impl fmt::Debug for CallGraph {
@@ -128,6 +129,12 @@ pub fn reachable_callgraph(
     }
     println!("[DONE] collect funcs in table");
 
+    // TODO optimization: generate map from FuncTy -> Vec<Func>, such that we 
+    // can quickly filter by function type in solve_constraints (~25% of total runtime!)
+    // pass that to solve_constraints.
+    
+    // TODO optimization make Func an interned string, then eq would be basically free
+    // right now its ~6% of all in callgraph.rs
 
     // Solve constraints for all functions in "worklist" and add their targets to worklist, until
     // this is empty.
