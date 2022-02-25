@@ -99,6 +99,7 @@ pub fn reachable_callgraph(
     
     let mut callgraph_edges = CallGraph(HashSet::new());
 
+
     // Collect "declarative constraints" once per function.
     // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
     let function_targets_constraints: HashMap<Func, HashSet<Target>> = module.functions.iter()
@@ -106,9 +107,23 @@ pub fn reachable_callgraph(
             (func.name(), collect_target_constraints(module, func.name(), options))
         })
         .collect();
-
-    println!("collect constraints done");
+    println!("[DONE] collect constraints");
     // println!("constraints: {:?}", function_targets_constraints);
+
+
+    let mut funcs_in_table: HashSet<&Function> = HashSet::new();
+    for table in &module.tables {
+        // TODO interpret `table.offset` for index-based analysis, i.e., to get a map from table
+        // index to function index after table initialization (assumption: table stays constant).
+        for element in &table.elements {
+            for func_idx in &element.functions {
+                let func = module.function_by_idx(*func_idx);
+                funcs_in_table.insert(func); 
+            }
+        }
+    }
+    println!("[DONE] collect funcs in table");
+
 
     // Solve constraints for all functions in "worklist" and add their targets to worklist, until
     // this is empty.
@@ -124,7 +139,7 @@ pub fn reachable_callgraph(
 
         for target_constraints in target_constraints {
             // Solve the constraints to concrete edges.
-            let targets = solve_constraints(module, target_constraints);
+            let targets = solve_constraints(module, &funcs_in_table, target_constraints);
 
             // Add those as edges to the concrete call graph.
             for target in targets {
@@ -142,7 +157,7 @@ pub fn reachable_callgraph(
         //     panic!("DEBUG")
         // }
         if i % 100 == 0 {
-            println!("done iteration {i}")
+            println!("[DONE] iteration {i}")
         }
     }
 
@@ -283,38 +298,26 @@ pub fn collect_target_constraints(
 /// _All_ constraints must be satisfied, i.e., conjunction over all constraints.
 pub fn solve_constraints(
     module: &wimpl::Module,
+    funcs_in_table: &HashSet<&Function>,
     target_constraints: &Target
 ) -> Vec<Func> {
-    let constraints = match target_constraints {
-        Target::Direct(f) => return vec![f.clone()],
-        Target::Constrained(constraints) => constraints,
-    };
-
-    // Start with all functions initially, and remove those not matching a particular constraint.
-    let mut valid_funcs = module.functions.iter().collect::<Vec<_>>();
-
-    let mut funcs_in_table: HashSet<&Function> = HashSet::new();
-    for table in &module.tables {
-        // TODO interpret `table.offset` for index-based analysis, i.e., to get a map from table
-        // index to function index after table initialization (assumption: table stays constant).
-        for element in &table.elements {
-            for func_idx in &element.functions {
-                let func = module.function_by_idx(*func_idx);
-                funcs_in_table.insert(func); 
+    match target_constraints {
+        Target::Direct(f) => vec![f.clone()],
+        Target::Constrained(constraints) => {
+            let mut filtered_iter: Box<dyn Iterator<Item=&Function>> = Box::new(module.functions.iter());
+            for constraint in constraints {
+                // Build up filtering iterator at runtime, adding all constraints from before.
+                filtered_iter = match constraint {
+                    Constraint::Type(ty) => Box::new(filtered_iter.filter(move |f| f.type_ == ty.clone())),
+                    Constraint::InTable => Box::new(filtered_iter.filter(|f| funcs_in_table.contains(f))),
+                    Constraint::TableIndexExpr(wimpl::Expr::Const(val)) => todo!("constant: {}", val),
+                    Constraint::TableIndexExpr(expr) => todo!("{}", expr),
+                }
             }
-        }
-    } 
-
-    for constraint in constraints {
-        match constraint {
-            Constraint::Type(ty) => valid_funcs.retain(|f| &f.type_ == ty),
-            Constraint::InTable => valid_funcs.retain(|f| funcs_in_table.contains(f)),
-            Constraint::TableIndexExpr(wimpl::Expr::Const(val)) => todo!("constant: {}", val),
-            Constraint::TableIndexExpr(expr) => todo!("{}", expr),
-        }
+            filtered_iter.map(|f| f.name()).collect()
+        },
     }
 
-    valid_funcs.into_iter().map(|f| f.name.clone()).collect()
 }
 
 #[test]
