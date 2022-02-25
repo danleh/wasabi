@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{collections::{HashSet, HashMap, hash_map::Entry}, path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File};
 
-use crate::{wimpl::{Func, self, Expr::Call, Function, Var}, FunctionType};
+use crate::{wimpl::{Func, self, Expr::Call, Function, Var, Body}, FunctionType};
 
 use test_utilities::*; 
 
@@ -9,7 +9,7 @@ pub struct CallGraph(HashSet<(Func, Func)>);
 
 impl fmt::Debug for CallGraph {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{:?}", self.0); 
+        writeln!(f, "{:?}", self.0)?; 
         for (x, y) in self.0.iter() {
             writeln!(f, "{} {}", x, y).expect("");
         }; 
@@ -98,9 +98,14 @@ pub fn reachable_callgraph(
     
     let mut callgraph_edges = CallGraph(HashSet::new());
 
+    // TODO collect "declarative constraints" once, and do not 
     // TODO use worklist algorithm, keep track of added edges.
     let mut changed = true;
+    let mut i = 0;
     while changed {
+        i += 1;
+        println!("iteration {i}");
+
         for func in &reachable {
             // Collect constraints for all (currently) reachable functions.
             let target_constraints = collect_target_constraints(module, func.clone(), options);
@@ -136,61 +141,118 @@ pub fn collect_target_constraints(
     // Do we merge with a JavaScript call-graph analysis?
     let body = &src.body;
 
-    let mut var_expr: HashMap<Var, Option<wimpl::Expr>> = HashMap::new();
+    use wimpl::Stmt::*;
+    use wimpl::Expr::*;
 
-    for stmt in &body.0 {
-        
-        use wimpl::Stmt::*;
-        use wimpl::Expr::*;
-
-        match stmt {
-
-            // FIXME recursively go into block, loop, if bodies!
-            
-            Assign { lhs: _, rhs: Call{ func, args: _}, type_: _ } |
-            Expr(Call { func, args: _}) => targets.push(Target::Direct(func.clone())),
-
-            Assign { lhs: _, rhs: CallIndirect { type_, table_idx, args: _ }, type_: _ } |
-            Expr(CallIndirect { type_, table_idx, args: _ }) => {
-                let mut constraints = HashSet::new();
-                if options.with_in_table_constraint {
-                    constraints.insert(Constraint::InTable);
-                }
-                if options.with_type_constraint {
-                    constraints.insert(Constraint::Type(type_.clone()));
-                }
-                if options.with_index_constraint {
-                    match var_expr.get(table_idx) {
-                        Some(Some(expr)) => {
-                            constraints.insert(Constraint::TableIndexExpr(expr.clone()));
-                        }
-                        // Over-approximation.
-                        Some(None) => {},
-                        None => unreachable!("uninitialized variable `{}`\nin: {}\nvariable map: {:?}", table_idx, src, var_expr),
+    // Step 1:
+    // Build map of variables to expressions or any (overapproximation for multiple assignments
+    // of the same variable).
+    // TODO do this only for vars we are interested in, i.e., arguments to call_indirects
+    // TODO with recursive exprs, this all would be trivial... :(
+    // If performance turns out to be a huge problem, do recursive Expr instead.
+    
+    struct VarExprMap(HashMap<Var, Option<wimpl::Expr>>);
+    impl VarExprMap {
+        fn add(&mut self, var: &Var, expr: &wimpl::Expr) {
+            self.0.entry(*var)
+                // Overapproximate if there was already a prior assignment to that variable.
+                .and_modify(|old_expr| *old_expr = None)
+                .or_insert(Some(expr.clone()));
+        }
+        /// Returns `None` if variable expression was over approximated.
+        fn get(&self, var: &Var) -> Option<&wimpl::Expr> {
+            match self.0.get(var) {
+                Some(overapprox_expr) => overapprox_expr.as_ref(),
+                None => panic!("uninitialized variable `{}`\nvariable map: {:?}", var, self.0),
+            }
+        }
+    }
+    
+    // Recursive "visitor" over statements/bodies.
+    fn collect_var_expr(body: &Body, var_expr: &mut VarExprMap) {
+        for stmt in &body.0 {
+            match stmt {
+                Unreachable => {},
+                Expr(_) => {},
+                Assign { lhs, type_: _, rhs } => var_expr.add(lhs, rhs),
+                Store { .. } => {},
+                Br { .. } => {},
+                
+                // Recursive cases:
+                // TODO Extract out in recursive visitor pattern.
+                Block { body, end_label: _ } => collect_var_expr(body, var_expr),
+                Loop { begin_label: _, body } => collect_var_expr(body, var_expr),
+                If { condition:_ , if_body, else_body } => {
+                    collect_var_expr(if_body, var_expr);
+                    if let Some(else_body) = else_body {
+                        collect_var_expr(else_body, var_expr)
                     }
-                }
-                targets.push(Target::Constrained(constraints));
+                },
+                Switch { index: _, cases, default } => {
+                    for case in cases {
+                        collect_var_expr(case, var_expr);
+                    }
+                    collect_var_expr(default, var_expr)
+                },
             }
-
-            // Update variables
-            // FIXME call_indirect itself might be a RHS of an assign, then this case doesn't match.
-            // FIXME assignment of variable textually AFTER the call_indirect usage, might still
-            // flow into the variable in case of loops -> need to do variable map before.
-            // TODO fix both issues by pulling var_expr updating up into a separate forward traversal that gives a var_expr_map
-            Assign { lhs: var, type_, rhs: expr } => {
-                // println!("{}\nbefore {:?}", stmt, var_expr);
-                var_expr.entry(*var)
-                    // Overapproximate if there is more than one assignment to a variable.
-                    .and_modify(|old_expr| *old_expr = None)
-                    .or_insert(Some(expr.clone()));
-                // println!("after {:?}", var_expr);
-            }
-
-            _ => {}
-
         }
     }
 
+    let mut var_expr = VarExprMap(HashMap::new());
+    collect_var_expr(body, &mut var_expr);
+
+
+    // Step 2:
+    // Collect one set of constraints (conjuncts) per call/call_indirect.
+
+    fn collect_call_constraints(body: &Body, targets: &mut Vec<Target>, var_expr: &VarExprMap, options: Options) {
+        for stmt in &body.0 {
+            match stmt {
+                // Direct calls:
+                Assign { lhs: _, rhs: Call{ func, args: _}, type_: _ } |
+                Expr(Call { func, args: _}) => targets.push(Target::Direct(func.clone())),
+    
+                // Indirect calls:
+                Assign { lhs: _, rhs: CallIndirect { type_, table_idx, args: _ }, type_: _ } |
+                Expr(CallIndirect { type_, table_idx, args: _ }) => {
+                    let mut constraints = HashSet::new();
+                    if options.with_in_table_constraint {
+                        constraints.insert(Constraint::InTable);
+                    }
+                    if options.with_type_constraint {
+                        constraints.insert(Constraint::Type(type_.clone()));
+                    }
+                    if options.with_index_constraint {
+                        if let Some(precise_expr) = var_expr.get(table_idx) {
+                            constraints.insert(Constraint::TableIndexExpr(precise_expr.clone()));
+                        }
+                    }
+                    targets.push(Target::Constrained(constraints));
+                }
+
+                // Recursive cases:
+                Block { body, end_label: _ } => collect_call_constraints(body, targets, var_expr, options),
+                Loop { begin_label: _, body } => collect_call_constraints(body, targets, var_expr, options),
+                If { condition:_ , if_body, else_body } => {
+                    collect_call_constraints(if_body, targets, var_expr, options);
+                    if let Some(else_body) = else_body {
+                        collect_call_constraints(else_body, targets, var_expr, options)
+                    }
+                },
+                Switch { index: _, cases, default } => {
+                    for case in cases {
+                        collect_call_constraints(case, targets, var_expr, options);
+                    }
+                    collect_call_constraints(default, targets, var_expr, options)
+                },
+
+                _ => {}
+    
+            }
+        }
+    }
+
+    collect_call_constraints(body, &mut targets, &var_expr, options);
     targets
 }
 
