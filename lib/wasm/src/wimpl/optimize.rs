@@ -11,14 +11,19 @@ enum Value {
 
 fn populate_var_map<'module>(
     stmts: &mut impl Iterator<Item=&'module Stmt>, 
-    map: &mut HashMap<Var, Value>, 
+    map: &mut HashMap<Var, Value>,
+    rev_map: &mut HashMap<Var, Var>,
     replaced_vars: &mut Vec<Var>
 ) -> Vec<Stmt> {
     let mut res: Vec<Stmt> = Vec::new(); 
 
     while let Some(stmt) = stmts.next() { 
         
-        let mut check = |lhs: Var| -> Option<Var> { //why on earth should it be mutable 
+        let mut check = |
+            lhs: Var,
+            map: &mut HashMap<Var, Value>, 
+            replaced_vars: &mut Vec<Var>
+        | -> Option<Var> { //why on earth should it be mutable 
             if map.contains_key(&lhs) {
                 match *map.get_mut(&lhs).expect("lhs should exist in var map") {
                     Value::Top => None,
@@ -32,10 +37,14 @@ fn populate_var_map<'module>(
             }
         }; 
 
-        let mut check_vec = |lhs_vec: Vec<Var>| -> Vec<Var> {
+        let mut check_vec = |
+            lhs_vec: Vec<Var>,
+            map: &mut HashMap<Var, Value>, 
+            replaced_vars: &mut Vec<Var>, 
+        | -> Vec<Var> {
             let mut res_vec = Vec::new();
             for lhs in lhs_vec {
-                if let Some(replacement_lhs) = check(lhs) {
+                if let Some(replacement_lhs) = check(lhs, map, replaced_vars) {
                     res_vec.push(replacement_lhs)
                 } else {
                     res_vec.push(lhs); 
@@ -49,6 +58,11 @@ fn populate_var_map<'module>(
             
             Stmt::Assign { lhs, type_, rhs } => {
                 
+                if rev_map.contains_key(lhs) {
+                    let (_, val) = rev_map.remove_entry(lhs).unwrap();
+                    *map.get_mut(&val).expect("variable should exist in rev_map") = Value::Top;
+                }
+
                 let stmt_type = *type_; 
 
                 match rhs {
@@ -58,7 +72,8 @@ fn populate_var_map<'module>(
                         if map.contains_key(lhs) {
                             *map.get_mut(lhs).expect("lhs should exist in var map") = Value::Top; 
                         } else {
-                            map.insert(*lhs, Value::Var(*var));  
+                            map.insert(*lhs, Value::Var(*var));
+                            rev_map.insert(*var, *lhs);  
                         }
                         /* 
                         if let Some(replacement_var) = check(*var) {
@@ -77,7 +92,7 @@ fn populate_var_map<'module>(
                     Expr::Const(_var_) => res.push(stmt.clone()), 
 
                     Expr::Load { op, memarg, addr } => {
-                        if let Some(replacement_var) = check(*addr) {
+                        if let Some(replacement_var) = check(*addr, map, replaced_vars) {
                             res.push(Stmt::Assign{
                                 lhs: *lhs,
                                 type_: stmt_type,
@@ -93,7 +108,7 @@ fn populate_var_map<'module>(
                     },
 
                     Expr::MemoryGrow { pages } => {
-                        if let Some(replacement_var) = check(*pages) {
+                        if let Some(replacement_var) = check(*pages, map, replaced_vars) {
                             res.push(Stmt::Assign{
                                 lhs: *lhs,
                                 type_: stmt_type,
@@ -112,7 +127,7 @@ fn populate_var_map<'module>(
                             type_: stmt_type,
                             rhs: Expr::Numeric{
                                 op: *op, 
-                                args: check_vec(args.clone()) 
+                                args: check_vec(args.clone(), map, replaced_vars) 
                             },
                         })                        
                     } 
@@ -123,7 +138,7 @@ fn populate_var_map<'module>(
                             type_: stmt_type, 
                             rhs: Expr::Call{
                                 func: func.clone(), 
-                                args: check_vec(args.clone()) 
+                                args: check_vec(args.clone(), map, replaced_vars) 
                             },
                         })
                     }
@@ -133,7 +148,7 @@ fn populate_var_map<'module>(
                             lhs: *lhs,
                             type_: stmt_type,
                             rhs: Expr::CallIndirect{
-                                args: check_vec(args.clone()),
+                                args: check_vec(args.clone(), map, replaced_vars),
                                 type_: type_.clone(),
                                 table_idx: *table_idx, 
                             },
@@ -148,7 +163,7 @@ fn populate_var_map<'module>(
             Stmt::Block { body, end_label: _ } | 
             Stmt::Loop { begin_label: _, body } => {
                 let mut body_stmts = body.0.iter();
-                let body_stmts = populate_var_map(&mut body_stmts, map, replaced_vars);
+                let body_stmts = populate_var_map(&mut body_stmts, map, rev_map, replaced_vars);
                 res.push(match stmt {
                     
                     Stmt::Block { body: _, end_label } => {
@@ -171,11 +186,11 @@ fn populate_var_map<'module>(
 
             Stmt::If { condition , if_body, else_body } => {
                 let mut if_body_stmts = if_body.0.iter();
-                let if_body = Body(populate_var_map(&mut if_body_stmts, map, replaced_vars));
+                let if_body = Body(populate_var_map(&mut if_body_stmts, map, rev_map, replaced_vars));
 
                 let else_body = if let Some(else_body) = else_body {
                     let mut else_body_stmts = else_body.0.iter();
-                    Some(Body(populate_var_map(&mut else_body_stmts, map, replaced_vars)))    
+                    Some(Body(populate_var_map(&mut else_body_stmts, map, rev_map, replaced_vars)))    
                 } else {
                     None
                 }; 
@@ -196,7 +211,7 @@ fn populate_var_map<'module>(
                     Expr::MemorySize => res.push(stmt.clone()),
 
                     Expr::Load { op, memarg, addr } => {
-                        if let Some(replacement_var) = check(*addr) {
+                        if let Some(replacement_var) = check(*addr, map, replaced_vars) {
                             res.push(Stmt::Expr(Expr::Load{
                                 op: *op,
                                 memarg: *memarg,
@@ -209,7 +224,7 @@ fn populate_var_map<'module>(
                     },
 
                     Expr::MemoryGrow { pages } => {
-                        if let Some(replacement_var) = check(*pages) {
+                        if let Some(replacement_var) = check(*pages, map, replaced_vars) {
                             res.push(Stmt::Expr(Expr::MemoryGrow {
                                     pages: replacement_var,
                                 }
@@ -222,7 +237,7 @@ fn populate_var_map<'module>(
                     Expr::Numeric { op, args } => {
                         res.push(Stmt::Expr(Expr::Numeric{
                                 op: *op, 
-                                args: check_vec(args.clone()) 
+                                args: check_vec(args.clone(), map, replaced_vars) 
                             },
                         ))                        
                     } 
@@ -230,14 +245,14 @@ fn populate_var_map<'module>(
                     Expr::Call { func, args } => {
                         res.push(Stmt::Expr(Expr::Call{
                                 func: func.clone(), 
-                                args: check_vec(args.clone()) 
+                                args: check_vec(args.clone(), map, replaced_vars) 
                             },
                         ))
                     }
 
                     Expr::CallIndirect { type_, table_idx, args } => {
                         res.push(Stmt::Expr(Expr::CallIndirect{
-                                args: check_vec(args.clone()),
+                                args: check_vec(args.clone(), map, replaced_vars),
                                 type_: type_.clone(),
                                 table_idx: *table_idx, 
                             },
@@ -316,8 +331,9 @@ fn constant_propogation (module: &mut Module) -> Module {
     for func in module.functions.clone() { //TODO dont want to clone and yet 
         let mut stmts = func.body.0.iter();
         let mut map = HashMap::new(); 
+        let mut rev_map = HashMap::new(); 
         let mut replaced_vars = Vec::new(); 
-        let opt_stmts = populate_var_map(&mut stmts, &mut map, &mut replaced_vars); 
+        let opt_stmts = populate_var_map(&mut stmts, &mut map, &mut rev_map, &mut replaced_vars); 
         let cleaned_stmts = cleanup(&opt_stmts, &replaced_vars);                
         opt_funcs.push(Function{
             name: func.name,
@@ -337,7 +353,7 @@ pub fn wimpl_optimize (path: impl AsRef<Path>) -> Result<Module, String> {
 
 #[test]
 fn opt_test() {
-    //let module = wimpl_optimize("tests/wimpl/local/local.wasm");
-    let module = wimpl_optimize("tests/wimpl/wimplify_expected/global/global.wasm");
+    let module = wimpl_optimize("tests/wimpl/wimplify_expected/updated_local/local.wasm");
+    //let module = wimpl_optimize("tests/wimpl/wimplify_expected/global/global.wasm");
     println!("{}", module.unwrap()); 
 }
