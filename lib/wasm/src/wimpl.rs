@@ -2128,7 +2128,7 @@ fn test(path_wimpl: &str, path_wasm: &str) {
 
 #[derive(Debug)]
 enum Value {
-    Top, 
+    Top, //TODO we dont have any reassignments so top will never be assigned 
     Var(Var)
 }
 
@@ -2140,34 +2140,35 @@ fn populate_var_map<'module>(
 
     while let Some(stmt) = stmts.next() { 
         
+        let mut check = |lhs: Var| -> Option<Var> { //why on earth should it be mutable 
+            if map.contains_key(&lhs) {
+                match *map.get_mut(&lhs).expect("lhs should exist in var map") {
+                    Value::Top => None,
+                    Value::Var(rhs) => Some(rhs)
+                }
+            } else {
+                None   
+            }
+        }; 
+
+        let mut check_vec = |lhs_vec: Vec<Var>| -> Vec<Var> {
+            let mut res_vec = Vec::new();
+            for lhs in lhs_vec {
+                if let Some(replacement_lhs) = check(lhs) {
+                    res_vec.push(replacement_lhs)
+                } else {
+                    res_vec.push(lhs); 
+                }
+            }; 
+            res_vec
+        };
+        
+
         match stmt {
             
             Stmt::Assign { lhs, type_, rhs } => {
                 
                 let stmt_type = *type_; 
-
-                let mut check = |lhs: Var| -> Option<Var> { //why on earth should it be mutable 
-                    if map.contains_key(&lhs) {
-                        match *map.get_mut(&lhs).expect("lhs should exist in var map") {
-                            Value::Top => None,
-                            Value::Var(rhs) => Some(rhs)
-                        }
-                    } else {
-                        None   
-                    }
-                }; 
-
-                let mut check_vec = |lhs_vec: Vec<Var>| -> Vec<Var> {
-                    let mut res_vec = Vec::new();
-                    for lhs in lhs_vec {
-                        if let Some(replacement_lhs) = check(lhs) {
-                            res_vec.push(replacement_lhs)
-                        } else {
-                            res_vec.push(lhs); 
-                        }
-                    }; 
-                    res_vec
-                }; 
 
                 match rhs {
                     
@@ -2257,8 +2258,9 @@ fn populate_var_map<'module>(
                             },
                         })
                     },
-                
-                    _ => res.push(stmt.clone())
+                    
+                    Expr::MemorySize => res.push(stmt.clone()),
+
                 }
             },
             
@@ -2304,21 +2306,85 @@ fn populate_var_map<'module>(
                 })
             },
 
+            Stmt::Expr(expr) => {
+                match expr {
+                    
+                    Expr::VarRef(_) => panic!("dangling variable"),
+                    
+                    Expr::Const(_) => res.push(stmt.clone()),
+                    Expr::MemorySize => res.push(stmt.clone()),
+
+                    Expr::Load { op, memarg, addr } => {
+                        if let Some(replacement_var) = check(*addr) {
+                            res.push(Stmt::Expr(Expr::Load{
+                                op: *op,
+                                memarg: *memarg,
+                                addr: replacement_var,
+                                })
+                            )
+                        } else {
+                            res.push(stmt.clone()); 
+                        } 
+                    },
+
+                    Expr::MemoryGrow { pages } => {
+                        if let Some(replacement_var) = check(*pages) {
+                            res.push(Stmt::Expr(Expr::MemoryGrow {
+                                    pages: replacement_var,
+                                }
+                            ))
+                        } else {
+                            res.push(stmt.clone()); 
+                        } 
+                    },
+                    
+                    Expr::Numeric { op, args } => {
+                        res.push(Stmt::Expr(Expr::Numeric{
+                                op: *op, 
+                                args: check_vec(args.clone()) 
+                            },
+                        ))                        
+                    } 
+
+                    Expr::Call { func, args } => {
+                        res.push(Stmt::Expr(Expr::Call{
+                                func: func.clone(), 
+                                args: check_vec(args.clone()) 
+                            },
+                        ))
+                    }
+
+                    Expr::CallIndirect { type_, table_idx, args } => {
+                        res.push(Stmt::Expr(Expr::CallIndirect{
+                                args: check_vec(args.clone()),
+                                type_: type_.clone(),
+                                table_idx: *table_idx, 
+                            },
+                        ))
+                    },
+                }
+            }
+            
             _ => res.push(stmt.clone()) 
         }
     }; 
     res
 }
 
+fn cleanup (stmts: &mut Vec<Stmt>, used_vars: &mut Vec<Var>) {
+    for stmt in stmts {
+
+    }
+    todo!() 
+}   
+
 fn constant_propogation (module: &mut Module) -> Module {
     let mut opt_funcs = Vec::new();  
     for func in module.functions.clone() { //TODO dont want to clone and yet 
         let mut stmts = func.body.0.iter();
         let mut map = HashMap::new(); 
-        let opt_stmts = populate_var_map(&mut stmts, &mut map); 
-        for x in map {
-            println!("{:?}", x); 
-        }        
+        let mut opt_stmts = populate_var_map(&mut stmts, &mut map); 
+        //cleanup(&mut opt_stmts);                
         opt_funcs.push(Function{
             name: func.name,
             type_: func.type_,
