@@ -2135,6 +2135,7 @@ enum Value {
 fn populate_var_map<'module>(
     stmts: &mut impl Iterator<Item=&'module Stmt>, 
     map: &mut HashMap<Var, Value>, 
+    replaced_vars: &mut Vec<Var>
 ) -> Vec<Stmt> {
     let mut res: Vec<Stmt> = Vec::new(); 
 
@@ -2144,7 +2145,10 @@ fn populate_var_map<'module>(
             if map.contains_key(&lhs) {
                 match *map.get_mut(&lhs).expect("lhs should exist in var map") {
                     Value::Top => None,
-                    Value::Var(rhs) => Some(rhs)
+                    Value::Var(rhs) => {
+                        replaced_vars.push(lhs.clone()); 
+                        Some(rhs)
+                    }
                 }
             } else {
                 None   
@@ -2267,7 +2271,7 @@ fn populate_var_map<'module>(
             Stmt::Block { body, end_label: _ } | 
             Stmt::Loop { begin_label: _, body } => {
                 let mut body_stmts = body.0.iter();
-                let body_stmts = populate_var_map(&mut body_stmts, map);
+                let body_stmts = populate_var_map(&mut body_stmts, map, replaced_vars);
                 res.push(match stmt {
                     
                     Stmt::Block { body: _, end_label } => {
@@ -2290,11 +2294,11 @@ fn populate_var_map<'module>(
 
             Stmt::If { condition , if_body, else_body } => {
                 let mut if_body_stmts = if_body.0.iter();
-                let if_body = Body(populate_var_map(&mut if_body_stmts, map));
+                let if_body = Body(populate_var_map(&mut if_body_stmts, map, replaced_vars));
 
                 let else_body = if let Some(else_body) = else_body {
                     let mut else_body_stmts = else_body.0.iter();
-                    Some(Body(populate_var_map(&mut else_body_stmts, map)))    
+                    Some(Body(populate_var_map(&mut else_body_stmts, map, replaced_vars)))    
                 } else {
                     None
                 }; 
@@ -2371,11 +2375,63 @@ fn populate_var_map<'module>(
     res
 }
 
-fn cleanup (stmts: &mut Vec<Stmt>, used_vars: &mut Vec<Var>) {
+fn cleanup (stmts: &[Stmt], replaced_vars: &[Var]) -> Vec<Stmt>{
+    let  mut cleaned_stmts = Vec::new(); 
     for stmt in stmts {
+        match stmt {
+            Stmt::Assign { lhs, type_: _, rhs: Expr::VarRef(_) } => {
+                if !replaced_vars.contains(lhs) {
+                    cleaned_stmts.push(stmt.clone());    
+                } 
+            },
 
+            Stmt::Loop {begin_label: _, body} |
+            Stmt::Block{ body, end_label: _} => {
+                let body_stmts = &body.0;
+                let body = Body(cleanup(body_stmts, replaced_vars));
+                cleaned_stmts.push(match stmt {
+
+                    Stmt::Loop {begin_label, body: _} => {
+                        Stmt::Loop{
+                            begin_label: *begin_label,
+                            body,
+                        }
+                    }, 
+                    
+                    Stmt::Block{ body: _, end_label} => {
+                        Stmt::Block{
+                            body,
+                            end_label: *end_label,
+                        }
+                    }, 
+                    _ => panic!("should not get anything other than block or loop here")
+                }
+                )
+            },
+            
+            Stmt::If{ condition, if_body, else_body} => {
+                let if_body_stmts = &if_body.0;
+                let if_body = Body(cleanup(if_body_stmts, replaced_vars));
+
+                let else_body = if let Some(else_body) = else_body {
+                    let else_body_stmts = &else_body.0;
+                    Some(Body(cleanup(else_body_stmts, replaced_vars)))
+                } else {
+                    None
+                }; 
+
+                cleaned_stmts.push(Stmt::If{
+                    condition: *condition,
+                    if_body,
+                    else_body,
+                })
+                
+            }, 
+
+            _ => cleaned_stmts.push(stmt.clone()),
+        }
     }
-    todo!() 
+    cleaned_stmts 
 }   
 
 fn constant_propogation (module: &mut Module) -> Module {
@@ -2383,12 +2439,13 @@ fn constant_propogation (module: &mut Module) -> Module {
     for func in module.functions.clone() { //TODO dont want to clone and yet 
         let mut stmts = func.body.0.iter();
         let mut map = HashMap::new(); 
-        let mut opt_stmts = populate_var_map(&mut stmts, &mut map); 
-        //cleanup(&mut opt_stmts);                
+        let mut replaced_vars = Vec::new(); 
+        let opt_stmts = populate_var_map(&mut stmts, &mut map, &mut replaced_vars); 
+        let cleaned_stmts = cleanup(&opt_stmts, &replaced_vars);                
         opt_funcs.push(Function{
             name: func.name,
             type_: func.type_,
-            body: Body(opt_stmts),
+            body: Body(cleaned_stmts),
             export: func.export,
         })
     }; 
@@ -2403,7 +2460,8 @@ pub fn wimpl_optimize (path: impl AsRef<Path>) -> Result<Module, String> {
 
 #[test]
 fn opt_test() {
-    let module = wimpl_optimize("tests/wimpl/local/local.wasm");
+    //let module = wimpl_optimize("tests/wimpl/local/local.wasm");
+    let module = wimpl_optimize("tests/wimpl/global/global.wasm");
     println!("{}", module.unwrap()); 
 }
 
