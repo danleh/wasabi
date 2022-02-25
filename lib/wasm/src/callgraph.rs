@@ -5,7 +5,7 @@ use crate::{wimpl::{Func, self, Expr::Call, Function, Var, Body}, FunctionType};
 
 use crate::wimpl::wimplify::*;  
 
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashSet, FxHashMap};
 use test_utilities::*; 
 
 // TODO perf: change from edge list to adjacency list, i.e., HashMap<Func, HashSet<Func>>
@@ -108,7 +108,7 @@ pub fn reachable_callgraph(
     // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
     let call_target_constraints: HashMap<Func, HashSet<Target>> = module.functions.iter()
         .map(|func| {
-            (func.name(), collect_target_constraints(module, func.name(), options))
+            (func.name(), collect_target_constraints(func, options))
         })
         .collect();
     println!("[DONE] collect constraints");
@@ -174,13 +174,10 @@ pub fn reachable_callgraph(
 }
 
 pub fn collect_target_constraints(
-    module: &wimpl::Module,
-    src: Func,
+    src: &Function,
     options: Options
 ) -> HashSet<Target> {
     let mut targets = HashSet::new();
-
-    let src = module.function(src.clone()).expect(&format!("source function not found in module: {:?}", src));
 
     // TODO how to handle imported functions? Can they each every exported function?
     // Do we add a direct edge there? Or do we add an abstract "host" node? 
@@ -197,7 +194,8 @@ pub fn collect_target_constraints(
     // TODO with recursive exprs, this all would be trivial... :(
     // If performance turns out to be a huge problem, do recursive Expr instead.
     
-    struct VarExprMap(HashMap<Var, Option<wimpl::Expr>>);
+    #[derive(Debug, Default)]
+    struct VarExprMap(FxHashMap<Var, Option<wimpl::Expr>>);
     impl VarExprMap {
         fn add(&mut self, var: &Var, expr: &wimpl::Expr) {
             self.0.entry(*var)
@@ -244,7 +242,7 @@ pub fn collect_target_constraints(
         }
     }
 
-    let mut var_expr = VarExprMap(HashMap::new());
+    let mut var_expr = VarExprMap::default();
     collect_var_expr(body, &mut var_expr);
 
 
