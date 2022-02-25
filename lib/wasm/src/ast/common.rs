@@ -133,6 +133,10 @@ impl FromStr for ValType {
     }
 }
 
+// TODO Implement interning for this, where a function type is represented
+// just by a u32 (more than enough for practical purposes, i.e., realistic
+// numbers of combinations of types)
+// and also not dopped, i.e., in a 'static arena.
 #[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]
 #[tag = 0x60]
 pub struct FunctionType {

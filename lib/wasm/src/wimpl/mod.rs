@@ -35,6 +35,8 @@ pub struct Module {
 
 impl Module {
     pub fn function(&self, name: Func) -> Option<&Function> {
+        // FIXME perf: This linear search can easily give us accidentially quadratic behavior!
+        // TODO Memoize lookup with HashMap in lazy_static or non-pub field on Module.
         let mut functions = self.functions.iter().filter(|f| f.name == name);
         let function = functions.next();
         assert!(functions.next().is_none(), "more than one matching function for name {}", name);
