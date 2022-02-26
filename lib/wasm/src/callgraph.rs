@@ -137,6 +137,11 @@ pub fn reachable_callgraph(
     // TODO optimization: generate map from FuncTy -> Vec<Func>, such that we 
     // can quickly filter by function type in solve_constraints (~25% of total runtime!)
     // pass that to solve_constraints.
+    let mut funcs_by_type: FxHashMap<FunctionType, Vec<&Function>> = FxHashMap::default();
+    for func in &module.functions {
+        let funcs_with_type = funcs_by_type.entry(func.type_).or_default();
+        funcs_with_type.push(func);
+    }
     
     // TODO optimization make Func an interned string, then eq would be basically free
     // right now its ~6% of all in callgraph.rs
@@ -151,7 +156,7 @@ pub fn reachable_callgraph(
         
         for call in calls {
             // Solve the constraints to concrete edges.
-            let targets = solve_constraints(module, &funcs_in_table, call);
+            let targets = solve_constraints(module, &funcs_by_type, &funcs_in_table, call);
 
             // Add those as edges to the concrete call graph.
             for target in targets {
@@ -306,15 +311,26 @@ pub fn collect_target_constraints(
 }
 
 /// _All_ constraints must be satisfied, i.e., conjunction over all constraints.
-pub fn solve_constraints<'a, Hasher: BuildHasher>(
+pub fn solve_constraints<'a>(
     module: &'a wimpl::Module,
-    funcs_in_table: &'a HashSet<Func, Hasher>,
+    funcs_by_type: &'a FxHashMap<FunctionType, Vec<&'a Function>>,
+    funcs_in_table: &'a FxHashSet<Func>,
     target_constraints: &'a Target
 ) -> Box<dyn Iterator<Item=Func> + 'a> {
     match target_constraints {
         Target::Direct(f) => Box::new(std::iter::once(f.clone())),
         Target::Constrained(constraints) => {
-            let mut filtered_iter: Box<dyn Iterator<Item=&Function>> = Box::new(module.functions.iter());
+            let mut filtered_iter: Box<dyn Iterator<Item=&Function>> = 
+                constraints.iter()
+                    // If there is a type constraint, start with the much narrowed down set of
+                    // function types already.
+                    .find_map(|c| match c {
+                        Constraint::Type(ty) => Some(*ty),
+                        _ => None,
+                    })
+                    .and_then(|ty| funcs_by_type.get(&ty))
+                    .map(|vec| Box::new(vec.iter().cloned()) as Box<dyn Iterator<Item=&Function>>)
+                    .unwrap_or_else(|| Box::new(module.functions.iter()) as Box<dyn Iterator<Item=&Function>>);
             for constraint in constraints {
                 // Build up filtering iterator at runtime, adding all constraints from before.
                 // TODO Speed up with bloom filter?
