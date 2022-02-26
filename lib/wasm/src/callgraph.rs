@@ -341,7 +341,7 @@ fn main() {
         // with_index_constraint: true,
         ..Options::default()
     };
-    let reachable = vec![Func::Named("main".to_string())].into_iter().collect::<HashSet<_>>();
+    let reachable = vec![Func::Named("main".to_string().into())].into_iter().collect::<HashSet<_>>();
     let callgraph = reachable_callgraph(&wimpl_module, reachable, options).unwrap();
 
     println!("{}", callgraph.to_dot());
@@ -368,7 +368,7 @@ fn main() {
 // }
 
 #[test]
-fn data_gathering () {
+fn data_gathering() {
     
     let mut file = File::create("data.csv").unwrap();
     writeln!(file, "path, num_functions, num_functions_exported, num_calls, num_ind_calls, unq functions in elem, num_funcs_with_call_ind, num_funcs_with_memory_access, reachable_ratio_trivial, reachable_ratio_ty_only, reachable_ratio_in_table_only, reachable_ratio_ty_and_in_table").unwrap(); 

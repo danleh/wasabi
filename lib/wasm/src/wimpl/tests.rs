@@ -522,7 +522,7 @@ fn parse_var() {
 #[test]
 fn parse_func_id() {
     assert_eq!(Ok(Func::Idx(13)), "f13".parse());
-    assert_eq!(Ok(Func::Named("bla".to_string())), "bla".parse());
+    assert_eq!(Ok(Func::Named("bla".to_string().into())), "bla".parse());
 
     // Negative tests:
     assert!(

@@ -4,6 +4,8 @@ use std::{
     path::Path,
 };
 
+use arc_interner::ArcIntern;
+
 use crate::{highlevel::{MemoryOp, Global, Table}, types::{InferredInstructionType, TypeChecker}, Val, ValType, Idx, BlockType};
 use crate::{
     highlevel::{self, LoadOp, NumericOp, StoreOp, FunctionType},
@@ -34,14 +36,14 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn function(&self, name: Func) -> Option<&Function> {
-        // FIXME perf: This linear search can easily give us accidentially quadratic behavior!
-        // TODO Memoize lookup with HashMap in lazy_static or non-pub field on Module.
-        let mut functions = self.functions.iter().filter(|f| f.name == name);
-        let function = functions.next();
-        assert!(functions.next().is_none(), "more than one matching function for name {}", name);
-        function
-    }
+    // FIXME perf: This linear search can easily give us accidentially quadratic behavior!
+    // TODO Memoize lookup with HashMap in lazy_static or non-pub field on Module.
+    // pub fn function(&self, name: Func) -> Option<&Function> {
+    //     let mut functions = self.functions.iter().filter(|f| f.name == name);
+    //     let function = functions.next();
+    //     assert!(functions.next().is_none(), "more than one matching function for name {}", name);
+    //     function
+    // }
 
     pub fn function_by_idx(&self, idx: Idx<highlevel::Function>) -> &Function {
         &self.functions[idx.into_inner()]
@@ -70,8 +72,8 @@ impl Function {
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Ord, PartialOrd)]
 pub enum Func {
     /// If the function had a debug name attached to it (from the `name` custom section).
-    // TODO use string interner? make this copy?
-    Named(String),
+    // TODO Alternative: use an interner that is `Copy` for convenience, e.g., a leaking one?
+    Named(ArcIntern<String>),
     /// Otherwise, just refer to the function via its index, which is the same as in the original
     /// WebAssembly module.
     Idx(usize),
@@ -79,8 +81,8 @@ pub enum Func {
 
 impl Func {
     pub fn from_idx(idx: Idx<highlevel::Function>, module: &highlevel::Module) -> Self {
-        match module.function(idx).name.clone() {
-            Some(name) => Func::Named(name),
+        match &module.function(idx).name {
+            Some(name) => Func::Named(ArcIntern::from(name.clone())),
             None => Func::Idx(idx.into_inner()),
         }
     }

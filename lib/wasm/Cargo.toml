@@ -20,6 +20,7 @@ test_utilities = { path = "../test_utilities" }
 # For faster HashSet and HashMap in callgraph etc.
 rustc-hash = "1.1.0"
 parking_lot = "0.12.0"
+arc-interner = "0.7.0"
 
 [dev-dependencies]
 walkdir = "2.3.2"

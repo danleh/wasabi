@@ -104,7 +104,7 @@ impl FromStr for Func {
         } else {
             // Functions must start with an alphabetic character, to avoid confusion with constants.
             match s.chars().next() {
-                Some(c) if c.is_alphabetic() => Func::Named(s.to_string()),
+                Some(c) if c.is_alphabetic() => Func::Named(s.to_string().into()),
                 _ => return Err(()),
             }
         })
