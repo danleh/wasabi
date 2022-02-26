@@ -512,6 +512,7 @@ pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
             };
             state.label_stack.push((Label(0), return_var));
 
+            // FIXME don't append, this costs a lot of performance due to unnecessary allocations
             let (mut stmts, _) = wimplify_instrs(&mut instrs, context, &mut state)?;
             result_instrs.append(&mut stmts);
         }
