@@ -24,8 +24,7 @@ pub enum Val {
 }
 
 impl Val {
-    
-    pub fn get_default_value (type_: ValType) -> Self {
+    pub fn get_default_value(type_: ValType) -> Self {
         match type_ {
             ValType::I32 => Val::I32(0),
             ValType::I64 => Val::I64(0),
@@ -78,6 +77,11 @@ pub enum ValType {
     #[tag = 0x7c] F64,
 }
 
+#[test]
+fn val_type_is_small() {
+    assert_eq!(std::mem::size_of::<ValType>(), 1)
+}
+
 impl ValType {
     /// Convert to the standard string representation, as in the WebAssembly
     /// specification and text format.
@@ -102,13 +106,13 @@ impl ValType {
         }
     }
 
-    pub fn new(ch: char) -> Self {
-        match ch {
-            'i' => ValType::I32,
-            'I' => ValType::I64,
-            'f' => ValType::F32,
-            'F' => ValType::F64,
-            _ => panic!("found unknown type")
+    pub fn from_char(c: char) -> Option<Self> {
+        match c {
+            'i' => Some(ValType::I32),
+            'I' => Some(ValType::I64),
+            'f' => Some(ValType::F32),
+            'F' => Some(ValType::F64),
+            _ => None,
         }
     }
 }
@@ -215,6 +219,11 @@ impl FromStr for FunctionType {
 /// In the WebAssembly MVP, blocks can return either nothing or a single value.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct BlockType(pub Option<ValType>);
+
+#[test]
+fn block_type_is_small() {
+    assert_eq!(std::mem::size_of::<BlockType>(), 1)
+}
 
 impl FromStr for BlockType {
     type Err = ();
@@ -360,7 +369,6 @@ impl Serialize for Label {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.0.serialize(serializer)
     }
-    
 }
 
 /* Code */
