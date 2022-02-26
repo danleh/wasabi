@@ -174,8 +174,8 @@
 use std::{fmt, convert::TryFrom};
 
 use crate::{
-    highlevel::{Function, Instr, Module, Global, ImportOrPresent, Code},
-    FunctionType, Idx, Label, ValType,
+    highlevel::{Function, Instr, Module, Global, ImportOrPresent, Code, FunctionType},
+    Idx, Label, ValType,
 };
 
 /// Value type inferred by the type checker.
@@ -983,7 +983,7 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
 
 #[cfg(test)]
 mod tests {
-    use crate::{highlevel::{Function, Module, Code, Instr, Instr::*, NumericOp::*, LocalOp, self}, FunctionType, ValType, Val, ValType::*, BlockType, Label};
+    use crate::{highlevel::{Function, Module, Code, Instr, Instr::*, NumericOp::*, LocalOp, FunctionType, self}, ValType, Val, ValType::*, BlockType, Label};
 
     use super::TypeChecker;
 

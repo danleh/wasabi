@@ -6,7 +6,7 @@ use walkdir::WalkDir;
 use crate::highlevel::LoadOp::*;
 use crate::highlevel::NumericOp::*;
 use crate::highlevel::StoreOp::*;
-use crate::FunctionType;
+use crate::highlevel::FunctionType;
 use crate::Memarg;
 use crate::Val::*;
 use crate::ValType;

@@ -6,8 +6,8 @@ use std::{
 
 use crate::{highlevel::{MemoryOp, Global, Table}, types::{InferredInstructionType, TypeChecker}, Val, ValType, Idx, BlockType};
 use crate::{
-    highlevel::{self, LoadOp, NumericOp, StoreOp},
-    FunctionType, Memarg,
+    highlevel::{self, LoadOp, NumericOp, StoreOp, FunctionType},
+    Memarg,
 };
 
 // TODO(Michelle): fix compile errors in wimpl_opt, add tests, only then include in module hierarchy.

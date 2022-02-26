@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{collections::{HashSet, HashMap, hash_map::Entry, BTreeSet}, path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, hash::BuildHasher};
 
-use crate::{wimpl::{Func, self, Expr::Call, Function, Var, Body}, FunctionType};
+use crate::{wimpl::{Func, self, Expr::Call, Function, Var, Body}, highlevel::FunctionType};
 
 use crate::wimpl::wimplify::*;  
 

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use rayon::prelude::*;
 
-use crate::{FunctionType, Idx, MemoryType, TableType, Val};
+use crate::{Idx, MemoryType, TableType, Val};
 use crate::highlevel as hl;
 use crate::lowlevel as ll;
 
@@ -16,7 +16,7 @@ use crate::lowlevel as ll;
 impl From<ll::Module> for hl::Module {
     fn from(ll::Module { sections }: ll::Module) -> Self {
         let mut module = hl::Module::default();
-        let mut types: Vec<FunctionType> = Vec::new();
+        let mut types: Vec<hl::FunctionType> = Vec::new();
 
         for section in sections {
             match section {
@@ -77,7 +77,7 @@ impl From<ll::Module> for hl::Module {
                 // Pass through unknown custom sections unmodified.
                 ll::Section::Custom(ll::CustomSection::Raw(sec)) => module.custom_sections.push(sec),
 
-                ll::Section::Type(ll::WithSize(ll::SectionOffset(types_))) => types = types_,
+                ll::Section::Type(ll::WithSize(ll::SectionOffset(types_))) => types = types_.into_iter().map(Into::into).collect(),
 
                 /* Imported functions, tables, memories, and globals are first added to the respective index spaces... */
 
@@ -87,7 +87,7 @@ impl From<ll::Module> for hl::Module {
                         match import_.type_ {
                             ll::ImportType::Function(type_idx) => module.functions.push(
                                 hl::Function::new_imported(
-                                    types[type_idx.into_inner()].clone(),
+                                    types[type_idx.into_inner()],
                                     import_.module, import_.name,
                                     export)
                             ),
@@ -118,7 +118,7 @@ impl From<ll::Module> for hl::Module {
                     for type_idx in function_signatures {
                         module.functions.push(
                             hl::Function::new(
-                                types[type_idx.into_inner()].clone(),
+                                types[type_idx.into_inner()],
                                 // Use an empty body/locals for now, code is only converted later.
                                 hl::Code { locals: vec![], body: vec![] },
                                 Vec::new()
@@ -206,7 +206,7 @@ impl From<ll::Module> for hl::Module {
     }
 }
 
-fn from_lowlevel_code(code: ll::Code, types: &[FunctionType]) -> hl::Code {
+fn from_lowlevel_code(code: ll::Code, types: &[hl::FunctionType]) -> hl::Code {
     let mut locals = Vec::new();
     for ll::Locals { type_, count } in code.locals {
         for _ in 0..count {
@@ -219,11 +219,11 @@ fn from_lowlevel_code(code: ll::Code, types: &[FunctionType]) -> hl::Code {
     }
 }
 
-fn from_lowlevel_expr(expr: ll::Expr, types: &[FunctionType]) -> hl::Expr {
+fn from_lowlevel_expr(expr: ll::Expr, types: &[hl::FunctionType]) -> hl::Expr {
     expr.0.into_iter().map(|instr| from_lowlevel_instr(instr, types)).collect()
 }
 
-fn from_lowlevel_instr(instr: ll::Instr, types: &[FunctionType]) -> hl::Instr {
+fn from_lowlevel_instr(instr: ll::Instr, types: &[hl::FunctionType]) -> hl::Instr {
     match instr {
         ll::Instr::Unreachable => hl::Instr::Unreachable,
         ll::Instr::Nop => hl::Instr::Nop,
@@ -240,7 +240,7 @@ fn from_lowlevel_instr(instr: ll::Instr, types: &[FunctionType]) -> hl::Instr {
 
         ll::Instr::Return => hl::Instr::Return,
         ll::Instr::Call(function_idx) => hl::Instr::Call(function_idx.into_inner().into()),
-        ll::Instr::CallIndirect(type_idx, table_idx) => hl::Instr::CallIndirect(types[type_idx.into_inner()].clone(), table_idx.into_inner().into()),
+        ll::Instr::CallIndirect(type_idx, table_idx) => hl::Instr::CallIndirect(types[type_idx.into_inner()], table_idx.into_inner().into()),
 
         ll::Instr::Drop => hl::Instr::Drop,
         ll::Instr::Select => hl::Instr::Select,
@@ -413,7 +413,7 @@ fn from_lowlevel_instr(instr: ll::Instr, types: &[FunctionType]) -> hl::Instr {
 /* From high-level to low-level. */
 
 struct EncodeState {
-    types: HashMap<FunctionType, usize>,
+    types: HashMap<hl::FunctionType, usize>,
     // Mapping of indices from the high-level AST to the low-level AST.
     // Necessary, because in the low-level AST, imported functions/globals etc. must come before
     // "local" ones.
@@ -436,12 +436,12 @@ macro_rules! element_idx_fns {
 }
 
 impl EncodeState {
-    fn get_or_insert_type(&mut self, type_: FunctionType) -> Idx<FunctionType> {
+    fn get_or_insert_type(&mut self, type_: hl::FunctionType) -> Idx<ll::FunctionType> {
         let new_idx = self.types.len();
         (*self.types.entry(type_).or_insert(new_idx)).into()
     }
-    fn get_type_idx(&self, type_: &FunctionType) -> Idx<FunctionType> {
-        (*self.types.get(type_).expect("call_indirect with unknown type")).into()
+    fn get_type_idx(&self, type_: hl::FunctionType) -> Idx<ll::FunctionType> {
+        (*self.types.get(&type_).expect("call_indirect with unknown type")).into()
     }
 
     element_idx_fns!(insert_function_idx, map_function_idx, function_idx, hl::Function, ll::Function);
@@ -474,7 +474,7 @@ impl From<&hl::Module> for ll::Module {
         for function in &module.functions {
             for instr in function.instrs() {
                 if let hl::Instr::CallIndirect(ty, _) = instr {
-                    state.get_or_insert_type(ty.clone());
+                    state.get_or_insert_type((*ty).into());
                 }
             }
         }
@@ -485,8 +485,8 @@ impl From<&hl::Module> for ll::Module {
         let mut types = state.types.iter().collect::<Vec<_>>();
         types.sort_unstable_by_key(|&(_, idx)| idx);
         let types = types.into_iter()
-            .map(|(type_, _)| type_.clone())
-            .collect::<Vec<FunctionType>>();
+            .map(|(type_, _)| (*type_).into())
+            .collect::<Vec<ll::FunctionType>>();
         if !types.is_empty() {
             sections.push(ll::Section::Type(ll::WithSize(ll::SectionOffset(types))));
         }
@@ -656,8 +656,8 @@ macro_rules! to_lowlevel_elements {
     };
 }
 
-fn to_lowlevel_functions(functions: &[hl::Function], state: &mut EncodeState) -> Vec<Idx<FunctionType>> {
-    to_lowlevel_elements!(functions, state, insert_function_idx, |func: &hl::Function| state.get_or_insert_type(func.type_.clone()))
+fn to_lowlevel_functions(functions: &[hl::Function], state: &mut EncodeState) -> Vec<Idx<ll::FunctionType>> {
+    to_lowlevel_elements!(functions, state, insert_function_idx, |func: &hl::Function| state.get_or_insert_type(func.type_.into()))
 }
 
 fn to_lowlevel_tables(tables: &[hl::Table], state: &mut EncodeState) -> Vec<TableType> {
@@ -774,7 +774,7 @@ fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
 
         hl::Instr::Return => ll::Instr::Return,
         hl::Instr::Call(function_idx) => ll::Instr::Call(state.map_function_idx(function_idx)),
-        hl::Instr::CallIndirect(ref type_, table_idx) => ll::Instr::CallIndirect(state.get_type_idx(&type_), state.map_table_idx(table_idx)),
+        hl::Instr::CallIndirect(ref type_, table_idx) => ll::Instr::CallIndirect(state.get_type_idx(*type_), state.map_table_idx(table_idx)),
 
         hl::Instr::Drop => ll::Instr::Drop,
         hl::Instr::Select => ll::Instr::Select,

@@ -2,10 +2,11 @@ use std::fmt;
 
 use crate::highlevel::Instr::*;
 use crate::highlevel::NumericOp::*;
+use crate::highlevel::FunctionType;
 use crate::highlevel::{Function, Instr, Module};
 use crate::types::InferredInstructionType;
 use crate::types::TypeChecker;
-use crate::{FunctionType, Idx, Val};
+use crate::{Idx, Val};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct FoldedExpr(Instr, Vec<FoldedExpr>);
