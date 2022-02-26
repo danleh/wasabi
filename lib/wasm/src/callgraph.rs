@@ -1,11 +1,12 @@
 use core::fmt;
-use std::{collections::{HashSet, HashMap, hash_map::Entry, BTreeSet}, path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, hash::BuildHasher};
+use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, hash::Hasher};
 
 use crate::{wimpl::{Func, self, Expr::Call, Function, Var, Body}, highlevel::FunctionType};
 
 use crate::wimpl::wimplify::*;  
 
-use rustc_hash::{FxHashSet, FxHashMap};
+use cuckoofilter::CuckooFilter;
+use rustc_hash::{FxHashSet, FxHashMap, FxHasher};
 use test_utilities::*; 
 
 #[derive(Default, Clone, Eq, PartialEq)]
@@ -83,7 +84,7 @@ impl CallGraph {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Target {
     Direct(Func),
-    Constrained(BTreeSet<Constraint>)
+    Constrained(Vec<Constraint>)
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -103,7 +104,7 @@ pub struct Options {
 
 pub fn reachable_callgraph(
     module: &wimpl::Module,
-    mut reachable: HashSet<Func>,
+    mut reachable: FxHashSet<Func>,
     options: Options,
 ) -> anyhow::Result<CallGraph> {
     
@@ -111,7 +112,7 @@ pub fn reachable_callgraph(
 
     // Collect "declarative constraints" once per function.
     // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
-    let call_target_constraints: HashMap<Func, HashSet<Target>> = module.functions.iter()
+    let call_target_constraints: FxHashMap<Func, FxHashSet<Target>> = module.functions.iter()
         .map(|func| {
             (func.name(), collect_target_constraints(func, options))
         })
@@ -122,19 +123,22 @@ pub fn reachable_callgraph(
 
     // TODO use bitset for speedup?
     let mut funcs_in_table = FxHashSet::default();
+    let mut funcs_in_table_approx = CuckooFilter::<FxHasher>::with_capacity(module.functions.len());
     for table in &module.tables {
         // TODO interpret `table.offset` for index-based analysis, i.e., to get a map from table
         // index to function index after table initialization (assumption: table stays constant).
         for element in &table.elements {
             for func_idx in &element.functions {
                 let func = module.function_by_idx(*func_idx);
-                funcs_in_table.insert(func.name()); 
+                let func_name = func.name();
+                let _ignore_not_enough_space = funcs_in_table_approx.add(&func_name);
+                funcs_in_table.insert(func_name);
             }
         }
     }
     println!("[DONE] collect funcs in table");
 
-    // TODO optimization: generate map from FuncTy -> Vec<Func>, such that we 
+    // Optimization: generate map from FuncTy -> Vec<Func>, such that we 
     // can quickly filter by function type in solve_constraints (~25% of total runtime!)
     // pass that to solve_constraints.
     let mut funcs_by_type: FxHashMap<FunctionType, Vec<&Function>> = FxHashMap::default();
@@ -156,7 +160,7 @@ pub fn reachable_callgraph(
         
         for call in calls {
             // Solve the constraints to concrete edges.
-            let targets = solve_constraints(module, &funcs_by_type, &funcs_in_table, call);
+            let targets = solve_constraints(module, &funcs_by_type, &funcs_in_table, &funcs_in_table_approx, call);
 
             // Add those as edges to the concrete call graph.
             for target in targets {
@@ -184,8 +188,8 @@ pub fn reachable_callgraph(
 pub fn collect_target_constraints(
     src: &Function,
     options: Options
-) -> HashSet<Target> {
-    let mut targets = HashSet::new();
+) -> FxHashSet<Target> {
+    let mut targets = FxHashSet::default();
 
     // TODO how to handle imported functions? Can they each every exported function?
     // Do we add a direct edge there? Or do we add an abstract "host" node? 
@@ -257,7 +261,7 @@ pub fn collect_target_constraints(
     // Step 2:
     // Collect one set of constraints (conjuncts) per call/call_indirect.
 
-    fn collect_call_constraints(body: &Body, targets: &mut HashSet<Target>, var_expr: &VarExprMap, options: Options) {
+    fn collect_call_constraints(body: &Body, targets: &mut FxHashSet<Target>, var_expr: &VarExprMap, options: Options) {
         for stmt in &body.0 {
             match stmt {
                 // Direct calls:
@@ -269,16 +273,16 @@ pub fn collect_target_constraints(
                 // Indirect calls:
                 Assign { lhs: _, rhs: CallIndirect { type_, table_idx, args: _ }, type_: _ } |
                 Expr(CallIndirect { type_, table_idx, args: _ }) => {
-                    let mut constraints = BTreeSet::new();
-                    if options.with_in_table_constraint {
-                        constraints.insert(Constraint::InTable);
-                    }
+                    let mut constraints = Vec::default();
                     if options.with_type_constraint {
-                        constraints.insert(Constraint::Type(type_.clone()));
+                        constraints.push(Constraint::Type(*type_));
+                    }
+                    if options.with_in_table_constraint {
+                        constraints.push(Constraint::InTable);
                     }
                     if options.with_index_constraint {
                         if let Some(precise_expr) = var_expr.get(table_idx) {
-                            constraints.insert(Constraint::TableIndexExpr(precise_expr.clone()));
+                            constraints.push(Constraint::TableIndexExpr(precise_expr.clone()));
                         }
                     }
                     targets.insert(Target::Constrained(constraints));
@@ -311,10 +315,11 @@ pub fn collect_target_constraints(
 }
 
 /// _All_ constraints must be satisfied, i.e., conjunction over all constraints.
-pub fn solve_constraints<'a>(
+pub fn solve_constraints<'a, T: Hasher + Default>(
     module: &'a wimpl::Module,
     funcs_by_type: &'a FxHashMap<FunctionType, Vec<&'a Function>>,
     funcs_in_table: &'a FxHashSet<Func>,
+    funcs_in_table_approx: &'a CuckooFilter<T>,
     target_constraints: &'a Target
 ) -> Box<dyn Iterator<Item=Func> + 'a> {
     match target_constraints {
@@ -333,10 +338,16 @@ pub fn solve_constraints<'a>(
                     .unwrap_or_else(|| Box::new(module.functions.iter()) as Box<dyn Iterator<Item=&Function>>);
             for constraint in constraints {
                 // Build up filtering iterator at runtime, adding all constraints from before.
-                // TODO Speed up with bloom filter?
                 filtered_iter = match constraint {
                     Constraint::Type(ty) => Box::new(filtered_iter.filter(move |f| &f.type_ == ty)),
-                    Constraint::InTable => Box::new(filtered_iter.filter(move |f| funcs_in_table.contains(&f.name))),
+                    Constraint::InTable => Box::new(filtered_iter.filter(move |f| {
+                        // Optimization: If the Bloom filter already says the function is not in the
+                        // table, then we don't need to check the slower hash set.
+                        // if !funcs_in_table_approx.contains(&f.name) {
+                        //     return false;
+                        // }
+                        funcs_in_table.contains(&f.name)
+                    })),
                     Constraint::TableIndexExpr(wimpl::Expr::Const(val)) => todo!("constant: {}", val),
                     Constraint::TableIndexExpr(expr) => todo!("{}", expr),
                 }
@@ -357,7 +368,7 @@ fn main() {
         // with_index_constraint: true,
         ..Options::default()
     };
-    let reachable = vec![Func::Named("main".to_string().into())].into_iter().collect::<HashSet<_>>();
+    let reachable = vec![Func::Named("main".to_string().into())].into_iter().collect();
     let callgraph = reachable_callgraph(&wimpl_module, reachable, options).unwrap();
 
     println!("{}", callgraph.to_dot());
@@ -444,7 +455,7 @@ fn data_gathering() {
 
         } 
 
-        let mut element_funcs = HashSet::new(); 
+        let mut element_funcs = FxHashSet::default(); 
         for tab in &wimpl_module.tables {
             for elem in &tab.elements {
                 for func_idx in &elem.functions {
@@ -459,7 +470,7 @@ fn data_gathering() {
             let exported_funcs = wimpl_module.functions.iter()
                 .filter(|func| !func.export.is_empty())
                 .map(|func| func.name())
-                .collect::<HashSet<_>>();
+                .collect::<FxHashSet<_>>();
             
             reachable_callgraph(&wimpl_module, exported_funcs, options).unwrap().functions().len() as f64 
                 / wimpl_module.functions.len() as f64
@@ -471,10 +482,10 @@ fn data_gathering() {
             let exported_funcs = wimpl_module.functions.iter()
                 .filter(|func| !func.export.is_empty())
                 .map(|func| func.name())
-                .collect::<HashSet<_>>();
+                .collect::<FxHashSet<_>>();
             
             let sum_reachable_count: u64 = exported_funcs.iter().map(|f| {
-                let mut reachable = HashSet::new();
+                let mut reachable = FxHashSet::default();
                 reachable.insert(f.clone());
                 let reachable_funcs_count = reachable_callgraph(&wimpl_module, reachable, options).unwrap().functions().len();
                 reachable_funcs_count as u64

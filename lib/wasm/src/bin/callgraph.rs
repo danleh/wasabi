@@ -1,6 +1,4 @@
-use std::collections::HashSet;
-
-use wasm::{wimpl::{self, wimplify::wimplify}, callgraph};
+use wasm::{wimpl::wimplify::wimplify, callgraph};
 
 // Profile with cargo flamegraph --bin callgraph -- tests/wasm/WasmBench-nonCpp/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13.wasm
 // Before, allow perf to capture traces:
@@ -21,7 +19,7 @@ fn main() {
     let exported_funcs = wimpl.functions.iter()
         .filter(|func| !func.export.is_empty())
         .map(|func| func.name())
-        .collect::<HashSet<_>>();
+        .collect();
 
     let callgraph = callgraph::reachable_callgraph(&wimpl, exported_funcs, options).unwrap();
     
