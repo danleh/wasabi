@@ -72,7 +72,8 @@ impl Function {
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Ord, PartialOrd)]
 pub enum Func {
     /// If the function had a debug name attached to it (from the `name` custom section).
-    // TODO Alternative: use an interner that is `Copy` for convenience, e.g., a leaking one?
+    /// The string is stored in a string interner, i.e., deduplicated and such that equality can
+    /// be a quick pointer equality.
     Named(ArcIntern<String>),
     /// Otherwise, just refer to the function via its index, which is the same as in the original
     /// WebAssembly module.
