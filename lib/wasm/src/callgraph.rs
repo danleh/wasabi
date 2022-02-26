@@ -8,47 +8,53 @@ use crate::wimpl::wimplify::*;
 use rustc_hash::{FxHashSet, FxHashMap};
 use test_utilities::*; 
 
-// TODO perf: change from edge list to adjacency list, i.e., HashMap<Func, HashSet<Func>>
-pub struct CallGraph(FxHashSet<(Func, Func)>);
+#[derive(Default, Clone, Eq, PartialEq)]
+pub struct CallGraph(FxHashMap<Func, FxHashSet<Func>>);
 
 impl fmt::Debug for CallGraph {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "{:?}", self.0)?; 
-        for (x, y) in self.0.iter() {
-            writeln!(f, "{} {}", x, y).expect("");
+        for (source, targets) in self.0.iter() {
+            for target in targets {
+                writeln!(f, "{} -> {}", source, target)?;
+            }
         }; 
         Ok(())
     }
 }
 
 impl CallGraph {
-    // pub fn reachable_funcs(&self, initially: HashSet<Func>) -> HashSet<Func> {
-    //     let mut reachable = initially;
-    //
-    //     for (src, dest) in &self.0 {
-    //         if reachable.contains(src) {
-    //             reachable.insert(dest.clone());
-    //         }
-    //     }
-    //
-    //     reachable
-    // }
+    /// Returns true if the edge was _not_ yet part of the callgraph.
+    pub fn add_edge(&mut self, source: Func, target: Func) -> bool {
+        let targets = self.0.entry(source).or_default();
+        targets.insert(target)
+    }
 
-    pub fn all(&self) -> HashSet<Func> {
-        let mut all = HashSet::new();
-        for (src, dest) in &self.0 {
-            all.insert(src.clone());
-            all.insert(dest.clone());
+    pub fn edges(&self) -> impl Iterator<Item=(Func, Func)> + '_ {
+        self.0.iter()
+            .flat_map(|(source, targets)| 
+                targets.iter()
+                .map(move |target| (source.clone(), target.clone())))
+    }
+
+    pub fn functions(&self) -> FxHashSet<Func> {
+        let mut result = FxHashSet::default();
+        for (source, target) in self.edges() {
+            result.insert(source);
+            result.insert(target);
         }
-        all
+        result
     }
 
     pub fn to_dot(&self) -> String {
         let mut dot_file: String = "".to_owned();
         dot_file.push_str("digraph G {\n"); 
-        dot_file.push_str("\trankdir=\"LR\";\n"); 
-        let mut edges = self.0.iter().collect::<Vec<_>>();
+        dot_file.push_str("\trankdir=\"LR\";\n");
+
+        // Sort edges to make output deterministic.
+        let mut edges = self.edges().collect::<Vec<_>>();
         edges.sort();
+
         for (from_fn, to_fn) in edges {
             dot_file.push_str(&format!("\t\"{}\"->\"{}\";\n", from_fn, to_fn)); 
         }
@@ -101,8 +107,7 @@ pub fn reachable_callgraph(
     options: Options,
 ) -> anyhow::Result<CallGraph> {
     
-    let mut callgraph_edges = CallGraph(FxHashSet::default());
-
+    let mut callgraph = CallGraph::default();
 
     // Collect "declarative constraints" once per function.
     // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
@@ -138,7 +143,6 @@ pub fn reachable_callgraph(
 
     // Solve constraints for all functions in "worklist" and add their targets to worklist, until
     // this is empty.
-    // TODO this is still quite slow, why?
 
     let mut worklist = reachable.iter().cloned().collect::<Vec<_>>();
     let mut i = 0;
@@ -150,9 +154,8 @@ pub fn reachable_callgraph(
             let targets = solve_constraints(module, &funcs_in_table, call);
 
             // Add those as edges to the concrete call graph.
-            // -> O(N^2)!
             for target in targets {
-                callgraph_edges.0.insert((func.clone(), target.clone()));
+                callgraph.add_edge(func.clone(), target.clone());
 
                 // Add target to worklist, if it wasn't already processed 
                 // (and everything reachable was processed).
@@ -170,7 +173,7 @@ pub fn reachable_callgraph(
         }
     }
 
-    Ok(callgraph_edges)
+    Ok(callgraph)
 }
 
 pub fn collect_target_constraints(
@@ -442,7 +445,7 @@ fn data_gathering () {
                 .map(|func| func.name())
                 .collect::<HashSet<_>>();
             
-            reachable_callgraph(&wimpl_module, exported_funcs, options).unwrap().all().len() as f64 
+            reachable_callgraph(&wimpl_module, exported_funcs, options).unwrap().functions().len() as f64 
                 / wimpl_module.functions.len() as f64
         }
         
@@ -457,7 +460,7 @@ fn data_gathering () {
             let sum_reachable_count: u64 = exported_funcs.iter().map(|f| {
                 let mut reachable = HashSet::new();
                 reachable.insert(f.clone());
-                let reachable_funcs_count = reachable_callgraph(&wimpl_module, reachable, options).unwrap().all().len();
+                let reachable_funcs_count = reachable_callgraph(&wimpl_module, reachable, options).unwrap().functions().len();
                 reachable_funcs_count as u64
             }).sum();
             (sum_reachable_count as f64) / (exported_funcs.len() as f64)
