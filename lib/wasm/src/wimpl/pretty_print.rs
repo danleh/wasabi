@@ -67,16 +67,16 @@ impl fmt::Display for Function {
         }
         write!(f, "func {}", self.name)?;
         write!(f, " (")?;
-        for (i, ty) in self.type_.params.iter().enumerate() {
+        for (i, ty) in self.type_.inputs().iter().enumerate() {
             write!(f, "{}: {}", Var::Param(i), ty)?;
-            if i < self.type_.params.len() - 1 {
+            if i < self.type_.inputs().len() - 1 {
                 write!(f, ", ")?;
             }
         }
         write!(f, ") -> (")?;
-        for (i, ty) in self.type_.results.iter().enumerate() {
+        for (i, ty) in self.type_.results().iter().enumerate() {
             write!(f, "{}: {}", Var::Return(i), ty)?;
-            if i < self.type_.results.len() - 1 {
+            if i < self.type_.results().len() - 1 {
                 write!(f, ", ")?;
             }
         }

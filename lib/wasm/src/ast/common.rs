@@ -137,13 +137,11 @@ impl FromStr for ValType {
 // just by a u32 (more than enough for practical purposes, i.e., realistic
 // numbers of combinations of types)
 // and also not dopped, i.e., in a 'static arena.
-#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]
+#[derive(WasmBinary, Default, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]
 #[tag = 0x60]
 pub struct FunctionType {
-    // Use Box instead of Vec to save the capacity field (smaller size of the struct), since
-    // funtion types are immutable anyway (i.e., no dynamic adding/removing of input/result types).
-    pub params: Box<[ValType]>,
-    pub results: Box<[ValType]>,
+    params: Vec<ValType>,
+    results: Vec<ValType>,
 }
 
 impl FunctionType {
@@ -152,6 +150,14 @@ impl FunctionType {
             params: params.into(), 
             results: results.into() 
         }
+    }
+
+    pub fn inputs(&self) -> &[ValType] {
+        &self.params
+    }
+
+    pub fn results(&self) -> &[ValType] {
+        &self.results
     }
 }
 

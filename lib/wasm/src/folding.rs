@@ -47,8 +47,8 @@ pub fn folds(
         let ty = type_checker.check_next_instr(instr).map_err(|e| e.to_string())?;
         println!("{:?}, {:?}", instr, ty);
         if let InferredInstructionType::Reachable(ty) = ty {
-            let n_inputs = ty.params.len();
-            let n_results = ty.results.len();
+            let n_inputs = ty.inputs().len();
+            let n_results = ty.results().len();
             let expr = if n_inputs == 0 {
                 FoldedExpr(instr.clone(), Vec::new())
             } else {

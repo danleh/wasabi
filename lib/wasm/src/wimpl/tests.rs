@@ -39,13 +39,13 @@ lazy_static! {
                 functions: vec![
                     Function {
                         name: Func::Idx(0),
-                        type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
+                        type_: FunctionType::default(),
                         body: Body(Vec::new()), 
                         export: Vec::new()
                     },
                     Function {
                         name: Func::Idx(1),
-                        type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
+                        type_: FunctionType::default(),
                         body: Body(Vec::new()), 
                         export: Vec::new()
                     },
@@ -64,13 +64,13 @@ lazy_static! {
                 functions: vec![
                     Function {
                         name: Func::Idx(0),
-                        type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
+                        type_: FunctionType::default(),
                         body: Body(Vec::new()), 
                         export: vec!["name1".to_string(), "name2".to_string()],                        
                     },
                     Function {
                         name: Func::Idx(1),
-                        type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
+                        type_: FunctionType::default(),
                         body: Body(Vec::new()), 
                         export: vec!["name3".to_string()],
                     },
@@ -92,13 +92,13 @@ lazy_static! {
                 functions: vec![
                     Function {
                         name: Func::Idx(0),
-                        type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
+                        type_: FunctionType::default(),
                         body: Body(Vec::new()), 
                         export: Vec::new()
                     },
                     Function {
                         name: Func::Idx(1),
-                        type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() },
+                        type_: FunctionType::new(&[ValType::I32], &[ValType::F64]),
                         body: Body(vec![
                             Assign {
                                 lhs: Stack(0),
@@ -133,7 +133,7 @@ lazy_static! {
         (
             Function {
                 name: Func::Idx(0),
-                type_: FunctionType { params: Vec::new().into_boxed_slice(), results: Vec::new().into_boxed_slice() },
+                type_: FunctionType::default(),
                 body: Body(Vec::new()), 
                 export: Vec::new()
             },
@@ -143,7 +143,7 @@ lazy_static! {
         (
             Function {
                 name: Func::Idx(1),
-                type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() },
+                type_: FunctionType::new(&[ValType::I32], &[ValType::F64]),
                 body: Body(Vec::new()), 
                 export: Vec::new()
             },
@@ -153,7 +153,7 @@ lazy_static! {
         (
             Function {
                 name: Func::Idx(1),
-                type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() },
+                type_: FunctionType::new(&[ValType::I32], &[ValType::F64]),
                 body: Body(vec![
                     Assign {
                         lhs: Stack(0),
@@ -169,7 +169,7 @@ lazy_static! {
         (
             Function {
                 name: Func::Idx(1),
-                type_: FunctionType { params: vec![ValType::I32].into_boxed_slice(), results:vec![ValType::F64].into_boxed_slice() },
+                type_: FunctionType::new(&[ValType::I32], &[ValType::F64]),
                 body: Body(vec![
                     Assign {
                         lhs: Stack(0),

@@ -594,7 +594,7 @@ impl<'module> TypeChecker<'module> {
             function,
             block_stack: Vec::new(),
         };
-        self_.push_func_block(function.type_.results.to_vec());
+        self_.push_func_block(function.type_.results().to_vec());
         self_
     }
 
@@ -770,8 +770,8 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
     
     // In the simple cases, we know the type from the instruction alone.
     if let Some(ty) = instr.simple_type() {
-        state.pop_vals_expected(&ty.params)?;
-        state.push_vals(&ty.results)?;
+        state.pop_vals_expected(ty.inputs())?;
+        state.push_vals(ty.results())?;
         return Ok(to_inferred_type(ty))
     }
 
@@ -783,21 +783,21 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
         Local(op, idx) => {
             let local_ty = function.param_or_local_type(*idx);
             let op_ty = op.to_type(local_ty);
-            state.pop_vals_expected(&op_ty.params)?;
-            state.push_vals(&op_ty.results)?;
+            state.pop_vals_expected(op_ty.inputs())?;
+            state.push_vals(op_ty.results())?;
             to_inferred_type(op_ty)
         }
         Global(op, idx) => {
             let global_ty = module.global(*idx);
             let op_ty = op.to_type(global_ty.type_.0);
-            state.pop_vals_expected(&op_ty.params)?;
-            state.push_vals(&op_ty.results)?;
+            state.pop_vals_expected(op_ty.inputs())?;
+            state.push_vals(op_ty.results())?;
             to_inferred_type(op_ty)
         }
         Call(idx) => {
             let function_ty = module.function(*idx).type_.clone();
-            state.pop_vals_expected(&function_ty.params)?;
-            state.push_vals(&function_ty.results)?;
+            state.pop_vals_expected(function_ty.inputs())?;
+            state.push_vals(function_ty.results())?;
             to_inferred_type(function_ty)
         }
 
@@ -918,7 +918,7 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
             to_inferred_type(FunctionType::new(&input_tys, &[]))
         }
         Return => {
-            let tys = &function.type_.results[..];
+            let tys = function.type_.results();
             state.pop_vals_expected(tys)?;
             state.unreachable()?;
             to_inferred_type(FunctionType::new(tys, &[]))

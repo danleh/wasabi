@@ -70,7 +70,7 @@ fn wimplify_instrs<'module>(
 
         fn local_idx_to_var(context: Context, local_idx: Idx<highlevel::Local>) -> Var {
             let local_idx = local_idx.into_inner();
-            let num_params = context.func_ty.params.len();
+            let num_params = context.func_ty.inputs().len();
             if local_idx < num_params {
                 Param(local_idx)
             } else {
@@ -289,12 +289,12 @@ fn wimplify_instrs<'module>(
             }
 
             highlevel::Instr::Call(func_index) => {
-                let n_args = context.module.function(*func_index).type_.params.len();
+                let n_args = context.module.function(*func_index).type_.inputs().len();
                 let rhs = Call {
                     func: Func::from_idx(*func_index, context.module),
                     args: var_stack.split_off(var_stack.len() - n_args),
                 };
-                match &ty.results[..] {
+                match ty.results() {
                     [] => vec![Stmt::Expr(rhs)],
                     [type_] => {
                         vec![Stmt::Assign {
@@ -313,9 +313,9 @@ fn wimplify_instrs<'module>(
                 let rhs = CallIndirect{
                     type_: func_type.clone(),
                     table_idx: var_stack.pop().expect("call_indirect requires an index"),
-                    args: var_stack.split_off(var_stack.len() - func_type.params.len()),
+                    args: var_stack.split_off(var_stack.len() - func_type.inputs().len()),
                 };
-                match &ty.results[..] {
+                match ty.results() {
                     [] => vec![Stmt::Expr(rhs)],
                     [type_] => {
                         vec![Stmt::Assign {
@@ -334,7 +334,7 @@ fn wimplify_instrs<'module>(
                 let condition = var_stack.pop().expect("select requires a value on the stack for the condition");
                 let if_result_val = var_stack.pop().expect("select requires a value on the stack for the then case");
                 let else_result_val = var_stack.pop().expect("select requires a value on the stack for the else case");
-                let type_ = ty.results[0];
+                let type_ = ty.results()[0];
                 let lhs = create_fresh_stack_var(state, &mut var_stack);
                 vec![
                     Stmt::Assign{
@@ -363,14 +363,14 @@ fn wimplify_instrs<'module>(
                 vec![Stmt::Assign{
                     rhs: VarRef(local_idx_to_var(context, *local_idx)),
                     lhs: create_fresh_stack_var(state, &mut var_stack),
-                    type_: ty.results[0],
+                    type_: ty.results()[0],
                 }]
             }
 
             highlevel::Instr::Local(highlevel::LocalOp::Set, local_idx) => {
                 vec![Stmt::Assign {
                     lhs: local_idx_to_var(context, *local_idx),
-                    type_: ty.params[0],
+                    type_: ty.inputs()[0],
                     rhs: VarRef(var_stack.pop().expect("local.set expects a value on the stack")),
                 }]
             }
@@ -378,7 +378,7 @@ fn wimplify_instrs<'module>(
             highlevel::Instr::Local(highlevel::LocalOp::Tee, local_idx) => {
                 vec![Stmt::Assign{
                     lhs: local_idx_to_var(context, *local_idx),
-                    type_: ty.params[0],
+                    type_: ty.inputs()[0],
                     rhs: VarRef(*var_stack.last().expect("local.tee expects a value on the stack")),
                 }]
             }
@@ -388,7 +388,7 @@ fn wimplify_instrs<'module>(
                 vec![Stmt::Assign{
                     rhs: VarRef(global_var),
                     lhs: create_fresh_stack_var(state, &mut var_stack),
-                    type_: ty.results[0],
+                    type_: ty.results()[0],
                 }]
 
             }
@@ -398,7 +398,7 @@ fn wimplify_instrs<'module>(
                 vec![Stmt::Assign{
                     lhs: global_var,
                     rhs: VarRef(var_stack.pop().expect("global.set expects a value on the stack")),
-                    type_: *ty.params.get(0).expect("return type of global.set not found"),
+                    type_: *ty.inputs().get(0).expect("return type of global.set not found"),
                 }]
             }
 
@@ -411,7 +411,7 @@ fn wimplify_instrs<'module>(
                         addr: rhs,
                     },
                     lhs: create_fresh_stack_var(state, &mut var_stack),
-                    type_: ty.results[0],
+                    type_: ty.results()[0],
                 }]
             }
 
@@ -430,7 +430,7 @@ fn wimplify_instrs<'module>(
                 vec![Stmt::Assign{
                     rhs: MemorySize{},
                     lhs: create_fresh_stack_var(state, &mut var_stack),
-                    type_: ty.results[0],
+                    type_: ty.results()[0],
                 }]
             }
 
@@ -442,7 +442,7 @@ fn wimplify_instrs<'module>(
                         pages: var_stack.pop().expect("memory.grow has to consume a value from stack"),
                     },
                     lhs: create_fresh_stack_var(state, &mut var_stack),
-                    type_: ty.results[0],
+                    type_: ty.results()[0],
                 }]
             }
 
@@ -450,7 +450,7 @@ fn wimplify_instrs<'module>(
                 vec![Stmt::Assign{
                     rhs: Const(*val),
                     lhs: create_fresh_stack_var(state, &mut var_stack),
-                    type_: ty.results[0],
+                    type_: ty.results()[0],
                 }]
             }
 
@@ -458,10 +458,10 @@ fn wimplify_instrs<'module>(
                 vec![Stmt::Assign{
                     rhs: Numeric {
                         op: *op,
-                        args: var_stack.split_off(var_stack.len() - ty.params.len()),
+                        args: var_stack.split_off(var_stack.len() - ty.inputs().len()),
                     },
                     lhs: create_fresh_stack_var(state, &mut var_stack),
-                    type_: ty.results[0],
+                    type_: ty.results()[0],
                 }]
             }
         });
@@ -482,7 +482,7 @@ pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
                 todo!("you haven't yet implemented locals having names");
             } else {
                 result_instrs.push(Stmt::Assign{
-                    lhs: Var::Local(loc_index.into_inner()-func.type_.params.len()),
+                    lhs: Var::Local(loc_index.into_inner()-func.type_.inputs().len()),
                     rhs: Expr::Const(Val::get_default_value(loc_type)),
                     type_: loc_type,
                 })
@@ -505,9 +505,9 @@ pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
                 stack_var_count: 0,
             };
 
-            let return_var = match func.type_.results[..] {
+            let return_var = match func.type_.results() {
                 [] => None,
-                [ty] => Some((Var::Return(0), ty, false)),
+                [ty] => Some((Var::Return(0), *ty, false)),
                 _ => unimplemented!("only WebAssembly MVP is supported, not multi-value extension")
             };
             state.label_stack.push((Label(0), return_var));
