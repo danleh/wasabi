@@ -14,7 +14,7 @@ fn main() {
     let options = Options {
         with_type_constraint: true,
         with_in_table_constraint: true,
-        // with_index_constraint: true,
+        with_index_constraint: true,
         ..Options::default()
     };
 

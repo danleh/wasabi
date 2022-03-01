@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File};
+use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex};
 
 use crate::{wimpl::{Func, self, Expr::Call, Function, Var, Body, analyze::VarExprMap}, highlevel::FunctionType, Val};
 
@@ -89,6 +89,7 @@ pub enum Target {
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Constraint {
     Type(FunctionType),
+    // FIXME doesn't refer to a particular table, wouldn't be precise in Wasm post MVP.
     InTable,
     // Exported
     TableIndexExpr(wimpl::Expr),
@@ -128,15 +129,31 @@ pub fn reachable_callgraph(
     // let mut funcs_in_table_approx = Bloom::new_for_fp_rate(module.functions.len(), 0.01);
 
     let mut funcs_in_table = FxHashSet::default();
+    let mut funcs_by_table_idx: FxHashMap<u32, Func> = FxHashMap::default();
     for table in &module.tables {
-        // TODO interpret `table.offset` for index-based analysis, i.e., to get a map from table
-        // index to function index after table initialization (assumption: table stays constant).
         for element in &table.elements {
-            for func_idx in &element.functions {
+            let element_offset = &element.offset;
+            use crate::highlevel::Instr as wasm;
+            let element_offset = match element_offset.as_slice() {
+                [wasm::Const(Val::I32(offset)), wasm::End] => *offset as u32,
+                // TODO overapproximate: if its an expression we cannot compute statically (like an imported global)
+                // then make this `funcs_by_table_idx` an Option::None, and then the constraint becomes worthless
+                // during solving.
+                expr => {
+                    println!("statically evaluate element offset expression: {:?}", expr);
+                    // FIXME ALL EDGES COULD BE WRONG!!
+                    0
+                }
+            };
+
+            for (idx_in_table, func_idx) in element.functions.iter().enumerate() {
+                let idx_in_table = idx_in_table as u32;
+
                 let func = module.function_by_idx(*func_idx);
-                // FIXME see above
-                // funcs_in_table_approx.set(&func.name);
                 funcs_in_table.insert(func.name());
+
+                let duplicate_element_init = funcs_by_table_idx.insert(element_offset+idx_in_table, func.name());
+                assert_eq!(duplicate_element_init, None, "table index {} is initialized twice", element_offset+idx_in_table)
             }
         }
     }
@@ -151,12 +168,8 @@ pub fn reachable_callgraph(
         funcs_with_type.push(func);
     }
     
-    // TODO optimization make Func an interned string, then eq would be basically free
-    // right now its ~6% of all in callgraph.rs
-
     // Solve constraints for all functions in "worklist" and add their targets to worklist, until
     // this is empty.
-
     let mut worklist = reachable_funcs.iter().cloned().collect::<Vec<_>>();
     let mut i = 0;
     while let Some(func) = worklist.pop() {
@@ -164,7 +177,7 @@ pub fn reachable_callgraph(
 
         for call in calls {
             // Solve the constraints to concrete edges.
-            let targets = solve_constraints(module, &funcs_by_type, &funcs_in_table, call);
+            let targets = solve_constraints(module, &funcs_by_type, &funcs_in_table, &funcs_by_table_idx, call);
 
             // Add those as edges to the concrete call graph.
             for target in targets {
@@ -184,6 +197,14 @@ pub fn reachable_callgraph(
         if i % 1000 == 0 {
             println!("[DONE] processing {} functions", i);
         }
+    }
+
+    // FIXME quick and dirty output: which kinds of constraints do we have (and how frequenty are they).
+    let iter = UNIQUE_CONSTRAINT_EXPRS.lock().unwrap();
+    let mut stats: Vec<_> = iter.iter().map(|(expr, count)| (count, expr)).collect();
+    stats.sort();
+    for (count, expr) in stats {
+        println!("{:10} {:30}", count, expr);
     }
 
     Ok(callgraph)
@@ -209,7 +230,7 @@ pub fn collect_target_constraints(
     // TODO do this only for vars we are interested in, i.e., arguments to call_indirects
     // TODO with recursive exprs, this all would be trivial... :(
     // If performance turns out to be a huge problem, do recursive Expr instead.
-    let var_expr = VarExprMap::from_body(&body);
+    let var_expr = VarExprMap::from_body(body);
 
     // Step 2:
     // Collect one set of constraints (conjuncts) per call/call_indirect.
@@ -233,7 +254,8 @@ pub fn collect_target_constraints(
                         constraints.push(Constraint::InTable);
                     }
                     if options.with_index_constraint {
-                        if let Some(precise_expr) = var_expr.get(table_idx) {
+                        // TODO Handle the `Err` case when this returns an uninitialized variable - local, parameters
+                        if let Ok(Some(precise_expr)) = var_expr.get(table_idx) {
                             constraints.push(Constraint::TableIndexExpr(precise_expr.clone()));
                         }
                     }
@@ -266,13 +288,19 @@ pub fn collect_target_constraints(
     targets
 }
 
+// FIXME global variable :(((
+lazy_static::lazy_static! {
+    // static ref UNIQUE_CONSTRAINT_EXPRS: Mutex<FxHashMap<wimpl::Expr, usize>> = Mutex::new(FxHashMap::default());
+    static ref UNIQUE_CONSTRAINT_EXPRS: Mutex<FxHashMap<String, usize>> = Mutex::new(FxHashMap::default());
+}
+
 /// _All_ constraints must be satisfied, i.e., conjunction over all constraints.
 pub fn solve_constraints<'a>(
     module: &'a wimpl::Module,
     funcs_by_type: &'a FxHashMap<FunctionType, Vec<&'a Function>>,
     funcs_in_table: &'a FxHashSet<Func>,
     // funcs_in_table_approx: &'a Bloom<Func>,
-    // funcs_by_table_idx: &'a FxHashMap<u32, Func>,
+    funcs_by_table_idx: &'a FxHashMap</* index in the table */ u32, Func>,
     target_constraints: &'a Target
 ) -> Box<dyn Iterator<Item=Func> + 'a> {
     match target_constraints {
@@ -303,13 +331,17 @@ pub fn solve_constraints<'a>(
                         // }
                         funcs_in_table.contains(&f.name)
                     })),
-                    Constraint::TableIndexExpr(wimpl::Expr::Const(Val::I32(idx))) => {
-                        // TODO
-                        todo!("index into table: {}", idx)
-                    },
+                    // TODO If we have a TableIndexExpr constraint, we already know the function 
+                    // immediately, so just use the result of `funcs_by_table_idx.get()` instead of
+                    // filtering.
+                    Constraint::TableIndexExpr(wimpl::Expr::Const(Val::I32(idx))) => Box::new(filtered_iter.filter(move |f| {
+                        let idx = *idx as u32;
+                        Some(&f.name) == funcs_by_table_idx.get(&idx)
+                    })),
                     Constraint::TableIndexExpr(expr) => {
+                        let opcode_only = expr.to_string().split([' ', '(']).next().unwrap_or("").to_owned();
+                        *UNIQUE_CONSTRAINT_EXPRS.lock().expect("lock poisoning doesnt happen").entry(opcode_only).or_default() += 1;
                         continue;
-                        todo!("{}", expr)
                     },
                 }
             }
@@ -474,7 +506,7 @@ fn data_gathering() {
         let reachable_ratio_ty_and_in_table = callgraph_reachable_funcs_ratio(&path, Options {
             with_type_constraint: true,
             with_in_table_constraint: true,
-            with_index_constraint: false,
+            with_index_constraint: true, // FIXME for output
         });
 
         // Binaryen meta-DCE does none of the above, instead (citing my email from July 2021)

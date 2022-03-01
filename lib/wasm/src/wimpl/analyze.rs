@@ -53,16 +53,18 @@ impl VarExprMap {
             .or_insert_with(|| Some(expr.clone()));
     }
 
-    /// Returns `None` if variable expression was over approximated.
-    pub fn get(&self, var: &Var) -> Option<&Expr> {
+    /// Returns `Ok(None)` if variable expression was over approximated.
+    /// Returns `Err` if variable was never assigned before.
+    pub fn get(&self, var: &Var) -> Result<Option<&Expr>, String> {
         match self.0.get(var) {
             // Recursive case: expression itself refers to a variable, resolve that recursively:
             Some(Some(Expr::VarRef(var))) => self.get(var),
             // Non-recursive case: non-var expression.
-            Some(Some(other_expr)) => Some(other_expr),
-            // Overapproximated:
-            Some(None) => None,
-            None => panic!("uninitialized variable `{}`\nvariable map: {:?}", var, self.0),
+            Some(Some(other_expr)) => Ok(Some(other_expr)),
+            // Overapproximated (because assigned twice):
+            Some(None) => Ok(None),
+            // Uninitialized variable, e.g., parameter:
+            None => Err(format!("uninitialized variable `{}`\nvariable map: {:?}", var, self.0)),
         }
     }
 }
