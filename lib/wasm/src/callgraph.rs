@@ -1,13 +1,12 @@
 use core::fmt;
-use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, hash::Hasher};
+use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File};
 
 use crate::{wimpl::{Func, self, Expr::Call, Function, Var, Body}, highlevel::FunctionType};
 
-use crate::wimpl::wimplify::*;  
+use crate::wimpl::wimplify::*;
 
-use cuckoofilter::CuckooFilter;
-use rustc_hash::{FxHashSet, FxHashMap, FxHasher};
-use test_utilities::*; 
+use rustc_hash::{FxHashSet, FxHashMap};
+use test_utilities::*;
 
 #[derive(Default, Clone, Eq, PartialEq)]
 pub struct CallGraph(FxHashMap<Func, FxHashSet<Func>>);
@@ -121,18 +120,23 @@ pub fn reachable_callgraph(
     // println!("constraints: {:?}", function_targets_constraints);
 
 
-    // TODO use bitset for speedup?
+    // TODO I tried various probabilistic set membership datastructures and implementations, but
+    // none beat the simpler version of just using a fast FxHashSet contains check.
+    // - `bloomfilter::Bloom`: slow, dominating by hashing with SipHash.
+    // - `cuckoofilter::Cuckoofilter`: wrong results! during construction of the Cuckoo filter,
+    // elements might be thrown out, which would then give false negatives, which we may never have.
+    // let mut funcs_in_table_approx = Bloom::new_for_fp_rate(module.functions.len(), 0.01);
+
     let mut funcs_in_table = FxHashSet::default();
-    let mut funcs_in_table_approx = CuckooFilter::<FxHasher>::with_capacity(module.functions.len());
     for table in &module.tables {
         // TODO interpret `table.offset` for index-based analysis, i.e., to get a map from table
         // index to function index after table initialization (assumption: table stays constant).
         for element in &table.elements {
             for func_idx in &element.functions {
                 let func = module.function_by_idx(*func_idx);
-                let func_name = func.name();
-                let _ignore_not_enough_space = funcs_in_table_approx.add(&func_name);
-                funcs_in_table.insert(func_name);
+                // FIXME see above
+                // funcs_in_table_approx.set(&func.name);
+                funcs_in_table.insert(func.name());
             }
         }
     }
@@ -160,7 +164,7 @@ pub fn reachable_callgraph(
         
         for call in calls {
             // Solve the constraints to concrete edges.
-            let targets = solve_constraints(module, &funcs_by_type, &funcs_in_table, &funcs_in_table_approx, call);
+            let targets = solve_constraints(module, &funcs_by_type, &funcs_in_table, call);
 
             // Add those as edges to the concrete call graph.
             for target in targets {
@@ -315,11 +319,11 @@ pub fn collect_target_constraints(
 }
 
 /// _All_ constraints must be satisfied, i.e., conjunction over all constraints.
-pub fn solve_constraints<'a, T: Hasher + Default>(
+pub fn solve_constraints<'a>(
     module: &'a wimpl::Module,
     funcs_by_type: &'a FxHashMap<FunctionType, Vec<&'a Function>>,
     funcs_in_table: &'a FxHashSet<Func>,
-    funcs_in_table_approx: &'a CuckooFilter<T>,
+    // funcs_in_table_approx: &'a Bloom<Func>,
     target_constraints: &'a Target
 ) -> Box<dyn Iterator<Item=Func> + 'a> {
     match target_constraints {
@@ -341,9 +345,11 @@ pub fn solve_constraints<'a, T: Hasher + Default>(
                 filtered_iter = match constraint {
                     Constraint::Type(ty) => Box::new(filtered_iter.filter(move |f| &f.type_ == ty)),
                     Constraint::InTable => Box::new(filtered_iter.filter(move |f| {
+                        // FIXME This is actually slower than the HashSet lookup, likely due to
+                        // `bloomfilter::Bloom` using SipHash, not the fast FxHash of FxHashSet.
                         // Optimization: If the Bloom filter already says the function is not in the
                         // table, then we don't need to check the slower hash set.
-                        // if !funcs_in_table_approx.contains(&f.name) {
+                        // if !funcs_in_table_approx.check(&f.name) {
                         //     return false;
                         // }
                         funcs_in_table.contains(&f.name)
