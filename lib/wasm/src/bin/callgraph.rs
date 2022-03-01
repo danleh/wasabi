@@ -1,4 +1,5 @@
-use wasm::{wimpl::wimplify::wimplify, callgraph};
+use rustc_hash::FxHashSet;
+use wasm::{wimpl::{wimplify::wimplify, Func}, callgraph::{self, Options}, highlevel::Function};
 
 // Profile with cargo flamegraph --bin callgraph -- tests/wasm/WasmBench-nonCpp/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13.wasm
 // Before, allow perf to capture traces:
@@ -10,20 +11,22 @@ fn main() {
     let wasm_path = &args[1];
     let wimpl = wimplify(wasm_path).unwrap();
 
-    let options = callgraph::Options {
+    let options = Options {
         with_type_constraint: true,
         with_in_table_constraint: true,
-        with_index_constraint: false,
+        // with_index_constraint: true,
+        ..Options::default()
     };
 
-    let exported_funcs = wimpl.functions.iter()
+    let exported_funcs: FxHashSet<Func> = wimpl.functions.iter()
         .filter(|func| !func.export.is_empty())
         .map(|func| func.name())
         .collect();
 
-    let callgraph = callgraph::reachable_callgraph(&wimpl, exported_funcs, options).unwrap();
+    let callgraph = callgraph::reachable_callgraph(&wimpl, exported_funcs.clone(), options).unwrap();
 
     println!("number of functions: {}", wimpl.functions.len());
+    println!("number of exported functions: {}", exported_funcs.len());
     println!("number of reachable functions: {}", callgraph.functions().len());
     println!("number of reachable call graph edges: {}", callgraph.edges().count());
     

@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File};
 
-use crate::{wimpl::{Func, self, Expr::Call, Function, Var, Body}, highlevel::FunctionType};
+use crate::{wimpl::{Func, self, Expr::Call, Function, Var, Body}, highlevel::FunctionType, Val};
 
 use crate::wimpl::wimplify::*;
 
@@ -222,13 +222,22 @@ pub fn collect_target_constraints(
         /// Returns `None` if variable expression was over approximated.
         fn get(&self, var: &Var) -> Option<&wimpl::Expr> {
             match self.0.get(var) {
-                Some(overapprox_expr) => overapprox_expr.as_ref(),
+                // Recursive case: expression itself refers to a variable, resolve that again:
+                Some(Some(VarRef(var))) => self.get(var),
+                
+                Some(Some(other_expr)) => Some(other_expr),
+                
+                // Overapproximated:
+                Some(None) => None,
+                
                 None => panic!("uninitialized variable `{}`\nvariable map: {:?}", var, self.0),
             }
         }
     }
     
     // Recursive "visitor" over statements/bodies.
+    // TODO overapproximates because variable map is created before the constraint construction,
+    // so more variables will be Top/None (namely those assigned after a call in a block).
     fn collect_var_expr(body: &Body, var_expr: &mut VarExprMap) {
         for stmt in &body.0 {
             match stmt {
@@ -324,6 +333,7 @@ pub fn solve_constraints<'a>(
     funcs_by_type: &'a FxHashMap<FunctionType, Vec<&'a Function>>,
     funcs_in_table: &'a FxHashSet<Func>,
     // funcs_in_table_approx: &'a Bloom<Func>,
+    // funcs_by_table_idx: &'a FxHashMap<u32, Func>,
     target_constraints: &'a Target
 ) -> Box<dyn Iterator<Item=Func> + 'a> {
     match target_constraints {
@@ -354,8 +364,14 @@ pub fn solve_constraints<'a>(
                         // }
                         funcs_in_table.contains(&f.name)
                     })),
-                    Constraint::TableIndexExpr(wimpl::Expr::Const(val)) => todo!("constant: {}", val),
-                    Constraint::TableIndexExpr(expr) => todo!("{}", expr),
+                    Constraint::TableIndexExpr(wimpl::Expr::Const(Val::I32(idx))) => {
+                        // TODO
+                        todo!("index into table: {}", idx)
+                    },
+                    Constraint::TableIndexExpr(expr) => {
+                        continue;
+                        todo!("{}", expr)
+                    },
                 }
             }
             Box::new(filtered_iter.map(|f| f.name()))
