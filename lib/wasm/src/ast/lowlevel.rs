@@ -233,7 +233,7 @@ impl FromStr for FunctionType {
 
 impl From<crate::highlevel::FunctionType> for FunctionType {
     fn from(ty: crate::highlevel::FunctionType) -> Self {
-        ty.get_from_arena().clone()
+        ty.as_ref().clone()
     }
 }
 

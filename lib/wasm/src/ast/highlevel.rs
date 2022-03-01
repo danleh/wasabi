@@ -2,6 +2,7 @@ use std::{collections::HashSet, convert::TryInto};
 use std::str::FromStr;
 use std::fmt;
 
+use internment::Intern;
 use lazy_static::lazy_static;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rustc_hash::FxHashMap;
@@ -73,39 +74,8 @@ pub struct Function {
 /// seldom, this shouldn't be an issue in practice.
 /// - Requires types to be immutable, but that is fine because (function) type signatures are not
 /// altered at runtime.
-#[derive(Clone, Copy, Eq, PartialEq, Hash)]
-pub struct FunctionType {
-    // TODO Niche optimization: use `NonZeroU32` to make `Option<FunctionType>` still only 4 bytes.
-    global_arena_id: u32
-}
-
-#[test]
-fn function_type_is_small_and_has_niche() {
-    assert_eq!(std::mem::size_of::<FunctionType>(), 4);
-    // TODO see above
-    // assert_eq!(std::mem::size_of::<Option<FunctionType>>(), 4);
-}
-
-#[derive(Default)]
-struct Arena {
-    /// For mapping back from ids to the values.
-    id_to_val: Vec<&'static crate::lowlevel::FunctionType>,
-
-    /// For looking up ids when creating a new function type and to ensure uniqueness in the vec.
-    val_to_id: FxHashMap<&'static crate::lowlevel::FunctionType, u32>,
-
-    // The actual, unique values of `lowlevel::FunctionType` are stored in leaked `Box`es, i.e., 
-    // they are never freed until the program exits.
-    // This is necessary, because otherwise there is no 'static location from which one could borrow
-    // and hand out references to (parts) of the underlying `lowlevel::FunctionType`,
-    // which we need for `Self::input()` and `Self::result()`.
-    // TODO Unfortunately, this adds another indirection, but could be offset by making 
-    // `lowlevel::FunctionType` a DST (dynamically sized type) stored as (midpoint, [ValType]).
-}
-
-lazy_static! {
-    static ref FUNCTION_TYPES: RwLock<Arena> = RwLock::new(Arena::default());
-}
+#[derive(Default, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct FunctionType(Intern<crate::lowlevel::FunctionType>);
 
 impl FunctionType {
     pub fn new(inputs: &[ValType], results: &[ValType]) -> Self {
@@ -115,80 +85,34 @@ impl FunctionType {
         Self::from(ty)
     }
 
-    pub(crate) fn get_from_arena(self) -> &'static crate::lowlevel::FunctionType {
-        let vec_idx: usize = self.global_arena_id.try_into().expect("u32 to usize should always suceed");
-        FUNCTION_TYPES.read().id_to_val[vec_idx]
+    pub fn as_ref(self) -> &'static crate::lowlevel::FunctionType {
+        self.0.as_ref()
     }
 
     pub fn inputs(self) -> &'static [ValType] {
-        self.get_from_arena().inputs()
+        self.as_ref().inputs()
     }
 
     pub fn results(self) -> &'static [ValType] {
-        self.get_from_arena().results()
+        self.as_ref().results()
     }
 }
 
 impl From<crate::lowlevel::FunctionType> for FunctionType {
     fn from(ty: crate::lowlevel::FunctionType) -> Self {
-        // Check if this is a new, globally unique function type and if yes, insert in arena.
-        let arena = FUNCTION_TYPES.upgradable_read();
-        let global_arena_id = match arena.val_to_id.get(&ty) {
-            Some(present) => *present,
-            None => {
-                let mut arena = RwLockUpgradableReadGuard::upgrade(arena);
-                let new_id: u32 = arena.id_to_val.len().try_into().expect("cannot have more than 2^32 unique function types");
-                
-                let val = Box::leak(Box::new(ty));
-                arena.id_to_val.push(val);
-                arena.val_to_id.insert(val, new_id);
-
-                new_id
-            },
-        };
-        Self { global_arena_id }
+        Self(Intern::new(ty))
     }
 }
 
 impl fmt::Debug for FunctionType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("FunctionType")
-            .field("id", &self.global_arena_id)
-            .field("inputs", &self.inputs())
-            .field("results", &self.results())
-            .finish()
+        self.as_ref().fmt(f)
     }
 }
 
 impl fmt::Display for FunctionType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.get_from_arena().fmt(f)
-    }
-}
-
-impl Default for FunctionType {
-    fn default() -> Self {
-        Self::new(&[], &[])
-    }
-}
-
-impl PartialOrd for FunctionType {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.get_from_arena().partial_cmp(other.get_from_arena())
-    }
-}
-
-impl Ord for FunctionType {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.get_from_arena().cmp(other.get_from_arena())
-    }
-}
-
-impl Serialize for FunctionType {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer {
-        self.get_from_arena().serialize(serializer)
+        self.as_ref().fmt(f)
     }
 }
 
@@ -1563,13 +1487,29 @@ impl Function {
 
     /// Return the type of the function parameter or non-parameter local with index idx.
     pub fn param_or_local_type(&self, idx: Idx<Local>) -> ValType {
-        self.param_or_local(idx).type_()
+        let idx = idx.into_inner();
+        let param_count = self.type_.inputs().len();
+
+        if idx < param_count {
+            self.type_.inputs()[idx]
+        } else {
+            self.code().expect("imported function cannot have locals").locals[idx - param_count].type_
+        }
     }
 
     /// Return the (optional) debug name of the function parameter or non-parameter local with
     /// index idx.
     pub fn param_or_local_name(&self, idx: Idx<Local>) -> Option<&str> {
-        self.param_or_local(idx).name()
+        self.assert_param_name_len_valid();
+
+        let idx = idx.into_inner();
+        let param_count = self.type_.inputs().len();
+
+        if idx < param_count {
+            self.param_names[idx].as_deref()
+        } else {
+            self.code().expect("imported function cannot have locals").locals[idx - param_count].name.as_deref()
+        }
     }
 
     /// Return a mutable reference to the (optional) debug name of the function parameter or
