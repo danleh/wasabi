@@ -3,7 +3,9 @@
 use crate::highlevel;
 use crate::wimpl::*; 
 
+/// The mutable state during conversion.
 pub struct State<'module> {
+    instrs_iter: std::slice::Iter<'module, highlevel::Instr>,
     type_checker: TypeChecker<'module>,
 
     label_count: usize,
@@ -14,26 +16,26 @@ pub struct State<'module> {
     label_stack: Vec<(Label, Option<(Var, ValType, bool)>)>,
 }
 
+/// The immutable context information required but never mutated during conversion.
 #[derive(Clone, Copy)]
 pub struct Context<'module> {
-    func_ty: &'module FunctionType,
     module: &'module highlevel::Module,
+    func_ty: &'module FunctionType,
 }
 
 fn wimplify_instrs<'module>(
-    instrs: &mut impl Iterator<Item=&'module highlevel::Instr>,
-    context: Context<'module>,
+    stmts_result: &mut Vec<Stmt>,
     state: &mut State,
-) -> Result<(Vec<Stmt>, /* was_else */ bool), String> {
+    context: Context<'module>,
+) -> Result</* was_else */ bool, String> {
 
     use Expr::*;
     use Var::*;
 
     // State that is "local" to this nested block (unlike `state`, which is for the whole function).
     let mut var_stack = Vec::new();
-    let mut stmts = Vec::new();
 
-    while let Some(instr) = instrs.next() {
+    while let Some(instr) = state.instrs_iter.next() {
         let ty = state.type_checker.check_next_instr(instr).map_err(|e| e.to_string())?;
 
         // DEBUG
@@ -45,10 +47,10 @@ fn wimplify_instrs<'module>(
                 match instr {
                     highlevel::Instr::End => {
                         state.label_stack.pop();
-                        return Ok((stmts, false))
+                        return Ok(false)
                     },
                     highlevel::Instr::Else => {
-                        return Ok((stmts, true))
+                        return Ok(true)
                     }
                     _ => continue
                 }
@@ -123,14 +125,14 @@ fn wimplify_instrs<'module>(
         // Conversion of each WebAssembly instruction to (one or more) Wimpl statements:
         match instr {
 
-            highlevel::Instr::Unreachable => stmts.push(Stmt::Unreachable),
+            highlevel::Instr::Unreachable => stmts_result.push(Stmt::Unreachable),
 
             highlevel::Instr::Nop => {},
 
             // Block and loop share so much code, so handle them together.
             highlevel::Instr::Block(blocktype) |
             highlevel::Instr::Loop(blocktype) => {
-                let result_var = blocktype_to_var_and_init(*blocktype, state, &mut var_stack, &mut stmts);
+                let result_var = blocktype_to_var_and_init(*blocktype, state, &mut var_stack, stmts_result);
                 let is_loop = match instr {
                     highlevel::Instr::Loop(_) => true,
                     highlevel::Instr::Block(_) => false,
@@ -141,10 +143,11 @@ fn wimplify_instrs<'module>(
                 state.label_count += 1;
                 state.label_stack.push((label, result_var.map(|(var, ty)| (var, ty, is_loop))));
 
-                let (block_body, ends_with_else) = wimplify_instrs(instrs, context, state)?;
+                let mut block_body = Vec::new();
+                let ends_with_else = wimplify_instrs(&mut block_body, state, context)?;
                 assert!(!ends_with_else, "block and loop are terminated by end, not else");
 
-                stmts.push(match instr {
+                stmts_result.push(match instr {
                     highlevel::Instr::Block(_) => Stmt::Block {
                         end_label: label,
                         body: Body(block_body),
@@ -160,15 +163,17 @@ fn wimplify_instrs<'module>(
             highlevel::Instr::If(blocktype) => {
                 let condition = var_stack.pop().expect("if expects a condition which was not found on the stack");
 
-                let result_var = blocktype_to_var_and_init(*blocktype, state, &mut var_stack, &mut stmts);
+                let result_var = blocktype_to_var_and_init(*blocktype, state, &mut var_stack, stmts_result);
 
                 let label = Label(state.label_count);
                 state.label_count += 1;
                 state.label_stack.push((label, result_var.map(|(var, ty)| (var, ty, false))));
                 
-                let (if_body, has_else) = wimplify_instrs(instrs, context, state)?;
+                let mut if_body = Vec::new();
+                let has_else = wimplify_instrs(&mut if_body, state, context)?;
                 let else_body = if has_else {
-                    let (else_body, ends_with_else) = wimplify_instrs(instrs, context, state)?;
+                    let mut else_body = Vec::new();
+                    let ends_with_else = wimplify_instrs(&mut else_body, state, context)?;
                     assert!(!ends_with_else, "else block must end with end instruction");
                     Some(Body(else_body))
                 } else {
@@ -179,7 +184,7 @@ fn wimplify_instrs<'module>(
                 // branch wants to exit the if, it needs to target a label.
                 // TODO do not generate the surrounding block if no branch targets it
                 // -> requires a precomputed map from branches to targets
-                stmts.push(Stmt::Block {
+                stmts_result.push(Stmt::Block {
                     end_label: label,
                     body: Body(vec![Stmt::If {
                         condition,
@@ -197,7 +202,7 @@ fn wimplify_instrs<'module>(
                 // the required value returned by if (if any) should be at the top of the var_stack
                 if let Some((if_result_var, type_, is_loop_block)) = result_info {
                     assert!(!is_loop_block, "if block result should never be have loop flag set");
-                    stmts.push(Stmt::Assign {
+                    stmts_result.push(Stmt::Assign {
                         lhs: if_result_var,
                         rhs: VarRef(var_stack.pop().expect("if block is producing a value which is expected on the stack")),
                         type_,
@@ -205,14 +210,14 @@ fn wimplify_instrs<'module>(
                 }
 
                 // End recursive invocation and return converted body of the current block.
-                return Ok((stmts, true));
+                return Ok(true);
             },
 
             highlevel::Instr::End => {
                 let (_, result_info) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack");
 
                 if let Some((block_result_var, type_, _is_loop_block)) = result_info {
-                    stmts.push(Stmt::Assign {
+                    stmts_result.push(Stmt::Assign {
                         lhs: block_result_var,
                         rhs: VarRef(var_stack.pop().expect("the block is producing a value for which it expect a value on the stack")),
                         type_,
@@ -220,18 +225,18 @@ fn wimplify_instrs<'module>(
                 };
 
                 // End recursive invocation and return converted body of the current block.
-                return Ok((stmts, false))
+                return Ok(false)
             }
 
             highlevel::Instr::Br(label) => {
-                stmts.extend(
+                stmts_result.extend(
                     label_to_instrs(*label, &state.label_stack, &mut || var_stack.pop()
                         .expect("br expected a value to return")))
             },
 
             highlevel::Instr::BrIf(label) => {
                 let condition = var_stack.pop().expect("if requires a conditional statement");
-                stmts.push(Stmt::If {
+                stmts_result.push(Stmt::If {
                     condition,
                     if_body: Body(label_to_instrs(*label, &state.label_stack, &mut || {
                         *var_stack.last().expect("br_if expected value to return")
@@ -256,7 +261,7 @@ fn wimplify_instrs<'module>(
                     var_stack.pop().expect("last succeeded, so pop should as well");
                 }
 
-                stmts.push(Stmt::Switch {
+                stmts_result.push(Stmt::Switch {
                     index,
                     cases,
                     default,
@@ -272,7 +277,7 @@ fn wimplify_instrs<'module>(
                     assert!(!loop_flag, "function should not have loop flag set");
 
                     let return_val = var_stack.pop().expect("return expects a return value");
-                    stmts.extend([
+                    stmts_result.extend([
                         Stmt::Assign{
                             lhs: return_var,
                             type_,
@@ -281,7 +286,7 @@ fn wimplify_instrs<'module>(
                         Stmt::Br { target }
                     ])
                 } else {
-                    stmts.push(Stmt::Br { target })
+                    stmts_result.push(Stmt::Br { target })
                 }
             }
 
@@ -291,7 +296,7 @@ fn wimplify_instrs<'module>(
                     func: Func::from_idx(*func_index, context.module),
                     args: var_stack.split_off(var_stack.len() - n_args),
                 };
-                stmts.push(match ty.results() {
+                stmts_result.push(match ty.results() {
                     [] => Stmt::Expr(rhs),
                     [type_] => Stmt::Assign {
                         lhs: create_fresh_stack_var(state, &mut var_stack),
@@ -310,7 +315,7 @@ fn wimplify_instrs<'module>(
                     table_idx: var_stack.pop().expect("call_indirect requires an index"),
                     args: var_stack.split_off(var_stack.len() - func_type.inputs().len()),
                 };
-                stmts.push(match ty.results() {
+                stmts_result.push(match ty.results() {
                     [] => Stmt::Expr(rhs),
                     [type_] => Stmt::Assign {
                         lhs: create_fresh_stack_var(state, &mut var_stack),
@@ -331,7 +336,7 @@ fn wimplify_instrs<'module>(
                 let else_result_val = var_stack.pop().expect("select requires a value on the stack for the else case");
                 let type_ = ty.results()[0];
                 let lhs = create_fresh_stack_var(state, &mut var_stack);
-                stmts.extend([
+                stmts_result.extend([
                     Stmt::Assign{
                         lhs,
                         rhs: Const(Val::get_default_value(type_)),
@@ -354,7 +359,7 @@ fn wimplify_instrs<'module>(
             }
 
             highlevel::Instr::Local(highlevel::LocalOp::Get, local_idx) => {
-                stmts.push(Stmt::Assign{
+                stmts_result.push(Stmt::Assign{
                     rhs: VarRef(local_idx_to_var(context, *local_idx)),
                     lhs: create_fresh_stack_var(state, &mut var_stack),
                     type_: ty.results()[0],
@@ -362,7 +367,7 @@ fn wimplify_instrs<'module>(
             }
 
             highlevel::Instr::Local(highlevel::LocalOp::Set, local_idx) => {
-                stmts.push(Stmt::Assign {
+                stmts_result.push(Stmt::Assign {
                     lhs: local_idx_to_var(context, *local_idx),
                     type_: ty.inputs()[0],
                     rhs: VarRef(var_stack.pop().expect("local.set expects a value on the stack")),
@@ -370,7 +375,7 @@ fn wimplify_instrs<'module>(
             }
 
             highlevel::Instr::Local(highlevel::LocalOp::Tee, local_idx) => {
-                stmts.push(Stmt::Assign{
+                stmts_result.push(Stmt::Assign{
                     lhs: local_idx_to_var(context, *local_idx),
                     type_: ty.inputs()[0],
                     rhs: VarRef(*var_stack.last().expect("local.tee expects a value on the stack")),
@@ -379,7 +384,7 @@ fn wimplify_instrs<'module>(
 
             highlevel::Instr::Global(highlevel::GlobalOp::Get, global_ind) => {
                 let global_var = Global(global_ind.into_inner());
-                stmts.push(Stmt::Assign{
+                stmts_result.push(Stmt::Assign{
                     rhs: VarRef(global_var),
                     lhs: create_fresh_stack_var(state, &mut var_stack),
                     type_: ty.results()[0],
@@ -388,7 +393,7 @@ fn wimplify_instrs<'module>(
 
             highlevel::Instr::Global(highlevel::GlobalOp::Set, global_ind) => {
                 let global_var = Global(global_ind.into_inner());
-                stmts.push(Stmt::Assign {
+                stmts_result.push(Stmt::Assign {
                     lhs: global_var,
                     rhs: VarRef(var_stack.pop().expect("global.set expects a value on the stack")),
                     type_: *ty.inputs().get(0).expect("return type of global.set not found"),
@@ -397,7 +402,7 @@ fn wimplify_instrs<'module>(
 
             highlevel::Instr::Load(loadop, memarg) => {
                 let rhs = var_stack.pop().expect("Every load consumes a value");
-                stmts.push(Stmt::Assign {
+                stmts_result.push(Stmt::Assign {
                     rhs: Load {
                         op: *loadop,
                         memarg: *memarg,
@@ -409,7 +414,7 @@ fn wimplify_instrs<'module>(
             }
 
             highlevel::Instr::Store(op, memarg) => {
-                stmts.push(Stmt::Store {
+                stmts_result.push(Stmt::Store {
                     op: *op,
                     memarg: *memarg,
                     addr: var_stack.pop().expect("store consumes a value for address from the stack which was not found"),
@@ -420,7 +425,7 @@ fn wimplify_instrs<'module>(
             highlevel::Instr::MemorySize(memory_idx) => {
                 assert_eq!(memory_idx.into_inner(), 0, "wasm mvp only has single memory");
 
-                stmts.push(Stmt::Assign {
+                stmts_result.push(Stmt::Assign {
                     rhs: MemorySize{},
                     lhs: create_fresh_stack_var(state, &mut var_stack),
                     type_: ty.results()[0],
@@ -430,7 +435,7 @@ fn wimplify_instrs<'module>(
             highlevel::Instr::MemoryGrow(memory_idx) => {
                 assert_eq!(memory_idx.into_inner(), 0, "wasm mvp only has single memory");
 
-                stmts.push(Stmt::Assign {
+                stmts_result.push(Stmt::Assign {
                     rhs: MemoryGrow {
                         pages: var_stack.pop().expect("memory.grow has to consume a value from stack"),
                     },
@@ -440,7 +445,7 @@ fn wimplify_instrs<'module>(
             }
 
             highlevel::Instr::Const(val) => {
-                stmts.push(Stmt::Assign{
+                stmts_result.push(Stmt::Assign{
                     rhs: Const(*val),
                     lhs: create_fresh_stack_var(state, &mut var_stack),
                     type_: ty.results()[0],
@@ -448,7 +453,7 @@ fn wimplify_instrs<'module>(
             }
 
             highlevel::Instr::Numeric(op) => {
-                stmts.push(Stmt::Assign {
+                stmts_result.push(Stmt::Assign {
                     rhs: Numeric {
                         op: *op,
                         args: var_stack.split_off(var_stack.len() - ty.inputs().len()),
@@ -460,7 +465,7 @@ fn wimplify_instrs<'module>(
         }
     }
 
-    Ok((stmts, false))
+    Ok(false)
 }
 
 pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
@@ -469,13 +474,13 @@ pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
 
         // TODO move into own function, e.g., Function::wimplify() or Function::from(hl::Function).
         //initialize the local variables
-        let mut result_instrs = Vec::with_capacity(func.local_count() + 1);
+        let mut stmts_result = Vec::with_capacity(func.local_count() + 1);
         for (loc_index, loc) in func.locals() {
             let (loc_name, loc_type) = (&loc.name, loc.type_);
             if let Some(_loc_name) = loc_name {
                 todo!("you haven't yet implemented locals having names");
             } else {
-                result_instrs.push(Stmt::Assign {
+                stmts_result.push(Stmt::Assign {
                     lhs: Var::Local(loc_index.into_inner() - func.type_.inputs().len()),
                     rhs: Expr::Const(Val::get_default_value(loc_type)),
                     type_: loc_type,
@@ -485,14 +490,13 @@ pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
 
         //translate the instructions in the function
         if let Some(code) = func.code() {
-            let mut instrs = code.body.as_slice().iter();
-
             let context = Context {
                 module,
                 func_ty: &func.type_
             };
 
             let mut state = State {
+                instrs_iter: code.body.as_slice().iter(),
                 type_checker: TypeChecker::begin_function(func, module),
                 label_stack: Vec::new(),
                 label_count: 1, // 0 is already used by the function body block.
@@ -506,13 +510,13 @@ pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
             };
             state.label_stack.push((Label(0), return_var));
 
-            let (mut stmts, _) = wimplify_instrs(&mut instrs, context, &mut state)?;
-            result_instrs.append(&mut stmts);
+            let was_else = wimplify_instrs(&mut stmts_result, &mut state, context)?;
+            assert!(!was_else, "function should not end with else");
         }
 
         wimpl_funcs.push(Function {
             type_: func.type_,
-            body: Body(result_instrs),
+            body: Body(stmts_result),
             name: Func::from_idx(idx, module),
             export: func.export.clone(), 
         });
