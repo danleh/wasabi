@@ -103,7 +103,7 @@ pub struct Options {
 
 pub fn reachable_callgraph(
     module: &wimpl::Module,
-    mut reachable: FxHashSet<Func>,
+    mut reachable_funcs: FxHashSet<Func>,
     options: Options,
 ) -> anyhow::Result<CallGraph> {
     
@@ -157,11 +157,11 @@ pub fn reachable_callgraph(
     // Solve constraints for all functions in "worklist" and add their targets to worklist, until
     // this is empty.
 
-    let mut worklist = reachable.iter().cloned().collect::<Vec<_>>();
+    let mut worklist = reachable_funcs.iter().cloned().collect::<Vec<_>>();
     let mut i = 0;
     while let Some(func) = worklist.pop() {
         let calls = call_target_constraints.get(&func).expect("all functions should have been constraints computed for");            
-        
+
         for call in calls {
             // Solve the constraints to concrete edges.
             let targets = solve_constraints(module, &funcs_by_type, &funcs_in_table, call);
@@ -173,7 +173,7 @@ pub fn reachable_callgraph(
                 // Add target to worklist, if it wasn't already processed 
                 // (and everything reachable was processed).
                 // TODO Is this check expensive? If yes, can we use a bit set for the set of reachable functions?
-                if reachable.insert(target.clone()) {
+                if reachable_funcs.insert(target.clone()) {
                     worklist.push(target);
                 }
             }

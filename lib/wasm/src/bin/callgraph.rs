@@ -22,6 +22,10 @@ fn main() {
         .collect();
 
     let callgraph = callgraph::reachable_callgraph(&wimpl, exported_funcs, options).unwrap();
+
+    println!("number of functions: {}", wimpl.functions.len());
+    println!("number of reachable functions: {}", callgraph.functions().len());
+    println!("number of reachable call graph edges: {}", callgraph.edges().count());
     
     // let dot = callgraph.to_dot();
     // println!("{}", dot);
