@@ -14,6 +14,7 @@ use crate::{
 
 // TODO(Michelle): fix compile errors in wimpl_opt, add tests, only then include in module hierarchy.
 pub mod optimize;
+pub mod analyze;
 
 pub mod wimplify;
 mod pretty_print;

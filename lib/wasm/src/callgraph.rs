@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File};
 
-use crate::{wimpl::{Func, self, Expr::Call, Function, Var, Body}, highlevel::FunctionType, Val};
+use crate::{wimpl::{Func, self, Expr::Call, Function, Var, Body, analyze::VarExprMap}, highlevel::FunctionType, Val};
 
 use crate::wimpl::wimplify::*;
 
@@ -209,71 +209,10 @@ pub fn collect_target_constraints(
     // TODO do this only for vars we are interested in, i.e., arguments to call_indirects
     // TODO with recursive exprs, this all would be trivial... :(
     // If performance turns out to be a huge problem, do recursive Expr instead.
-    
-    #[derive(Debug, Default)]
-    struct VarExprMap(FxHashMap<Var, Option<wimpl::Expr>>);
-    impl VarExprMap {
-        fn add(&mut self, var: &Var, expr: &wimpl::Expr) {
-            self.0.entry(*var)
-                // Overapproximate if there was already a prior assignment to that variable.
-                .and_modify(|old_expr| *old_expr = None)
-                .or_insert_with(|| Some(expr.clone()));
-        }
-        /// Returns `None` if variable expression was over approximated.
-        fn get(&self, var: &Var) -> Option<&wimpl::Expr> {
-            match self.0.get(var) {
-                // Recursive case: expression itself refers to a variable, resolve that again:
-                Some(Some(VarRef(var))) => self.get(var),
-                
-                Some(Some(other_expr)) => Some(other_expr),
-                
-                // Overapproximated:
-                Some(None) => None,
-                
-                None => panic!("uninitialized variable `{}`\nvariable map: {:?}", var, self.0),
-            }
-        }
-    }
-    
-    // Recursive "visitor" over statements/bodies.
-    // TODO overapproximates because variable map is created before the constraint construction,
-    // so more variables will be Top/None (namely those assigned after a call in a block).
-    fn collect_var_expr(body: &Body, var_expr: &mut VarExprMap) {
-        for stmt in &body.0 {
-            match stmt {
-                Unreachable => {},
-                Expr(_) => {},
-                Assign { lhs, type_: _, rhs } => var_expr.add(lhs, rhs),
-                Store { .. } => {},
-                Br { .. } => {},
-                
-                // Recursive cases:
-                // TODO Extract out in recursive visitor pattern.
-                Block { body, end_label: _ } => collect_var_expr(body, var_expr),
-                Loop { begin_label: _, body } => collect_var_expr(body, var_expr),
-                If { condition:_ , if_body, else_body } => {
-                    collect_var_expr(if_body, var_expr);
-                    if let Some(else_body) = else_body {
-                        collect_var_expr(else_body, var_expr)
-                    }
-                },
-                Switch { index: _, cases, default } => {
-                    for case in cases {
-                        collect_var_expr(case, var_expr);
-                    }
-                    collect_var_expr(default, var_expr)
-                },
-            }
-        }
-    }
-
-    let mut var_expr = VarExprMap::default();
-    collect_var_expr(body, &mut var_expr);
-
+    let var_expr = VarExprMap::from_body(&body);
 
     // Step 2:
     // Collect one set of constraints (conjuncts) per call/call_indirect.
-
     fn collect_call_constraints(body: &Body, targets: &mut FxHashSet<Target>, var_expr: &VarExprMap, options: Options) {
         for stmt in &body.0 {
             match stmt {
