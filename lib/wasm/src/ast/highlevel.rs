@@ -1,12 +1,8 @@
-use std::{collections::HashSet, convert::TryInto};
+use std::collections::HashSet;
 use std::str::FromStr;
 use std::fmt;
 
 use internment::Intern;
-use lazy_static::lazy_static;
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
-use rustc_hash::FxHashMap;
-use serde::Serialize;
 
 use crate::{BlockType, GlobalType, Idx, Label, Memarg, MemoryType, Mutability, RawCustomSection, TableType, Val, ValType};
 
