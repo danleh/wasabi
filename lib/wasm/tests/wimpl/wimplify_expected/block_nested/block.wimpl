@@ -1,8 +1,0 @@
-b1: i32 = i32.const 0
-@label1: block {
-  s0: i32 = i32.const 42
-  @label2: block { s1: i32 = i32.const 0 }
-  s2: i32 = i32.const 1
-  s3: i32 = i32.add(s0, s2)
-  b1: i32 = s3
-}

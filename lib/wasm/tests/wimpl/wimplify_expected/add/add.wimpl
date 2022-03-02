@@ -1,3 +1,1 @@
-s0: i32 = i32.const 3
-s1: i32 = i32.const 4
-s2: i32 = i32.add(s0, s1) 
+i32.add(i32.const 3, i32.const 4) 

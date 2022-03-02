@@ -1,0 +1,45 @@
+# Wasm, with runtime stack and local state
+i32.const 3     [3]
+local.tee $l0   [3], {$l0 -> 3}
+i32.const 7     [3, 7]
+local.set $l0   [3], {$l0 -> 7}
+local.get $l0   [3, 7]
+i32.add         [10]
+
+# Translated Wimpl
+
+Before (non-recursive Expr):
+s0 = i32.const 3
+l0 = s0
+s1 = i32.const 7
+l0 = s1
+s2 = l0
+i32.add(s2, s0)
+
+After (with recursive Expr):
+s0 = i32.const 3 // TODO can be avoided if utility function: Expr::is_pure() && Expr::is_small()
+l0 = s0
+l0 = i32.const 7
+i32.add(l0, s0)
+
+Potential bug if not carefully done!
+l0 = i32.const 3
+l0 = i32.const 7
+i32.add(l0, l0) // 14, not 10!
+
+
+
+
+
+
+
+TODO
+local.tee == local.set; local.get --> similar problem there?
+
+i32.const 3     [3]
+local.set $l0   [], {$l0 -> 3}
+local.get $l0   [3], {$l0 -> 3}
+i32.const 7     [3, 7]
+local.set $l0   [3], {$l0 -> 7}
+local.get $l0   [3, 7]
+i32.add         [10]
