@@ -1,0 +1,4 @@
+s0 = i32.const 3 // TODO could be potentially avoided if we don't introduce stack variables for constants, but instead duplicate the constant. E.g., with a check is_pure() + is_small() on Expr.
+l0 = s0
+l0 = i32.const 7
+i32.add(l0, s0)
