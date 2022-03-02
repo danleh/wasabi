@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use lazy_static::lazy_static;
@@ -219,6 +220,11 @@ lazy_static! {
             "var ref on rhs"
         ),
         (
+            Expr(Const(I32(1337))),
+            "i32.const 1337",
+            ""
+        ),
+        (
             Assign {
                 lhs: Stack(0),
                 rhs: Const(I32(1337)),
@@ -232,12 +238,12 @@ lazy_static! {
                 lhs: Stack(1),
                 rhs: Numeric {
                     op: I32Add,
-                    args: vec![Stack(2), Stack(3)],
+                    args: vec![Const(Val::I32(7)), VarRef(Stack(3))],
                 },
                 type_: ValType::I32,
             },
-            "s1: i32 = i32.add(s2, s3)",
-            ""
+            "s1: i32 = i32.add(i32.const 7, s3)",
+            "nested non-variable expression"
         ),
         (
             Assign {
@@ -245,7 +251,7 @@ lazy_static! {
                 rhs: Load {
                     op: I32Load,
                     memarg: Memarg::default(I32Load),
-                    addr: Stack(0),
+                    addr: Box::new(VarRef(Stack(0))),
                 },
                 type_: ValType::I32,
             },
@@ -255,8 +261,8 @@ lazy_static! {
         (
             Store {
                 op: I64Store8,
-                value: Stack(1),
-                addr: Stack(2),
+                value: VarRef(Stack(1)),
+                addr: VarRef(Stack(2)),
                 memarg: Memarg {
                     offset: 0,
                     alignment_exp: 4,
@@ -285,12 +291,12 @@ lazy_static! {
                 lhs: Stack(1),
                 rhs: CallIndirect {
                     type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
-                    table_idx: Stack(0),
-                    args: vec![Stack(2), Stack(3)],
+                    table_idx: Box::new(VarRef(Stack(0))),
+                    args: vec![MemorySize, VarRef(Stack(3))],
                 },
                 type_: ValType::I32,
             },
-            "s1: i32 = call_indirect [i32] -> [i32] (s0) (s2, s3)",
+            "s1: i32 = call_indirect [i32] -> [i32] (s0) (memory.size, s3)",
             ""
         ),
         (
@@ -330,7 +336,7 @@ lazy_static! {
         ),
         (
             If {
-                    condition: Stack(0),
+                    condition: VarRef(Stack(0)),
                     if_body: Body (
                         vec![Br {
                             target: Label(0),
@@ -342,7 +348,7 @@ lazy_static! {
         ),
         (
             Switch {
-                    index: Stack(0),
+                    index: VarRef(Stack(0)),
                     cases: vec![
                         Body(vec![Unreachable]),
                         Body(vec![Expr(MemorySize), Br { target: Label(1) }]),
@@ -395,24 +401,24 @@ lazy_static! {
             Assign {
                 lhs: Stack(1),
                 type_: ValType::I32,
-                rhs: MemoryGrow { pages: Stack(0) },
+                rhs: MemoryGrow { pages: Box::new(VarRef(Stack(0))) },
             },
             "s1: i32 = memory.grow ( s0 )",
             "extra space around arguments"),
         (
             Expr(Call {
                 func: FunctionId::Idx(2),
-                args: vec![Stack(2), Stack(3)],
+                args: vec![VarRef(Stack(2)), VarRef(Stack(3))],
             }),
             "call f2 ( s2, s3 )",
             "extra space around call arguments"
         ),
         (
-            Assign{
+            Assign {
                 lhs: Stack(1),
                 rhs: CallIndirect {
                     type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
-                    table_idx: Stack(0),
+                    table_idx: Box::new(VarRef(Stack(0))),
                     args: vec![],
                 },
                 type_: ValType::I32,
@@ -425,7 +431,7 @@ lazy_static! {
                 lhs: Stack(1),
                 rhs: Numeric {
                     op: I32Add,
-                    args: vec![Stack(2), Stack(3)],
+                    args: vec![VarRef(Stack(2)), VarRef(Stack(3))],
                 },
                 type_: ValType::I32,
             },
@@ -435,8 +441,8 @@ lazy_static! {
         (
             Store {
                 op: I64Store8,
-                value: Stack(1),
-                addr: Stack(2),
+                value: VarRef(Stack(1)),
+                addr: VarRef(Stack(2)),
                 memarg: Memarg {
                     offset: 0,
                     alignment_exp: 4,
@@ -538,19 +544,18 @@ fn parse_func_id() {
 #[test]
 fn parse_expr() {
     assert_eq!(Ok(MemorySize), "memory.size".parse());
-    assert_eq!(Ok(MemoryGrow { pages: Local(0) }), "memory.grow (l0)".parse());
+    assert_eq!(Ok(MemoryGrow { pages: Box::new(VarRef(Local(0))) }), "memory.grow (l0)".parse());
     assert_eq!(Ok(VarRef(Global(1))), "g1".parse());
     assert_eq!(Ok(Numeric {
         op: I32Add,
-        args: vec![Stack(0), Local(1)]
+        args: vec![VarRef(Stack(0)), VarRef(Local(1))]
     }), "i32.add(s0, l1)".parse());
     // More complex expressions are tested in the statements.
 }
 
 #[test]
 fn parse_stmt() {
-    let parse_testcases = WIMPL_CANONICAL_SYNTAX_TESTCASES
-        .iter()
+    let parse_testcases = WIMPL_CANONICAL_SYNTAX_TESTCASES.iter()
         .chain(WIMPL_ALTERNATIVE_SYNTAX_TESTCASES.iter());
     for (i, (wimpl, text, msg)) in parse_testcases.enumerate() {
         let parsed = Stmt::from_str(text);
@@ -621,9 +626,12 @@ fn macros_should_compile_and_not_fail_at_runtime() {
 #[test]
 fn wimplify_with_expected_output() {
     const WIMPL_TEST_INPUTS_DIR: &str = "tests/wimpl/wimplify_expected/";
-    for entry in WalkDir::new(&WIMPL_TEST_INPUTS_DIR) {
-        let wimpl_path = entry.unwrap().path().to_owned();
+    
+    // Sort for deterministic order.
+    let mut files: Vec<PathBuf> = WalkDir::new(&WIMPL_TEST_INPUTS_DIR).into_iter().map(|entry| entry.unwrap().path().to_owned()).collect();
+    files.sort();
 
+    for wimpl_path in files {
         // Find all files, where a <name>.wimpl file and a <name>.wasm file are next to each other.
         if let Some("wimpl") = wimpl_path.extension().and_then(|os_str| os_str.to_str()) {
             let wasm_path = wimpl_path.with_extension("wasm");

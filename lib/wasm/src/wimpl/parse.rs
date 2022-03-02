@@ -178,15 +178,15 @@ fn op<T: FromStr>(input: &str) -> NomResult<T> {
     )(input)
 }
 
-fn arg_single(input: &str) -> NomResult<Var> {
+fn arg_single(input: &str) -> NomResult<Expr> {
     delimited(
-        pair(tag("("), ws), var, pair(ws, tag(")"))
+        pair(tag("("), ws), expr, pair(ws, tag(")"))
     )(input)
 }
-fn arg_list(input: &str) -> NomResult<Vec<Var>> {
+fn arg_list(input: &str) -> NomResult<Vec<Expr>> {
     delimited(
         pair(tag("("), ws),
-        separated_list0(tuple((ws, tag(","), ws)), var),
+        separated_list0(tuple((ws, tag(","), ws)), expr),
         pair(ws, tag(")")),
     )(input)
 }
@@ -209,7 +209,7 @@ fn load(input: &str) -> NomResult<Expr> {
         Expr::Load {
             op,
             memarg,
-            addr,
+            addr: Box::new(addr),
         },
     ))
 }
@@ -245,7 +245,8 @@ fn expr(input: &str) -> NomResult<Expr> {
             ws,
             // HACK Accept any non-whitespace character for the integer/float
             // immediate, the rest of the parsing is done by Val::from_str.
-            take_while1(|c: char| !c.is_ascii_whitespace()),
+            // SUPER HACK Also stop at commas and parentheses in case this is in an argument list.
+            take_while1(|c: char| !c.is_ascii_whitespace() && c != ',' && c != ')'),
         )),
         |(ty, _, (), number)| Val::from_str(number, ty).map(Const),
     );
@@ -253,7 +254,7 @@ fn expr(input: &str) -> NomResult<Expr> {
     let memory_size = map(tag("memory.size"), |_| MemorySize);
     let memory_grow = map(
         tuple((tag("memory.grow"), ws, arg_single)),
-        |(_, (), pages)| MemoryGrow { pages },
+        |(_, (), pages)| MemoryGrow { pages: Box::new(pages) },
     );
 
     let numeric = map(
@@ -281,7 +282,7 @@ fn expr(input: &str) -> NomResult<Expr> {
             arg_list,
         )),
         |(_, (), type_, (), table_idx, (), args)|
-            CallIndirect { type_, table_idx, args }
+            CallIndirect { type_, table_idx: Box::new(table_idx), args }
     );
 
     alt((var_ref, const_, load, memory_size, memory_grow, numeric, call, call_indirect))(input)
@@ -378,9 +379,8 @@ fn stmt(input: &str) -> NomResult<Stmt> {
         if_,
         switch,
 
-        // HACK Order this case below assign, because otherwise the parser parses a LHS
-        // variable as an `Stmt::Expr(Expr::VarRef(...))`, continues, and fails with the rest.
-        // Otherwise
+        // HACK Put this case below assign, otherwise the parser parses a LHS variable, e.g.,
+        // `l0 = ...` as `Stmt::Expr(Expr::VarRef(...))` and then fails on the rest from `=` onward.
         expr_stmt,
     ))(input)
 }

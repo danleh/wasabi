@@ -224,6 +224,9 @@ pub fn collect_target_constraints(
     use wimpl::Stmt::*;
     use wimpl::Expr::*;
 
+    // FIXME now with recursive Expr this doesn't need the var_expr map anymore
+    // FIXME however, the constraint collection now needs to be a visitor over Expr as well!
+
     // Step 1:
     // Build map of variables to expressions or any (overapproximation for multiple assignments
     // of the same variable).
@@ -255,9 +258,10 @@ pub fn collect_target_constraints(
                     }
                     if options.with_index_constraint {
                         // TODO Handle the `Err` case when this returns an uninitialized variable - local, parameters
-                        if let Ok(Some(precise_expr)) = var_expr.get(table_idx) {
-                            constraints.push(Constraint::TableIndexExpr(precise_expr.clone()));
-                        }
+                        // FIXME
+                        // if let Ok(Some(precise_expr)) = var_expr.get(table_idx) {
+                        //     constraints.push(Constraint::TableIndexExpr(precise_expr.clone()));
+                        // }
                     }
                     targets.insert(Target::Constrained(constraints));
                 }
@@ -453,7 +457,7 @@ fn data_gathering() {
             for elem in &tab.elements {
                 for func_idx in &elem.functions {
                     //let func = wimpl_module.function_by_idx(*func_idx);
-                    element_funcs.insert(func_idx.into_inner()); 
+                    element_funcs.insert(func_idx.to_u32()); 
                 }
             }
         }

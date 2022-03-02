@@ -13,7 +13,7 @@ use crate::{
 };
 
 // TODO(Michelle): fix compile errors in wimpl_opt, add tests, only then include in module hierarchy.
-pub mod optimize;
+// pub mod optimize;
 pub mod analyze;
 
 pub mod wimplify;
@@ -144,6 +144,14 @@ pub enum Stmt {
     /// Expression statement, expression is executed for side-effects only.
     Expr(Expr),
 
+    // TODO Maybe add a variable declaration stmt before blocks, select, locals, etc.
+    // DO NOT include initialization expression in it, if you would want that just append an assign.
+    // THEN remove ValType from Assign and wimplify label_stack / var_stack.
+    // VarDecl(Var, ValType), // let l0: i32
+
+    // TODO Add a drop statement, that assigns the RHS to nothing
+    // Drop(Expr) // _ = i32.const 3
+
     /// This unifies all local.set, global.set, local.tee, local.get, and global.get,
     /// and data-flow before branches ("br with value" in Wasm).
     Assign {
@@ -155,8 +163,8 @@ pub enum Stmt {
     Store {
         op: StoreOp,
         memarg: Memarg,
-        addr: Var,
-        value: Var,
+        addr: Expr,
+        value: Expr,
     },
 
     // Simplify drop: This is just a dead variable, no instruction needed.
@@ -190,14 +198,14 @@ pub enum Stmt {
     // -> if (cond) { b0 = value; br @label }
     // -> switch (cond) { case 0: {} default: { b0 = value; br @label } }
     If {
-        condition: Var,
+        condition: Expr,
         if_body: Body,
         else_body: Option<Body>,
     },
 
     /// Similar to C switch statement, but doesn't fallthrough from one case to the next.
     Switch {
-        index: Var,
+        index: Expr,
         cases: Vec<Body>,
         default: Body,
     },
@@ -211,32 +219,29 @@ pub enum Expr {
 
     Const(Val),
 
-    // TODO Make Expr recursive (i.e., allow for folded expressions) by replacing all occurrences of
-    // `Var` below with `Box<Expr>`.
-
     Load {
         op: LoadOp,
         memarg: Memarg,
-        addr: Var,
+        addr: Box<Expr>,
     },
 
     MemorySize,
-    MemoryGrow { pages: Var },
+    MemoryGrow { pages: Box<Expr> },
 
     Numeric {
         op: NumericOp,
-        args: Vec<Var>,
+        args: Vec<Expr>,
     },
 
     Call {
         func: FunctionId,
-        args: Vec<Var>,
+        args: Vec<Expr>,
     },
 
     CallIndirect {
         type_: FunctionType,
-        table_idx: Var,
-        args: Vec<Var>,
+        table_idx: Box<Expr>,
+        args: Vec<Expr>,
     },
 
 }
