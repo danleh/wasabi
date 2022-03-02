@@ -14,6 +14,7 @@ pub struct State<'module> {
     stack_var_count: u32,
 
     // The bool is `true` if the label is for a `loop` block, and false for `block` and `if`.
+    // TODO maybe this doesn't need ValType, because the type is carried along in the expr stack?
     #[allow(clippy::type_complexity)]
     label_stack: Vec<(Label, Option<(Var, ValType, bool)>)>,
 }
@@ -36,7 +37,7 @@ fn wimplify_instrs<'module>(
     use Var::*;
 
     // State that is "local" to this nested block (unlike `state`, which is for the whole function).
-    let mut expr_stack: Vec<Expr> = Vec::new();
+    let mut expr_stack: Vec<(Expr, ValType)> = Vec::new();
 
     while let Some(instr) = state.instrs_iter.next() {
         let ty = state.type_checker.check_next_instr(instr).map_err(|e| e.to_string())?;
@@ -79,8 +80,8 @@ fn wimplify_instrs<'module>(
         // valid, as it would change semantics and likely performance when doubly evaluated).
         // So evaluate the expr and store in an intermediate fresh variable. Then return this 
         // variable for future uses.
-        fn pop_expr_and_assign_to_fresh_stack_var(type_: ValType, state: &mut State, expr_stack: &mut Vec<Expr>, stmts_result: &mut Vec<Stmt>) -> Expr {
-            let expr = expr_stack.pop().expect("expected value on the stack");
+        fn pop_expr_and_assign_to_fresh_stack_var(state: &mut State, expr_stack: &mut Vec<(Expr, ValType)>, stmts_result: &mut Vec<Stmt>) -> Expr {
+            let (expr, type_) = expr_stack.pop().expect("expected value on the stack");
             let var = create_fresh_stack_var(state);
             stmts_result.push(Stmt::Assign {
                 lhs: var,
@@ -88,6 +89,24 @@ fn wimplify_instrs<'module>(
                 rhs: expr,
             });
             VarRef(var)
+        }
+
+        // To make sure the Wimpl evaluation order is equivalent to WebAssembly, before pushing a
+        // statement, we must make sure (by calling this function) that all expressions still
+        // "dormant" on the stack are actually executed beforehand (e.g., due to side effects).
+        // To be able to refer to their values later on, we replace those expressions by references 
+        // to the freshly created variables holding the evaluation result instead.
+        // TODO call this whenever calling stmts.push(...)
+        fn materialize_all_exprs_as_stmts(state: &mut State, expr_stack: &mut Vec<(Expr, ValType)>, stmts_result: &mut Vec<Stmt>) {
+            for (expr, type_) in expr_stack {
+                let var = create_fresh_stack_var(state);
+                let expr = std::mem::replace(expr, VarRef(var));
+                stmts_result.push(Stmt::Assign {
+                    lhs: var,
+                    type_: *type_,
+                    rhs: expr
+                })
+            }
         }
 
         fn local_idx_to_var(context: Context, local_idx: Idx<highlevel::Local>) -> Var {
@@ -100,16 +119,17 @@ fn wimplify_instrs<'module>(
             }
         }
 
-        fn create_block_label_and_var(state: &mut State, expr_stack: &mut Vec<Expr>, blocktype: BlockType, is_loop: bool) -> Label {
+        fn create_block_label_and_var(state: &mut State, expr_stack: &mut Vec<(Expr, ValType)>, blocktype: BlockType, is_loop: bool) -> Label {
             let label = Label(state.label_count);
             state.label_count += 1;
-            let result_var = BlockResult(label.0);
-            state.label_stack.push((label, blocktype.0.map(|ty| {
-                (result_var, ty, is_loop)
-            })));
 
-            // The result of the block is then at the top of the stack after the block.
-            expr_stack.push(VarRef(result_var));
+            if let Some(type_) = blocktype.0 {
+                let result_var = BlockResult(label.0);
+                state.label_stack.push((label, Some((result_var, type_, is_loop))));
+    
+                // The result of the block is then at the top of the stack after the block.
+                expr_stack.push((VarRef(result_var), type_));
+            }
 
             label
         }
@@ -129,12 +149,18 @@ fn wimplify_instrs<'module>(
         // Conversion of each WebAssembly instruction to (one or more) Wimpl statements:
         match instr {
 
-            wasm::Unreachable => stmts_result.push(Stmt::Unreachable),
+            wasm::Unreachable => {
+                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+                stmts_result.push(Stmt::Unreachable)
+            },
 
             wasm::Nop => {},
 
             wasm::Block(blocktype) => {
                 let label = create_block_label_and_var(state, &mut expr_stack, *blocktype, false);
+
+                // Do this before the recursive call modifies the state (e.g., adds stack variables).
+                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
                 let mut block_body = Vec::new();
                 let ends_with_else = wimplify_instrs(&mut block_body, state, context)?;
@@ -150,6 +176,8 @@ fn wimplify_instrs<'module>(
             wasm::Loop(blocktype) => {
                 let label = create_block_label_and_var(state, &mut expr_stack, *blocktype, true);
 
+                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+
                 let mut loop_body = Vec::new();
                 let ends_with_else = wimplify_instrs(&mut loop_body, state, context)?;
                 assert!(!ends_with_else, "loop should be terminated by end, not else");
@@ -163,9 +191,12 @@ fn wimplify_instrs<'module>(
             }
 
             wasm::If(blocktype) => {
-                let condition = expr_stack.pop().expect("if expects a condition which was not found on the stack");
+                let (condition, condition_ty) = expr_stack.pop().expect("if expects a condition which was not found on the stack");
+                assert_eq!(condition_ty, ValType::I32);
 
                 let label = create_block_label_and_var(state, &mut expr_stack, *blocktype, false);
+                
+                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
                 
                 let mut if_body = Vec::new();
                 let has_else = wimplify_instrs(&mut if_body, state, context)?;
@@ -199,12 +230,19 @@ fn wimplify_instrs<'module>(
                 // Assign result of the if statement that we just finished processing.
                 if let Some((if_result_var, type_, is_loop_block)) = result_info {
                     assert!(!is_loop_block, "if block result should never have loop flag set");
+                    let value = expr_stack.pop().expect("else expects if result value on the stack").0;
+                    
+                    // Because the stack should be empty at the end of a block, we don't need to
+                    // materialize expressions here.
+                    
                     stmts_result.push(Stmt::Assign {
                         lhs: if_result_var,
-                        rhs: expr_stack.pop().expect("else expects if result value on the stack"),
                         type_,
+                        rhs: value,
                     })
                 }
+
+                assert!(expr_stack.is_empty(), "should not contain superfluous expressions");
 
                 // End recursive invocation and return converted body of the current block.
                 return Ok(true);
@@ -214,12 +252,19 @@ fn wimplify_instrs<'module>(
                 let (_, result_info) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack");
 
                 if let Some((block_result_var, type_, _is_loop_block)) = result_info {
+                    let value = expr_stack.pop().expect("end expects if/block/loop result value on the stack").0;
+
+                    // Because the stack should be empty at the end of a block, we don't need to
+                    // materialize expressions here.
+                    
                     stmts_result.push(Stmt::Assign {
                         lhs: block_result_var,
-                        rhs: expr_stack.pop().expect("end expects if/block/loop result value on the stack"),
                         type_,
+                        rhs: value,
                     });
                 };
+
+                assert!(expr_stack.is_empty(), "should not contain superfluous expressions");
 
                 // End recursive invocation and return converted body of the current block.
                 return Ok(false)
@@ -230,12 +275,15 @@ fn wimplify_instrs<'module>(
                 
                 // Handle dataflow ("transported value through branch") by explicit assignment.
                 if let Some((var, type_)) = block_var {
-                    let value = expr_stack.pop().expect("br to this label expects a value");
+                    let value = expr_stack.pop().expect("br to this label expects a value").0;
+                    materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
                     stmts_result.push(Stmt::Assign {
                         lhs: var,
                         type_,
                         rhs: value,
                     })
+                } else {
+                    materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
                 }
 
                 stmts_result.push(Stmt::Br { target: wimpl_label })
@@ -243,14 +291,20 @@ fn wimplify_instrs<'module>(
 
             // Translate br_if as if + (unconditional) br.
             wasm::BrIf(label) => {
-                let condition = expr_stack.pop().expect("br_if expects a conditional on the stack");
+                let (condition, condition_ty) = expr_stack.pop().expect("br_if expects a conditional on the stack");
+                assert_eq!(condition_ty, ValType::I32);
 
                 let (wimpl_label, block_var) = wasm_label_to_wimpl_label_and_block_var(state, *label);
                 
+                // Materialize also the (maybe) value of the branch target in a variable.
+                // This is necessary because its expression shall not be duplicated, once for the
+                // case if the branch is taken (assigned to target result variable), once if the
+                // branch is not taken (in the expression stack).
+                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+
                 let mut if_body = Vec::with_capacity(2);
                 if let Some((block_var, type_)) = block_var {
-                    let branch_value_var = pop_expr_and_assign_to_fresh_stack_var(type_, state, &mut expr_stack, stmts_result);
-                    expr_stack.push(branch_value_var.clone());
+                    let branch_value_var = expr_stack.pop().expect("br_if to this label expects a value").0;
                     if_body.push(Stmt::Assign {
                         lhs: block_var,
                         type_,
@@ -266,35 +320,24 @@ fn wimplify_instrs<'module>(
                 })
             }
 
+            // FIXME write test case for this
             wasm::BrTable { table, default } => {
-                let mut table_index_value = expr_stack.pop().expect("br_table expects an index into the table on the stack");
+                let (table_index_expr, table_index_ty) = expr_stack.pop().expect("br_table expects an index into the table on the stack");
+                assert_eq!(table_index_ty, ValType::I32);
 
-                // Use default label for getting type of branch targets, because that is always 
-                // guaranteed to be there and consistent with all other branch table targets.
-                let branch_target_value_var = if let (_, Some((_, type_))) = wasm_label_to_wimpl_label_and_block_var(state, *default) {
-                    // Need to keep evaluation order of the index expr and the branch target value the same, so first this into a fresh variable.
-                    // If the branch table targets don't require a value, no need to do this.
-                    let table_index_var = create_fresh_stack_var(state);
-                    stmts_result.push(Stmt::Assign {
-                        lhs: table_index_var,
-                        type_: ValType::I32,
-                        rhs: table_index_value,
-                    });
-                    table_index_value = VarRef(table_index_var);
+                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
-                    Some(pop_expr_and_assign_to_fresh_stack_var(type_, state, &mut expr_stack, stmts_result))
-                } else {
-                    None
-                };
-
-                let br_with_maybe_assign = move |label: crate::Label, state: &mut State| -> Vec<Stmt> {
+                let br_with_maybe_assign = move |label: crate::Label, state: &mut State, expr_stack: &Vec<(Expr, ValType)>| -> Vec<Stmt> {
                     let (wimpl_label, block_var) = wasm_label_to_wimpl_label_and_block_var(state, label);
                     if let Some((block_var, type_)) = block_var {
+                        // Since we just materialized this, this is going to be a `VarRef` and cloning
+                        // it is fine (doesn't alter semantics or introduce duplicate expressions).
+                        let branch_value_var = expr_stack.last().expect("this br_table expects a value").0.clone();
                         vec![
                             Stmt::Assign {
                                 lhs: block_var,
                                 type_,
-                                rhs: branch_target_value_var.clone().expect("inconsistent types for br_table targets"),
+                                rhs: branch_value_var,
                             },
                             Stmt::Br { target: wimpl_label }
                         ]
@@ -304,9 +347,9 @@ fn wimplify_instrs<'module>(
                 };
 
                 stmts_result.push(Stmt::Switch {
-                    index: table_index_value,
-                    cases: table.iter().map(|label| Body(br_with_maybe_assign(*label, state))).collect(),
-                    default: Body(br_with_maybe_assign(*default, state)),
+                    index: table_index_expr,
+                    cases: table.iter().map(|label| Body(br_with_maybe_assign(*label, state, &mut expr_stack))).collect(),
+                    default: Body(br_with_maybe_assign(*default, state, &mut expr_stack)),
                 })
             }
 
@@ -318,7 +361,7 @@ fn wimplify_instrs<'module>(
                     assert_eq!(target, *target_from_label_stack, "label stack is invalid, should have been the function label");
                     assert!(!loop_flag, "function body block should not have loop flag set");
 
-                    let return_val = expr_stack.pop().expect("return expects a return value");
+                    let return_val = expr_stack.pop().expect("return expects a return value").0;
                     stmts_result.extend([
                         Stmt::Assign {
                             lhs: *return_var,
@@ -336,13 +379,17 @@ fn wimplify_instrs<'module>(
                 let n_args = context.module.function(*func_index).type_.inputs().len();
                 let call_expr = Call {
                     func: FunctionId::from_idx(*func_index, context.module),
-                    args: expr_stack.split_off(expr_stack.len() - n_args),
+                    args: expr_stack.split_off(expr_stack.len() - n_args).into_iter().map(|(expr, _ty)| expr).collect(),
                 };
+
                 // If the call doesn't produce a value, emit it as a statement for its side-effects,
                 // otherwise push its result on the stack.
                 match ty.results() {
-                    [] => stmts_result.push(Stmt::Expr(call_expr)),
-                    [type_] => expr_stack.push(call_expr),
+                    [] => {
+                        materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+                        stmts_result.push(Stmt::Expr(call_expr))
+                    },
+                    [type_] => expr_stack.push((call_expr, *type_)),
                     _ => panic!("WebAssembly multi-value extension")
                 }
             },
@@ -350,41 +397,54 @@ fn wimplify_instrs<'module>(
             wasm::CallIndirect(func_type, table_index) => {
                 assert_eq!(table_index.to_usize(), 0, "WebAssembly MVP must always have a single table");
 
+                let (table_index_expr, table_index_ty) = expr_stack.pop().expect("call_indirect expects a table index on the stack");
+                assert_eq!(table_index_ty, ValType::I32);
+
+                let n_args = func_type.inputs().len();
                 let call_expr = CallIndirect {
                     type_: func_type.clone(),
-                    table_idx: Box::new(expr_stack.pop().expect("call_indirect expects a table index on the stack")),
-                    args: expr_stack.split_off(expr_stack.len() - func_type.inputs().len()),
+                    table_idx: Box::new(table_index_expr),
+                    args: expr_stack.split_off(expr_stack.len() - n_args).into_iter().map(|(expr, _ty)| expr).collect(),
                 };
+
                 // Analoguous to call above.
                 match ty.results() {
-                    [] => stmts_result.push(Stmt::Expr(call_expr)),
-                    [type_] => expr_stack.push(call_expr),
+                    [] => {
+                        materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+                        stmts_result.push(Stmt::Expr(call_expr))
+                    },
+                    [type_] => expr_stack.push((call_expr, *type_)),
                     _ => panic!("WebAssembly multi-value extension")
                 }
             }
 
             wasm::Drop => {
-                let expr = expr_stack.pop().expect("drop expects a value on the stack");
+                let expr = expr_stack.pop().expect("drop expects a value on the stack").0;
+
+                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+
                 // Emit as a statement because maybe it was executed for its side-effect, e.g., calls.
                 stmts_result.push(Stmt::Expr(expr))
             },
 
+            // Translate as if block assigning to a fresh stack variable.
             wasm::Select => {
-                let type_ = ty.results()[0];
+                let (condition, condition_ty) = expr_stack.pop().expect("select expects a conditional on the stack");
+                assert_eq!(condition_ty, ValType::I32);
 
-                // We need to evaluate the if and else case, regardless of whether they are used,
-                // to match the semantics of Wasm.
-                // Also, their evaluation order needs to be kept.
-                // So store all three in fresh stack variables.
-                let condition_var = pop_expr_and_assign_to_fresh_stack_var(ValType::I32, state, &mut expr_stack, stmts_result);
-                let if_result_var = pop_expr_and_assign_to_fresh_stack_var(type_, state, &mut expr_stack, stmts_result);
-                let else_result_var = pop_expr_and_assign_to_fresh_stack_var(type_, state, &mut expr_stack, stmts_result);
+                let type_ = ty.results()[0];
+                
+                // We need to materialize the if and else case, regardless of whether they are used,
+                // to match the semantics of Wasm, where both are always evaluated.
+                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+                let if_result_var = expr_stack.pop().expect("select expects if value on the stack").0;
+                let else_result_var = expr_stack.pop().expect("select expects else value on the stack").0;
 
                 let result_var = create_fresh_stack_var(state);
 
                 stmts_result.push(
                     Stmt::If {
-                        condition: condition_var,
+                        condition,
                         if_body: Body(vec![Stmt::Assign {
                             lhs: result_var,
                             type_,
@@ -400,24 +460,32 @@ fn wimplify_instrs<'module>(
             }
 
             wasm::Local(highlevel::LocalOp::Get, local_idx) => {
-                expr_stack.push(VarRef(local_idx_to_var(context, *local_idx)))
+                let type_ = ty.results()[0];
+
+                expr_stack.push((VarRef(local_idx_to_var(context, *local_idx)), type_))
             }
 
             wasm::Local(highlevel::LocalOp::Set, local_idx) => {
+                let (rhs, type_) = expr_stack.pop().expect("local.set expects a value on the stack");
+                assert_eq!(type_, ty.inputs()[0]);
+
+                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+
                 stmts_result.push(Stmt::Assign {
                     lhs: local_idx_to_var(context, *local_idx),
-                    type_: ty.inputs()[0],
-                    rhs: expr_stack.pop().expect("local.set expects a value on the stack"),
+                    type_,
+                    rhs,
                 })
             }
 
             wasm::Local(highlevel::LocalOp::Tee, local_idx) => {
-                let type_ = ty.inputs()[0];
-                
-                // The stack needs to contain the value at this point of setting the local,
-                // not the value of the local itself, so store in a temporary first.
-                let value_var = pop_expr_and_assign_to_fresh_stack_var(type_, state, &mut expr_stack, stmts_result);
-                
+                // The stack needs to contain the value at this point of setting the local, so
+                // materialize the argument to local.tee as well!
+                // See tests/wimpl_expected/local_tee.wat for a problematic example otherwise.
+                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+                let (value_var, type_) = expr_stack.pop().expect("local.tee expects a value on the stack");
+                assert_eq!(type_, ty.inputs()[0]);
+
                 stmts_result.push(Stmt::Assign {
                     lhs: local_idx_to_var(context, *local_idx),
                     type_,
@@ -426,57 +494,78 @@ fn wimplify_instrs<'module>(
             }
 
             wasm::Global(highlevel::GlobalOp::Get, global_idx) => {
-                expr_stack.push(VarRef(Global(global_idx.to_u32())))
+                let type_ = ty.results()[0];
+
+                expr_stack.push((VarRef(Global(global_idx.to_u32())), type_))
             }
 
             wasm::Global(highlevel::GlobalOp::Set, global_idx) => {
+                let (rhs, type_) = expr_stack.pop().expect("local.set expects a value on the stack");
+                assert_eq!(type_, ty.inputs()[0]);
+
+                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+
                 stmts_result.push(Stmt::Assign {
                     lhs: Global(global_idx.to_u32()),
-                    type_: ty.inputs()[0],
-                    rhs: expr_stack.pop().expect("global.set expects a value on the stack"),
+                    type_,
+                    rhs,
                 })
             }
 
             wasm::Load(loadop, memarg) => {
-                let addr = Box::new(expr_stack.pop().expect("load expects an address on the stack"));
-                expr_stack.push(
+                let (addr, addr_ty) = expr_stack.pop().expect("load expects an address on the stack");
+                assert_eq!(addr_ty, ValType::I32);
+
+                let type_ = ty.results()[0];
+
+                expr_stack.push((
                     Load {
                         op: *loadop,
                         memarg: *memarg,
-                        addr,
-                    }
-                )
+                        addr: Box::new(addr),
+                    },
+                    type_
+                ))
             }
 
             wasm::Store(op, memarg) => {
+                let (addr, addr_ty) = expr_stack.pop().expect("store expects an address on the stack");
+                assert_eq!(addr_ty, ValType::I32);
+
+                let value = expr_stack.pop().expect("store expects a value to store on the stack").0;
+
+                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+
                 stmts_result.push(Stmt::Store {
                     op: *op,
                     memarg: *memarg,
-                    addr: expr_stack.pop().expect("store expects an address on the stack"),
-                    value: expr_stack.pop().expect("store expects a value to store on the stack"),
+                    addr,
+                    value,
                 })
             }
 
             wasm::MemorySize(memory_idx) => {
                 assert_eq!(memory_idx.to_usize(), 0, "Wasm MVP only has a single memory");
 
-                expr_stack.push(MemorySize)
+                expr_stack.push((MemorySize, ty.results()[0]))
             }
 
             wasm::MemoryGrow(memory_idx) => {
                 assert_eq!(memory_idx.to_usize(), 0, "Wasm MVP only has a single memory");
 
-                let pages = Box::new(expr_stack.pop().expect("memory.grow expects a value on the stack"));
-                expr_stack.push(MemoryGrow { pages })
+                let (pages, pages_ty) = expr_stack.pop().expect("memory.grow expects a value on the stack");
+                assert_eq!(pages_ty, ValType::I32);
+
+                expr_stack.push((MemoryGrow { pages: Box::new(pages) }, ty.results()[0]))
             }
 
             wasm::Const(val) => {
-                expr_stack.push(Const(*val))
+                expr_stack.push((Const(*val), ty.results()[0]))
             }
 
             wasm::Numeric(op) => {
-                let args = expr_stack.split_off(expr_stack.len() - ty.inputs().len());
-                expr_stack.push(Numeric { op: *op, args })
+                let args = expr_stack.split_off(expr_stack.len() - ty.inputs().len()).into_iter().map(|(expr, _ty)| expr).collect();
+                expr_stack.push((Numeric { op: *op, args }, ty.results()[0]))
             }
         }
     }
