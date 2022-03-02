@@ -628,10 +628,9 @@ fn wimplify_with_expected_output() {
         if let Some("wimpl") = wimpl_path.extension().and_then(|os_str| os_str.to_str()) {
             let wasm_path = wimpl_path.with_extension("wasm");
             if wasm_path.exists() {
-
                 println!("\t{}", wimpl_path.display());
                 
-                let wimpl_module = wimplify(wasm_path).unwrap();
+                let wimpl_module = Module::from_wasm_file(wasm_path).unwrap();
 
                 // Every wimpl file contains only a sequence of statements, not a whole module.
                 // Compare the first function from the .wasm binary, with all instructions of the
@@ -640,7 +639,6 @@ fn wimplify_with_expected_output() {
                 let expected = Body(Stmt::from_text_file(&wimpl_path).unwrap());
 
                 assert_eq!(actual, expected, "testcase: {}\nexpected Wimpl: {}\nproduced Wimpl: {}\n", wimpl_path.display(), expected, actual);
-                
             }
         }
     }
@@ -654,11 +652,11 @@ fn wimplify_should_not_crash_on_realistic_files() {
 
         if let Some("wasm") = path.extension().and_then(|os_str| os_str.to_str()) {
             if std::fs::metadata(&path).unwrap().is_file() {
-
                 println!("\t{}", path.display());
-                let wimpl_module = wimplify(&path);
-                assert!(wimpl_module.is_ok(), "couldn't wimplify testcase: {}", path.display());
 
+                let wimpl_module = Module::from_wasm_file(&path);
+                
+                assert!(wimpl_module.is_ok(), "couldn't wimplify testcase: {}", path.display());
             }
         }
     }

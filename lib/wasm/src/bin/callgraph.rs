@@ -1,5 +1,5 @@
 use rustc_hash::FxHashSet;
-use wasm::{wimpl::{wimplify::wimplify, FunctionId}, callgraph::{self, Options}, highlevel::Function};
+use wasm::{wimpl::{wimplify::wimplify, FunctionId, Module}, callgraph::{self, Options}, highlevel::Function};
 
 // Profile with cargo flamegraph --bin callgraph -- tests/wasm/WasmBench-nonCpp/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13.wasm
 // Before, allow perf to capture traces:
@@ -9,7 +9,7 @@ fn main() {
     println!("{:?}", args);
 
     let wasm_path = &args[1];
-    let wimpl = wimplify(wasm_path).unwrap();
+    let wimpl = Module::from_wasm_file(wasm_path).unwrap();
 
     let options = Options {
         with_type_constraint: true,

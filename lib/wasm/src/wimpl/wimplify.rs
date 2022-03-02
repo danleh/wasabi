@@ -468,7 +468,7 @@ fn wimplify_instrs<'module>(
     Ok(false)
 }
 
-pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
+pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
     let mut wimpl_funcs = Vec::new();
     for (idx, func) in module.functions() {
 
@@ -527,9 +527,4 @@ pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
         globals: module.globals.clone(),
         tables: module.tables.clone(),
     })
-}
-
-// TODO add that as an impl to wimpl::Module as Module::from_file
-pub fn wimplify(path: impl AsRef<Path>) -> Result<Module, String> {
-    wimplify_module(&highlevel::Module::from_file(path.as_ref()).expect("path should point to a valid wasm file"))
 }

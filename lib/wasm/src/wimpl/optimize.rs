@@ -346,7 +346,7 @@ fn constant_propogation (module: &mut Module) -> Module {
 }
 
 pub fn wimpl_optimize (path: impl AsRef<Path>) -> Result<Module, String> {
-    let mut module = wimplify_module(&highlevel::Module::from_file(path.as_ref()).expect("path should point to a valid wasm file"))?; 
+    let mut module = Module::from_wasm_file(path)?;
     let module = constant_propogation(&mut module);   
     Ok(module)   
 }

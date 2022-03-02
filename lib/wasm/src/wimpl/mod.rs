@@ -37,6 +37,11 @@ pub struct Module {
 }
 
 impl Module {
+    pub fn from_wasm_file(path: impl AsRef<Path>) -> Result<Module, String> {
+        let wasm_module = highlevel::Module::from_file(path).map_err(|err| err.to_string())?;
+        wimplify::wimplify(&wasm_module)
+    }
+
     // FIXME perf: This linear search can easily give us accidentially quadratic behavior!
     // TODO Memoize lookup with HashMap in lazy_static or non-pub field on Module.
     // pub fn function(&self, name: Func) -> Option<&Function> {
