@@ -60,16 +60,16 @@ impl From<ll::Module> for hl::Module {
                     // Inline the name information for functions and locals into our high-level AST.
                     for ll::NameAssoc { idx, name } in function_names {
                         module.functions
-                            .get_mut(idx.into_inner())
+                            .get_mut(idx.to_usize())
                             .expect("invalid function index")
                             .name = Some(name);
                     }
                     for ll::IndirectNameAssoc { idx: func_idx, name_map } in local_names {
                         let function = module.functions
-                            .get_mut(func_idx.into_inner())
+                            .get_mut(func_idx.to_usize())
                             .expect("invalid function index");
                         for ll::NameAssoc { idx, name } in name_map {
-                            *function.param_or_local_name_mut(idx.into_inner().into()) = Some(name);
+                            *function.param_or_local_name_mut(idx.to_usize().into()) = Some(name);
                         }
                     }
                 }
@@ -87,7 +87,7 @@ impl From<ll::Module> for hl::Module {
                         match import_.type_ {
                             ll::ImportType::Function(type_idx) => module.functions.push(
                                 hl::Function::new_imported(
-                                    types[type_idx.into_inner()],
+                                    types[type_idx.to_usize()],
                                     import_.module, import_.name,
                                     export)
                             ),
@@ -118,7 +118,7 @@ impl From<ll::Module> for hl::Module {
                     for type_idx in function_signatures {
                         module.functions.push(
                             hl::Function::new(
-                                types[type_idx.into_inner()],
+                                types[type_idx.to_usize()],
                                 // Use an empty body/locals for now, code is only converted later.
                                 hl::Code { locals: vec![], body: vec![] },
                                 Vec::new()
@@ -161,22 +161,22 @@ impl From<ll::Module> for hl::Module {
                 ll::Section::Export(ll::WithSize(ll::SectionOffset(exports))) => {
                     for ll::Export { name, type_ } in exports {
                         match type_ {
-                            ll::ExportType::Function(idx) => module.functions[idx.into_inner()].export.push(name),
-                            ll::ExportType::Table(idx) => module.tables[idx.into_inner()].export.push(name),
-                            ll::ExportType::Memory(idx) => module.memories[idx.into_inner()].export.push(name),
-                            ll::ExportType::Global(idx) => module.globals[idx.into_inner()].export.push(name),
+                            ll::ExportType::Function(idx) => module.functions[idx.to_usize()].export.push(name),
+                            ll::ExportType::Table(idx) => module.tables[idx.to_usize()].export.push(name),
+                            ll::ExportType::Memory(idx) => module.memories[idx.to_usize()].export.push(name),
+                            ll::ExportType::Global(idx) => module.globals[idx.to_usize()].export.push(name),
                         }
                     }
                 }
-                ll::Section::Start(ll::WithSize(ll::SectionOffset(function_idx))) => module.start = Some(function_idx.into_inner().into()),
+                ll::Section::Start(ll::WithSize(ll::SectionOffset(function_idx))) => module.start = Some(function_idx.to_usize().into()),
 
                 /* Finally, all "contents" of the already declared functions/tables/memories. */
 
                 ll::Section::Element(ll::WithSize(ll::SectionOffset(elements))) => {
                     for element in elements {
-                        module.tables[element.table_idx.into_inner()].elements.push(hl::Element {
+                        module.tables[element.table_idx.to_usize()].elements.push(hl::Element {
                             offset: from_lowlevel_expr(element.offset, &types),
-                            functions: element.init.into_iter().map(|idx| idx.into_inner().into()).collect(),
+                            functions: element.init.into_iter().map(|idx| idx.to_usize().into()).collect(),
                         })
                     }
                 }
@@ -193,7 +193,7 @@ impl From<ll::Module> for hl::Module {
                 }
                 ll::Section::Data(ll::WithSize(ll::SectionOffset(data))) => {
                     for data in data {
-                        module.memories[data.memory_idx.into_inner()].data.push(hl::Data {
+                        module.memories[data.memory_idx.to_usize()].data.push(hl::Data {
                             offset: from_lowlevel_expr(data.offset, &types),
                             bytes: data.init,
                         })
@@ -239,17 +239,17 @@ fn from_lowlevel_instr(instr: ll::Instr, types: &[hl::FunctionType]) -> hl::Inst
         ll::Instr::BrTable { table, default } => hl::Instr::BrTable { table, default },
 
         ll::Instr::Return => hl::Instr::Return,
-        ll::Instr::Call(function_idx) => hl::Instr::Call(function_idx.into_inner().into()),
-        ll::Instr::CallIndirect(type_idx, table_idx) => hl::Instr::CallIndirect(types[type_idx.into_inner()], table_idx.into_inner().into()),
+        ll::Instr::Call(function_idx) => hl::Instr::Call(function_idx.to_usize().into()),
+        ll::Instr::CallIndirect(type_idx, table_idx) => hl::Instr::CallIndirect(types[type_idx.to_usize()], table_idx.to_usize().into()),
 
         ll::Instr::Drop => hl::Instr::Drop,
         ll::Instr::Select => hl::Instr::Select,
 
-        ll::Instr::LocalGet(local_idx) => hl::Instr::Local(hl::LocalOp::Get, local_idx.into_inner().into()),
-        ll::Instr::LocalSet(local_idx) => hl::Instr::Local(hl::LocalOp::Set, local_idx.into_inner().into()),
-        ll::Instr::LocalTee(local_idx) => hl::Instr::Local(hl::LocalOp::Tee, local_idx.into_inner().into()),
-        ll::Instr::GlobalGet(global_idx) => hl::Instr::Global(hl::GlobalOp::Get, global_idx.into_inner().into()),
-        ll::Instr::GlobalSet(global_idx) => hl::Instr::Global(hl::GlobalOp::Set, global_idx.into_inner().into()),
+        ll::Instr::LocalGet(local_idx) => hl::Instr::Local(hl::LocalOp::Get, local_idx.to_usize().into()),
+        ll::Instr::LocalSet(local_idx) => hl::Instr::Local(hl::LocalOp::Set, local_idx.to_usize().into()),
+        ll::Instr::LocalTee(local_idx) => hl::Instr::Local(hl::LocalOp::Tee, local_idx.to_usize().into()),
+        ll::Instr::GlobalGet(global_idx) => hl::Instr::Global(hl::GlobalOp::Get, global_idx.to_usize().into()),
+        ll::Instr::GlobalSet(global_idx) => hl::Instr::Global(hl::GlobalOp::Set, global_idx.to_usize().into()),
 
         ll::Instr::I32Load(memarg) => hl::Instr::Load(hl::LoadOp::I32Load, memarg),
         ll::Instr::I64Load(memarg) => hl::Instr::Load(hl::LoadOp::I64Load, memarg),
@@ -275,8 +275,8 @@ fn from_lowlevel_instr(instr: ll::Instr, types: &[hl::FunctionType]) -> hl::Inst
         ll::Instr::I64Store16(memarg) => hl::Instr::Store(hl::StoreOp::I64Store16, memarg),
         ll::Instr::I64Store32(memarg) => hl::Instr::Store(hl::StoreOp::I64Store32, memarg),
 
-        ll::Instr::MemorySize(memory_idx) => hl::Instr::MemorySize(memory_idx.into_inner().into()),
-        ll::Instr::MemoryGrow(memory_idx) => hl::Instr::MemoryGrow(memory_idx.into_inner().into()),
+        ll::Instr::MemorySize(memory_idx) => hl::Instr::MemorySize(memory_idx.to_usize().into()),
+        ll::Instr::MemoryGrow(memory_idx) => hl::Instr::MemoryGrow(memory_idx.to_usize().into()),
 
         ll::Instr::I32Const(immediate) => hl::Instr::Const(Val::I32(immediate)),
         ll::Instr::I64Const(immediate) => hl::Instr::Const(Val::I64(immediate)),
@@ -430,7 +430,7 @@ macro_rules! element_idx_fns {
             self.$field.insert(old_idx, new_idx);
         }
         fn $map_fn(&self, old_idx: Idx<$hl_ty>) -> Idx<$ll_ty> {
-            self.$field[&old_idx.into_inner()].into()
+            self.$field[&old_idx.to_usize()].into()
         }
     };
 }
@@ -718,7 +718,7 @@ fn to_lowlevel_local_names(module: &hl::Module, state: &EncodeState) -> ll::Indi
 
         for (idx, param_or_local) in func.param_or_locals() {
             if let Some(name) = param_or_local.name() {
-                name_map.push(ll::NameAssoc { idx: idx.into_inner().into(), name: name.to_string() });
+                name_map.push(ll::NameAssoc { idx: idx.to_usize().into(), name: name.to_string() });
             }
         }
 
@@ -779,9 +779,9 @@ fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
         hl::Instr::Drop => ll::Instr::Drop,
         hl::Instr::Select => ll::Instr::Select,
 
-        hl::Instr::Local(hl::LocalOp::Get, local_idx) => ll::Instr::LocalGet(local_idx.into_inner().into()),
-        hl::Instr::Local(hl::LocalOp::Set, local_idx) => ll::Instr::LocalSet(local_idx.into_inner().into()),
-        hl::Instr::Local(hl::LocalOp::Tee, local_idx) => ll::Instr::LocalTee(local_idx.into_inner().into()),
+        hl::Instr::Local(hl::LocalOp::Get, local_idx) => ll::Instr::LocalGet(local_idx.to_usize().into()),
+        hl::Instr::Local(hl::LocalOp::Set, local_idx) => ll::Instr::LocalSet(local_idx.to_usize().into()),
+        hl::Instr::Local(hl::LocalOp::Tee, local_idx) => ll::Instr::LocalTee(local_idx.to_usize().into()),
         hl::Instr::Global(hl::GlobalOp::Get, global_idx) => ll::Instr::GlobalGet(state.map_global_idx(global_idx)),
         hl::Instr::Global(hl::GlobalOp::Set, global_idx) => ll::Instr::GlobalSet(state.map_global_idx(global_idx)),
 

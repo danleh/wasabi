@@ -52,7 +52,7 @@ impl Module {
     // }
 
     pub fn function_by_idx(&self, idx: Idx<highlevel::Function>) -> &Function {
-        &self.functions[idx.into_inner()]
+        &self.functions[idx.to_usize()]
     }
 }
 
@@ -90,7 +90,7 @@ impl FunctionId {
     pub fn from_idx(idx: Idx<highlevel::Function>, module: &highlevel::Module) -> Self {
         match &module.function(idx).name {
             Some(name) => FunctionId::Name(ArcIntern::from(name.clone())),
-            None => FunctionId::Idx(idx.into_inner()),
+            None => FunctionId::Idx(idx.to_usize()),
         }
     }
 }
@@ -104,24 +104,24 @@ pub enum Var {
     // These two correspond to the WebAssembly constructs of the same name.
     // Note that the index of locals in WebAssembly does not have to match the local numbering here,
     // because the "index space" of locals contains also the function parameters.
-    Local(usize),
-    Global(usize),
+    Local(u32),
+    Global(u32),
 
     /// Originally an (implicit) stack slot in the WebAssembly operand stack.
-    Stack(usize),
+    Stack(u32),
     /// Originally a parameter to the current function (which would have been accessed via
     /// `local.get` and was in the same index space as locals).
-    Param(usize),
+    Param(u32),
     /// Originally the result value of a block with non-empty block type.
-    BlockResult(usize),
+    BlockResult(u32),
     /// Originally the return value of the function.
     /// In the Wasm MVP, there is always only a single one.
-    Return(usize),
+    Return(u32),
 }
 
 /// An absolute block label, NOT to be confused with the relative branch labels of WebAssembly!
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, Ord, PartialOrd, Default)]
-pub struct Label(usize);
+pub struct Label(u32);
 
 /// Wimpl instructions make the following major changes over high-level Wasm:
 /// - Remove the evaluation/operand stack completely, every instruction takes

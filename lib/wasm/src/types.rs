@@ -404,19 +404,19 @@ impl fmt::Display for TypeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("type error")?;
         if let Some(function_idx) = self.0.function_idx {
-            write!(f, ", function #{}", function_idx.into_inner())?;
+            write!(f, ", function #{}", function_idx.to_usize())?;
             if let Some(function_name) = &self.0.function_name {
                 write!(f, " ({})", function_name)?;
             }
         }
         if let Some(global_idx) = self.0.global_idx {
-            write!(f, ", global init expression #{}", global_idx.into_inner())?;
+            write!(f, ", global init expression #{}", global_idx.to_usize())?;
             if let Some(global_name) = &self.0.global_name {
                 write!(f, " ({})", global_name)?;
             }
         }
         if let Some(instruction_idx) = self.0.instruction_idx {
-            write!(f, ", instruction #{}", instruction_idx.into_inner())?;
+            write!(f, ", instruction #{}", instruction_idx.to_usize())?;
             if let Some(instruction) = &self.0.instruction {
                 write!(f, " ({}) ", instruction)?;
             }
@@ -714,8 +714,8 @@ impl<'module> TypeChecker<'module> {
         self.block_stack
             .iter()
             .rev()
-            .nth(label.0 as usize)
-            .ok_or_else(|| format!("invalid branch target label {}", label.0).into())
+            .nth(label.to_usize())
+            .ok_or_else(|| format!("invalid branch target label {}", label.to_u32()).into())
     }
 
     fn pop_block(&mut self) -> Result<BlockFrame, TypeError> {
@@ -1102,7 +1102,7 @@ mod tests {
     pub fn unconditional_branch_leaves_end_unreachable() {
         let mut type_checker = init_function_module_type_checker();
         assert_reachable_type(&mut type_checker, Block(BlockType(None)), &[], &[]);
-        assert_reachable_type(&mut type_checker, Br(Label(0)), &[], &[]);
+        assert_reachable_type(&mut type_checker, Br(0.into()), &[], &[]);
         assert_unreachable_type(&mut type_checker, End);
     }
 
@@ -1112,7 +1112,7 @@ mod tests {
         assert_reachable_type(&mut type_checker, Block(BlockType(Some(I64))), &[], &[]);
         assert_reachable_type(&mut type_checker, Block(BlockType(None)), &[], &[]);
         assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
-        assert_reachable_type(&mut type_checker, Br(Label(1)), &[I64], &[]);
+        assert_reachable_type(&mut type_checker, Br(1.into()), &[I64], &[]);
         assert_unreachable_type(&mut type_checker, End);
         assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
         assert_reachable_type(&mut type_checker, End, &[], &[I64]);
@@ -1123,7 +1123,7 @@ mod tests {
         let mut type_checker = init_function_module_type_checker();
         assert_reachable_type(&mut type_checker, Loop(BlockType(Some(I64))), &[], &[]);
         assert_reachable_type(&mut type_checker, Const(Val::I32(0)), &[], &[I32]);
-        assert_reachable_type(&mut type_checker, BrIf(Label(0)), &[I32], &[]);
+        assert_reachable_type(&mut type_checker, BrIf(0.into()), &[I32], &[]);
         assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
         assert_reachable_type(&mut type_checker, End, &[], &[I64]);
     }
@@ -1136,8 +1136,8 @@ mod tests {
         assert_reachable_type(&mut type_checker, Const(Val::I64(42)), &[], &[I64]);
         assert_reachable_type(&mut type_checker, Const(Val::I32(3)), &[], &[I32]);
         assert_reachable_type(&mut type_checker, BrTable { 
-            table: vec![Label(1), Label(0), Label(0), Label(1)], 
-            default: Label(0)
+            table: vec![1.into(), 0.into(), 0.into(), 1.into()], 
+            default: 0.into()
         }, &[I32, I64], &[]);
         assert_unreachable_type(&mut type_checker, Numeric(I64Add));
         assert_unreachable_type(&mut type_checker, End);

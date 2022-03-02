@@ -1047,7 +1047,8 @@ impl FromStr for Instr {
             Ok(int.into())
         }
         fn parse_label(str: &str) -> Result<Label, ()> {
-            Ok(Label(str.parse().map_err(|_| ())?))
+            let u: usize = str.parse().map_err(|_| ())?;
+            Ok(u.into())
         }
 
         let (operator, rest) = str.split_once(char::is_whitespace).ok_or(())?;
@@ -1137,22 +1138,22 @@ impl fmt::Display for Instr {
 
             Block(ty) | Loop(ty) | If(ty) => write!(f, " {}", ty),
 
-            Br(label) => write!(f, " {}", label.0),
-            BrIf(label) => write!(f, " {}", label.0),
+            Br(label) => write!(f, " {}", label.to_u32()),
+            BrIf(label) => write!(f, " {}", label.to_u32()),
             BrTable { table, default } => {
                 for label in table {
-                    write!(f, " {}", label.0)?;
+                    write!(f, " {}", label.to_u32())?;
                 }
-                write!(f, " {}", default.0)
+                write!(f, " {}", default.to_u32())
             }
 
-            Call(func_idx) => write!(f, " {}", func_idx.into_inner()),
+            Call(func_idx) => write!(f, " {}", func_idx.to_u32()),
             // We don't print the table index, because we also don't for memory.size and memory.grow,
             // and because in the MVP the table index is going to be 0 anyway.
             CallIndirect(func_ty, _table_idx) => write!(f, " {}", func_ty),
 
-            Local(_, local_idx) => write!(f, " {}", local_idx.into_inner()),
-            Global(_, global_idx) => write!(f, " {}", global_idx.into_inner()),
+            Local(_, local_idx) => write!(f, " {}", local_idx.to_u32()),
+            Global(_, global_idx) => write!(f, " {}", global_idx.to_u32()),
 
             Load(op, memarg) => {
                 if !memarg.is_default(*op) {
@@ -1205,19 +1206,19 @@ impl Module {
     // TODO Add the same for globals, tables, and memories, if needed.
 
     pub fn function(&self, idx: Idx<Function>) -> &Function {
-        &self.functions[idx.into_inner()]
+        &self.functions[idx.to_usize()]
     }
 
     pub fn function_mut(&mut self, idx: Idx<Function>) -> &mut Function {
-        &mut self.functions[idx.into_inner()]
+        &mut self.functions[idx.to_usize()]
     }
 
     pub fn global(&self, idx: Idx<Global>) -> &Global {
-        &self.globals[idx.into_inner()]
+        &self.globals[idx.to_usize()]
     }
 
     pub fn global_mut(&mut self, idx: Idx<Global>) -> &mut Global {
-        &mut self.globals[idx.into_inner()]
+        &mut self.globals[idx.to_usize()]
     }
 
 
@@ -1375,7 +1376,7 @@ impl Function {
 
     pub fn param_or_local(&self, idx: Idx<Local>) -> ParamOrLocalRef {
         self.param_or_locals()
-            .nth(idx.into_inner())
+            .nth(idx.to_usize())
             .expect("invalid local index")
             .1
     }
@@ -1483,7 +1484,7 @@ impl Function {
 
     /// Return the type of the function parameter or non-parameter local with index idx.
     pub fn param_or_local_type(&self, idx: Idx<Local>) -> ValType {
-        let idx = idx.into_inner();
+        let idx = idx.to_usize();
         let param_count = self.type_.inputs().len();
 
         if idx < param_count {
@@ -1498,7 +1499,7 @@ impl Function {
     pub fn param_or_local_name(&self, idx: Idx<Local>) -> Option<&str> {
         self.assert_param_name_len_valid();
 
-        let idx = idx.into_inner();
+        let idx = idx.to_usize();
         let param_count = self.type_.inputs().len();
 
         if idx < param_count {
@@ -1513,7 +1514,7 @@ impl Function {
     pub fn param_or_local_name_mut(&mut self, idx: Idx<Local>) -> &mut Option<String> {
         self.assert_param_name_len_valid();
 
-        let idx = idx.into_inner();
+        let idx = idx.to_usize();
         let param_count = self.param_names.len();
 
         if idx < param_count {

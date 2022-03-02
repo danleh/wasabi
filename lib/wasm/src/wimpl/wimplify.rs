@@ -1,5 +1,7 @@
 //! Conversion from standard WebAssembly to Wimpl.
 
+use std::convert::TryInto;
+
 use crate::highlevel;
 use crate::wimpl::*; 
 
@@ -8,8 +10,8 @@ pub struct State<'module> {
     instrs_iter: std::slice::Iter<'module, highlevel::Instr>,
     type_checker: TypeChecker<'module>,
 
-    label_count: usize,
-    stack_var_count: usize,
+    label_count: u32,
+    stack_var_count: u32,
 
     // The bool is `true` if the label is for a `loop` block, and false for `block` and `if`.
     #[allow(clippy::type_complexity)]
@@ -475,13 +477,13 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
         // TODO move into own function, e.g., Function::wimplify() or Function::from(hl::Function).
         //initialize the local variables
         let mut stmts_result = Vec::with_capacity(func.local_count() + 1);
-        for (loc_index, loc) in func.locals() {
+        for (local_idx, loc) in func.locals() {
             let (loc_name, loc_type) = (&loc.name, loc.type_);
             if let Some(_loc_name) = loc_name {
                 todo!("you haven't yet implemented locals having names");
             } else {
                 stmts_result.push(Stmt::Assign {
-                    lhs: Var::Local(loc_index.into_inner() - func.type_.inputs().len()),
+                    lhs: Var::Local(local_idx.to_u32() - func.type_.inputs().len() as u32),
                     rhs: Expr::Const(Val::get_default_value(loc_type)),
                     type_: loc_type,
                 })

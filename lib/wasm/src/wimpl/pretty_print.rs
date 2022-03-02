@@ -1,6 +1,6 @@
 //! Pretty-printing of Wimpl.
 
-use std::fmt;
+use std::{fmt, convert::TryInto};
 
 use crate::wimpl::*;
 
@@ -68,14 +68,14 @@ impl fmt::Display for Function {
         write!(f, "func {}", self.name)?;
         write!(f, " (")?;
         for (i, ty) in self.type_.inputs().iter().enumerate() {
-            write!(f, "{}: {}", Var::Param(i), ty)?;
+            write!(f, "{}: {}", Var::Param(i.try_into().expect("more than 2^32 parameters")), ty)?;
             if i < self.type_.inputs().len() - 1 {
                 write!(f, ", ")?;
             }
         }
         write!(f, ") -> (")?;
         for (i, ty) in self.type_.results().iter().enumerate() {
-            write!(f, "{}: {}", Var::Return(i), ty)?;
+            write!(f, "{}: {}", Var::Return(i.try_into().expect("more than 2^32 return values")), ty)?;
             if i < self.type_.results().len() - 1 {
                 write!(f, ", ")?;
             }

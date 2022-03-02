@@ -296,9 +296,12 @@ pub enum Mutability {
 pub struct Idx<T>(u32, PhantomData<fn() -> T>);
 
 impl<T> Idx<T> {
-    pub fn into_inner(self) -> usize { self.0 as usize }
+    pub fn to_u32(self) -> u32 { self.0 }
+    pub fn to_usize(self) -> usize { self.0 as usize }
 }
 
+// Unfortunately, another impl for u32 would make .into() calls ambiguous with integer literals,
+// so only provide the conversion from usize.
 impl<T> From<usize> for Idx<T> {
     #[inline]
     fn from(u: usize) -> Self {
@@ -319,7 +322,7 @@ impl<T> fmt::Debug for Idx<T> {
 // which we do not want (T is only a marker and not actually contained).
 impl<T> Clone for Idx<T> {
     #[inline]
-    fn clone(&self) -> Self { self.into_inner().into() }
+    fn clone(&self) -> Self { self.to_usize().into() }
 }
 
 impl<T> Copy for Idx<T> {}
@@ -359,10 +362,20 @@ impl<T> Ord for Idx<T> {
 // Similar to indices, labels are just a typed wrapper around numbers in the binary format.
 // TODO make consistent with Idx: make field private, use into_inner().
 #[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct Label(pub u32);
+pub struct Label(u32);
 
 impl Label {
-    pub fn into_inner(self) -> usize { self.0 as usize }
+    pub fn to_u32(self) -> u32 { self.0 }
+    pub fn to_usize(self) -> usize { self.0 as usize }
+}
+
+// Unfortunately, another impl for u32 would make .into() calls ambiguous with integer literals,
+// so only provide the conversion from usize.
+impl From<usize> for Label {
+    #[inline]
+    fn from(u: usize) -> Self {
+        Label(u.try_into().expect("wasm32 only allows u32 labels"))
+    }
 }
 
 impl Serialize for Label {
