@@ -94,17 +94,17 @@ impl FromStr for Var {
     }
 }
 
-impl FromStr for Func {
+impl FromStr for FunctionId {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(if let Some(idx) = s.strip_prefix('f') {
             let idx = idx.parse().map_err(|_| ())?;
-            Func::Idx(idx)
+            FunctionId::Idx(idx)
         } else {
             // Functions must start with an alphabetic character, to avoid confusion with constants.
             match s.chars().next() {
-                Some(c) if c.is_alphabetic() => Func::Named(s.to_string().into()),
+                Some(c) if c.is_alphabetic() => FunctionId::Name(s.to_string().into()),
                 _ => return Err(()),
             }
         })
@@ -159,8 +159,8 @@ fn ws(input: &str) -> NomResult<()> {
 fn var(input: &str) -> NomResult<Var> {
     map_res(alphanumeric1, Var::from_str)(input)
 }
-fn func(input: &str) -> NomResult<Func> {
-    map_res(alphanumeric1, Func::from_str)(input)
+fn func(input: &str) -> NomResult<FunctionId> {
+    map_res(alphanumeric1, FunctionId::from_str)(input)
 }
 fn label(input: &str) -> NomResult<Label> {
     map_res(

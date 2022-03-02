@@ -109,11 +109,11 @@ impl fmt::Display for Body {
     }
 }
 
-impl fmt::Display for Func {
+impl fmt::Display for FunctionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Func::Named(s) => write!(f, "{}", s),
-            Func::Idx(i) => write!(f, "f{}", i),
+            FunctionId::Name(s) => write!(f, "{}", s),
+            FunctionId::Idx(i) => write!(f, "f{}", i),
         }
     }
 }

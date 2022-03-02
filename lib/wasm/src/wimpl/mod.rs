@@ -55,7 +55,7 @@ impl Module {
 pub struct Function {
     /// Either the name of a function (from debug info originally), or a
     /// numerical index.
-    pub name: Func,
+    pub name: FunctionId,
     pub type_: FunctionType,
     // TODO what about imported functions? I think we should make body an Option.
     pub body: Body,
@@ -65,27 +65,27 @@ pub struct Function {
 }
 
 impl Function {
-    pub fn name(&self) -> Func {
+    pub fn name(&self) -> FunctionId {
         self.name.clone()
     }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Ord, PartialOrd)]
-pub enum Func {
+pub enum FunctionId {
     /// If the function had a debug name attached to it (from the `name` custom section).
     /// The string is stored in a string interner, i.e., deduplicated and such that equality can
     /// be a quick pointer equality.
-    Named(ArcIntern<String>),
+    Name(ArcIntern<String>),
     /// Otherwise, just refer to the function via its index, which is the same as in the original
     /// WebAssembly module.
     Idx(usize),
 }
 
-impl Func {
+impl FunctionId {
     pub fn from_idx(idx: Idx<highlevel::Function>, module: &highlevel::Module) -> Self {
         match &module.function(idx).name {
-            Some(name) => Func::Named(ArcIntern::from(name.clone())),
-            None => Func::Idx(idx.into_inner()),
+            Some(name) => FunctionId::Name(ArcIntern::from(name.clone())),
+            None => FunctionId::Idx(idx.into_inner()),
         }
     }
 }
@@ -224,7 +224,7 @@ pub enum Expr {
     },
 
     Call {
-        func: Func,
+        func: FunctionId,
         args: Vec<Var>,
     },
 

@@ -293,7 +293,7 @@ fn wimplify_instrs<'module>(
             highlevel::Instr::Call(func_index) => {
                 let n_args = context.module.function(*func_index).type_.inputs().len();
                 let rhs = Call {
-                    func: Func::from_idx(*func_index, context.module),
+                    func: FunctionId::from_idx(*func_index, context.module),
                     args: var_stack.split_off(var_stack.len() - n_args),
                 };
                 stmts_result.push(match ty.results() {
@@ -517,7 +517,7 @@ pub fn wimplify_module(module: &highlevel::Module) -> Result<Module, String> {
         wimpl_funcs.push(Function {
             type_: func.type_,
             body: Body(stmts_result),
-            name: Func::from_idx(idx, module),
+            name: FunctionId::from_idx(idx, module),
             export: func.export.clone(), 
         });
     }

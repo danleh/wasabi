@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex};
 
-use crate::{wimpl::{Func, self, Expr::Call, Function, Var, Body, analyze::VarExprMap}, highlevel::FunctionType, Val};
+use crate::{wimpl::{FunctionId, self, Expr::Call, Function, Var, Body, analyze::VarExprMap}, highlevel::FunctionType, Val};
 
 use crate::wimpl::wimplify::*;
 
@@ -9,7 +9,7 @@ use rustc_hash::{FxHashSet, FxHashMap};
 use test_utilities::*;
 
 #[derive(Default, Clone, Eq, PartialEq)]
-pub struct CallGraph(FxHashMap<Func, FxHashSet<Func>>);
+pub struct CallGraph(FxHashMap<FunctionId, FxHashSet<FunctionId>>);
 
 impl fmt::Debug for CallGraph {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -25,19 +25,19 @@ impl fmt::Debug for CallGraph {
 
 impl CallGraph {
     /// Returns true if the edge was _not_ yet part of the callgraph.
-    pub fn add_edge(&mut self, source: Func, target: Func) -> bool {
+    pub fn add_edge(&mut self, source: FunctionId, target: FunctionId) -> bool {
         let targets = self.0.entry(source).or_default();
         targets.insert(target)
     }
 
-    pub fn edges(&self) -> impl Iterator<Item=(Func, Func)> + '_ {
+    pub fn edges(&self) -> impl Iterator<Item=(FunctionId, FunctionId)> + '_ {
         self.0.iter()
             .flat_map(|(source, targets)| 
                 targets.iter()
                 .map(move |target| (source.clone(), target.clone())))
     }
 
-    pub fn functions(&self) -> FxHashSet<Func> {
+    pub fn functions(&self) -> FxHashSet<FunctionId> {
         let mut result = FxHashSet::default();
         for (source, target) in self.edges() {
             result.insert(source);
@@ -82,7 +82,7 @@ impl CallGraph {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Target {
-    Direct(Func),
+    Direct(FunctionId),
     Constrained(Vec<Constraint>)
 }
 
@@ -104,7 +104,7 @@ pub struct Options {
 
 pub fn reachable_callgraph(
     module: &wimpl::Module,
-    mut reachable_funcs: FxHashSet<Func>,
+    mut reachable_funcs: FxHashSet<FunctionId>,
     options: Options,
 ) -> anyhow::Result<CallGraph> {
     
@@ -112,7 +112,7 @@ pub fn reachable_callgraph(
 
     // Collect "declarative constraints" once per function.
     // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
-    let call_target_constraints: FxHashMap<Func, FxHashSet<Target>> = module.functions.iter()
+    let call_target_constraints: FxHashMap<FunctionId, FxHashSet<Target>> = module.functions.iter()
         .map(|func| {
             (func.name(), collect_target_constraints(func, options))
         })
@@ -129,7 +129,7 @@ pub fn reachable_callgraph(
     // let mut funcs_in_table_approx = Bloom::new_for_fp_rate(module.functions.len(), 0.01);
 
     let mut funcs_in_table = FxHashSet::default();
-    let mut funcs_by_table_idx: FxHashMap<u32, Func> = FxHashMap::default();
+    let mut funcs_by_table_idx: FxHashMap<u32, FunctionId> = FxHashMap::default();
     for table in &module.tables {
         for element in &table.elements {
             let element_offset = &element.offset;
@@ -298,11 +298,11 @@ lazy_static::lazy_static! {
 pub fn solve_constraints<'a>(
     module: &'a wimpl::Module,
     funcs_by_type: &'a FxHashMap<FunctionType, Vec<&'a Function>>,
-    funcs_in_table: &'a FxHashSet<Func>,
+    funcs_in_table: &'a FxHashSet<FunctionId>,
     // funcs_in_table_approx: &'a Bloom<Func>,
-    funcs_by_table_idx: &'a FxHashMap</* index in the table */ u32, Func>,
+    funcs_by_table_idx: &'a FxHashMap</* index in the table */ u32, FunctionId>,
     target_constraints: &'a Target
-) -> Box<dyn Iterator<Item=Func> + 'a> {
+) -> Box<dyn Iterator<Item=FunctionId> + 'a> {
     match target_constraints {
         Target::Direct(f) => Box::new(std::iter::once(f.clone())),
         Target::Constrained(constraints) => {
@@ -361,7 +361,7 @@ fn main() {
         // with_index_constraint: true,
         ..Options::default()
     };
-    let reachable = vec![Func::Named("main".to_string().into())].into_iter().collect();
+    let reachable = vec![FunctionId::Name("main".to_string().into())].into_iter().collect();
     let callgraph = reachable_callgraph(&wimpl_module, reachable, options).unwrap();
 
     println!("{}", callgraph.to_dot());

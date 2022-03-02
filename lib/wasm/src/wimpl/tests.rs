@@ -38,13 +38,13 @@ lazy_static! {
             Module {
                 functions: vec![
                     Function {
-                        name: Func::Idx(0),
+                        name: FunctionId::Idx(0),
                         type_: FunctionType::default(),
                         body: Body(Vec::new()), 
                         export: Vec::new()
                     },
                     Function {
-                        name: Func::Idx(1),
+                        name: FunctionId::Idx(1),
                         type_: FunctionType::default(),
                         body: Body(Vec::new()), 
                         export: Vec::new()
@@ -63,13 +63,13 @@ lazy_static! {
             Module {
                 functions: vec![
                     Function {
-                        name: Func::Idx(0),
+                        name: FunctionId::Idx(0),
                         type_: FunctionType::default(),
                         body: Body(Vec::new()), 
                         export: vec!["name1".to_string(), "name2".to_string()],                        
                     },
                     Function {
-                        name: Func::Idx(1),
+                        name: FunctionId::Idx(1),
                         type_: FunctionType::default(),
                         body: Body(Vec::new()), 
                         export: vec!["name3".to_string()],
@@ -91,13 +91,13 @@ lazy_static! {
             Module {
                 functions: vec![
                     Function {
-                        name: Func::Idx(0),
+                        name: FunctionId::Idx(0),
                         type_: FunctionType::default(),
                         body: Body(Vec::new()), 
                         export: Vec::new()
                     },
                     Function {
-                        name: Func::Idx(1),
+                        name: FunctionId::Idx(1),
                         type_: FunctionType::new(&[ValType::I32], &[ValType::F64]),
                         body: Body(vec![
                             Assign {
@@ -132,7 +132,7 @@ lazy_static! {
     static ref WIMPL_FUNCTION_SYNTAX_TESTCASES: Vec<(Function, &'static str, &'static str)> = vec![
         (
             Function {
-                name: Func::Idx(0),
+                name: FunctionId::Idx(0),
                 type_: FunctionType::default(),
                 body: Body(Vec::new()), 
                 export: Vec::new()
@@ -142,7 +142,7 @@ lazy_static! {
         ),
         (
             Function {
-                name: Func::Idx(1),
+                name: FunctionId::Idx(1),
                 type_: FunctionType::new(&[ValType::I32], &[ValType::F64]),
                 body: Body(Vec::new()), 
                 export: Vec::new()
@@ -152,7 +152,7 @@ lazy_static! {
         ),
         (
             Function {
-                name: Func::Idx(1),
+                name: FunctionId::Idx(1),
                 type_: FunctionType::new(&[ValType::I32], &[ValType::F64]),
                 body: Body(vec![
                     Assign {
@@ -168,7 +168,7 @@ lazy_static! {
         ),
         (
             Function {
-                name: Func::Idx(1),
+                name: FunctionId::Idx(1),
                 type_: FunctionType::new(&[ValType::I32], &[ValType::F64]),
                 body: Body(vec![
                     Assign {
@@ -274,7 +274,7 @@ lazy_static! {
         ),
         (
             Expr(Call {
-                func: Func::Idx(7),
+                func: FunctionId::Idx(7),
                 args: Vec::new(),
             }),
             "call f7 ()",
@@ -401,7 +401,7 @@ lazy_static! {
             "extra space around arguments"),
         (
             Expr(Call {
-                func: Func::Idx(2),
+                func: FunctionId::Idx(2),
                 args: vec![Stack(2), Stack(3)],
             }),
             "call f2 ( s2, s3 )",
@@ -521,8 +521,8 @@ fn parse_var() {
 
 #[test]
 fn parse_func_id() {
-    assert_eq!(Ok(Func::Idx(13)), "f13".parse());
-    assert_eq!(Ok(Func::Named("bla".to_string().into())), "bla".parse());
+    assert_eq!(Ok(FunctionId::Idx(13)), "f13".parse());
+    assert_eq!(Ok(FunctionId::Name("bla".to_string().into())), "bla".parse());
 
     // Negative tests:
     assert!(
@@ -530,7 +530,7 @@ fn parse_func_id() {
         "empty is not allowed"
     );
     assert!(
-        "123\n ".parse::<Func>().is_err(),
+        "123\n ".parse::<FunctionId>().is_err(),
         "only number for function name is not allowed"
     );
 }
