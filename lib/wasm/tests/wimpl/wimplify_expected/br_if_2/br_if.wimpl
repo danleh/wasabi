@@ -1,9 +1,0 @@
-@label1: block {
-  s0: i32 = p0
-  s1: i32 = i32.eqz(s0) 
-  if (s1) {
-    br @label1 
-  }
-  s2: i32 = i32.const 42 
-  p1: i32 = s2 
-} 

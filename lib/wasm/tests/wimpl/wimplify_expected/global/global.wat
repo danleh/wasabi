@@ -10,7 +10,7 @@
     (global.get 0) 
     (i32.const 42) 
     (global.set 0)
-    (global.get 1)    
+    (global.get 1)
     drop
     drop
     drop 

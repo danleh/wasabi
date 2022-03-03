@@ -1,0 +1,4 @@
+s0: f64 = f64.const 52.6
+s1: f64 = f64.const 46.9
+if (i32.const 0) { s2: f64 = s0 } else { s2: f64 = s1 }
+s2

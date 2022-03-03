@@ -1,0 +1,9 @@
+@label1: block {
+	// Without optimization:
+	// s0: i32 = i32.const 42
+	// b1: i32 = s0
+	// With optimization:
+	b1: i32 = i32.const 42
+	br @label1 
+}
+b1

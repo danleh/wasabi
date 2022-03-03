@@ -2,7 +2,7 @@
     i32.const 3
     i32.const 7
 }
-@label1: block {
+@label2: block {
     s0: i32 = i32.const 3
     i32.const 7
     s0
