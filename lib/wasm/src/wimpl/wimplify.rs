@@ -159,13 +159,14 @@ fn wimplify_instrs<'module>(
             wasm::Nop => {},
 
             wasm::Block(blocktype) => {
+                // Do this before any statements are pushed out, or expressions added to the stack
+                // (e.g., the variable holding the result.)
+                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+
                 let label = create_block_label_and_var(state, &mut expr_stack, *blocktype, false);
 
                 // DEBUG
                 // println!("block: {}, {:?}", blocktype, state.label_stack);
-
-                // Do this before the recursive call modifies the state (e.g., adds stack variables).
-                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
                 let mut block_body = Vec::new();
                 let ends_with_else = wimplify_instrs(&mut block_body, state, context)?;
@@ -179,9 +180,9 @@ fn wimplify_instrs<'module>(
                 );
             }
             wasm::Loop(blocktype) => {
-                let label = create_block_label_and_var(state, &mut expr_stack, *blocktype, true);
-
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+
+                let label = create_block_label_and_var(state, &mut expr_stack, *blocktype, true);
 
                 let mut loop_body = Vec::new();
                 let ends_with_else = wimplify_instrs(&mut loop_body, state, context)?;
