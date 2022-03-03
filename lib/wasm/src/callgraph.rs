@@ -262,7 +262,7 @@ pub fn collect_target_constraints(
                     expr => Some(expr)
                 };
 
-                let expr_abstracted = expr.map(abstract_expr).unwrap_or_else(String::new);
+                let expr_abstracted = expr.map(abstract_expr).unwrap_or_else(|| "<unresolved var>".into());
                 *UNIQUE_CONSTRAINT_EXPRS.lock().expect("lock poisoning doesnt happen").entry(expr_abstracted).or_default() += 1;
 
                 if let Some(expr) = expr {
