@@ -214,81 +214,49 @@ pub fn collect_target_constraints(
     src: &Function,
     options: Options
 ) -> FxHashSet<Target> {
-    let mut targets = FxHashSet::default();
-
     // TODO how to handle imported functions? Can they each every exported function?
     // Do we add a direct edge there? Or do we add an abstract "host" node? 
     // Do we merge with a JavaScript call-graph analysis?
     let body = &src.body;
 
-    use wimpl::Stmt::*;
-    use wimpl::Expr::*;
-
-    // FIXME now with recursive Expr this doesn't need the var_expr map anymore
-    // FIXME however, the constraint collection now needs to be a visitor over Expr as well!
-
     // Step 1:
     // Build map of variables to expressions or any (overapproximation for multiple assignments
     // of the same variable).
-    // TODO do this only for vars we are interested in, i.e., arguments to call_indirects
-    // TODO with recursive exprs, this all would be trivial... :(
-    // If performance turns out to be a huge problem, do recursive Expr instead.
     let var_expr = VarExprMap::from_body(body);
+    println!("{src}\nvar_map: {:#}", var_expr);
 
     // Step 2:
     // Collect one set of constraints (conjuncts) per call/call_indirect.
-    fn collect_call_constraints(body: &Body, targets: &mut FxHashSet<Target>, var_expr: &VarExprMap, options: Options) {
-        for stmt in &body.0 {
-            match stmt {
-                // Direct calls:
-                Assign { lhs: _, rhs: Call{ func, args: _}, type_: _ } |
-                Expr(Call { func, args: _}) => {
-                    targets.insert(Target::Direct(func.clone()));
-                },
-    
-                // Indirect calls:
-                Assign { lhs: _, rhs: CallIndirect { type_, table_idx, args: _ }, type_: _ } |
-                Expr(CallIndirect { type_, table_idx, args: _ }) => {
-                    let mut constraints = Vec::default();
-                    if options.with_type_constraint {
-                        constraints.push(Constraint::Type(*type_));
-                    }
-                    if options.with_in_table_constraint {
-                        constraints.push(Constraint::InTable);
-                    }
-                    if options.with_index_constraint {
-                        // TODO Handle the `Err` case when this returns an uninitialized variable - local, parameters
-                        // FIXME
-                        // if let Ok(Some(precise_expr)) = var_expr.get(table_idx) {
-                        //     constraints.push(Constraint::TableIndexExpr(precise_expr.clone()));
-                        // }
-                    }
-                    targets.insert(Target::Constrained(constraints));
-                }
-
-                // Recursive cases:
-                Block { body, end_label: _ } => collect_call_constraints(body, targets, var_expr, options),
-                Loop { begin_label: _, body } => collect_call_constraints(body, targets, var_expr, options),
-                If { condition:_ , if_body, else_body } => {
-                    collect_call_constraints(if_body, targets, var_expr, options);
-                    if let Some(else_body) = else_body {
-                        collect_call_constraints(else_body, targets, var_expr, options)
-                    }
-                },
-                Switch { index: _, cases, default } => {
-                    for case in cases {
-                        collect_call_constraints(case, targets, var_expr, options);
-                    }
-                    collect_call_constraints(default, targets, var_expr, options)
-                },
-
-                _ => {}
-    
-            }
+    let mut targets = FxHashSet::default();
+    use wimpl::Expr::*;
+    body.visit_expr_pre_order(|expr| match expr {
+        Call { func, args: _} => {
+            targets.insert(Target::Direct(func.clone()));
         }
-    }
-
-    collect_call_constraints(body, &mut targets, &var_expr, options);
+        CallIndirect { type_, table_idx, args: _ } => {
+            let mut constraints = Vec::default();
+            if options.with_type_constraint {
+                constraints.push(Constraint::Type(*type_));
+            }
+            if options.with_in_table_constraint {
+                constraints.push(Constraint::InTable);
+            }
+            if options.with_index_constraint {
+                // TODO Handle the `Err` case when this returns an uninitialized variable - local, parameters
+                let expr = match table_idx.as_ref() {
+                    VarRef(var) => match var_expr.get(var) {
+                        Ok(Some(precise_expr)) => unreachable!("a single assigned variable??"),
+                        Ok(None) => todo!("over approximated: \n{var}"),
+                        Err(uninitialized) => todo!("uninitialized: {uninitialized}\n{var}"),
+                    },
+                    expr => expr
+                };
+                constraints.push(Constraint::TableIndexExpr(expr.clone()));
+            }
+            targets.insert(Target::Constrained(constraints));
+        }
+        _ => {}
+    });
     targets
 }
 
