@@ -645,7 +645,7 @@ fn wimplify_with_expected_output() {
                 let actual = wimpl_module.functions[0].clone().body;
                 let expected = Body(Stmt::from_text_file(&wimpl_path).unwrap());
 
-                assert_eq!(actual, expected, "testcase: {}\nexpected Wimpl: {}\nproduced Wimpl: {}\n", wimpl_path.display(), expected, actual);
+                assert_eq!(actual, expected, "\ntestcase: {}\nexpected Wimpl: {}\nproduced Wimpl: {}\n", wimpl_path.display(), expected, actual);
             }
         }
     }
@@ -663,7 +663,7 @@ fn wimplify_should_not_crash_on_realistic_files() {
 
                 let wimpl_module = Module::from_wasm_file(&path);
                 
-                assert!(wimpl_module.is_ok(), "couldn't wimplify testcase: {}", path.display());
+                assert!(wimpl_module.is_ok(), "\ncouldn't wimplify testcase: {}", path.display());
             }
         }
     }
