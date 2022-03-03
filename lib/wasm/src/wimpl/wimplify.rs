@@ -310,7 +310,11 @@ fn wimplify_instrs<'module>(
 
                 let mut if_body = Vec::with_capacity(2);
                 if let Some((block_var, type_)) = block_var {
-                    let branch_value_var = expr_stack.pop().expect("br_if to this label expects a value").0;
+                    // The value "transported" by the branch, needs to be duplicated, in case the
+                    // branch is not taken.
+                    // Since we just materialized this, this is going to be a `VarRef` and cloning
+                    // it is fine (doesn't alter semantics or introduce duplicate expressions).
+                    let branch_value_var = expr_stack.last().expect("br_if to this label expects a value").0.clone();
                     if_body.push(Stmt::Assign {
                         lhs: block_var,
                         type_,
@@ -336,8 +340,7 @@ fn wimplify_instrs<'module>(
                 let br_with_maybe_assign = move |label: crate::Label, state: &mut State, expr_stack: &Vec<(Expr, ValType)>| -> Vec<Stmt> {
                     let (wimpl_label, block_var) = wasm_label_to_wimpl_label_and_block_var(state, label);
                     if let Some((block_var, type_)) = block_var {
-                        // Since we just materialized this, this is going to be a `VarRef` and cloning
-                        // it is fine (doesn't alter semantics or introduce duplicate expressions).
+                        // Same as for br_if above, see there.
                         let branch_value_var = expr_stack.last().expect("this br_table expects a value").0.clone();
                         vec![
                             Stmt::Assign {
