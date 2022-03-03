@@ -1,3 +1,6 @@
+// FIXME before merging wimpl, remove this
+#![allow(unused_imports)]
+
 // Export AST types directly under crate, without ast prefix.
 mod ast;
 pub use crate::ast::*;
