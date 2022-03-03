@@ -3,6 +3,13 @@ use std::collections::HashMap;
 use crate::wimpl::*;
 use crate::wimpl::wimplify::*;
 
+// TODO optimization to unwrap blocks/loops whose label is never the target of any branch.
+// Just needs two forward passes: 1. collect all branch targets in a HashSet, 2. unwrap block if not contained.
+
+// TODO optimization to replace assignments to dead variables with expression statements.
+
+// TODO optimization to replace pure (side-effect free) expression statements.
+
 #[derive(Debug)]
 enum Value {
     Top, //TODO we dont have any reassignments so top will never be assigned 
