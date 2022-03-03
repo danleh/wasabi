@@ -13,10 +13,8 @@ pub struct State<'module> {
     label_count: u32,
     stack_var_count: u32,
 
-    // The bool is `true` if the label is for a `loop` block, and false for `block` and `if`.
-    // TODO maybe this doesn't need ValType, because the type is carried along in the expr stack?
     #[allow(clippy::type_complexity)]
-    label_stack: Vec<(Label, Option<(Var, ValType, bool)>)>,
+    label_stack: Vec<(Label, /* is_loop */ bool, Option<Var>)>,
 }
 
 /// The immutable context information required but never mutated during conversion.
@@ -85,7 +83,6 @@ fn wimplify_instrs<'module>(
         // stack. This is not desired, because it could change semantics (due to side effects) and
         // performance (due to double evaluation). So instead the expression in evaluated once here
         // and the the duplication is just refering to the inserted stack slot with a VarRef.
-        // TODO call this whenever calling stmts.push(...)
         fn materialize_all_exprs_as_stmts(state: &mut State, expr_stack: &mut Vec<(Expr, ValType)>, stmts_result: &mut Vec<Stmt>) {
             for (expr, type_) in expr_stack {
                 match expr {
@@ -122,28 +119,32 @@ fn wimplify_instrs<'module>(
             let label = Label(state.label_count);
             state.label_count += 1;
 
-            if let Some(type_) = blocktype.0 {
-                let result_var = BlockResult(label.0);
-                state.label_stack.push((label, Some((result_var, type_, is_loop))));
-    
-                // The result of the block is then at the top of the stack after the block.
-                expr_stack.push((VarRef(result_var), type_));
-            } else {
-                state.label_stack.push((label, None));
-            }
+            let result_var = match blocktype.0 {
+                Some(type_) => {
+                    let result_var = BlockResult(label.0);
+                    // The result of the block is then at the top of the stack after the block.
+                    expr_stack.push((VarRef(result_var), type_));
+                    Some(result_var)
+                },
+                None => None,
+            };
+
+            state.label_stack.push((label, is_loop, result_var));
 
             label
         }
 
-        fn wasm_label_to_wimpl_label_and_block_var(state: &State, wasm_label: crate::Label) -> (Label, Option<(Var, ValType)>) {
-            let (wimpl_label, block_result) = *state.label_stack.iter().rev().nth(wasm_label.to_usize()).expect("invalid branch label, not in label stack");
-            match block_result {
+        fn wasm_label_to_wimpl_label_and_block_var(state: &State, wasm_label: crate::Label) -> (Label, Option<Var>) {
+            let (wimpl_label, is_loop, block_result) = *state.label_stack.iter().rev().nth(wasm_label.to_usize()).expect("invalid branch label, not in label stack");
+            
+            match (is_loop, block_result) {
                 // Target block is not a loop and needs a result, so return the result variable.
-                Some((block_result_var, type_, false)) => (wimpl_label, Some((block_result_var, type_))),
+                (false, Some(block_result_var)) => (wimpl_label, Some(block_result_var)),
+                
                 // Target block either has no result, or is a loop. Because loops/blocks have no 
                 // inputs in Wasm MVP and br to loops jump to the beginning, there is no result
                 // that would need to be assigned in that case.
-                Some((_, _, true)) | None => (wimpl_label, None)
+                (true, Some(_)) | (_, None) => (wimpl_label, None)
             }
         }
 
@@ -217,8 +218,6 @@ fn wimplify_instrs<'module>(
 
                 // Wrap `if` inside a `block`, because Wimpl ifs don't have a label, but if a 
                 // branch wants to exit the if, it needs to target a label.
-                // TODO do not generate the surrounding block if no branch targets it
-                // -> requires a precomputed map from branches to targets
                 stmts_result.push(Stmt::Block {
                     body: Body(vec![Stmt::If {
                         condition,
@@ -231,15 +230,15 @@ fn wimplify_instrs<'module>(
 
             wasm::Else => {
                 // Cannot pop because you still want it to be on the label stack while processing the else body.
-                let (_, result_info) = *state.label_stack.last().expect("label stack should include if label");
+                let (_label, is_loop, if_result_var) = *state.label_stack.last().expect("label stack should include if label");
+                assert!(!is_loop, "if block result should never have loop flag set");
 
                 // Assign result of the if statement that we just finished processing.
-                if let Some((if_result_var, type_, is_loop_block)) = result_info {
-                    assert!(!is_loop_block, "if block result should never have loop flag set");
-                    let value = expr_stack.pop().expect("else expects if result value on the stack").0;
+                if let Some(if_result_var) = if_result_var {
+                    let (value, type_) = expr_stack.pop().expect("else expects if result value on the stack");
                     
                     // Because the stack should be empty at the end of a block, we don't need to
-                    // materialize expressions here.
+                    // materialize expressions here. See assert below.
                     
                     stmts_result.push(Stmt::Assign {
                         lhs: if_result_var,
@@ -255,13 +254,13 @@ fn wimplify_instrs<'module>(
             },
 
             wasm::End => {
-                let (_, result_info) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack");
+                let (_label, _is_loop, block_result_var) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack");
 
-                if let Some((block_result_var, type_, _is_loop_block)) = result_info {
-                    let value = expr_stack.pop().expect("end expects if/block/loop result value on the stack").0;
+                if let Some(block_result_var) = block_result_var {
+                    let (value, type_) = expr_stack.pop().expect("end expects if/block/loop result value on the stack");
 
                     // Because the stack should be empty at the end of a block, we don't need to
-                    // materialize expressions here.
+                    // materialize expressions here. See assert below.
                     
                     stmts_result.push(Stmt::Assign {
                         lhs: block_result_var,
@@ -276,17 +275,41 @@ fn wimplify_instrs<'module>(
                 return Ok(false)
             }
 
+            wasm::Return => {
+                let (wimpl_label, is_loop, return_var) = *state.label_stack.first().expect("empty label stack, but expected function ");
+                assert_eq!(wimpl_label, Label(0), "first element on the label stack should point to function body label");
+                assert!(!is_loop, "function body block should not have loop flag set");
+
+                if let Some(return_var) = return_var {
+                    let (return_expr, type_) = expr_stack.pop().expect("return expects a return value");
+
+                    materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+
+                    stmts_result.push(Stmt::Assign {
+                        lhs: return_var,
+                        type_,
+                        rhs: return_expr
+                    })
+                } else {
+                    materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+                }
+
+                stmts_result.push(Stmt::Br { target: wimpl_label })
+            }
+
             wasm::Br(label) => {
                 let (wimpl_label, block_var) = wasm_label_to_wimpl_label_and_block_var(state, *label);
                 
                 // Handle dataflow ("transported value through branch") by explicit assignment.
-                if let Some((var, type_)) = block_var {
-                    let value = expr_stack.pop().expect("br to this label expects a value").0;
+                if let Some(block_var) = block_var {
+                    let (branch_value_var, type_) = expr_stack.pop().expect("br to this label expects a value");
+                    
                     materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+                    
                     stmts_result.push(Stmt::Assign {
-                        lhs: var,
+                        lhs: block_var,
                         type_,
-                        rhs: value,
+                        rhs: branch_value_var,
                     })
                 } else {
                     materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
@@ -303,18 +326,21 @@ fn wimplify_instrs<'module>(
                 let (wimpl_label, block_var) = wasm_label_to_wimpl_label_and_block_var(state, *label);
                 
                 // Materialize also the (maybe) value of the branch target in a variable.
-                // This is necessary because its expression shall not be duplicated, once for the
-                // case if the branch is taken (assigned to target result variable), once if the
-                // branch is not taken (in the expression stack).
+                // This is necessary for br_if unlike for br because the expression is statically
+                // duplicated, once for the case if the branch is taken (assigned to target result
+                // variable), and once if the branch is not taken (in the expression stack).
+                // However, we don't want the expression to be evaluated twice, so assign it to a 
+                // variable.
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
                 let mut if_body = Vec::with_capacity(2);
-                if let Some((block_var, type_)) = block_var {
+                if let Some(block_var) = block_var {
                     // The value "transported" by the branch, needs to be duplicated, in case the
                     // branch is not taken.
                     // Since we just materialized this, this is going to be a `VarRef` and cloning
                     // it is fine (doesn't alter semantics or introduce duplicate expressions).
-                    let branch_value_var = expr_stack.last().expect("br_if to this label expects a value").0.clone();
+                    let (branch_value_var, type_) = expr_stack.last().expect("br_if to this label expects a value").clone();
+                    
                     if_body.push(Stmt::Assign {
                         lhs: block_var,
                         type_,
@@ -330,18 +356,20 @@ fn wimplify_instrs<'module>(
                 })
             }
 
-            // FIXME write test case for this
             wasm::BrTable { table, default } => {
                 let (table_index_expr, table_index_ty) = expr_stack.pop().expect("br_table expects an index into the table on the stack");
                 assert_eq!(table_index_ty, ValType::I32);
 
+                // Same as for br_if above.
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
                 let br_with_maybe_assign = move |label: crate::Label, state: &mut State, expr_stack: &Vec<(Expr, ValType)>| -> Vec<Stmt> {
                     let (wimpl_label, block_var) = wasm_label_to_wimpl_label_and_block_var(state, label);
-                    if let Some((block_var, type_)) = block_var {
-                        // Same as for br_if above, see there.
-                        let branch_value_var = expr_stack.last().expect("this br_table expects a value").0.clone();
+                    
+                    if let Some(block_var) = block_var {
+                        // Same as for br_if above.
+                        let (branch_value_var, type_) = expr_stack.last().expect("this br_table expects a value").clone();
+
                         vec![
                             Stmt::Assign {
                                 lhs: block_var,
@@ -360,28 +388,6 @@ fn wimplify_instrs<'module>(
                     cases: table.iter().map(|label| Body(br_with_maybe_assign(*label, state, &mut expr_stack))).collect(),
                     default: Body(br_with_maybe_assign(*default, state, &mut expr_stack)),
                 })
-            }
-
-            wasm::Return => {
-                // This points to the block for the overall function body.
-                let target = Label(0);
-
-                if let (target_from_label_stack, Some((return_var, type_, loop_flag))) = state.label_stack.first().expect("empty label stack, but expected function ") {
-                    assert_eq!(target, *target_from_label_stack, "label stack is invalid, should have been the function label");
-                    assert!(!loop_flag, "function body block should not have loop flag set");
-
-                    let return_val = expr_stack.pop().expect("return expects a return value").0;
-                    stmts_result.extend([
-                        Stmt::Assign {
-                            lhs: *return_var,
-                            type_: *type_,
-                            rhs: return_val
-                        },
-                        Stmt::Br { target }
-                    ])
-                } else {
-                    stmts_result.push(Stmt::Br { target })
-                }
             }
 
             wasm::Call(func_index) => {
@@ -430,13 +436,15 @@ fn wimplify_instrs<'module>(
             wasm::Drop => {
                 let expr = expr_stack.pop().expect("drop expects a value on the stack").0;
 
+                // TODO An alternative could be to just materialize everything (including the drop
+                // argument), pop the (now in a variable) argument from the expression stack and 
+                // then just not use the variable again. This is slightly more general but creates
+                // more stack variables.
+                // Finally a dead store/liveness analysis could then remove those variables.
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
                 stmts_result.push(Stmt::Expr(expr));
 
-                // // Optimization:
-                // // TODO A more generalized way would be to just materialize everything, pop the
-                // // (now in a variable) argument from the expression stack and then just not
-                // // use the variable again. A liveness analysis could then remove those variables.
+                // // Alternative Optimization:
                 // match expr {
                 //     // If the popped expression is in a variable already, just don't use it anymore,
                 //     // i.e., no statements emitted.
@@ -637,10 +645,10 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
 
             let return_var = match func.type_.results() {
                 [] => None,
-                [ty] => Some((Var::Return(0), *ty, false)),
+                [_type] => Some(Var::Return(0)),
                 _ => unimplemented!("only WebAssembly MVP is supported, not multi-value extension")
             };
-            state.label_stack.push((Label(0), return_var));
+            state.label_stack.push((Label(0), false, return_var));
 
             let was_else = wimplify_instrs(&mut stmts_result, &mut state, context)?;
             assert!(!was_else, "function should not end with else");
