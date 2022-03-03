@@ -472,10 +472,11 @@ fn wimplify_instrs<'module>(
                 // We need to materialize the if and else case, regardless of whether they are used,
                 // to match the semantics of Wasm, where both are always evaluated.
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
-                let if_result_var = expr_stack.pop().expect("select expects if value on the stack").0;
                 let else_result_var = expr_stack.pop().expect("select expects else value on the stack").0;
+                let if_result_var = expr_stack.pop().expect("select expects if value on the stack").0;
 
                 let result_var = create_fresh_stack_var(state);
+                expr_stack.push((VarRef(result_var), type_));
 
                 stmts_result.push(
                     Stmt::If {
