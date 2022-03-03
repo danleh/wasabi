@@ -1,8 +1,5 @@
-s0: i32 = i32.const 0
-call f1 ()
-s1: i32 = i32.const 3
-s2: i32 = i32.const 42
-s3: i32 = call f2 (s1, s2) 
-s4: i32 = i32.const 56 
-s5: i32 = i32.add (s3, s4) 
-
+i32.const 0
+i32.add(
+    call f1 (i32.const 3, i32.const 42), 
+    i32.const 56
+)

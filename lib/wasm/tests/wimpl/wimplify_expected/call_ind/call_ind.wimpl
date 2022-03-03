@@ -1,2 +1,1 @@
-s0: i32 = i32.const 0 
-call_indirect []->[] (s0) ()
+call_indirect []->[] (i32.const 0) ()
