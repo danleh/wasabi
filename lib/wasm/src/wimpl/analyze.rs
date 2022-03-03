@@ -144,7 +144,7 @@ pub fn abstract_expr(expr: &Expr) -> String {
     let expr = MEMARG.replace_all(&expr, "");
     let expr = ALIGN.replace_all(&expr, "");
     let expr = CONST.replace_all(&expr, "const <const>");
-    let expr = FUNC.replace_all(&expr, "<func>");
+    // let expr = FUNC.replace_all(&expr, "<func>");
 
     expr.to_string()
 }
