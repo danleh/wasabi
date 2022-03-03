@@ -251,6 +251,8 @@ pub fn collect_target_constraints(
                         // TODO handle parameter variables with inter-procedural analysis, 
                         // but for now we don't produce a constraint for those.
                         VarExprMapResult::Uninitialized(Var::Param(_)) => None,
+                        // TODO handle uninitialized globals with some global read/write analysis.
+                        VarExprMapResult::Uninitialized(Var::Global(_)) => None,
                         VarExprMapResult::Uninitialized(uninitialized) => unreachable!("non-parameter variables should always be initialized, but: {} was not", uninitialized)
                     }
                     expr => Some(expr)
