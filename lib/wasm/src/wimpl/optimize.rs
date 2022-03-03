@@ -5,10 +5,14 @@ use crate::wimpl::wimplify::*;
 
 // TODO optimization to unwrap blocks/loops whose label is never the target of any branch.
 // Just needs two forward passes: 1. collect all branch targets in a HashSet, 2. unwrap block if not contained.
+// Useful to remove the block generated from WebAssembly ifs
+
 
 // TODO optimization to replace assignments to dead variables with expression statements.
 
 // TODO optimization to replace pure (side-effect free) expression statements.
+
+// TODO constant propagation
 
 #[derive(Debug)]
 enum Value {
