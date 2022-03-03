@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex};
+use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex, iter::FromIterator, cmp::Reverse};
 
 use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr}}, highlevel::FunctionType, Val};
 
@@ -379,12 +379,15 @@ fn data_gathering() {
     
     const WASM_TEST_INPUTS_DIR: &str = "tests/";
 
+    let mut all_idx_exprs: FxHashMap<String, usize> = FxHashMap::default();
+
     for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
         println!("{}", path.display());
         let wimpl_module = Module::from_wasm_file(&path).expect(&format!("could not decode valid wasm file '{}'", path.display()));
 
         let idx_exprs = collect_call_indirect_idx_expr(&wimpl_module);
         for (expr, count) in idx_exprs.iter().take(20) {
+            *all_idx_exprs.entry(expr.clone()).or_default() += *count;
             println!("{:8}  {}", count, expr);
         }
 
@@ -519,5 +522,12 @@ fn data_gathering() {
             num_funcs_with_memory_access, 
             reachable_ratio_trivial, reachable_ratio_ty_only, reachable_ratio_in_table_only, reachable_ratio_ty_and_in_table
         ).unwrap();
+    }
+
+    println!("call_indirect idx expressions for all binaries:");
+    let mut all_idx_exprs = Vec::from_iter(all_idx_exprs);
+    all_idx_exprs.sort_by_key(|(expr, count)| Reverse((*count, expr.clone())));
+    for (expr, count) in all_idx_exprs.iter().take(50) {
+        println!("{:8}  {}", count, expr);
     }
 }
