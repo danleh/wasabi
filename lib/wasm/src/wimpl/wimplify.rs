@@ -608,63 +608,73 @@ fn wimplify_instrs<'module>(
     Ok(false)
 }
 
-pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
-    let mut wimpl_funcs = Vec::new();
-    for (idx, func) in module.functions() {
+fn wimplify_function_body(function: &highlevel::Function, module: &highlevel::Module) -> Result<Body, String> {
+    // The body will be at least the number of locals and often a nop or return instruction.
+    let mut stmts_result = Vec::with_capacity(function.local_count() + 1);
 
-        // TODO move into own function, e.g., Function::wimplify() or Function::from(hl::Function).
-        //initialize the local variables
-        let mut stmts_result = Vec::with_capacity(func.local_count() + 1);
-        for (local_idx, loc) in func.locals() {
-            let (loc_name, loc_type) = (&loc.name, loc.type_);
-            if let Some(_loc_name) = loc_name {
-                todo!("you haven't yet implemented locals having names");
-            } else {
-                stmts_result.push(Stmt::Assign {
-                    lhs: Var::Local(local_idx.to_u32() - func.type_.inputs().len() as u32),
-                    rhs: Expr::Const(Val::get_default_value(loc_type)),
-                    type_: loc_type,
-                })
-            }
+    // Initialize the local variables.
+    for (local_idx, loc) in function.locals() {
+        let (loc_name, loc_type) = (&loc.name, loc.type_);
+        if let Some(_loc_name) = loc_name {
+            todo!("you haven't yet implemented locals having names");
+        } else {
+            stmts_result.push(Stmt::Assign {
+                lhs: Var::Local(local_idx.to_u32() - function.type_.inputs().len() as u32),
+                rhs: Expr::Const(Val::get_default_value(loc_type)),
+                type_: loc_type,
+            })
         }
-
-        //translate the instructions in the function
-        if let Some(code) = func.code() {
-            let context = Context {
-                module,
-                func_ty: &func.type_
-            };
-
-            let mut state = State {
-                instrs_iter: code.body.as_slice().iter(),
-                type_checker: TypeChecker::begin_function(func, module),
-                label_stack: Vec::new(),
-                label_count: 1, // 0 is already used by the function body block.
-                stack_var_count: 0,
-            };
-
-            let return_var = match func.type_.results() {
-                [] => None,
-                [_type] => Some(Var::Return(0)),
-                _ => unimplemented!("only WebAssembly MVP is supported, not multi-value extension")
-            };
-            state.label_stack.push((Label(0), false, return_var));
-
-            let was_else = wimplify_instrs(&mut stmts_result, &mut state, context)?;
-            assert!(!was_else, "function should not end with else");
-        }
-
-        wimpl_funcs.push(Function {
-            type_: func.type_,
-            body: Body(stmts_result),
-            name: FunctionId::from_idx(idx, module),
-            export: func.export.clone(), 
-        });
     }
 
+    // Translate the instructions in the function.
+    // FIXME Handle imported functions, where there is no body.
+    if let Some(code) = function.code() {
+        let context = Context {
+            module,
+            func_ty: &function.type_
+        };
+
+        let mut state = State {
+            instrs_iter: code.body.as_slice().iter(),
+            type_checker: TypeChecker::begin_function(function, module),
+            label_stack: Vec::new(),
+            label_count: 1, // 0 is already used by the function body block.
+            stack_var_count: 0,
+        };
+
+        let return_var = match function.type_.results() {
+            [] => None,
+            [_type] => Some(Var::Return(0)),
+            _ => unimplemented!("only WebAssembly MVP is supported, not multi-value extension")
+        };
+        state.label_stack.push((Label(0), false, return_var));
+
+        let was_else = wimplify_instrs(&mut stmts_result, &mut state, context)?;
+        assert!(!was_else, "function should not end with else");
+    }
+
+    Ok(Body(stmts_result))
+}
+
+pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
+    let functions = module.functions().map(|(idx, function)| -> Result<Function, String> {
+        Ok(Function {
+            type_: function.type_,
+            body: wimplify_function_body(function, module)?,
+            name: FunctionId::from_idx(idx, module),
+            export: function.export.clone(), 
+        })
+    }).collect::<Result<Vec<_>, _>>()?;
+
     Ok(Module{
-        functions: wimpl_funcs,
+        functions,
+
+        // TODO translate global init expr and table/memory offsets to Wimpl also.
         globals: module.globals.clone(),
+        
+        // TODO allow only for a single table, since we only care about the MVP.
         tables: module.tables.clone(),
+        
+        // TODO add (a single) memory.
     })
 }
