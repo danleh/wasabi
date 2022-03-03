@@ -511,20 +511,20 @@ fn wimplify_instrs<'module>(
                 })
             }
 
+            // Essentially equivalent to a local.set followed by a local.get (see above).
             wasm::Local(highlevel::LocalOp::Tee, local_idx) => {
-                // The stack needs to contain the value at this point of setting the local, so
-                // materialize the argument to local.tee as well!
-                // See tests/wimpl_expected/local_tee.wat for a problematic example otherwise.
-                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
-
-                let (value_var, type_) = expr_stack.last().expect("local.tee expects a value on the stack").clone();
+                let (value, type_) = expr_stack.pop().expect("local.tee expects a value on the stack");
                 assert_eq!(type_, ty.inputs()[0]);
 
+                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+
+                let local_var = local_idx_to_var(context, *local_idx);
                 stmts_result.push(Stmt::Assign {
-                    lhs: local_idx_to_var(context, *local_idx),
+                    lhs: local_var,
                     type_,
-                    rhs: value_var,
-                })
+                    rhs: value,
+                });
+                expr_stack.push((VarRef(local_var), type_));
             }
 
             wasm::Global(highlevel::GlobalOp::Get, global_idx) => {
