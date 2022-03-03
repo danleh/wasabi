@@ -43,7 +43,7 @@ fn wimplify_instrs<'module>(
         let ty = state.type_checker.check_next_instr(instr).map_err(|e| e.to_string())?;
 
         // DEBUG
-        // println!("instr: {}, {}, {:?}", instr, ty, expr_stack);
+        // println!("expr stack: [{}]\ninstr: {}, {}", expr_stack.iter().map(|(expr, ty)| format!("{}: {}", expr, ty)).collect::<Vec<_>>().join(", "), instr, ty);
 
         let ty = match ty {
             // If the following code (until the next end or else) is unreachable, 
@@ -518,7 +518,8 @@ fn wimplify_instrs<'module>(
                 // materialize the argument to local.tee as well!
                 // See tests/wimpl_expected/local_tee.wat for a problematic example otherwise.
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
-                let (value_var, type_) = expr_stack.pop().expect("local.tee expects a value on the stack");
+
+                let (value_var, type_) = expr_stack.last().expect("local.tee expects a value on the stack").clone();
                 assert_eq!(type_, ty.inputs()[0]);
 
                 stmts_result.push(Stmt::Assign {
@@ -565,7 +566,7 @@ fn wimplify_instrs<'module>(
 
             wasm::Store(op, memarg) => {
                 let (value, value_ty) = expr_stack.pop().expect("store expects a value to store on the stack");
-                assert_eq!(value_ty, ty.inputs()[0]);
+                assert_eq!(value_ty, ty.inputs()[1]);
 
                 let (addr, addr_ty) = expr_stack.pop().expect("store expects an address on the stack");
                 assert_eq!(addr_ty, ValType::I32);
