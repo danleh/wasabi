@@ -564,10 +564,11 @@ fn wimplify_instrs<'module>(
             }
 
             wasm::Store(op, memarg) => {
+                let (value, value_ty) = expr_stack.pop().expect("store expects a value to store on the stack");
+                assert_eq!(value_ty, ty.inputs()[0]);
+
                 let (addr, addr_ty) = expr_stack.pop().expect("store expects an address on the stack");
                 assert_eq!(addr_ty, ValType::I32);
-
-                let value = expr_stack.pop().expect("store expects a value to store on the stack").0;
 
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
