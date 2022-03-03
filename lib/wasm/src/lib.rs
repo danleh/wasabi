@@ -12,7 +12,6 @@ mod error;
 pub use crate::error::{Error, ErrorKind};
 
 pub mod types;
-mod folding;
 pub mod wimpl;
 
 pub mod callgraph;
