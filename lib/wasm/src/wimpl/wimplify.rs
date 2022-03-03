@@ -43,7 +43,7 @@ fn wimplify_instrs<'module>(
         let ty = state.type_checker.check_next_instr(instr).map_err(|e| e.to_string())?;
 
         // DEBUG
-        // println!("{}, {}, {:?}", instr, ty, var_stack);
+        // println!("instr: {}, {}, {:?}", instr, ty, expr_stack);
 
         let ty = match ty {
             // If the following code (until the next end or else) is unreachable, 
@@ -129,6 +129,8 @@ fn wimplify_instrs<'module>(
     
                 // The result of the block is then at the top of the stack after the block.
                 expr_stack.push((VarRef(result_var), type_));
+            } else {
+                state.label_stack.push((label, None));
             }
 
             label
@@ -158,6 +160,9 @@ fn wimplify_instrs<'module>(
 
             wasm::Block(blocktype) => {
                 let label = create_block_label_and_var(state, &mut expr_stack, *blocktype, false);
+
+                // DEBUG
+                // println!("block: {}, {:?}", blocktype, state.label_stack);
 
                 // Do this before the recursive call modifies the state (e.g., adds stack variables).
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
