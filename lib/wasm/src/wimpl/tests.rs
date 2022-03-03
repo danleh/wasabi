@@ -17,10 +17,9 @@ use crate::wimpl::Stmt::*;
 use crate::wimpl::Expr::*;
 use crate::wimpl::Var::*;
 
+// Macros for writing Wimpl statements in Rust.
 use crate::wimpl;
 use crate::wimpls;
-
-use crate::wimpl::wimplify::*;  
 
 lazy_static! {
     static ref WIMPL_MODULE_SYNTAX_TESTCASES: Vec<(Module, &'static str, &'static str)> = vec![
