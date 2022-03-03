@@ -99,9 +99,12 @@ impl fmt::Display for Body {
         // Pop-off the last superfluous newline.
         inner.pop();
 
-        // If the inner part (inside the curly braces) is only a single line, e.g., a single br
-        // instruction, then print the whole body as a single line as well.
-        if inner.lines().count() == 1 {
+        // HACK If the inner part (inside the curly braces) is only a single line, e.g., a single br
+        // instruction and doesn't contain any nested structures (no curly braces or parentheses),
+        // then print the whole body as a single line as well.
+        // TODO A better way would be using some advanced pretty printer algorithm, e.g., using
+        // Wadler's document-based approach.
+        if inner.lines().count() == 1 && !inner.contains(['(', '{']) {
             write!(f, "{{ {} }}", inner)
         } else {
             write!(f, "{{\n{}\n}}", indent_once(&inner))
