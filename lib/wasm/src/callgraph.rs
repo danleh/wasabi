@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex};
 
-use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult}}, highlevel::FunctionType, Val};
+use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr}}, highlevel::FunctionType, Val};
 
 use crate::wimpl::wimplify::*;
 
@@ -117,7 +117,9 @@ pub fn reachable_callgraph(
             (func.name(), collect_target_constraints(func, options))
         })
         .collect();
-    println!("[DONE] collect constraints");
+    
+    // DEBUG
+    // println!("[DONE] collect constraints");
     // println!("constraints: {:?}", function_targets_constraints);
 
 
@@ -157,7 +159,9 @@ pub fn reachable_callgraph(
             }
         }
     }
-    println!("[DONE] collect funcs in table");
+
+    // DEBUG
+    // println!("[DONE] collect funcs in table");
 
     // Optimization: generate map from FuncTy -> Vec<Func>, such that we 
     // can quickly filter by function type in solve_constraints (~25% of total runtime!)
@@ -199,13 +203,13 @@ pub fn reachable_callgraph(
         // }
     }
 
-    // FIXME quick and dirty output: which kinds of constraints do we have (and how frequenty are they).
-    let iter = UNIQUE_CONSTRAINT_EXPRS.lock().unwrap();
-    let mut stats: Vec<_> = iter.iter().map(|(expr, count)| (count, expr)).collect();
-    stats.sort();
-    for (count, expr) in stats {
-        println!("{:10} {:30}", count, expr);
-    }
+    // // FIXME quick and dirty output: which kinds of constraints do we have (and how frequenty are they).
+    // let iter = UNIQUE_CONSTRAINT_EXPRS.lock().unwrap();
+    // let mut stats: Vec<_> = iter.iter().map(|(expr, count)| (count, expr)).collect();
+    // stats.sort();
+    // for (count, expr) in stats {
+    //     println!("{:10} {:30}", count, expr);
+    // }
 
     Ok(callgraph)
 }
@@ -378,7 +382,12 @@ fn data_gathering() {
     for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
         println!("{}", path.display());
         let wimpl_module = Module::from_wasm_file(&path).expect(&format!("could not decode valid wasm file '{}'", path.display()));
-        
+
+        let idx_exprs = collect_call_indirect_idx_expr(&wimpl_module);
+        for (expr, count) in idx_exprs.iter().take(20) {
+            println!("{:8}  {}", count, expr);
+        }
+
         // let wimpl_module = wimpl::wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect(""); 
         // let callgraph = callgraph(&wimpl_module); 
 

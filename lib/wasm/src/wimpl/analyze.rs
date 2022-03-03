@@ -1,8 +1,9 @@
-use std::fmt;
+use std::{fmt, iter::FromIterator, cmp::Reverse};
 
+use regex::Regex;
 use rustc_hash::FxHashMap;
 
-use crate::wimpl::{Stmt, Expr, Var, Body};
+use crate::wimpl::{Stmt, Expr, Var, Body, Module};
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub struct VarExprMap(FxHashMap<Var, Option<Expr>>);
@@ -59,4 +60,36 @@ impl fmt::Display for VarExprMap {
         }
         write!(f, "}}")
     }
+}
+
+/// Returns a slightly abstracted form of the call_indirect expressions, sorted descending by count.
+pub fn collect_call_indirect_idx_expr(module: &Module) -> Vec<(String, usize)> {
+    let mut result: FxHashMap<String, usize> = FxHashMap::default();
+    for func in &module.functions {
+        use Expr::*;
+        func.body.visit_expr_pre_order(|expr| 
+            if let CallIndirect { type_: _, table_idx, args: _ } = expr {
+                let table_idx = table_idx.to_string();
+
+                // HACK Remove some stuff that is irrelevant for our analysis
+                lazy_static::lazy_static! {
+                    static ref MEMARG: Regex = Regex::new(r"\s+offset=\d+\s+").unwrap();
+                    static ref PARAM: Regex = Regex::new(r"p\d+").unwrap();
+                    static ref STACK: Regex = Regex::new(r"s\d+").unwrap();
+                    static ref LOCAL: Regex = Regex::new(r"l\d+").unwrap();
+                    static ref CONST: Regex = Regex::new(r"const \d+").unwrap();
+                }
+                let table_idx = MEMARG.replace_all(&table_idx, "");
+                let table_idx = PARAM.replace_all(&table_idx, "<param>");
+                let table_idx = STACK.replace_all(&table_idx, "<stack>");
+                let table_idx = LOCAL.replace_all(&table_idx, "<local>");
+                let table_idx = CONST.replace_all(&table_idx, "const <const>");
+
+                *result.entry(table_idx.to_string()).or_default() += 1;
+            }
+        );
+    }
+    let mut result = Vec::from_iter(result);
+    result.sort_by_key(|(expr, count)| Reverse((*count, expr.clone())));
+    result
 }
