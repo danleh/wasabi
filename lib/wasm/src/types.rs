@@ -795,7 +795,7 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
             to_inferred_type(op_ty)
         }
         Call(idx) => {
-            let function_ty = module.function(*idx).type_.clone();
+            let function_ty = module.function(*idx).type_;
             state.pop_vals_expected(function_ty.inputs())?;
             state.push_vals(function_ty.results())?;
             to_inferred_type(function_ty)
@@ -983,7 +983,7 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
 
 #[cfg(test)]
 mod tests {
-    use crate::{highlevel::{Function, Module, Code, Instr, Instr::*, NumericOp::*, LocalOp, FunctionType, self}, ValType, Val, ValType::*, BlockType, Label};
+    use crate::{highlevel::{Function, Module, Code, Instr, Instr::*, NumericOp::*, LocalOp, FunctionType, self}, ValType, Val, ValType::*, BlockType};
 
     use super::TypeChecker;
 

@@ -1,4 +1,4 @@
-use wasm::wimpl::{wimplify::wimplify, self};
+use wasm::wimpl;
 
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();

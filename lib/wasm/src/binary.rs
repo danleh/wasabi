@@ -59,8 +59,7 @@ impl DecodeState {
                     None
                 })
             .flat_map(|imports| imports.iter()
-                .filter(|import|
-                    if let ImportType::Function(_) = import.type_ { true } else { false }))
+                .filter(|import| matches!(import.type_, ImportType::Function(_))))
             .count();
         let functions_code = self.code_offsets.into_iter()
             .enumerate()
@@ -367,7 +366,7 @@ impl WasmBinary for String {
         // re-allocation is necessary.
         let offset_before = state.current_offset;
         let buf: Vec<u8> = Vec::decode(reader, state).set_err_elem::<String>()?;
-        Ok(String::from_utf8(buf).add_err_info::<String>(offset_before)?)
+        String::from_utf8(buf).add_err_info::<String>(offset_before)
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {

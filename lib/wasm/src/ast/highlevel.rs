@@ -81,6 +81,8 @@ impl FunctionType {
         Self::from(ty)
     }
 
+    // This is not exactly equal to the AsRef trait, because this returns a 'static reference.
+    #[allow(clippy::should_implement_trait)]
     pub fn as_ref(self) -> &'static crate::lowlevel::FunctionType {
         self.0.as_ref()
     }

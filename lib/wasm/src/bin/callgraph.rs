@@ -1,5 +1,5 @@
 use rustc_hash::FxHashSet;
-use wasm::{wimpl::{wimplify::wimplify, FunctionId, Module}, callgraph::{self, Options}, highlevel::Function};
+use wasm::{wimpl::{FunctionId, Module}, callgraph::{self, Options}};
 
 // Profile with cargo flamegraph --bin callgraph -- tests/wasm/WasmBench-nonCpp/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13.wasm
 // Before, allow perf to capture traces:

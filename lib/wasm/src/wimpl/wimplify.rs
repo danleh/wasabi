@@ -76,26 +76,15 @@ fn wimplify_instrs<'module>(
             var
         }
 
-        // Use this when an _expression_ on the stack would need to be duplicated (which is not
-        // valid, as it would change semantics and likely performance when doubly evaluated).
-        // So evaluate the expr and store in an intermediate fresh variable. Then return this 
-        // variable for future uses.
-        fn pop_expr_and_assign_to_fresh_stack_var(state: &mut State, expr_stack: &mut Vec<(Expr, ValType)>, stmts_result: &mut Vec<Stmt>) -> Expr {
-            let (expr, type_) = expr_stack.pop().expect("expected value on the stack");
-            let var = create_fresh_stack_var(state);
-            stmts_result.push(Stmt::Assign {
-                lhs: var,
-                type_,
-                rhs: expr,
-            });
-            VarRef(var)
-        }
-
         // To make sure the Wimpl evaluation order is equivalent to WebAssembly, before pushing a
         // statement, we must make sure (by calling this function) that all expressions still
         // "dormant" on the stack are actually executed beforehand (e.g., due to side effects).
         // To be able to refer to their values later on, we replace those expressions by references 
         // to the freshly created variables holding the evaluation result instead.
+        // This is also required whenever an instruction would "duplicate" an expression on the
+        // stack. This is not desired, because it could change semantics (due to side effects) and
+        // performance (due to double evaluation). So instead the expression in evaluated once here
+        // and the the duplication is just refering to the inserted stack slot with a VarRef.
         // TODO call this whenever calling stmts.push(...)
         fn materialize_all_exprs_as_stmts(state: &mut State, expr_stack: &mut Vec<(Expr, ValType)>, stmts_result: &mut Vec<Stmt>) {
             for (expr, type_) in expr_stack {
@@ -422,7 +411,7 @@ fn wimplify_instrs<'module>(
 
                 let n_args = func_type.inputs().len();
                 let call_expr = CallIndirect {
-                    type_: func_type.clone(),
+                    type_: *func_type,
                     table_idx: Box::new(table_index_expr),
                     args: expr_stack.split_off(expr_stack.len() - n_args).into_iter().map(|(expr, _ty)| expr).collect(),
                 };

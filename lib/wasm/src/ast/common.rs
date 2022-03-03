@@ -44,6 +44,8 @@ impl Val {
     }
 
     /// Parse a number as the given type `ty` and return as a typed value.
+    // Use Result instead of Option for consistency with stdlib FromStr trait.
+    #[allow(clippy::result_unit_err)]
     pub fn from_str(str: &str, ty: ValType) -> Result<Self, ()> {
         Ok(match ty {
             ValType::I32 => Val::I32(str.parse().map_err(|_| ())?),
@@ -197,8 +199,7 @@ impl FromStr for FunctionType {
                 .split(',')
                 .filter_map(trim_filter)
                 .map(ValType::from_str)
-                .collect::<Result<Vec<_>, _>>()?
-                .into();
+                .collect::<Result<Vec<_>, _>>()?;
             let results = results
                 .trim()
                 .strip_prefix('[').ok_or(())?
@@ -206,9 +207,8 @@ impl FromStr for FunctionType {
                 .split(',')
                 .filter_map(trim_filter)
                 .map(ValType::from_str)
-                .collect::<Result<Vec<_>, _>>()?
-                .into();
-        Ok(FunctionType { params, results })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(FunctionType { params, results })
         } else {
             // More than one arrow in the type is invalid.
             Err(())
@@ -438,6 +438,8 @@ impl Memarg {
     }
 
     /// Parses Memarg, fills fields with defaults for `op`.
+    // Use Result instead of Option for consistency with stdlib FromStr trait.
+    #[allow(clippy::result_unit_err)]
     pub fn from_str(s: &str, op: impl MemoryOp) -> Result<Self, ()> {
         let mut result = Memarg::default(op);
 

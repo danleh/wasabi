@@ -462,7 +462,7 @@ impl From<&hl::Module> for ll::Module {
             global_idx: HashMap::new(),
         };
 
-        let imports = to_lowlevel_imports(&module, &mut state);
+        let imports = to_lowlevel_imports(module, &mut state);
         let functions = to_lowlevel_functions(&module.functions, &mut state);
         let tables = to_lowlevel_tables(&module.tables, &mut state);
         let memories = to_lowlevel_memories(&module.memories, &mut state);
@@ -474,7 +474,7 @@ impl From<&hl::Module> for ll::Module {
         for function in &module.functions {
             for instr in function.instrs() {
                 if let hl::Instr::CallIndirect(ty, _) = instr {
-                    state.get_or_insert_type((*ty).into());
+                    state.get_or_insert_type(*ty);
                 }
             }
         }
@@ -517,7 +517,7 @@ impl From<&hl::Module> for ll::Module {
         }
 
         // Export
-        let exports = to_lowlevel_exports(&module, &state);
+        let exports = to_lowlevel_exports(module, &state);
         if !exports.is_empty() {
             sections.push(ll::Section::Export(ll::WithSize(ll::SectionOffset(exports))));
         }
@@ -570,11 +570,11 @@ impl From<&hl::Module> for ll::Module {
         if let Some(name) = &module.name {
             name_subsections.push(ll::NameSubSection::Module(ll::WithSize(name.clone())));
         }
-        let function_names = to_lowlevel_function_names(&module, &state);
+        let function_names = to_lowlevel_function_names(module, &state);
         if !function_names.is_empty() {
             name_subsections.push(ll::NameSubSection::Function(ll::WithSize(function_names)));
         }
-        let local_names = to_lowlevel_local_names(&module, &state);
+        let local_names = to_lowlevel_local_names(module, &state);
         if !local_names.is_empty() {
             name_subsections.push(ll::NameSubSection::Local(ll::WithSize(local_names)));
         }
@@ -657,7 +657,7 @@ macro_rules! to_lowlevel_elements {
 }
 
 fn to_lowlevel_functions(functions: &[hl::Function], state: &mut EncodeState) -> Vec<Idx<ll::FunctionType>> {
-    to_lowlevel_elements!(functions, state, insert_function_idx, |func: &hl::Function| state.get_or_insert_type(func.type_.into()))
+    to_lowlevel_elements!(functions, state, insert_function_idx, |func: &hl::Function| state.get_or_insert_type(func.type_))
 }
 
 fn to_lowlevel_tables(tables: &[hl::Table], state: &mut EncodeState) -> Vec<TableType> {
@@ -671,7 +671,7 @@ fn to_lowlevel_memories(memories: &[hl::Memory], state: &mut EncodeState) -> Vec
 fn to_lowlevel_globals(globals: &[hl::Global], state: &mut EncodeState) -> Vec<ll::Global> {
     to_lowlevel_elements!(globals, state, insert_global_idx, |global: &hl::Global| ll::Global {
         type_: global.type_,
-        init: to_lowlevel_expr(&global.init().unwrap(), state),
+        init: to_lowlevel_expr(global.init().unwrap(), state),
     })
 }
 
