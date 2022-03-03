@@ -206,13 +206,14 @@ fn wimplify_instrs<'module>(
                 );
             }
 
+            // Translate if into block + if, because the Wimpl if alone cannot have a label/result.
             wasm::If(blocktype) => {
                 let (condition, condition_ty) = expr_stack.pop().expect("if expects a condition which was not found on the stack");
                 assert_eq!(condition_ty, ValType::I32);
 
-                let label = create_block_label_and_var(state, &mut expr_stack, *blocktype, false);
-                
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+
+                let label = create_block_label_and_var(state, &mut expr_stack, *blocktype, false);
                 
                 let mut if_body = Vec::new();
                 let has_else = wimplify_instrs(&mut if_body, state, context)?;
