@@ -205,29 +205,29 @@ impl FromStr for FunctionType {
         let mut splitted = str.split("->");
         let params = splitted.next().ok_or(())?;
         let results = splitted.next().ok_or(())?;
-        if let None = splitted.next() {
-            // Split individual types by comma, and remove brackets.
-            let params = params
-                .trim()
-                .strip_prefix('[').ok_or(())?
-                .strip_suffix(']').ok_or(())?
-                .split(',')
-                .filter_map(trim_filter)
-                .map(ValType::from_str)
-                .collect::<Result<Vec<_>, _>>()?;
-            let results = results
-                .trim()
-                .strip_prefix('[').ok_or(())?
-                .strip_suffix(']').ok_or(())?
-                .split(',')
-                .filter_map(trim_filter)
-                .map(ValType::from_str)
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(FunctionType { params, results })
-        } else {
+        if splitted.next().is_some() {
             // More than one arrow in the type is invalid.
-            Err(())
+            return Err(());
         }
+
+        // Split individual types by comma, and remove brackets.
+        let params = params
+            .trim()
+            .strip_prefix('[').ok_or(())?
+            .strip_suffix(']').ok_or(())?
+            .split(',')
+            .filter_map(trim_filter)
+            .map(ValType::from_str)
+            .collect::<Result<Vec<_>, _>>()?;
+        let results = results
+            .trim()
+            .strip_prefix('[').ok_or(())?
+            .strip_suffix(']').ok_or(())?
+            .split(',')
+            .filter_map(trim_filter)
+            .map(ValType::from_str)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(FunctionType { params, results })
     }
 }
 

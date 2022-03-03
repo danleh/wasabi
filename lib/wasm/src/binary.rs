@@ -31,6 +31,7 @@ pub struct DecodeState {
 }
 
 impl DecodeState {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> DecodeState {
         DecodeState::with_offset(0)
     }
