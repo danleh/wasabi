@@ -122,16 +122,18 @@ pub fn abstract_expr(expr: &Expr) -> String {
     let expr = expr.to_string();
 
     lazy_static::lazy_static! {
-        static ref MEMARG: Regex = Regex::new(r"\s+offset=\d+\s+").unwrap();
+        static ref MEMARG: Regex = Regex::new(r"\s*offset=\d+\s*").unwrap();
+        static ref ALIGN: Regex = Regex::new(r"\s*align=\d+\s*").unwrap();
         static ref PARAM: Regex = Regex::new(r"p\d+").unwrap();
         static ref STACK: Regex = Regex::new(r"s\d+").unwrap();
         static ref LOCAL: Regex = Regex::new(r"l\d+").unwrap();
         static ref GLOBAL: Regex = Regex::new(r"g\d+").unwrap();
         static ref RETURN: Regex = Regex::new(r"r\d+").unwrap();
         static ref BLOCK: Regex = Regex::new(r"b\d+").unwrap();
+        static ref FUNC: Regex = Regex::new(r"f\d+").unwrap();
         static ref CONST: Regex = Regex::new(r"const -?\d+").unwrap();
     }
-    const UNIFY_VARS: bool = false;
+    const UNIFY_VARS: bool = true;
     let expr = PARAM.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<param>" });
     let expr = STACK.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<stack>" });
     let expr = LOCAL.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<local>" });
@@ -140,7 +142,9 @@ pub fn abstract_expr(expr: &Expr) -> String {
     let expr = BLOCK.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<block>" });
 
     let expr = MEMARG.replace_all(&expr, "");
+    let expr = ALIGN.replace_all(&expr, "");
     let expr = CONST.replace_all(&expr, "const <const>");
+    let expr = FUNC.replace_all(&expr, "<func>");
 
     expr.to_string()
 }
