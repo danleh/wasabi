@@ -243,10 +243,10 @@ fn expr(input: &str) -> NomResult<Expr> {
             val_type,
             tag(".const"),
             ws,
-            // HACK Accept any non-whitespace character for the integer/float
-            // immediate, the rest of the parsing is done by Val::from_str.
-            // SUPER HACK Also stop at commas and parentheses in case this is in an argument list.
-            take_while1(|c: char| !c.is_ascii_whitespace() && c != ',' && c != ')'),
+            // HACK Accept any potential integer or float literal character,
+            // the rest of the parsing is done by Val::from_str.
+            // TODO Check which characters are actually valid for int/float literals in Wasm.
+            take_while1(|c: char| c.is_alphanum() || c == '.'),
         )),
         |(ty, _, (), number)| Val::from_str(number, ty).map(Const),
     );
@@ -269,7 +269,7 @@ fn expr(input: &str) -> NomResult<Expr> {
 
     // HACK For call_indirect, we know nothing besides the argument list is following
     // the function type, so consume up to the opening parenthesis.
-    // However, this will fail to recognize comments after the function type!
+    // FIXME However, this will fail to recognize comments after the function type!
     let func_ty = map_res(take_until("("), FunctionType::from_str);
     let call_indirect = map(
         tuple((
