@@ -112,8 +112,10 @@ pub fn sort_map_count<T: Ord + Clone, Hasher>(map: &HashMap<T, usize, Hasher>) -
 }
 
 pub fn print_map_count<T: Ord + Clone + Display, Hasher>(map: &HashMap<T, usize, Hasher>) {
+    let total: f64 = map.iter().map(|(_, count)| *count as f64).sum();
     for (t, count) in sort_map_count(map).into_iter().take(20) {
-        println!("{:8}  {}", count, t);
+        let percent = count as f64 / total * 100.0;
+        println!("{:8} ({:5.2}%)  {}", count, percent, t);
     }
 }
 
