@@ -1,9 +1,9 @@
-use std::{cmp::Reverse, fmt, iter::FromIterator};
+use std::{cmp::Reverse, fmt, iter::FromIterator, cell::RefCell, collections::HashMap};
 
 use regex::Regex;
 use rustc_hash::FxHashMap;
 
-use crate::wimpl::{Body, Expr, Module, Stmt, Var};
+use crate::{wimpl::{Body, Expr, Module, Stmt, Var}, highlevel::{StoreOp, LoadOp}};
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub struct VarExprMap(FxHashMap<Var, Option<Expr>>);
@@ -70,18 +70,49 @@ pub fn collect_call_indirect_idx_expr(module: &Module) -> Vec<(String, usize)> {
         use Expr::*;
         func.body.visit_expr_pre_order(|expr| {
             if let CallIndirect { type_: _, table_idx, args: _ } = expr {
-                let table_idx = abstract_call_indirect_idx_expr(table_idx);
+                let table_idx = abstract_expr(table_idx);
                 *result.entry(table_idx).or_default() += 1;
             }
         });
     }
-    let mut result = Vec::from_iter(result);
-    result.sort_by_key(|(expr, count)| Reverse((*count, expr.clone())));
-    result
+    sort_map_count(&result)
+}
+
+/// Returns a slightly abstracted form of the call_indirect expressions, sorted descending by count.
+pub fn collect_i32_load_store_addr_expr(module: &Module) -> (
+    /* addrs */ Vec<(String, usize)>, 
+    /* store values */ Vec<(String, usize)>,
+ ) {
+    let addrs: RefCell<FxHashMap<String, usize>> = RefCell::new(FxHashMap::default());
+    let mut values: FxHashMap<String, usize> = FxHashMap::default();
+    for func in &module.functions {
+        use crate::wimpl::Expr::*;
+        use crate::wimpl::Stmt::*;
+        // TODO / FIXME Can we make the assumption that call_indirect idx are always loaded/stored
+        // via full i32s?
+        func.body.visit_pre_order(|expr| {
+            if let Store { op: StoreOp::I32Store, memarg: _, addr, value } = expr {
+                *addrs.borrow_mut().entry(abstract_expr(addr)).or_default() += 1;
+                *values.entry(abstract_expr(value)).or_default() += 1;
+            }
+        },
+        |expr| {
+            if let Load { op: LoadOp::I32Load, memarg: _, addr } = expr {
+                *addrs.borrow_mut().entry(abstract_expr(addr)).or_default() += 1;
+            }
+        });
+    }
+    (sort_map_count(&addrs.into_inner()), sort_map_count(&values))
+}
+
+pub fn sort_map_count<T: Ord + Clone, Hasher>(map: &HashMap<T, usize, Hasher>) -> Vec<(T, usize)> {
+    let mut vec = Vec::from_iter(map.iter().map(|(t, count)| (t.clone(), *count)));
+    vec.sort_by_key(|(expr, count)| Reverse((*count, expr.clone())));
+    vec
 }
 
 // HACK Remove some stuff that is irrelevant for our analysis
-pub fn abstract_call_indirect_idx_expr(expr: &Expr) -> String {
+pub fn abstract_expr(expr: &Expr) -> String {
     let expr = expr.to_string();
 
     lazy_static::lazy_static! {

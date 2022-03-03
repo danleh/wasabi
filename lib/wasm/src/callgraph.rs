@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex, iter::FromIterator, cmp::Reverse};
 
-use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_call_indirect_idx_expr}}, highlevel::FunctionType, Val};
+use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_addr_expr}}, highlevel::FunctionType, Val};
 
 use crate::wimpl::wimplify::*;
 
@@ -263,6 +263,9 @@ pub fn collect_target_constraints(
                 };
                 if let Some(expr) = expr {
                     constraints.push(Constraint::TableIndexExpr(expr.clone()));
+
+                    let expr = abstract_expr(expr);
+                    *UNIQUE_CONSTRAINT_EXPRS.lock().expect("lock poisoning doesnt happen").entry(expr).or_default() += 1;
                 }
             }
             targets.insert(Target::Constrained(constraints));
@@ -323,8 +326,7 @@ pub fn solve_constraints<'a>(
                         Some(&f.name) == funcs_by_table_idx.get(&idx)
                     })),
                     Constraint::TableIndexExpr(expr) => {
-                        let expr = abstract_call_indirect_idx_expr(expr);
-                        *UNIQUE_CONSTRAINT_EXPRS.lock().expect("lock poisoning doesnt happen").entry(expr).or_default() += 1;
+                        // TODO
                         continue;
                     },
                 }
@@ -380,6 +382,7 @@ fn data_gathering() {
     const WASM_TEST_INPUTS_DIR: &str = "tests/";
 
     let mut all_idx_exprs: FxHashMap<String, usize> = FxHashMap::default();
+    let mut all_i32_load_store_addr_exprs: FxHashMap<String, usize> = FxHashMap::default();
 
     for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
         println!("{}", path.display());
@@ -389,6 +392,10 @@ fn data_gathering() {
         for (expr, count) in idx_exprs.iter().take(20) {
             *all_idx_exprs.entry(expr.clone()).or_default() += *count;
             println!("{:8}  {}", count, expr);
+        }
+
+        for (expr, count) in collect_i32_load_store_addr_expr(&wimpl_module).0 {
+            *all_i32_load_store_addr_exprs.entry(expr).or_default() += count;
         }
 
         // let wimpl_module = wimpl::wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect(""); 
@@ -525,17 +532,19 @@ fn data_gathering() {
     }
 
     println!("call_indirect idx expressions for all binaries:");
-    let mut all_idx_exprs = Vec::from_iter(all_idx_exprs);
-    all_idx_exprs.sort_by_key(|(expr, count)| Reverse((*count, expr.clone())));
-    for (expr, count) in all_idx_exprs.iter().take(50) {
+    for (expr, count) in sort_map_count(&all_idx_exprs).iter().take(50) {
         println!("{:8}  {}", count, expr);
     }
 
     println!("call_indirect idx constraints (after resolving with VarExprMap!) for all binaries:");
-    let iter = UNIQUE_CONSTRAINT_EXPRS.lock().unwrap();
-    let mut all_idx_exprs = Vec::from_iter(iter.iter().map(|(expr, count)| (expr.clone(), *count)));
-    all_idx_exprs.sort_by_key(|(expr, count)| Reverse((*count, expr.clone())));
-    for (expr, count) in all_idx_exprs.iter().take(50) {
+    let all_idx_constraints = UNIQUE_CONSTRAINT_EXPRS.lock().unwrap().clone();
+    for (expr, count) in sort_map_count(&all_idx_constraints).iter().take(50) {
         println!("{:8}  {}", count, expr);
     }
+
+    println!("i32 load/store addr expressions for all binaries:");
+    for (expr, count) in sort_map_count(&all_i32_load_store_addr_exprs).iter().take(50) {
+        println!("{:8}  {}", count, expr);
+    }
+
 }
