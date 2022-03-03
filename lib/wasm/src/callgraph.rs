@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex, iter::FromIterator, cmp::Reverse};
 
-use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr}}, highlevel::FunctionType, Val};
+use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_call_indirect_idx_expr}}, highlevel::FunctionType, Val};
 
 use crate::wimpl::wimplify::*;
 
@@ -175,7 +175,7 @@ pub fn reachable_callgraph(
     // Solve constraints for all functions in "worklist" and add their targets to worklist, until
     // this is empty.
     let mut worklist = reachable_funcs.iter().cloned().collect::<Vec<_>>();
-    let mut i = 0;
+    // let mut i = 0;
     while let Some(func) = worklist.pop() {
         let calls = call_target_constraints.get(&func).expect("all functions should have been constraints computed for");            
 
@@ -323,8 +323,8 @@ pub fn solve_constraints<'a>(
                         Some(&f.name) == funcs_by_table_idx.get(&idx)
                     })),
                     Constraint::TableIndexExpr(expr) => {
-                        let opcode_only = expr.to_string().split([' ', '(']).next().unwrap_or("").to_owned();
-                        *UNIQUE_CONSTRAINT_EXPRS.lock().expect("lock poisoning doesnt happen").entry(opcode_only).or_default() += 1;
+                        let expr = abstract_call_indirect_idx_expr(expr);
+                        *UNIQUE_CONSTRAINT_EXPRS.lock().expect("lock poisoning doesnt happen").entry(expr).or_default() += 1;
                         continue;
                     },
                 }
@@ -526,6 +526,14 @@ fn data_gathering() {
 
     println!("call_indirect idx expressions for all binaries:");
     let mut all_idx_exprs = Vec::from_iter(all_idx_exprs);
+    all_idx_exprs.sort_by_key(|(expr, count)| Reverse((*count, expr.clone())));
+    for (expr, count) in all_idx_exprs.iter().take(50) {
+        println!("{:8}  {}", count, expr);
+    }
+
+    println!("call_indirect idx constraints (after resolving with VarExprMap!) for all binaries:");
+    let iter = UNIQUE_CONSTRAINT_EXPRS.lock().unwrap();
+    let mut all_idx_exprs = Vec::from_iter(iter.iter().map(|(expr, count)| (expr.clone(), *count)));
     all_idx_exprs.sort_by_key(|(expr, count)| Reverse((*count, expr.clone())));
     for (expr, count) in all_idx_exprs.iter().take(50) {
         println!("{:8}  {}", count, expr);
