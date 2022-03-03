@@ -1,4 +1,4 @@
-use std::{cmp::Reverse, fmt, iter::FromIterator, cell::RefCell, collections::HashMap};
+use std::{cmp::Reverse, fmt::{self, Display}, iter::FromIterator, cell::RefCell, collections::HashMap};
 
 use regex::Regex;
 use rustc_hash::FxHashMap;
@@ -64,7 +64,7 @@ impl fmt::Display for VarExprMap {
 }
 
 /// Returns a slightly abstracted form of the call_indirect expressions, sorted descending by count.
-pub fn collect_call_indirect_idx_expr(module: &Module) -> Vec<(String, usize)> {
+pub fn collect_call_indirect_idx_expr(module: &Module) -> FxHashMap<String, usize> {
     let mut result: FxHashMap<String, usize> = FxHashMap::default();
     for func in &module.functions {
         use Expr::*;
@@ -75,13 +75,13 @@ pub fn collect_call_indirect_idx_expr(module: &Module) -> Vec<(String, usize)> {
             }
         });
     }
-    sort_map_count(&result)
+    result
 }
 
 /// Returns a slightly abstracted form of the call_indirect expressions, sorted descending by count.
-pub fn collect_i32_load_store_addr_expr(module: &Module) -> (
-    /* addrs */ Vec<(String, usize)>, 
-    /* store values */ Vec<(String, usize)>,
+pub fn collect_i32_load_store_arg_expr(module: &Module) -> (
+    /* addrs */ FxHashMap<String, usize>, 
+    /* store values */ FxHashMap<String, usize>,
  ) {
     let addrs: RefCell<FxHashMap<String, usize>> = RefCell::new(FxHashMap::default());
     let mut values: FxHashMap<String, usize> = FxHashMap::default();
@@ -102,13 +102,19 @@ pub fn collect_i32_load_store_addr_expr(module: &Module) -> (
             }
         });
     }
-    (sort_map_count(&addrs.into_inner()), sort_map_count(&values))
+    (addrs.into_inner(), values)
 }
 
 pub fn sort_map_count<T: Ord + Clone, Hasher>(map: &HashMap<T, usize, Hasher>) -> Vec<(T, usize)> {
     let mut vec = Vec::from_iter(map.iter().map(|(t, count)| (t.clone(), *count)));
     vec.sort_by_key(|(expr, count)| Reverse((*count, expr.clone())));
     vec
+}
+
+pub fn print_map_count<T: Ord + Clone + Display, Hasher>(map: &HashMap<T, usize, Hasher>) {
+    for (t, count) in sort_map_count(map).into_iter().take(20) {
+        println!("{:8}  {}", count, t);
+    }
 }
 
 // HACK Remove some stuff that is irrelevant for our analysis
@@ -123,9 +129,9 @@ pub fn abstract_expr(expr: &Expr) -> String {
         static ref GLOBAL: Regex = Regex::new(r"g\d+").unwrap();
         static ref RETURN: Regex = Regex::new(r"r\d+").unwrap();
         static ref BLOCK: Regex = Regex::new(r"b\d+").unwrap();
-        static ref CONST: Regex = Regex::new(r"const \d+").unwrap();
+        static ref CONST: Regex = Regex::new(r"const -?\d+").unwrap();
     }
-    const UNIFY_VARS: bool = true;
+    const UNIFY_VARS: bool = false;
     let expr = PARAM.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<param>" });
     let expr = STACK.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<stack>" });
     let expr = LOCAL.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<local>" });

@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex, iter::FromIterator, cmp::Reverse};
 
-use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_addr_expr}}, highlevel::FunctionType, Val};
+use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count}}, highlevel::FunctionType, Val};
 
 use crate::wimpl::wimplify::*;
 
@@ -395,7 +395,7 @@ fn data_gathering() {
             // println!("{:8}  {}", count, expr);
         }
 
-        let (addr_exprs, value_exprs) = collect_i32_load_store_addr_expr(&wimpl_module);
+        let (addr_exprs, value_exprs) = collect_i32_load_store_arg_expr(&wimpl_module);
         for (expr, count) in addr_exprs {
             *all_i32_load_store_addr_exprs.entry(expr).or_default() += count;
         }
@@ -537,24 +537,16 @@ fn data_gathering() {
     }
 
     println!("call_indirect idx expressions for all binaries:");
-    for (expr, count) in sort_map_count(&all_idx_exprs).iter().take(50) {
-        println!("{:8}  {}", count, expr);
-    }
-
+    print_map_count(&all_idx_exprs);
+    
     println!("call_indirect idx constraints (after resolving with VarExprMap!) for all binaries:");
     let all_idx_constraints = UNIQUE_CONSTRAINT_EXPRS.lock().unwrap().clone();
-    for (expr, count) in sort_map_count(&all_idx_constraints).iter().take(50) {
-        println!("{:8}  {}", count, expr);
-    }
+    print_map_count(&all_idx_constraints);
 
     println!("i32 load/store addr expressions for all binaries:");
-    for (expr, count) in sort_map_count(&all_i32_load_store_addr_exprs).iter().take(50) {
-        println!("{:8}  {}", count, expr);
-    }
+    print_map_count(&all_i32_load_store_addr_exprs);
 
     println!("i32 store value expressions for all binaries:");
-    for (expr, count) in sort_map_count(&all_i32_store_value_exprs).iter().take(50) {
-        println!("{:8}  {}", count, expr);
-    }
+    print_map_count(&all_i32_store_value_exprs);
 
 }
