@@ -1,0 +1,18 @@
+@label1: block {
+  s0: i64 = i64.const 42
+  switch (i32.const 1) {
+    case 0: {
+      r0: i64 = s0
+      br @label0
+    }
+    case 1: {
+      b1: i64 = s0
+      br @label1
+    }
+    default: {
+      r0: i64 = s0 
+      br @label0
+    }
+  }  
+}
+r0 :i64 = b1
