@@ -261,11 +261,12 @@ pub fn collect_target_constraints(
                     }
                     expr => Some(expr)
                 };
+
+                let expr_abstracted = expr.map(abstract_expr).unwrap_or_else(String::new);
+                *UNIQUE_CONSTRAINT_EXPRS.lock().expect("lock poisoning doesnt happen").entry(expr_abstracted).or_default() += 1;
+
                 if let Some(expr) = expr {
                     constraints.push(Constraint::TableIndexExpr(expr.clone()));
-
-                    let expr = abstract_expr(expr);
-                    *UNIQUE_CONSTRAINT_EXPRS.lock().expect("lock poisoning doesnt happen").entry(expr).or_default() += 1;
                 }
             }
             targets.insert(Target::Constrained(constraints));
@@ -390,10 +391,10 @@ fn data_gathering() {
         let wimpl_module = Module::from_wasm_file(&path).expect(&format!("could not decode valid wasm file '{}'", path.display()));
 
         let idx_exprs = collect_call_indirect_idx_expr(&wimpl_module);
-        for (expr, count) in idx_exprs.iter().take(20) {
+        for (expr, count) in idx_exprs.iter() {
             *all_idx_exprs.entry(expr.clone()).or_default() += *count;
-            // println!("{:8}  {}", count, expr);
         }
+        print_map_count(&idx_exprs);
 
         let (addr_exprs, value_exprs) = collect_i32_load_store_arg_expr(&wimpl_module);
         for (expr, count) in addr_exprs {
