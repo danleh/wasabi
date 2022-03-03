@@ -99,13 +99,23 @@ fn wimplify_instrs<'module>(
         // TODO call this whenever calling stmts.push(...)
         fn materialize_all_exprs_as_stmts(state: &mut State, expr_stack: &mut Vec<(Expr, ValType)>, stmts_result: &mut Vec<Stmt>) {
             for (expr, type_) in expr_stack {
-                let var = create_fresh_stack_var(state);
-                let expr = std::mem::replace(expr, VarRef(var));
-                stmts_result.push(Stmt::Assign {
-                    lhs: var,
-                    type_: *type_,
-                    rhs: expr
-                })
+                match expr {
+                    VarRef(Stack(_)) => {
+                        // Optimization: Expression already is in a stack variable, so no need to 
+                        // materialize it again (and it also cannot be overwritten since stack 
+                        // variables are effectively in SSA form, unlike parameters, locals, or
+                        // result variables).
+                    }
+                    _ => {
+                        let var = create_fresh_stack_var(state);
+                        let expr = std::mem::replace(expr, VarRef(var));
+                        stmts_result.push(Stmt::Assign {
+                            lhs: var,
+                            type_: *type_,
+                            rhs: expr
+                        })
+                    }
+                }
             }
         }
 
@@ -431,9 +441,24 @@ fn wimplify_instrs<'module>(
                 let expr = expr_stack.pop().expect("drop expects a value on the stack").0;
 
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+                stmts_result.push(Stmt::Expr(expr));
 
-                // Emit as a statement because maybe it was executed for its side-effect, e.g., calls.
-                stmts_result.push(Stmt::Expr(expr))
+                // // Optimization:
+                // // TODO A more generalized way would be to just materialize everything, pop the
+                // // (now in a variable) argument from the expression stack and then just not
+                // // use the variable again. A liveness analysis could then remove those variables.
+                // match expr {
+                //     // If the popped expression is in a variable already, just don't use it anymore,
+                //     // i.e., no statements emitted.
+                //     VarRef(_) => {}
+                    
+                //     // Otherwise, emit it as a statement, to at least execute it for its 
+                //     // side-effects, e.g., if it was a call.
+                //     _ => {
+                //         materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+                //         stmts_result.push(Stmt::Expr(expr))
+                //     }
+                // }
             },
 
             // Translate as if block assigning to a fresh stack variable.
