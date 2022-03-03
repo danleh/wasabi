@@ -8,7 +8,7 @@ use ordered_float::OrderedFloat;
 use serde::{Serialize, Serializer};
 
 use crate::WasmBinary;
-use crate::highlevel::MemoryOp;
+use crate::highlevel::{MemoryOp, FunctionType};
 
 /* AST nodes common to high- and low-level representations. */
 
@@ -139,83 +139,6 @@ impl FromStr for ValType {
     }
 }
 
-// TODO Implement interning for this, where a function type is represented
-// just by a u32 (more than enough for practical purposes, i.e., realistic
-// numbers of combinations of types)
-// and also not dopped, i.e., in a 'static arena.
-#[derive(WasmBinary, Default, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]
-#[tag = 0x60]
-pub struct FunctionType {
-    params: Vec<ValType>,
-    results: Vec<ValType>,
-}
-
-impl FunctionType {
-    pub fn new(params: &[ValType], results: &[ValType]) -> Self {
-        FunctionType { 
-            params: params.into(), 
-            results: results.into() 
-        }
-    }
-
-    pub fn inputs(&self) -> &[ValType] {
-        &self.params
-    }
-
-    pub fn results(&self) -> &[ValType] {
-        &self.results
-    }
-}
-
-impl fmt::Display for FunctionType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&format!("{:?} -> {:?}", self.params, self.results).to_lowercase())
-    }
-}
-
-impl FromStr for FunctionType {
-    type Err = ();
-
-    fn from_str(str: &str) -> Result<Self, Self::Err> {
-        fn trim_filter(s: &str) -> Option<&str> {
-            let s = s.trim();
-            if s.is_empty() {
-                None
-            } else {
-                Some(s)
-            }
-        }
-
-        // Split by the arrow.
-        let mut splitted = str.split("->");
-        let params = splitted.next().ok_or(())?;
-        let results = splitted.next().ok_or(())?;
-        if let None = splitted.next() {
-            // Split individual types by comma, and remove brackets.
-            let params = params
-                .trim()
-                .strip_prefix('[').ok_or(())?
-                .strip_suffix(']').ok_or(())?
-                .split(',')
-                .filter_map(trim_filter)
-                .map(ValType::from_str)
-                .collect::<Result<Vec<_>, _>>()?;
-            let results = results
-                .trim()
-                .strip_prefix('[').ok_or(())?
-                .strip_suffix(']').ok_or(())?
-                .split(',')
-                .filter_map(trim_filter)
-                .map(ValType::from_str)
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(FunctionType { params, results })
-        } else {
-            // More than one arrow in the type is invalid.
-            Err(())
-        }
-    }
-}
-
 /// In the WebAssembly MVP, blocks can return either nothing or a single value.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct BlockType(pub Option<ValType>);
@@ -230,8 +153,8 @@ impl FromStr for BlockType {
 
     fn from_str(str: &str) -> Result<Self, Self::Err> {
         // Re-use implementation for parsing `FunctionType`s.
-        let FunctionType { params, results } = FunctionType::from_str(str)?;
-        match (&params[..], &results[..]) {
+        let func_ty = FunctionType::from_str(str)?;
+        match (func_ty.inputs(), func_ty.results()) {
             ([], []) => Ok(BlockType(None)),
             ([], [ty]) => Ok(BlockType(Some(*ty))),
             // `BlockType` is a subset of all `FunctionType`s.
