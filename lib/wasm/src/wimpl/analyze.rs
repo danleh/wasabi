@@ -7,6 +7,13 @@ use crate::wimpl::{Stmt, Expr, Var, Body};
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub struct VarExprMap(FxHashMap<Var, Option<Expr>>);
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum VarExprMapResult<'a> {
+    Precise(&'a Expr),
+    Top,
+    Uninitialized(Var)
+}
+
 impl VarExprMap {
     pub fn from_body(body: &Body) -> Self {
         let mut map = Self::default();
@@ -27,18 +34,16 @@ impl VarExprMap {
             .or_insert_with(|| Some(expr.clone()));
     }
 
-    /// Returns `Ok(None)` if variable expression was over approximated.
-    /// Returns `Err` if variable was never assigned before.
-    pub fn get(&self, var: &Var) -> Result<Option<&Expr>, String> {
+    pub fn get(&self, var: &Var) -> VarExprMapResult {
         match self.0.get(var) {
-            // Recursive case: expression itself refers to a variable, resolve that recursively:
+            // Expression itself refers to a variable, resolve that recursively:
             Some(Some(Expr::VarRef(var))) => self.get(var),
             // Non-recursive case: non-var expression.
-            Some(Some(other_expr)) => Ok(Some(other_expr)),
-            // Overapproximated (because assigned twice):
-            Some(None) => Ok(None),
+            Some(Some(other_expr)) => VarExprMapResult::Precise(other_expr),
+            // Overapproximated (e.g., because the variable was assigned twice):
+            Some(None) => VarExprMapResult::Top,
             // Uninitialized variable, e.g., parameter:
-            None => Err(format!("uninitialized variable `{}`\nvariable map: {:?}", var, self.0)),
+            None => VarExprMapResult::Uninitialized(*var),
         }
     }
 }

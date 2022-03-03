@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex};
 
-use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::VarExprMap}, highlevel::FunctionType, Val};
+use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult}}, highlevel::FunctionType, Val};
 
 use crate::wimpl::wimplify::*;
 
@@ -219,11 +219,12 @@ pub fn collect_target_constraints(
     // Do we merge with a JavaScript call-graph analysis?
     let body = &src.body;
 
-    // Step 1:
-    // Build map of variables to expressions or any (overapproximation for multiple assignments
-    // of the same variable).
+    // Step 1: Build a map of variables to expressions or an overapproximation when variables are
+    // assigned multiple times.
     let var_expr = VarExprMap::from_body(body);
-    println!("{src}\nvar_map: {:#}", var_expr);
+    
+    // DEBUG
+    // println!("{src}\nvar_map: {:#}", var_expr);
 
     // Step 2:
     // Collect one set of constraints (conjuncts) per call/call_indirect.
@@ -242,16 +243,21 @@ pub fn collect_target_constraints(
                 constraints.push(Constraint::InTable);
             }
             if options.with_index_constraint {
-                // TODO Handle the `Err` case when this returns an uninitialized variable - local, parameters
                 let expr = match table_idx.as_ref() {
+                    // The table_idx expression refers to a variable, try to resolve that...
                     VarRef(var) => match var_expr.get(var) {
-                        Ok(Some(precise_expr)) => unreachable!("a single assigned variable??"),
-                        Ok(None) => todo!("over approximated: \n{var}"),
-                        Err(uninitialized) => todo!("uninitialized: {uninitialized}\n{var}"),
-                    },
-                    expr => expr
+                        VarExprMapResult::Precise(expr) => Some(expr),
+                        VarExprMapResult::Top => None,
+                        // TODO handle parameter variables with inter-procedural analysis, 
+                        // but for now we don't produce a constraint for those.
+                        VarExprMapResult::Uninitialized(Var::Param(_)) => None,
+                        VarExprMapResult::Uninitialized(uninitialized) => unreachable!("non-parameter variables should always be initialized, but: {} was not", uninitialized)
+                    }
+                    expr => Some(expr)
                 };
-                constraints.push(Constraint::TableIndexExpr(expr.clone()));
+                if let Some(expr) = expr {
+                    constraints.push(Constraint::TableIndexExpr(expr.clone()));
+                }
             }
             targets.insert(Target::Constrained(constraints));
         }
