@@ -193,10 +193,10 @@ pub fn reachable_callgraph(
         }
 
         // DEBUG
-        i += 1;
-        if i % 1000 == 0 {
-            println!("[DONE] processing {} functions", i);
-        }
+        // i += 1;
+        // if i % 1000 == 0 {
+        //     println!("[DONE] processing {} functions", i);
+        // }
     }
 
     // FIXME quick and dirty output: which kinds of constraints do we have (and how frequenty are they).

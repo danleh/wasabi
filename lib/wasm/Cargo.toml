@@ -22,6 +22,8 @@ anyhow = "1.0.55"
 # TODO move to dev-dependencies by moving imports into blocks of #[cfg(test)]
 test_utilities = { path = "../test_utilities" }
 
+regex = "1.5.4"
+
 # For interning function types and some strings.
 internment = "0.6.0"
 arc-interner = "0.7.0"
