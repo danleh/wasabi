@@ -383,6 +383,7 @@ fn data_gathering() {
 
     let mut all_idx_exprs: FxHashMap<String, usize> = FxHashMap::default();
     let mut all_i32_load_store_addr_exprs: FxHashMap<String, usize> = FxHashMap::default();
+    let mut all_i32_store_value_exprs: FxHashMap<String, usize> = FxHashMap::default();
 
     for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
         println!("{}", path.display());
@@ -391,11 +392,15 @@ fn data_gathering() {
         let idx_exprs = collect_call_indirect_idx_expr(&wimpl_module);
         for (expr, count) in idx_exprs.iter().take(20) {
             *all_idx_exprs.entry(expr.clone()).or_default() += *count;
-            println!("{:8}  {}", count, expr);
+            // println!("{:8}  {}", count, expr);
         }
 
-        for (expr, count) in collect_i32_load_store_addr_expr(&wimpl_module).0 {
+        let (addr_exprs, value_exprs) = collect_i32_load_store_addr_expr(&wimpl_module);
+        for (expr, count) in addr_exprs {
             *all_i32_load_store_addr_exprs.entry(expr).or_default() += count;
+        }
+        for (expr, count) in value_exprs {
+            *all_i32_store_value_exprs.entry(expr).or_default() += count;
         }
 
         // let wimpl_module = wimpl::wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect(""); 
@@ -544,6 +549,11 @@ fn data_gathering() {
 
     println!("i32 load/store addr expressions for all binaries:");
     for (expr, count) in sort_map_count(&all_i32_load_store_addr_exprs).iter().take(50) {
+        println!("{:8}  {}", count, expr);
+    }
+
+    println!("i32 store value expressions for all binaries:");
+    for (expr, count) in sort_map_count(&all_i32_store_value_exprs).iter().take(50) {
         println!("{:8}  {}", count, expr);
     }
 

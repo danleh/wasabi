@@ -120,12 +120,20 @@ pub fn abstract_expr(expr: &Expr) -> String {
         static ref PARAM: Regex = Regex::new(r"p\d+").unwrap();
         static ref STACK: Regex = Regex::new(r"s\d+").unwrap();
         static ref LOCAL: Regex = Regex::new(r"l\d+").unwrap();
+        static ref GLOBAL: Regex = Regex::new(r"g\d+").unwrap();
+        static ref RETURN: Regex = Regex::new(r"r\d+").unwrap();
+        static ref BLOCK: Regex = Regex::new(r"b\d+").unwrap();
         static ref CONST: Regex = Regex::new(r"const \d+").unwrap();
     }
+    const UNIFY_VARS: bool = true;
+    let expr = PARAM.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<param>" });
+    let expr = STACK.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<stack>" });
+    let expr = LOCAL.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<local>" });
+    let expr = GLOBAL.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<global>" });
+    let expr = RETURN.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<return>" });
+    let expr = BLOCK.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<block>" });
+
     let expr = MEMARG.replace_all(&expr, "");
-    let expr = PARAM.replace_all(&expr, "<param>");
-    let expr = STACK.replace_all(&expr, "<stack>");
-    let expr = LOCAL.replace_all(&expr, "<local>");
     let expr = CONST.replace_all(&expr, "const <const>");
 
     expr.to_string()
