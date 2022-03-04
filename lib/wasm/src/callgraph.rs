@@ -397,7 +397,7 @@ fn main() {
 fn data_gathering() {
     
     let mut file = File::create("data.csv").unwrap();
-    writeln!(file, "path, num_functions, num_functions_exported, num_calls, num_ind_calls, unq functions in elem, num_funcs_with_call_ind, num_funcs_with_memory_access, reachable_ratio_trivial, reachable_ratio_ty_only, reachable_ratio_in_table_only, reachable_ratio_ty_and_in_table").unwrap(); 
+    writeln!(file, "path, num_functions, num_functions_exported, num_calls, num_ind_calls, unq functions in elem, num_funcs_with_call_ind, num_funcs_with_memory_access, reachable_ratio_trivial, reachable_ratio_ty_only, reachable_ratio_in_table_only, reachable_ratio_ty_and_in_table_and_idx_expr").unwrap(); 
     
     const WASM_TEST_INPUTS_DIR: &str = "tests/";
 
@@ -433,6 +433,7 @@ fn data_gathering() {
         let mut num_funcs_with_call_ind = 0; 
         let mut num_funcs_with_memory_access = 0; 
 
+        // FIXME Wrong after recursive Wimpl!! Use traverse::visit_pre_order
         for fun in wimpl_module.functions {
             let mut flag_call_ind = false; 
             let mut flag_load_store = false; 
@@ -530,7 +531,12 @@ fn data_gathering() {
         let reachable_ratio_ty_and_in_table = callgraph_reachable_funcs_ratio(&path, Options {
             with_type_constraint: true,
             with_in_table_constraint: true,
-            with_index_constraint: true, // FIXME for output
+            with_index_constraint: false,
+        });
+        let reachable_ratio_ty_and_in_table_and_idx_expr = callgraph_reachable_funcs_ratio(&path, Options {
+            with_type_constraint: true,
+            with_in_table_constraint: true,
+            with_index_constraint: true,
         });
 
         // Binaryen meta-DCE does none of the above, instead (citing my email from July 2021)
@@ -548,11 +554,15 @@ fn data_gathering() {
         
         // wasp does also neither of the above, they (unsoundly) disregard all call_indirects
 
+        if reachable_ratio_ty_and_in_table != reachable_ratio_ty_and_in_table_and_idx_expr {
+            println!("{}\nwithout idx_expr: {}\nwith idx_expr: {}", path.display(), reachable_ratio_ty_and_in_table, reachable_ratio_ty_and_in_table_and_idx_expr);
+        }
+
         writeln!(file, "\"{}\",{},{},{},{},{},{},{},{},{},{},{}", 
             path.display(), num_functions, num_functions_exported, num_calls, num_ind_calls, 
             element_funcs.len(), num_funcs_with_call_ind, 
             num_funcs_with_memory_access, 
-            reachable_ratio_trivial, reachable_ratio_ty_only, reachable_ratio_in_table_only, reachable_ratio_ty_and_in_table
+            reachable_ratio_trivial, reachable_ratio_ty_only, reachable_ratio_in_table_only, reachable_ratio_ty_and_in_table_and_idx_expr
         ).unwrap();
     }
 
