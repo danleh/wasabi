@@ -12,6 +12,14 @@ use super::FunctionId;
 // But not apparent in WebAssembly
 // Idea: constraints: (i) function must return i32 (ii) must have an edge to function with memory.grow instruction
 
+// TODO Inference of function pointer types for locals/parameters
+// E.g., call_indirect (i32.load(p0)) (...) would induce the constraint p0: ptr<func>
+// and call_indirect(i32.load offset=4(i32.load(p0))) would induce p0: ptr<struct { offset 4: ptr<func> }>
+
+// TODO Refine types by collecting constraints on all parameter and local usages
+// E.g., lifting func (i32, i32) to func (ptr<func>, ptr<struct>) ...
+// and use that to make call_indirect constraints more precise (because there are higher types)
+
 /// A map from a variable to the assigned expression (or over-approximating Top if there were
 /// multiple assignments).
 // FIXME Currently disregards kill sets (e.g., when the expression depends on a variable that
@@ -80,8 +88,8 @@ pub fn abstract_expr(expr: &Expr) -> String {
     let expr = expr.to_string();
 
     lazy_static::lazy_static! {
-        static ref MEMARG: Regex = Regex::new(r"\s*offset=\d+\s*").unwrap();
-        static ref ALIGN: Regex = Regex::new(r"\s*align=\d+\s*").unwrap();
+        static ref MEMARG: Regex = Regex::new(r"\s+offset=\d+\s*").unwrap();
+        static ref ALIGN: Regex = Regex::new(r"\s+align=\d+\s*").unwrap();
 
         static ref PARAM: Regex = Regex::new(r"p\d+").unwrap();
         static ref STACK: Regex = Regex::new(r"s\d+").unwrap();
@@ -101,10 +109,10 @@ pub fn abstract_expr(expr: &Expr) -> String {
     let expr = RETURN.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<return>" });
     let expr = BLOCK.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<block>" });
 
-    let expr = MEMARG.replace_all(&expr, "");
+    // let expr = MEMARG.replace_all(&expr, "");
     let expr = ALIGN.replace_all(&expr, "");
     let expr = CONST.replace_all(&expr, "const <const>");
-    let expr = FUNC.replace_all(&expr, "call <func>");
+    // let expr = FUNC.replace_all(&expr, "call <func>");
 
     expr.to_string()
 }
