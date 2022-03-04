@@ -10,7 +10,11 @@ use crate::{wimpl::{Body, Expr, Module, Stmt, Var}, highlevel::{StoreOp, LoadOp}
 // But not apparent in WebAssembly
 // Idea: constraints: (i) function must return i32 (ii) must have an edge to function with memory.grow instruction
 
-/// A map from a variable to a 
+/// A map from a variable to the assigned expression (or over-approximating Top if there were
+/// multiple assignments).
+// FIXME Currently disregards kill sets (e.g., when the expression depends on a variable that
+// is then later re-assigned) and loops (e.g., when a variable is lexically only a single time
+// assigned, but at program execution multiple times in multiple iterations).
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub struct VarExprMap<'module>(FxHashMap<Var, Option<&'module Expr>>);
 
@@ -69,6 +73,40 @@ impl<'module> fmt::Display for VarExprMap<'module> {
     }
 }
 
+// HACKY Abstract away part of an expression by simple string replacement.
+pub fn abstract_expr(expr: &Expr) -> String {
+    let expr = expr.to_string();
+
+    lazy_static::lazy_static! {
+        static ref MEMARG: Regex = Regex::new(r"\s*offset=\d+\s*").unwrap();
+        static ref ALIGN: Regex = Regex::new(r"\s*align=\d+\s*").unwrap();
+
+        static ref PARAM: Regex = Regex::new(r"p\d+").unwrap();
+        static ref STACK: Regex = Regex::new(r"s\d+").unwrap();
+        static ref LOCAL: Regex = Regex::new(r"l\d+").unwrap();
+        static ref GLOBAL: Regex = Regex::new(r"g\d+").unwrap();
+        static ref RETURN: Regex = Regex::new(r"r\d+").unwrap();
+        static ref BLOCK: Regex = Regex::new(r"b\d+").unwrap();
+
+        static ref CONST: Regex = Regex::new(r"const -?\d+").unwrap();
+        static ref FUNC: Regex = Regex::new(r"call \w+").unwrap();
+    }
+    const UNIFY_VARS: bool = false;
+    let expr = PARAM.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<param>" });
+    let expr = STACK.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<stack>" });
+    let expr = LOCAL.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<local>" });
+    let expr = GLOBAL.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<global>" });
+    let expr = RETURN.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<return>" });
+    let expr = BLOCK.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<block>" });
+
+    let expr = MEMARG.replace_all(&expr, "");
+    let expr = ALIGN.replace_all(&expr, "");
+    let expr = CONST.replace_all(&expr, "const <const>");
+    let expr = FUNC.replace_all(&expr, "call <func>");
+
+    expr.to_string()
+}
+
 /// Returns a slightly abstracted form of the call_indirect expressions, sorted descending by count.
 pub fn collect_call_indirect_idx_expr(module: &Module) -> FxHashMap<String, usize> {
     let mut result: FxHashMap<String, usize> = FxHashMap::default();
@@ -111,50 +149,18 @@ pub fn collect_i32_load_store_arg_expr(module: &Module) -> (
     (addrs.into_inner(), values)
 }
 
+/// Utility function for sorting a "count map" by count in descending order.
 pub fn sort_map_count<T: Ord + Clone, Hasher>(map: &HashMap<T, usize, Hasher>) -> Vec<(T, usize)> {
     let mut vec = Vec::from_iter(map.iter().map(|(t, count)| (t.clone(), *count)));
     vec.sort_by_key(|(expr, count)| Reverse((*count, expr.clone())));
     vec
 }
 
+/// Utility function to print out a "count map", with percentages.
 pub fn print_map_count<T: Ord + Clone + Display, Hasher>(map: &HashMap<T, usize, Hasher>) {
     let total: f64 = map.iter().map(|(_, count)| *count as f64).sum();
     for (t, count) in sort_map_count(map).into_iter().take(20) {
         let percent = count as f64 / total * 100.0;
         println!("{:8} ({:5.2}%)  {}", count, percent, t);
     }
-}
-
-// HACK Remove some stuff that is irrelevant for our analysis
-pub fn abstract_expr(expr: &Expr) -> String {
-    let expr = expr.to_string();
-
-    lazy_static::lazy_static! {
-        static ref MEMARG: Regex = Regex::new(r"\s*offset=\d+\s*").unwrap();
-        static ref ALIGN: Regex = Regex::new(r"\s*align=\d+\s*").unwrap();
-
-        static ref PARAM: Regex = Regex::new(r"p\d+").unwrap();
-        static ref STACK: Regex = Regex::new(r"s\d+").unwrap();
-        static ref LOCAL: Regex = Regex::new(r"l\d+").unwrap();
-        static ref GLOBAL: Regex = Regex::new(r"g\d+").unwrap();
-        static ref RETURN: Regex = Regex::new(r"r\d+").unwrap();
-        static ref BLOCK: Regex = Regex::new(r"b\d+").unwrap();
-
-        static ref CONST: Regex = Regex::new(r"const -?\d+").unwrap();
-        static ref FUNC: Regex = Regex::new(r"call \w+").unwrap();
-    }
-    const UNIFY_VARS: bool = false;
-    let expr = PARAM.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<param>" });
-    let expr = STACK.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<stack>" });
-    let expr = LOCAL.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<local>" });
-    let expr = GLOBAL.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<global>" });
-    let expr = RETURN.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<return>" });
-    let expr = BLOCK.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<block>" });
-
-    let expr = MEMARG.replace_all(&expr, "");
-    let expr = ALIGN.replace_all(&expr, "");
-    let expr = CONST.replace_all(&expr, "const <const>");
-    let expr = FUNC.replace_all(&expr, "call <func>");
-
-    expr.to_string()
 }
