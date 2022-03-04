@@ -74,6 +74,14 @@ impl Function {
     pub fn name(&self) -> FunctionId {
         self.name.clone()
     }
+
+    pub fn params(&self) -> impl Iterator<Item = (Var, ValType)> {
+        self.type_
+            .inputs()
+            .iter()
+            .enumerate()
+            .map(|(idx, ty)| (Var::Param(idx as u32), *ty))
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Ord, PartialOrd)]
