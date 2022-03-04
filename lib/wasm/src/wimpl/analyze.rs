@@ -5,52 +5,58 @@ use rustc_hash::FxHashMap;
 
 use crate::{wimpl::{Body, Expr, Module, Stmt, Var}, highlevel::{StoreOp, LoadOp}};
 
+// TODO Analysis for identification of heap allocation function ("malloc")
+// Often required for "allocation site abstraction" in pointer analysis
+// But not apparent in WebAssembly
+// Idea: constraints: (i) function must return i32 (ii) must have an edge to function with memory.grow instruction
+
+/// A map from a variable to a 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
-pub struct VarExprMap(FxHashMap<Var, Option<Expr>>);
+pub struct VarExprMap<'module>(FxHashMap<Var, Option<&'module Expr>>);
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum VarExprMapResult<'a> {
-    Precise(&'a Expr),
+pub enum VarExprMapResult<'module> {
+    Precise(&'module Expr),
     Top,
     Uninitialized(Var),
 }
 
-impl VarExprMap {
-    pub fn from_body(body: &Body) -> Self {
+impl<'module> VarExprMap<'module> {
+    pub fn from_body(body: &'module Body) -> Self {
         let mut map = Self::default();
 
         body.visit_stmt_pre_order(|stmt| {
             if let Stmt::Assign { lhs, type_: _, rhs } = stmt {
-                map.add(lhs, rhs)
+                map.add(*lhs, rhs)
             }
         });
 
         map
     }
 
-    pub fn add(&mut self, var: &Var, expr: &Expr) {
+    pub fn add(&mut self, var: Var, expr: &'module Expr) {
         self.0
-            .entry(*var)
+            .entry(var)
             // Overapproximate if there was already a prior assignment to that variable.
             .and_modify(|old_expr| *old_expr = None)
-            .or_insert_with(|| Some(expr.clone()));
+            .or_insert_with(|| Some(expr));
     }
 
-    pub fn get(&self, var: &Var) -> VarExprMapResult {
-        match self.0.get(var) {
+    pub fn get(&self, var: Var) -> VarExprMapResult {
+        match self.0.get(&var) {
             // Expression itself refers to a variable, resolve that recursively:
-            Some(Some(Expr::VarRef(var))) => self.get(var),
+            Some(Some(Expr::VarRef(var))) => self.get(*var),
             // Non-recursive case: non-var expression.
             Some(Some(other_expr)) => VarExprMapResult::Precise(other_expr),
             // Overapproximated (e.g., because the variable was assigned twice):
             Some(None) => VarExprMapResult::Top,
             // Uninitialized variable, e.g., parameter:
-            None => VarExprMapResult::Uninitialized(*var),
+            None => VarExprMapResult::Uninitialized(var),
         }
     }
 }
 
-impl fmt::Display for VarExprMap {
+impl<'module> fmt::Display for VarExprMap<'module> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "{{")?;
         for (var, maybe_expr) in &self.0 {
@@ -137,7 +143,7 @@ pub fn abstract_expr(expr: &Expr) -> String {
         static ref CONST: Regex = Regex::new(r"const -?\d+").unwrap();
         static ref FUNC: Regex = Regex::new(r"call \w+").unwrap();
     }
-    const UNIFY_VARS: bool = true;
+    const UNIFY_VARS: bool = false;
     let expr = PARAM.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<param>" });
     let expr = STACK.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<stack>" });
     let expr = LOCAL.replace_all(&expr, if UNIFY_VARS { "<var>" } else { "<local>" });

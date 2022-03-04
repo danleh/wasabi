@@ -249,7 +249,7 @@ pub fn collect_target_constraints(
             if options.with_index_constraint {
                 let expr = match table_idx.as_ref() {
                     // The table_idx expression refers to a variable, try to resolve that...
-                    VarRef(var) => match var_expr.get(var) {
+                    VarRef(var) => match var_expr.get(*var) {
                         VarExprMapResult::Precise(expr) => Some(expr),
                         VarExprMapResult::Top => None,
                         // TODO handle parameter variables with inter-procedural analysis, 
