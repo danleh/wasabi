@@ -492,6 +492,7 @@ impl FromStr for StoreOp {
     }
 }
 
+// TODO Split this and Instr::Numeric in unary and binary for pattern matching on Numeric args...
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum NumericOp {
     /* Unary */

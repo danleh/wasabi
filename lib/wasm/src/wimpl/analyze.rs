@@ -1,4 +1,4 @@
-use std::{cmp::Reverse, fmt::{self, Display}, iter::FromIterator, cell::RefCell, collections::HashMap};
+use std::{cmp::Reverse, fmt::{self, Display}, iter::FromIterator, cell::RefCell, collections::HashMap, ops::{Add, BitAnd, BitOr, RangeInclusive}};
 
 use regex::Regex;
 use rustc_hash::FxHashMap;
@@ -162,5 +162,139 @@ pub fn print_map_count<T: Ord + Clone + Display, Hasher>(map: &HashMap<T, usize,
     for (t, count) in sort_map_count(map).into_iter().take(20) {
         let percent = count as f64 / total * 100.0;
         println!("{:8} ({:5.2}%)  {}", count, percent, t);
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct I32Range {
+    min: u32,
+    max_inclusive: u32
+}
+
+impl Default for I32Range {
+    fn default() -> Self {
+        Self { min: 0, max_inclusive: u32::MAX }
+    }
+}
+
+impl I32Range {
+    pub fn new(min: u32, max_inclusive: u32) -> Self {
+        Self { min, max_inclusive }
+    }
+
+    pub fn exact(val: u32) -> I32Range {
+        Self { min: val, max_inclusive: val }
+    }
+
+    pub fn iter(self) -> impl Iterator<Item = u32> {
+        self.min..=self.max_inclusive
+    }
+}
+
+impl Add for I32Range {
+    type Output = I32Range;
+    fn add(self, rhs: Self) -> Self::Output {
+        let min_min = self.min.checked_add(rhs.min);
+        let min_max = self.min.checked_add(rhs.max_inclusive);
+        let max_min = self.max_inclusive.checked_add(rhs.min);
+        let max_max = self.max_inclusive.checked_add(rhs.max_inclusive);
+        match (min_min, min_max, max_min, max_max) {
+            (Some(min_min), Some(min_max), Some(max_min), Some(max_max)) => {
+                I32Range::new(min_min.min(max_min).min(min_max), max_max.max(min_max).max(max_min))
+            }
+            _overflow => I32Range::default(),
+        }
+    }
+}
+
+impl BitAnd for I32Range {
+    type Output = I32Range;
+    fn bitand(self, rhs: Self) -> Self::Output {
+        let min_min = self.min & rhs.min;
+        let min_max = self.min & rhs.max_inclusive;
+        let max_min = self.max_inclusive & rhs.min;
+        let max_max = self.max_inclusive & rhs.max_inclusive;
+        I32Range::new(min_min.min(max_min).min(min_max), max_max.max(min_max).max(max_min))
+    }
+}
+
+impl BitOr for I32Range {
+    type Output = I32Range;
+    fn bitor(self, rhs: Self) -> Self::Output {
+        let min_min = self.min | rhs.min;
+        let min_max = self.min | rhs.max_inclusive;
+        let max_min = self.max_inclusive | rhs.min;
+        let max_max = self.max_inclusive | rhs.max_inclusive;
+        I32Range::new(min_min.min(max_min).min(min_max), max_max.max(min_max).max(max_min))
+    }
+}
+
+#[test]
+fn test_add_without_overflow() {
+    assert_eq!(I32Range::new(3, 20).add(I32Range::exact(5)), I32Range::new(8, 25));
+    assert_eq!(I32Range::new(3, 20).add(I32Range::new(0, 2)), I32Range::new(3, 22));
+}
+
+/// Panics if called with a non-i32 expression.
+pub fn approx_i32_eval(expr: &Expr) -> I32Range {
+    use Expr::*;
+    use crate::Val;
+    use crate::ValType;
+    use crate::highlevel::NumericOp::*;
+    match expr {
+        Const(Val::I32(val)) => I32Range::exact(*val as u32),
+        Const(_) => panic!("should only be called with an i32 expression"),
+
+        // Over-approximate cases:
+        VarRef(_) => I32Range::default(),
+        Load { op, memarg, addr } => I32Range::default(),
+        // TODO In the future we could use the module's memory limits to restrict min = min size and
+        // max = max size (if any). 
+        // Not for now, however because memory.* does not appear in call_indirect expressions.
+        MemorySize => I32Range::default(),
+        MemoryGrow { pages } => I32Range::default(),
+        Call { func, args } => I32Range::default(),
+        CallIndirect { type_, table_idx, args } => I32Range::default(),
+
+        // Recursive "evaluation".
+        Numeric { op, args: _  } if op.to_type().results()[0] != ValType::I32 => panic!("should only be called with an i32 expression"),
+        // "Boolean" i32 results.
+        // TODO Proper evaluation with ranged integer arithmetic.
+        Numeric { op: I32Eqz, args: _ } => I32Range::new(0, 1),
+        Numeric { op: I32Eq, args: _ } => I32Range::new(0, 1),
+        Numeric { op: I32Ne, args: _ } => I32Range::new(0, 1),
+        Numeric { op: I32LtS, args: _ } => I32Range::new(0, 1),
+        Numeric { op: I32LtU, args: _ } => I32Range::new(0, 1),
+        Numeric { op: I32GtS, args: _ } => I32Range::new(0, 1),
+        Numeric { op: I32GtU, args: _ } => I32Range::new(0, 1),
+        Numeric { op: I32LeS, args: _ } => I32Range::new(0, 1),
+        Numeric { op: I32LeU, args: _ } => I32Range::new(0, 1),
+        Numeric { op: I32GeS, args: _ } => I32Range::new(0, 1),
+        Numeric { op: I32GeU, args: _ } => I32Range::new(0, 1),
+        Numeric { op, args } => match &args[..] {
+            // TODO Implement I32Clz etc.
+            [_unary] => I32Range::default(),
+            [first, second] => match op {
+                I32Add => approx_i32_eval(first).add(approx_i32_eval(second)),
+                I32And => approx_i32_eval(first).bitand(approx_i32_eval(second)),
+                I32Or => approx_i32_eval(first).bitor(approx_i32_eval(second)),
+
+                // TODO Implement more NumericOps.
+                // I32Sub => todo!(),
+                // I32Mul => todo!(),
+                // I32DivS => todo!(),
+                // I32DivU => todo!(),
+                // I32RemS => todo!(),
+                // I32RemU => todo!(),
+                // I32Xor => todo!(),
+                // I32Shl => todo!(),
+                // I32ShrS => todo!(),
+                // I32ShrU => todo!(),
+                // I32Rotl => todo!(),
+                // I32Rotr => todo!(),
+                _ => I32Range::default(),
+            },
+            _ => unreachable!("Wasm has only unary and binary numeric operations")
+        },
     }
 }

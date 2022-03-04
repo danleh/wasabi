@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex, iter::FromIterator, cmp::Reverse};
 
-use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count}}, highlevel::FunctionType, Val};
+use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count, approx_i32_eval, I32Range}}, highlevel::FunctionType, Val, ValType};
 
 use crate::wimpl::wimplify::*;
 
@@ -306,6 +306,8 @@ pub fn solve_constraints<'a>(
                     .map(|vec| Box::new(vec.iter().cloned()) as Box<dyn Iterator<Item=&Function>>)
                     .unwrap_or_else(|| Box::new(module.functions.iter()) as Box<dyn Iterator<Item=&Function>>);
             for constraint in constraints {
+                use wimpl::Expr::*;
+                use crate::highlevel::NumericOp::*;
                 // Build up filtering iterator at runtime, adding all constraints from before.
                 filtered_iter = match constraint {
                     Constraint::Type(ty) => Box::new(filtered_iter.filter(move |f| &f.type_ == ty)),
@@ -322,14 +324,31 @@ pub fn solve_constraints<'a>(
                     // TODO If we have a TableIndexExpr constraint, we already know the function 
                     // immediately, so just use the result of `funcs_by_table_idx.get()` instead of
                     // filtering.
-                    Constraint::TableIndexExpr(wimpl::Expr::Const(Val::I32(idx))) => Box::new(filtered_iter.filter(move |f| {
+                    Constraint::TableIndexExpr(Const(Val::I32(idx))) => Box::new(filtered_iter.filter(move |f| {
                         let idx = *idx as u32;
                         Some(&f.name) == funcs_by_table_idx.get(&idx)
                     })),
-                    Constraint::TableIndexExpr(expr) => {
-                        // TODO
-                        continue;
+                    Constraint::TableIndexExpr(expr @ Numeric { op, args: _ }) if op.to_type().results()[0] == ValType::I32 => {
+                        let idx_range = approx_i32_eval(expr);
+                        
+                        // DEBUG
+                        // println!("{} -> {:?}", expr, idx_range);
+
+                        if idx_range == I32Range::default() {
+                            filtered_iter
+                        } else {
+                            Box::new(filtered_iter.filter(move |f| {
+                                for idx in idx_range.iter() {
+                                    if Some(&f.name) == funcs_by_table_idx.get(&idx) {
+                                        return true;
+                                    }
+                                }
+                                false
+                            }))
+                        }
                     },
+                    // TODO Load expressions -> needs pointer analysis
+                    _ => continue,
                 }
             }
             Box::new(filtered_iter.map(|f| f.name()))
