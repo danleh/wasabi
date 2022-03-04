@@ -163,7 +163,6 @@ pub enum Stmt {
 
     Store {
         op: StoreOp,
-        memarg: Memarg,
         addr: Expr,
         value: Expr,
     },
@@ -222,7 +221,6 @@ pub enum Expr {
 
     Load {
         op: LoadOp,
-        memarg: Memarg,
         addr: Box<Expr>,
     },
 

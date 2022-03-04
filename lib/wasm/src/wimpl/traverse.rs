@@ -51,7 +51,7 @@ impl Stmt {
             Assign { lhs: _, type_: _, rhs } => {
                 rhs.visit_pre_order_(f_expr);
             }
-            Store { op: _, memarg: _, addr, value } => {
+            Store { op: _, addr, value } => {
                 addr.visit_pre_order_(f_expr);
                 value.visit_pre_order_(f_expr);
             }
@@ -95,7 +95,7 @@ impl Expr {
         match self {
             VarRef(_) => {},
             Const(_) => {},
-            Load { op: _, memarg: _, addr } => {
+            Load { op: _, addr } => {
                 addr.visit_pre_order_(f);
             },
             MemorySize => {},

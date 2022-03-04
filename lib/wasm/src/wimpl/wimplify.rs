@@ -547,15 +547,23 @@ fn wimplify_instrs<'module>(
             }
 
             wasm::Load(loadop, memarg) => {
-                let (addr, addr_ty) = expr_stack.pop().expect("load expects an address on the stack");
+                let (mut addr, addr_ty) = expr_stack.pop().expect("load expects an address on the stack");
                 assert_eq!(addr_ty, ValType::I32);
 
                 let type_ = ty.results()[0];
 
+                // Convert offset to constant addition on address.
+                // Drop alignment hint, since that is only for optimization.
+                if memarg.offset != 0 {
+                    addr = Numeric { op: NumericOp::I32Add, args: vec![
+                        addr,
+                        Const(Val::I32(memarg.offset.try_into().unwrap()))
+                    ]};
+                }
+
                 expr_stack.push((
                     Load {
                         op: *loadop,
-                        memarg: *memarg,
                         addr: Box::new(addr),
                     },
                     type_
@@ -566,14 +574,22 @@ fn wimplify_instrs<'module>(
                 let (value, value_ty) = expr_stack.pop().expect("store expects a value to store on the stack");
                 assert_eq!(value_ty, ty.inputs()[1]);
 
-                let (addr, addr_ty) = expr_stack.pop().expect("store expects an address on the stack");
+                let (mut addr, addr_ty) = expr_stack.pop().expect("store expects an address on the stack");
                 assert_eq!(addr_ty, ValType::I32);
+
+                // Convert offset to constant addition on address.
+                // Drop alignment hint, since that is only for optimization.
+                if memarg.offset != 0 {
+                    addr = Numeric { op: NumericOp::I32Add, args: vec![
+                        addr,
+                        Const(Val::I32(memarg.offset.try_into().unwrap()))
+                    ]};
+                }
 
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
                 stmts_result.push(Stmt::Store {
                     op: *op,
-                    memarg: *memarg,
                     addr,
                     value,
                 })

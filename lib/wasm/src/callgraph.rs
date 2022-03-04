@@ -453,9 +453,9 @@ fn data_gathering() {
                         flag_call_ind = true; 
                     },
                     
-                    Store { op: _, memarg: _, addr: _, value: _ } |
-                    Assign { lhs:_, type_:_, rhs: Load{op:_, memarg:_, addr:_} } |
-                    Expr(Load{op:_, memarg:_, addr:_}) => {
+                    Store { op: _, addr: _, value: _ } |
+                    Assign { lhs:_, type_:_, rhs: Load{op:_, addr:_} } |
+                    Expr(Load{op:_, addr:_}) => {
                         flag_load_store = true; 
                     }, 
 

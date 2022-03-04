@@ -249,26 +249,12 @@ lazy_static! {
                 lhs: Stack(1),
                 rhs: Load {
                     op: I32Load,
-                    memarg: Memarg::default(I32Load),
                     addr: Box::new(VarRef(Stack(0))),
                 },
                 type_: ValType::I32,
             },
             "s1: i32 = i32.load(s0)",
             ""
-        ),
-        (
-            Store {
-                op: I64Store8,
-                value: VarRef(Stack(1)),
-                addr: VarRef(Stack(2)),
-                memarg: Memarg {
-                    offset: 0,
-                    alignment_exp: 4,
-                },
-            },
-            "i64.store8 align=16 (s2) (s1)",
-            "memory operation with non-default alignment"
         ),
         (
             Br {
@@ -442,12 +428,8 @@ lazy_static! {
                 op: I64Store8,
                 value: VarRef(Stack(1)),
                 addr: VarRef(Stack(2)),
-                memarg: Memarg {
-                    offset: 0,
-                    alignment_exp: 4,
-                },
             },
-            "i64.store8 align=16(s2)(s1)",
+            "i64.store8(s2)(s1)",
             "minimal spacing around arguments"
         ),
         (

@@ -191,24 +191,15 @@ fn arg_list(input: &str) -> NomResult<Vec<Expr>> {
     )(input)
 }
 
-// The defaults of a memarg (if not given) depend on the natural alignment
-// of the memory instruction, hence this higher-order combinator.
-fn memarg<'a>(op: impl MemoryOp + 'a) -> impl FnMut(&'a str) -> NomResult<'a, Memarg> {
-    // Same trick as for function types in call_indirect: Consume until beginning of argument list.
-    map_res(take_until("("), move |s| Memarg::from_str(s, op))
-}
-
 // Memarg parsing depends on result of previous LoadOp/StoreOp parsing.
 // This is easier to write in direct than in point-free style, so we do.
 fn load(input: &str) -> NomResult<Expr> {
     let (input, op) = op::<LoadOp>(input)?;
-    let (input, memarg) = memarg(op)(input)?;
     let (input, addr) = arg_single(input)?;
     Ok((
         input,
         Expr::Load {
             op,
-            memarg,
             addr: Box::new(addr),
         },
     ))
@@ -216,7 +207,6 @@ fn load(input: &str) -> NomResult<Expr> {
 
 fn store(input: &str) -> NomResult<Stmt> {
     let (input, op) = op::<StoreOp>(input)?;
-    let (input, memarg) = memarg(op)(input)?;
     let (input, addr) = arg_single(input)?;
     let (input, ()) = ws(input)?;
     let (input, value) = arg_single(input)?;
@@ -224,7 +214,6 @@ fn store(input: &str) -> NomResult<Stmt> {
         input,
         Stmt::Store {
             op,
-            memarg,
             addr,
             value,
         },

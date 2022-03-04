@@ -145,13 +145,13 @@ pub fn collect_i32_load_store_arg_expr(module: &Module) -> (
         // TODO / FIXME Can we make the assumption that call_indirect idx are always loaded/stored
         // via full i32s?
         func.body.visit_pre_order(|expr| {
-            if let Store { op: StoreOp::I32Store, memarg: _, addr, value } = expr {
+            if let Store { op: StoreOp::I32Store, addr, value } = expr {
                 *addrs.borrow_mut().entry(abstract_expr(addr)).or_default() += 1;
                 *values.entry(abstract_expr(value)).or_default() += 1;
             }
         },
         |expr| {
-            if let Load { op: LoadOp::I32Load, memarg: _, addr } = expr {
+            if let Load { op: LoadOp::I32Load, addr } = expr {
                 *addrs.borrow_mut().entry(abstract_expr(addr)).or_default() += 1;
             }
         });
@@ -290,14 +290,14 @@ pub fn approx_i32_eval(expr: &Expr) -> I32Range {
 
         // Over-approximate cases:
         VarRef(_) => I32Range::default(),
-        Load { op, memarg, addr } => I32Range::default(),
+        Load { op: _, addr: _ } => I32Range::default(),
         // TODO In the future we could use the module's memory limits to restrict min = min size and
         // max = max size (if any). 
         // Not for now, however because memory.* does not appear in call_indirect expressions.
         MemorySize => I32Range::default(),
-        MemoryGrow { pages } => I32Range::default(),
-        Call { func, args } => I32Range::default(),
-        CallIndirect { type_, table_idx, args } => I32Range::default(),
+        MemoryGrow { pages: _ } => I32Range::default(),
+        Call { func: _, args: _ } => I32Range::default(),
+        CallIndirect { type_: _, table_idx: _, args: _ } => I32Range::default(),
 
         // Recursive "evaluation".
         Numeric { op, args: _  } if op.to_type().results()[0] != ValType::I32 => panic!("should only be called with an i32 expression"),

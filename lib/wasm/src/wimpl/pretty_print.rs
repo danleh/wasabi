@@ -165,17 +165,10 @@ impl fmt::Display for Stmt {
             // The first argument is addr, second is value.
             Store {
                 op,
-                memarg,
                 addr,
                 value,
             } => {
-                write!(f, "{}", op)?;
-                if !memarg.is_default(*op) {
-                    f.write_str(" ")?;
-                    memarg.fmt(f, *op)?;
-                    f.write_str(" ")?;
-                }
-                write!(f, "({}) ({})", addr, value)?;
+                write!(f, "{} ({}) ({})", op, addr, value)?;
             },
 
             Br { target } => write!(f, "br {}", target)?,
@@ -242,16 +235,9 @@ impl fmt::Display for Expr {
             // i32.load offset=3 align=4 (s0)
             Load {
                 op,
-                memarg,
                 addr
             } => {
-                write!(f, "{}", op)?;
-                if !memarg.is_default(*op) {
-                    f.write_str(" ")?;
-                    memarg.fmt(f, *op)?;
-                    f.write_str(" ")?;
-                }
-                write!(f, "({})", addr)
+                write!(f, "{}({})", op, addr)
             },
 
             MemorySize => write!(f, "memory.size"),
