@@ -234,44 +234,47 @@ pub fn collect_target_constraints(
     // Collect one set of constraints (conjuncts) per call/call_indirect.
     let mut targets = FxHashSet::default();
     use wimpl::Expr::*;
-    body.visit_expr_pre_order(|expr| match expr {
-        Call { func, args: _} => {
-            targets.insert(Target::Direct(func.clone()));
-        }
-        CallIndirect { type_, table_idx, args: _ } => {
-            let mut constraints = Vec::default();
-            if options.with_type_constraint {
-                constraints.push(Constraint::Type(*type_));
+    body.visit_expr_pre_order(|expr| {
+        match expr {
+            Call { func, args: _} => {
+                targets.insert(Target::Direct(func.clone()));
             }
-            if options.with_in_table_constraint {
-                constraints.push(Constraint::InTable);
-            }
-            if options.with_index_constraint {
-                let expr = match table_idx.as_ref() {
-                    // The table_idx expression refers to a variable, try to resolve that...
-                    VarRef(var) => match var_expr.get(*var) {
-                        VarExprMapResult::Precise(expr) => Some(expr),
-                        VarExprMapResult::Top => None,
-                        // TODO handle parameter variables with inter-procedural analysis, 
-                        // but for now we don't produce a constraint for those.
-                        VarExprMapResult::Uninitialized(Var::Param(_)) => None,
-                        // TODO handle uninitialized globals with some global read/write analysis.
-                        VarExprMapResult::Uninitialized(Var::Global(_)) => None,
-                        VarExprMapResult::Uninitialized(uninitialized) => unreachable!("non-parameter variables should always be initialized, but: {} was not", uninitialized)
-                    }
-                    expr => Some(expr)
-                };
-
-                let expr_abstracted = expr.map(abstract_expr).unwrap_or_else(|| "<unresolved var>".into());
-                *UNIQUE_CONSTRAINT_EXPRS.lock().expect("lock poisoning doesnt happen").entry(expr_abstracted).or_default() += 1;
-
-                if let Some(expr) = expr {
-                    constraints.push(Constraint::TableIndexExpr(expr.clone()));
+            CallIndirect { type_, table_idx, args: _ } => {
+                let mut constraints = Vec::default();
+                if options.with_type_constraint {
+                    constraints.push(Constraint::Type(*type_));
                 }
+                if options.with_in_table_constraint {
+                    constraints.push(Constraint::InTable);
+                }
+                if options.with_index_constraint {
+                    let expr = match table_idx.as_ref() {
+                        // The table_idx expression refers to a variable, try to resolve that...
+                        VarRef(var) => match var_expr.get(*var) {
+                            VarExprMapResult::Precise(expr) => Some(expr),
+                            VarExprMapResult::Top => None,
+                            // TODO handle parameter variables with inter-procedural analysis, 
+                            // but for now we don't produce a constraint for those.
+                            VarExprMapResult::Uninitialized(Var::Param(_)) => None,
+                            // TODO handle uninitialized globals with some global read/write analysis.
+                            VarExprMapResult::Uninitialized(Var::Global(_)) => None,
+                            VarExprMapResult::Uninitialized(uninitialized) => unreachable!("non-parameter variables should always be initialized, but: {} was not", uninitialized)
+                        }
+                        expr => Some(expr)
+                    };
+
+                    let expr_abstracted = expr.map(abstract_expr).unwrap_or_else(|| "<unresolved var>".into());
+                    *UNIQUE_CONSTRAINT_EXPRS.lock().expect("lock poisoning doesnt happen").entry(expr_abstracted).or_default() += 1;
+
+                    if let Some(expr) = expr {
+                        constraints.push(Constraint::TableIndexExpr(expr.clone()));
+                    }
+                }
+                targets.insert(Target::Constrained(constraints));
             }
-            targets.insert(Target::Constrained(constraints));
+            _ => {}
         }
-        _ => {}
+        true
     });
     targets
 }

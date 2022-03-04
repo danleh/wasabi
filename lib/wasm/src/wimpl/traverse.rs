@@ -4,19 +4,19 @@ use super::{Body, Stmt, Expr};
 
 impl Body {
     // A "facade", such that one doesn't have to borrow the closure arguments manually.
-    pub fn visit_pre_order<'a>(&'a self, mut f_stmt: impl FnMut(&'a Stmt), mut f_expr: impl FnMut(&'a Expr)) {
+    pub fn visit_pre_order<'a>(&'a self, mut f_stmt: impl FnMut(&'a Stmt) -> bool, mut f_expr: impl FnMut(&'a Expr) -> bool) {
         self.visit_pre_order_(&mut f_stmt, &mut f_expr)
     }
 
-    pub fn visit_stmt_pre_order<'a>(&'a self, mut f_stmt: impl FnMut(&'a Stmt)) {
-        self.visit_pre_order_(&mut f_stmt, &mut |_| ())
+    pub fn visit_stmt_pre_order<'a>(&'a self, mut f_stmt: impl FnMut(&'a Stmt) -> bool) {
+        self.visit_pre_order_(&mut f_stmt, &mut |_| true)
     }
 
-    pub fn visit_expr_pre_order<'a>(&'a self, mut f_expr: impl FnMut(&'a Expr)) {
-        self.visit_pre_order_(&mut |_| (), &mut f_expr)
+    pub fn visit_expr_pre_order<'a>(&'a self, mut f_expr: impl FnMut(&'a Expr) -> bool) {
+        self.visit_pre_order_(&mut |_| true, &mut f_expr)
     }
 
-    fn visit_pre_order_<'a>(&'a self, f_stmt: &mut dyn FnMut(&'a Stmt), f_expr: &mut dyn FnMut(&'a Expr)) {
+    fn visit_pre_order_<'a>(&'a self, f_stmt: &mut dyn FnMut(&'a Stmt) -> bool, f_expr: &mut dyn FnMut(&'a Expr) -> bool) {
         for stmt in &self.0 {
             stmt.visit_pre_order_(f_stmt, f_expr)
         }
@@ -24,21 +24,24 @@ impl Body {
 }
 
 impl Stmt {
-    pub fn visit_pre_order<'a>(&'a self, mut f_stmt: impl FnMut(&'a Stmt), mut f_expr: impl FnMut(&'a Expr)) {
+    pub fn visit_pre_order<'a>(&'a self, mut f_stmt: impl FnMut(&'a Stmt) -> bool, mut f_expr: impl FnMut(&'a Expr) -> bool) {
         self.visit_pre_order_(&mut f_stmt, &mut f_expr)
     }
 
-    pub fn visit_stmt_pre_order<'a>(&'a self, mut f_stmt: impl FnMut(&'a Stmt)) {
-        self.visit_pre_order_(&mut f_stmt, &mut |_| ())
+    pub fn visit_stmt_pre_order<'a>(&'a self, mut f_stmt: impl FnMut(&'a Stmt) -> bool) {
+        self.visit_pre_order_(&mut f_stmt, &mut |_| true)
     }
 
-    pub fn visit_expr_pre_order<'a>(&'a self, mut f_expr: impl FnMut(&'a Expr)) {
-        self.visit_pre_order_(&mut |_| (), &mut f_expr)
+    pub fn visit_expr_pre_order<'a>(&'a self, mut f_expr: impl FnMut(&'a Expr) -> bool) {
+        self.visit_pre_order_(&mut |_| true, &mut f_expr)
     }
 
-    fn visit_pre_order_<'a>(&'a self, f_stmt: &mut dyn FnMut(&'a Stmt), f_expr: &mut dyn FnMut(&'a Expr)) {
+    fn visit_pre_order_<'a>(&'a self, f_stmt: &mut dyn FnMut(&'a Stmt) -> bool, f_expr: &mut dyn FnMut(&'a Expr) -> bool) {
         // Pre-order traversal: always visit the current statement first.
-        f_stmt(self);
+        if !f_stmt(self) {
+            // Abort traversal if visitor returns false.
+            return;
+        }
 
         // Then traverse into the expressions and recursive statements.
         use Stmt::*;
@@ -83,13 +86,15 @@ impl Stmt {
 }
 
 impl Expr {
-    pub fn visit_pre_order<'a>(&'a self, mut f: impl FnMut(&'a Expr)) {
+    pub fn visit_pre_order<'a>(&'a self, mut f: impl FnMut(&'a Expr) -> bool) {
         self.visit_pre_order_(&mut f)
     }
 
     // Because expressions don't contain statements, this only needs a visitor function for `Expr`s.
-    fn visit_pre_order_<'a>(&'a self, f: &mut dyn FnMut(&'a Expr)) {
-        f(self);
+    fn visit_pre_order_<'a>(&'a self, f: &mut dyn FnMut(&'a Expr) -> bool) {
+        if !f(self) {
+            return;
+        }
 
         use Expr::*;
         match self {
@@ -133,8 +138,14 @@ fn example_how_to_share_state_across_visitors() {
     let output = std::cell::RefCell::new(String::new());
     for func in &module.functions {
         func.body.visit_pre_order(
-            |x| writeln!(output.borrow_mut(), "stmt: {x}\n").unwrap(), 
-            |x| writeln!(output.borrow_mut(), "expr: {x}\n").unwrap()
+            |x| {
+                writeln!(output.borrow_mut(), "stmt: {x}\n").unwrap();
+                true
+            }, 
+            |x| {
+                writeln!(output.borrow_mut(), "expr: {x}\n").unwrap();
+                true
+            }
         );
     }
     println!("{}", output.into_inner())
@@ -150,10 +161,12 @@ fn example_collect_constants() {
     // `RefCell`.
     let mut all_constants = std::collections::BTreeSet::new();
     for func in &module.functions {
-        func.body.visit_pre_order(
-            |_| (), 
-            |expr| if let Expr::Const(val) = expr {
-                all_constants.insert(*val);
+        func.body.visit_expr_pre_order(
+            |expr| {
+                if let Expr::Const(val) = expr {
+                    all_constants.insert(*val);
+                }
+                true
             }
         );
     }

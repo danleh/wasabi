@@ -5,7 +5,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{wimpl::{Body, Expr, Module, Stmt, Var}, highlevel::{StoreOp, LoadOp}};
 
-use super::FunctionId;
+use super::{FunctionId, Function};
 
 // TODO Analysis for identification of heap allocation function ("malloc")
 // Often required for "allocation site abstraction" in pointer analysis
@@ -43,6 +43,7 @@ impl<'module> VarExprMap<'module> {
             if let Stmt::Assign { lhs, type_: _, rhs } = stmt {
                 map.add(*lhs, rhs)
             }
+            true
         });
 
         map
@@ -80,6 +81,48 @@ impl<'module> fmt::Display for VarExprMap<'module> {
             }
         }
         write!(f, "}}")
+    }
+}
+
+pub fn param_exprs(function: &Function) {
+    // enum Type {
+    //     Pointer,
+    //     NoPointer
+    // }
+    // fn infer_type(expr: &Expr) -> Type {
+    //     use Expr::*;
+    //     match expr {
+    //         VarRef(_) => todo!(),
+    //         Const(_) => todo!(),
+    //         Load { op, addr } => todo!(),
+    //         MemorySize => todo!(),
+    //         MemoryGrow { pages } => todo!(),
+    //         Numeric { op, args } => todo!(),
+    //         Call { func, args } => todo!(),
+    //         CallIndirect { type_, table_idx, args } => todo!(),
+    //     }
+    // }
+    println!("{}", function.name);
+    for (var, _ty) in function.params() {
+        let mut param_usages = FxHashSet::default();
+        function.body.visit_expr_pre_order(|expr| {
+            let mut is_in_expr = false;
+            expr.visit_pre_order(|subexpr| {
+                if subexpr == &Expr::VarRef(var) {
+                    is_in_expr = true;
+                    return false;
+                }
+                true
+            });
+            if is_in_expr {
+                param_usages.insert(expr);
+            }
+            false
+        });
+        println!("  {var} usages:");
+        for expr in param_usages {
+            println!("    {expr}");
+        }
     }
 }
 
@@ -127,6 +170,7 @@ pub fn collect_call_indirect_idx_expr(module: &Module) -> FxHashMap<String, usiz
                 let table_idx = abstract_expr(table_idx);
                 *result.entry(table_idx).or_default() += 1;
             }
+            true
         });
     }
     result
@@ -149,11 +193,13 @@ pub fn collect_i32_load_store_arg_expr(module: &Module) -> (
                 *addrs.borrow_mut().entry(abstract_expr(addr)).or_default() += 1;
                 *values.entry(abstract_expr(value)).or_default() += 1;
             }
+            true
         },
         |expr| {
             if let Load { op: LoadOp::I32Load, addr } = expr {
                 *addrs.borrow_mut().entry(abstract_expr(addr)).or_default() += 1;
             }
+            true
         });
     }
     (addrs.into_inner(), values)
@@ -165,10 +211,13 @@ pub fn collect_memory_functions(module: &Module) -> Vec<(FunctionId, bool, bool)
         let mut has_memory_size = false;
         let mut has_memory_grow = false;
         use crate::wimpl::Expr::*;
-        func.body.visit_expr_pre_order(|expr| match expr {
-            MemorySize => has_memory_size = true,
-            MemoryGrow { pages: _ } => has_memory_grow = true,
-            _ => {}
+        func.body.visit_expr_pre_order(|expr| {
+            match expr {
+                MemorySize => has_memory_size = true,
+                MemoryGrow { pages: _ } => has_memory_grow = true,
+                _ => {}
+            }
+            true
         });
         if has_memory_size || has_memory_grow {
             result.push((func.name(), has_memory_size, has_memory_grow));
@@ -182,11 +231,12 @@ pub fn collect_function_direct_call_count(module: &Module) -> FxHashMap<Function
     let mut result: FxHashMap<FunctionId, usize> = FxHashMap::default();
     for func in &module.functions {
         use crate::wimpl::Expr::*;
-        func.body.visit_expr_pre_order(|expr| 
+        func.body.visit_expr_pre_order(|expr| {
             if let Call { func, args: _ } = expr { 
                 *result.entry(func.clone()).or_default() += 1 
             }
-        );
+            true
+        });
     }
     result
 }
