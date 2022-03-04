@@ -1,9 +1,11 @@
 use std::{cmp::Reverse, fmt::{self, Display}, iter::FromIterator, cell::RefCell, collections::HashMap, ops::{Add, BitAnd, BitOr, RangeInclusive}};
 
 use regex::Regex;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{wimpl::{Body, Expr, Module, Stmt, Var}, highlevel::{StoreOp, LoadOp}};
+
+use super::FunctionId;
 
 // TODO Analysis for identification of heap allocation function ("malloc")
 // Often required for "allocation site abstraction" in pointer analysis
@@ -149,6 +151,38 @@ pub fn collect_i32_load_store_arg_expr(module: &Module) -> (
     (addrs.into_inner(), values)
 }
 
+pub fn collect_memory_functions(module: &Module) -> Vec<(FunctionId, bool, bool)> {
+    let mut result = Vec::new();
+    for func in &module.functions {
+        let mut has_memory_size = false;
+        let mut has_memory_grow = false;
+        use crate::wimpl::Expr::*;
+        func.body.visit_expr_pre_order(|expr| match expr {
+            MemorySize => has_memory_size = true,
+            MemoryGrow { pages: _ } => has_memory_grow = true,
+            _ => {}
+        });
+        if has_memory_size || has_memory_grow {
+            result.push((func.name(), has_memory_size, has_memory_grow));
+        }
+    }
+    result.sort();
+    result
+}
+
+pub fn collect_function_direct_call_count(module: &Module) -> FxHashMap<FunctionId, usize> {
+    let mut result: FxHashMap<FunctionId, usize> = FxHashMap::default();
+    for func in &module.functions {
+        use crate::wimpl::Expr::*;
+        func.body.visit_expr_pre_order(|expr| 
+            if let Call { func, args: _ } = expr { 
+                *result.entry(func.clone()).or_default() += 1 
+            }
+        );
+    }
+    result
+}
+
 /// Utility function for sorting a "count map" by count in descending order.
 pub fn sort_map_count<T: Ord + Clone, Hasher>(map: &HashMap<T, usize, Hasher>) -> Vec<(T, usize)> {
     let mut vec = Vec::from_iter(map.iter().map(|(t, count)| (t.clone(), *count)));
@@ -165,6 +199,7 @@ pub fn print_map_count<T: Ord + Clone + Display, Hasher>(map: &HashMap<T, usize,
     }
 }
 
+/// An over-approximation of a WebAssembly i32 value as an interval.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct I32Range {
     min: u32,
