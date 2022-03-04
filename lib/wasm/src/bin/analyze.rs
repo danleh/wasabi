@@ -3,7 +3,7 @@ use std::{iter::FromIterator, cmp::Reverse};
 use lazy_static::lazy_static;
 use regex::Regex;
 use rustc_hash::{FxHashSet, FxHashMap};
-use wasm::{wimpl::{FunctionId, Module, Expr, analyze::{collect_call_indirect_idx_expr, print_map_count, collect_i32_load_store_arg_expr}}, callgraph::{self, Options}};
+use wasm::{wimpl::{FunctionId, Module, Expr, analyze::{collect_call_indirect_idx_expr, print_map_count, collect_i32_load_store_arg_expr, collect_memory_functions, collect_function_direct_call_count}}, callgraph::{self, Options}};
 
 // Profile with cargo flamegraph --bin callgraph -- tests/wasm/WasmBench-nonCpp/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13/a132c19bdeee909290fe971ba01b3c2d7f475eae25509766abd425a01bf1cc13.wasm
 // Before, allow perf to capture traces:
@@ -23,6 +23,14 @@ fn main() {
     print_map_count(&addr_exprs);
     println!("most frequent i32 store value expressions:");
     print_map_count(&value_exprs);
+
+    println!("functions with memory.* instructions:");
+    for (func, has_memory_size, has_memory_grow) in collect_memory_functions(&wimpl) {
+        println!("  {}: memory.size: {:?}, memory.grow: {:?}", func, has_memory_size, has_memory_grow);
+    }
+
+    println!("functions with the highest direct call in-degree:");
+    print_map_count(&collect_function_direct_call_count(&wimpl));
 
     let options = Options {
         with_type_constraint: true,
