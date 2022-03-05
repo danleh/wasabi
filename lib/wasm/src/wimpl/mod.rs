@@ -45,12 +45,12 @@ impl Module {
 
     // FIXME perf: This linear search can easily give us accidentially quadratic behavior!
     // TODO Memoize lookup with HashMap in lazy_static or non-pub field on Module.
-    // pub fn function(&self, name: Func) -> Option<&Function> {
-    //     let mut functions = self.functions.iter().filter(|f| f.name == name);
-    //     let function = functions.next();
-    //     assert!(functions.next().is_none(), "more than one matching function for name {}", name);
-    //     function
-    // }
+    pub fn function(&self, name: FunctionId) -> Option<&Function> {
+        let mut functions = self.functions.iter().filter(|f| f.name == name);
+        let function = functions.next();
+        assert!(functions.next().is_none(), "non-unique function name {}", name);
+        function
+    }
 
     pub fn function_by_idx(&self, idx: Idx<highlevel::Function>) -> &Function {
         &self.functions[idx.to_usize()]

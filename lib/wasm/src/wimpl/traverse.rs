@@ -1,5 +1,7 @@
 //! Functions for iterating over Wimpl statements and expressions.
 
+use std::ops::Add;
+
 use super::{Body, Stmt, Expr};
 
 impl Body {
@@ -127,7 +129,49 @@ impl Expr {
             },
         }
     }
+
+    // // TODO to take a generic transformer closure and return type T
+    // fn convert<'a, T: From<&'a Expr> + Merge>(&self) -> T {
+    //     if !f(self) {
+    //         return;
+    //     }
+
+    //     use Expr::*;
+    //     match self {
+    //         VarRef(_) => {},
+    //         Const(_) => {},
+    //         Load { op: _, addr } => {
+    //             addr.visit_pre_order_(f);
+    //         },
+    //         MemorySize => {},
+    //         MemoryGrow { pages } => {
+    //             pages.visit_pre_order_(f);
+    //         },
+    //         Unary(_, arg) => {
+    //             arg.visit_pre_order_(f);
+    //         },
+    //         Binary(_, left, right) => {
+    //             left.visit_pre_order_(f);
+    //             right.visit_pre_order_(f);
+    //         },
+    //         Call { func: _, args } => {
+    //             for arg in args {
+    //                 arg.visit_pre_order_(f);
+    //             }
+    //         },
+    //         CallIndirect { type_: _, table_idx, args } => {
+    //             table_idx.visit_pre_order_(f);
+    //             for arg in args {
+    //                 arg.visit_pre_order_(f);
+    //             }
+    //         },
+    //     }
+    // }
 }
+
+// trait Merge {
+//     fn merge(self, other: Self) -> Self;
+// }
 
 #[test]
 fn example_how_to_share_state_across_visitors() {
