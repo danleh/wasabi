@@ -9,6 +9,9 @@
 # Callgraph evaluation table.
 /data.csv
 
+# Wimpl test outputs
+/out.wimpl
+
 # Data from profiling / performance analysis.
 /flamegraph*.svg
 /perf.data*
