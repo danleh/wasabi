@@ -10,7 +10,7 @@ p0: f64 = f64.const .1
 // x: i32 = i32.const 7
 
 // Instructions take runtime arguments in parentheses.
-s1: i32 = i32.ne(s0)
+s1: i32 = i32.eqz(s0)
 s2: i32 = i32.add (s0, s1)
 
 // Calls always need the argument parentheses.
@@ -18,7 +18,7 @@ call f1 ()
 
 // Instruction "immediates", i.e., arguments that are statically encoded
 // into the instruction come before the argument.
-s3: i32 = i32.load offset=3 (s0)
+call_indirect [i32]->[  i64,i64  ] (s1) ()
 call_indirect [ ] ->[] (s1) ()
 
 // Blocks are explicitly labeled.

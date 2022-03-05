@@ -580,7 +580,7 @@ fn parse_pretty_print_roundtrips() {
 #[test]
 fn parse_wimpl_text_file() {
     let instrs = Stmt::from_text_file("tests/wimpl/syntax.wimpl");
-    assert!(instrs.is_ok());
+    assert!(instrs.is_ok(), "{:?}", instrs);
 }
 
 #[test]
@@ -590,7 +590,7 @@ fn macros_should_compile_and_not_fail_at_runtime() {
     let _ = wimpl!(call_indirect [ ] ->[] (s1) ());
 
     // Tricky cases, because rustc lexes these tokens differently than we need to.
-    let _ = wimpl!(s3: i32 = i32.load offset=3 (s0));
+    let _ = wimpl!(s3: i32 = i32.load (s0));
     let _ = wimpl!(@label0: block {});
 
     // Multiple instructions:

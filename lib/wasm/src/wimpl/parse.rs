@@ -25,6 +25,8 @@ pub struct ParseError {
 
     /// Erroneous input line text.
     input_line: String,
+
+    nom_error_kind: Option<nom::error::ErrorKind>,
 }
 
 impl std::error::Error for ParseError {}
@@ -47,6 +49,7 @@ impl ParseError {
                     line,
                     column,
                     input_line,
+                    nom_error_kind: Some(error.code)
                 };
             }
         }
