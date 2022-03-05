@@ -243,12 +243,9 @@ impl fmt::Display for Expr {
             MemorySize => write!(f, "memory.size"),
             MemoryGrow { pages } => write!(f, "memory.grow({})", pages),
 
-            // i32.add(s0, s1)
             // f32.neg(s0)
-            Numeric { op, args } => {
-                write!(f, "{}", op)?;
-                display_delim(f, args, "(", ")", ", ")
-            },
+            Unary(op, arg) => write!(f, "{}({})", op, arg),
+            Binary(op, left, right) => write!(f, "{}({}, {})", op, left, right),
 
             // call f1 (s1, s2)
             Call {

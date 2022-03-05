@@ -310,7 +310,6 @@ pub fn solve_constraints<'a>(
                     .unwrap_or_else(|| Box::new(module.functions.iter()) as Box<dyn Iterator<Item=&Function>>);
             for constraint in constraints {
                 use wimpl::Expr::*;
-                use crate::highlevel::NumericOp::*;
                 // Build up filtering iterator at runtime, adding all constraints from before.
                 filtered_iter = match constraint {
                     Constraint::Type(ty) => Box::new(filtered_iter.filter(move |f| &f.type_ == ty)),
@@ -331,7 +330,15 @@ pub fn solve_constraints<'a>(
                         let idx = *idx as u32;
                         Some(&f.name) == funcs_by_table_idx.get(&idx)
                     })),
-                    Constraint::TableIndexExpr(expr @ Numeric { op, args: _ }) if op.to_type().results()[0] == ValType::I32 => {
+                    Constraint::TableIndexExpr(expr) => {
+                        let is_i32_expr = match expr {
+                            Unary(op, _) => op.to_type().results()[0] == ValType::I32, 
+                            Binary(op, _, _) => op.to_type().results()[0] == ValType::I32,
+                            _ => false,
+                        };
+                        if !is_i32_expr {
+                            continue;
+                        }
                         let idx_range = approx_i32_eval(expr);
                         
                         // DEBUG
@@ -351,7 +358,6 @@ pub fn solve_constraints<'a>(
                         }
                     },
                     // TODO Load expressions -> needs pointer analysis
-                    _ => continue,
                 }
             }
             Box::new(filtered_iter.map(|f| f.name()))

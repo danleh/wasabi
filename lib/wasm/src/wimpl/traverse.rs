@@ -107,10 +107,12 @@ impl Expr {
             MemoryGrow { pages } => {
                 pages.visit_pre_order_(f);
             },
-            Numeric { op: _, args } => {
-                for arg in args {
-                    arg.visit_pre_order_(f);
-                }
+            Unary(_, arg) => {
+                arg.visit_pre_order_(f);
+            },
+            Binary(_, left, right) => {
+                left.visit_pre_order_(f);
+                right.visit_pre_order_(f);
             },
             Call { func: _, args } => {
                 for arg in args {

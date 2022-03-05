@@ -249,9 +249,22 @@ fn expr(input: &str) -> NomResult<Expr> {
         |(_, (), pages)| MemoryGrow { pages: Box::new(pages) },
     );
 
-    let numeric = map(
-        tuple((op::<NumericOp>, ws, arg_list)),
-        |(op, (), args)| Numeric { op, args },
+    let unary = map_res(
+        tuple((op::<UnaryOp>, ws, arg_list)),
+        |(op, (), mut args)| -> Result<_, _> {
+            if args.len() != 1 { return Err("wrong number of arguments for unary operator") }
+            let arg = args.pop().unwrap();
+            Ok(Unary(op, Box::new(arg)))
+        },
+    );
+    let binary = map_res(
+        tuple((op::<BinaryOp>, ws, arg_list)),
+        |(op, (), mut args)| -> Result<_, _> {
+            if args.len() != 2 { return Err("wrong number of arguments for binary operator") }
+            let right = args.pop().unwrap();
+            let left = args.pop().unwrap();
+            Ok(Binary(op, Box::new(left), Box::new(right)))
+        },
     );
 
     let call = map(
@@ -277,7 +290,17 @@ fn expr(input: &str) -> NomResult<Expr> {
             CallIndirect { type_, table_idx: Box::new(table_idx), args }
     );
 
-    alt((var_ref, const_, load, memory_size, memory_grow, numeric, call, call_indirect))(input)
+    alt((
+        var_ref, 
+        const_, 
+        load, 
+        memory_size, 
+        memory_grow, 
+        unary, 
+        binary, 
+        call, 
+        call_indirect
+    ))(input)
 }
 
 /// Parse multiple statements, with possibly preceding and trailing whitespace.

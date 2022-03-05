@@ -5,8 +5,9 @@ use lazy_static::lazy_static;
 use walkdir::WalkDir;
 
 use crate::highlevel::LoadOp::*;
-use crate::highlevel::NumericOp::*;
 use crate::highlevel::StoreOp::*;
+use crate::highlevel::UnaryOp::*;
+use crate::highlevel::BinaryOp::*;
 use crate::highlevel::FunctionType;
 use crate::Memarg;
 use crate::Val::*;
@@ -235,10 +236,7 @@ lazy_static! {
         (
             Assign {
                 lhs: Stack(1),
-                rhs: Numeric {
-                    op: I32Add,
-                    args: vec![Const(Val::I32(7)), VarRef(Stack(3))],
-                },
+                rhs: Binary(I32Add, Box::new(Const(Val::I32(7))), Box::new(VarRef(Stack(3)))),
                 type_: ValType::I32,
             },
             "s1: i32 = i32.add(i32.const 7, s3)",
@@ -414,10 +412,7 @@ lazy_static! {
         (
             Assign{
                 lhs: Stack(1),
-                rhs: Numeric {
-                    op: I32Add,
-                    args: vec![VarRef(Stack(2)), VarRef(Stack(3))],
-                },
+                rhs: Binary(I32Add, Box::new(VarRef(Stack(2))), Box::new(VarRef(Stack(3)))),
                 type_: ValType::I32,
             },
             "s1: i32 = i32.add (s2,s3)",
@@ -527,10 +522,7 @@ fn parse_expr() {
     assert_eq!(Ok(MemorySize), "memory.size".parse());
     assert_eq!(Ok(MemoryGrow { pages: Box::new(VarRef(Local(0))) }), "memory.grow (l0)".parse());
     assert_eq!(Ok(VarRef(Global(1))), "g1".parse());
-    assert_eq!(Ok(Numeric {
-        op: I32Add,
-        args: vec![VarRef(Stack(0)), VarRef(Local(1))]
-    }), "i32.add(s0, l1)".parse());
+    assert_eq!(Ok(Binary(I32Add, Box::new(VarRef(Stack(0))), Box::new(VarRef(Local(1))))), "i32.add(s0, l1)".parse());
     // More complex expressions are tested in the statements.
 }
 

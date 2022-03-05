@@ -983,7 +983,7 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
 
 #[cfg(test)]
 mod tests {
-    use crate::{highlevel::{Function, Module, Code, Instr, Instr::*, NumericOp::*, LocalOp, FunctionType, self}, ValType, Val, ValType::*, BlockType};
+    use crate::{highlevel::{Function, Module, Code, Instr, Instr::*, UnaryOp::*, BinaryOp::*, LocalOp, FunctionType, self}, ValType, Val, ValType::*, BlockType};
 
     use super::TypeChecker;
 
@@ -1036,7 +1036,7 @@ mod tests {
         let mut type_checker = init_function_module_type_checker();
         assert_reachable_type(&mut type_checker, Const(Val::I32(0)), &[], &[I32]);
         assert_reachable_type(&mut type_checker, Const(Val::I32(0)), &[], &[I32]);
-        assert_reachable_type(&mut type_checker, Numeric(I32Add), &[I32, I32], &[I32]);
+        assert_reachable_type(&mut type_checker, Binary(I32Add), &[I32, I32], &[I32]);
     }
 
     #[test]
@@ -1064,8 +1064,8 @@ mod tests {
         let mut type_checker = init_function_module_type_checker();
         assert_reachable_type(&mut type_checker, Unreachable, &[], &[]);
         assert_unreachable_type(&mut type_checker, Const(Val::I64(1)));
-        assert_unreachable_type(&mut type_checker, Numeric(I64Eqz));
-        assert!(type_checker.check_next_instr(&Numeric(F32Abs)).is_err());
+        assert_unreachable_type(&mut type_checker, Unary(I64Eqz));
+        assert!(type_checker.check_next_instr(&Unary(F32Abs)).is_err());
     }
 
     #[test]
@@ -1087,7 +1087,7 @@ mod tests {
         let mut type_checker = init_function_module_type_checker();
         assert_reachable_type(&mut type_checker, Const(Val::F64(0.0.into())), &[], &[F64]);
         assert_reachable_type(&mut type_checker, Return, &[F64], &[]);
-        assert_unreachable_type(&mut type_checker, Numeric(I32Add));
+        assert_unreachable_type(&mut type_checker, Binary(I32Add));
     }
 
     #[test]
@@ -1139,7 +1139,7 @@ mod tests {
             table: vec![1.into(), 0.into(), 0.into(), 1.into()], 
             default: 0.into()
         }, &[I32, I64], &[]);
-        assert_unreachable_type(&mut type_checker, Numeric(I64Add));
+        assert_unreachable_type(&mut type_checker, Binary(I64Add));
         assert_unreachable_type(&mut type_checker, End);
         assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
         assert_reachable_type(&mut type_checker, End, &[], &[I64]);

@@ -240,9 +240,8 @@ pub enum Instr {
     MemoryGrow(Idx<Memory>),
 
     Const(Val),
-    // TODO Discern between UnaryOp and BinaryOp.
-    // This would make arity a static information.
-    Numeric(NumericOp),
+    Unary(UnaryOp),
+    Binary(BinaryOp),
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -492,10 +491,8 @@ impl FromStr for StoreOp {
     }
 }
 
-// TODO Split this and Instr::Numeric in unary and binary for pattern matching on Numeric args...
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum NumericOp {
-    /* Unary */
+pub enum UnaryOp {
     I32Eqz,
     I64Eqz,
 
@@ -552,8 +549,10 @@ pub enum NumericOp {
     I64ReinterpretF64,
     F32ReinterpretI32,
     F64ReinterpretI64,
+}
 
-    /* Binary */
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum BinaryOp {
     I32Eq,
     I32Ne,
     I32LtS,
@@ -639,15 +638,21 @@ pub enum NumericOp {
     F64Copysign,
 }
 
-impl fmt::Display for NumericOp {
+impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_name())
     }
 }
 
-impl NumericOp {
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_name())
+    }
+}
+
+impl UnaryOp {
     pub fn to_name(&self) -> &'static str {
-        use NumericOp::*;
+        use UnaryOp::*;
         match self {
             I32Eqz => "i32.eqz",
             I64Eqz => "i64.eqz",
@@ -696,6 +701,105 @@ impl NumericOp {
             I64ReinterpretF64 => "i64.reinterpret_f64",
             F32ReinterpretI32 => "f32.reinterpret_i32",
             F64ReinterpretI64 => "f64.reinterpret_i64",
+        }
+    }
+
+    pub fn to_type(self) -> FunctionType {
+        use UnaryOp::*;
+        use ValType::*;
+        match self {
+            I32Eqz => FunctionType::new(&[I32], &[I32]),
+            I64Eqz => FunctionType::new(&[I64], &[I32]),
+
+            I32Clz | I32Ctz | I32Popcnt => FunctionType::new(&[I32], &[I32]),
+            I64Clz | I64Ctz | I64Popcnt => FunctionType::new(&[I64], &[I64]),
+
+            F32Abs | F32Neg | F32Ceil | F32Floor | F32Trunc | F32Nearest | F32Sqrt => FunctionType::new(&[F32], &[F32]),
+            F64Abs | F64Neg | F64Ceil | F64Floor | F64Trunc | F64Nearest | F64Sqrt => FunctionType::new(&[F64], &[F64]),
+
+            // conversions
+            I32WrapI64 => FunctionType::new(&[I64], &[I32]),
+            I32TruncF32S | I32TruncF32U => FunctionType::new(&[F32], &[I32]),
+            I32TruncF64S | I32TruncF64U => FunctionType::new(&[F64], &[I32]),
+            I64ExtendI32S | I64ExtendI32U => FunctionType::new(&[I32], &[I64]),
+            I64TruncF32S | I64TruncF32U => FunctionType::new(&[F32], &[I64]),
+            I64TruncF64S | I64TruncF64U => FunctionType::new(&[F64], &[I64]),
+            F32ConvertI32S | F32ConvertI32U => FunctionType::new(&[I32], &[F32]),
+            F32ConvertI64S | F32ConvertI64U => FunctionType::new(&[I64], &[F32]),
+            F32DemoteF64 => FunctionType::new(&[F64], &[F32]),
+            F64ConvertI32S | F64ConvertI32U => FunctionType::new(&[I32], &[F64]),
+            F64ConvertI64S | F64ConvertI64U => FunctionType::new(&[I64], &[F64]),
+            F64PromoteF32 => FunctionType::new(&[F32], &[F64]),
+            I32ReinterpretF32 => FunctionType::new(&[F32], &[I32]),
+            I64ReinterpretF64 => FunctionType::new(&[F64], &[I64]),
+            F32ReinterpretI32 => FunctionType::new(&[I32], &[F32]),
+            F64ReinterpretI64 => FunctionType::new(&[I64], &[F64]),
+        }
+    }
+}
+
+impl FromStr for UnaryOp {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use UnaryOp::*;
+        Ok(match s {
+            "i32.eqz" => I32Eqz,
+            "i64.eqz" => I64Eqz,
+            "i32.clz" => I32Clz,
+            "i32.ctz" => I32Ctz,
+            "i32.popcnt" => I32Popcnt,
+            "i64.clz" => I64Clz,
+            "i64.ctz" => I64Ctz,
+            "i64.popcnt" => I64Popcnt,
+            "f32.abs" => F32Abs,
+            "f32.neg" => F32Neg,
+            "f32.ceil" => F32Ceil,
+            "f32.floor" => F32Floor,
+            "f32.trunc" => F32Trunc,
+            "f32.nearest" => F32Nearest,
+            "f32.sqrt" => F32Sqrt,
+            "f64.abs" => F64Abs,
+            "f64.neg" => F64Neg,
+            "f64.ceil" => F64Ceil,
+            "f64.floor" => F64Floor,
+            "f64.trunc" => F64Trunc,
+            "f64.nearest" => F64Nearest,
+            "f64.sqrt" => F64Sqrt,
+            "i32.wrap_i64" => I32WrapI64,
+            "i32.trunc_f32_s" => I32TruncF32S,
+            "i32.trunc_f32_u" => I32TruncF32U,
+            "i32.trunc_f64_s" => I32TruncF64S,
+            "i32.trunc_f64_u" => I32TruncF64U,
+            "i64.extend_i32_s" => I64ExtendI32S,
+            "i64.extend_i32_u" => I64ExtendI32U,
+            "i64.trunc_f32_s" => I64TruncF32S,
+            "i64.trunc_f32_u" => I64TruncF32U,
+            "i64.trunc_f64_s" => I64TruncF64S,
+            "i64.trunc_f64_u" => I64TruncF64U,
+            "f32.convert_i32_s" => F32ConvertI32S,
+            "f32.convert_i32_u" => F32ConvertI32U,
+            "f32.convert_i64_s" => F32ConvertI64S,
+            "f32.convert_i64_u" => F32ConvertI64U,
+            "f32.demote_f64" => F32DemoteF64,
+            "f64.convert_i32_s" => F64ConvertI32S,
+            "f64.convert_i32_u" => F64ConvertI32U,
+            "f64.convert_i64_s" => F64ConvertI64S,
+            "f64.convert_i64_u" => F64ConvertI64U,
+            "f64.promote_f32" => F64PromoteF32,
+            "i32.reinterpret_f32" => I32ReinterpretF32,
+            "i64.reinterpret_f64" => I64ReinterpretF64,
+            "f32.reinterpret_i32" => F32ReinterpretI32,
+            "f64.reinterpret_i64" => F64ReinterpretI64,
+            _ => return Err(())
+        })
+    }
+}
+
+impl BinaryOp {
+    pub fn to_name(&self) -> &'static str {
+        use BinaryOp::*;
+        match self {
             I32Eq => "i32.eq",
             I32Ne => "i32.ne",
             I32LtS => "i32.lt_s",
@@ -776,40 +880,9 @@ impl NumericOp {
     }
 
     pub fn to_type(self) -> FunctionType {
-        use NumericOp::*;
+        use BinaryOp::*;
         use ValType::*;
         match self {
-            /* Unary */
-
-            I32Eqz => FunctionType::new(&[I32], &[I32]),
-            I64Eqz => FunctionType::new(&[I64], &[I32]),
-
-            I32Clz | I32Ctz | I32Popcnt => FunctionType::new(&[I32], &[I32]),
-            I64Clz | I64Ctz | I64Popcnt => FunctionType::new(&[I64], &[I64]),
-
-            F32Abs | F32Neg | F32Ceil | F32Floor | F32Trunc | F32Nearest | F32Sqrt => FunctionType::new(&[F32], &[F32]),
-            F64Abs | F64Neg | F64Ceil | F64Floor | F64Trunc | F64Nearest | F64Sqrt => FunctionType::new(&[F64], &[F64]),
-
-            // conversions
-            I32WrapI64 => FunctionType::new(&[I64], &[I32]),
-            I32TruncF32S | I32TruncF32U => FunctionType::new(&[F32], &[I32]),
-            I32TruncF64S | I32TruncF64U => FunctionType::new(&[F64], &[I32]),
-            I64ExtendI32S | I64ExtendI32U => FunctionType::new(&[I32], &[I64]),
-            I64TruncF32S | I64TruncF32U => FunctionType::new(&[F32], &[I64]),
-            I64TruncF64S | I64TruncF64U => FunctionType::new(&[F64], &[I64]),
-            F32ConvertI32S | F32ConvertI32U => FunctionType::new(&[I32], &[F32]),
-            F32ConvertI64S | F32ConvertI64U => FunctionType::new(&[I64], &[F32]),
-            F32DemoteF64 => FunctionType::new(&[F64], &[F32]),
-            F64ConvertI32S | F64ConvertI32U => FunctionType::new(&[I32], &[F64]),
-            F64ConvertI64S | F64ConvertI64U => FunctionType::new(&[I64], &[F64]),
-            F64PromoteF32 => FunctionType::new(&[F32], &[F64]),
-            I32ReinterpretF32 => FunctionType::new(&[F32], &[I32]),
-            I64ReinterpretF64 => FunctionType::new(&[F64], &[I64]),
-            F32ReinterpretI32 => FunctionType::new(&[I32], &[F32]),
-            F64ReinterpretI64 => FunctionType::new(&[I64], &[F64]),
-
-            /* Binary */
-
             I32Eq | I32Ne | I32LtS | I32LtU | I32GtS | I32GtU | I32LeS | I32LeU | I32GeS | I32GeU => FunctionType::new(&[I32, I32], &[I32]),
             I64Eq | I64Ne | I64LtS | I64LtU | I64GtS | I64GtU | I64LeS | I64LeU | I64GeS | I64GeU => FunctionType::new(&[I64, I64], &[I32]),
 
@@ -824,59 +897,12 @@ impl NumericOp {
     }
 }
 
-impl FromStr for NumericOp {
+impl FromStr for BinaryOp {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        use NumericOp::*;
+        use BinaryOp::*;
         Ok(match s {
-            "i32.eqz" => I32Eqz,
-            "i64.eqz" => I64Eqz,
-            "i32.clz" => I32Clz,
-            "i32.ctz" => I32Ctz,
-            "i32.popcnt" => I32Popcnt,
-            "i64.clz" => I64Clz,
-            "i64.ctz" => I64Ctz,
-            "i64.popcnt" => I64Popcnt,
-            "f32.abs" => F32Abs,
-            "f32.neg" => F32Neg,
-            "f32.ceil" => F32Ceil,
-            "f32.floor" => F32Floor,
-            "f32.trunc" => F32Trunc,
-            "f32.nearest" => F32Nearest,
-            "f32.sqrt" => F32Sqrt,
-            "f64.abs" => F64Abs,
-            "f64.neg" => F64Neg,
-            "f64.ceil" => F64Ceil,
-            "f64.floor" => F64Floor,
-            "f64.trunc" => F64Trunc,
-            "f64.nearest" => F64Nearest,
-            "f64.sqrt" => F64Sqrt,
-            "i32.wrap_i64" => I32WrapI64,
-            "i32.trunc_f32_s" => I32TruncF32S,
-            "i32.trunc_f32_u" => I32TruncF32U,
-            "i32.trunc_f64_s" => I32TruncF64S,
-            "i32.trunc_f64_u" => I32TruncF64U,
-            "i64.extend_i32_s" => I64ExtendI32S,
-            "i64.extend_i32_u" => I64ExtendI32U,
-            "i64.trunc_f32_s" => I64TruncF32S,
-            "i64.trunc_f32_u" => I64TruncF32U,
-            "i64.trunc_f64_s" => I64TruncF64S,
-            "i64.trunc_f64_u" => I64TruncF64U,
-            "f32.convert_i32_s" => F32ConvertI32S,
-            "f32.convert_i32_u" => F32ConvertI32U,
-            "f32.convert_i64_s" => F32ConvertI64S,
-            "f32.convert_i64_u" => F32ConvertI64U,
-            "f32.demote_f64" => F32DemoteF64,
-            "f64.convert_i32_s" => F64ConvertI32S,
-            "f64.convert_i32_u" => F64ConvertI32U,
-            "f64.convert_i64_s" => F64ConvertI64S,
-            "f64.convert_i64_u" => F64ConvertI64U,
-            "f64.promote_f32" => F64PromoteF32,
-            "i32.reinterpret_f32" => I32ReinterpretF32,
-            "i64.reinterpret_f64" => I64ReinterpretF64,
-            "f32.reinterpret_i32" => F32ReinterpretI32,
-            "f64.reinterpret_i64" => F64ReinterpretI64,
             "i32.eq" => I32Eq,
             "i32.ne" => I32Ne,
             "i32.lt_s" => I32LtS,
@@ -1001,7 +1027,8 @@ impl Instr {
 
             Load(op, _) => op.to_name(),
             Store(op, _) => op.to_name(),
-            Numeric(op) => op.to_name(),
+            Unary(op) => op.to_name(),
+            Binary(op) => op.to_name(),
         }
     }
 
@@ -1019,7 +1046,8 @@ impl Instr {
             MemorySize(_) => Some(FunctionType::new(&[], &[I32])),
             MemoryGrow(_) => Some(FunctionType::new(&[I32], &[I32])),
             Const(ref val) => Some(FunctionType::new(&[], &[val.to_type()])),
-            Numeric(ref op) => Some(op.to_type()),
+            Unary(ref op) => Some(op.to_type()),
+            Binary(ref op) => Some(op.to_type()),
             CallIndirect(ref func_ty, _) => Some(FunctionType::new(&[func_ty.inputs(), &[I32]].concat(), func_ty.results())),
 
             // Difficult because of nesting and block types.
@@ -1118,7 +1146,8 @@ impl FromStr for Instr {
                 Store(op, Memarg::from_str(rest, op)?)
             },
             
-            op if NumericOp::from_str(op).is_ok() => return NumericOp::from_str(op).map(Numeric),
+            op if UnaryOp::from_str(op).is_ok() => UnaryOp::from_str(op).map(Unary)?,
+            op if BinaryOp::from_str(op).is_ok() => BinaryOp::from_str(op).map(Binary)?,
 
             _ => return Err(()),
         })
@@ -1137,7 +1166,7 @@ impl fmt::Display for Instr {
             Unreachable | Nop | Drop | Select | Return
             | Else | End
             | MemorySize(_) | MemoryGrow(_)
-            | Numeric(_) => Ok(()),
+            | Unary(_) | Binary(_) => Ok(()),
 
             Block(ty) | Loop(ty) | If(ty) => write!(f, " {}", ty),
 

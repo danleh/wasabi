@@ -8,7 +8,7 @@ use arc_interner::ArcIntern;
 
 use crate::{highlevel::{MemoryOp, Global, Table}, types::{InferredInstructionType, TypeChecker}, Val, ValType, Idx, BlockType};
 use crate::{
-    highlevel::{self, LoadOp, NumericOp, StoreOp, FunctionType},
+    highlevel::{self, LoadOp, UnaryOp, BinaryOp, StoreOp, FunctionType},
     Memarg,
 };
 
@@ -235,10 +235,8 @@ pub enum Expr {
     MemorySize,
     MemoryGrow { pages: Box<Expr> },
 
-    Numeric {
-        op: NumericOp,
-        args: Vec<Expr>,
-    },
+    Unary(UnaryOp, Box<Expr>),
+    Binary(BinaryOp, Box<Expr>, Box<Expr>),
 
     Call {
         func: FunctionId,

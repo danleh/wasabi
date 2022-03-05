@@ -555,10 +555,10 @@ fn wimplify_instrs<'module>(
                 // Convert offset to constant addition on address.
                 // Drop alignment hint, since that is only for optimization.
                 if memarg.offset != 0 {
-                    addr = Numeric { op: NumericOp::I32Add, args: vec![
-                        addr,
-                        Const(Val::I32(memarg.offset.try_into().unwrap()))
-                    ]};
+                    addr = Binary(BinaryOp::I32Add, 
+                        Box::new(addr), 
+                        Box::new(Const(Val::I32(memarg.offset.try_into().expect("u32 to i32"))))
+                    );
                 }
 
                 expr_stack.push((
@@ -580,10 +580,10 @@ fn wimplify_instrs<'module>(
                 // Convert offset to constant addition on address.
                 // Drop alignment hint, since that is only for optimization.
                 if memarg.offset != 0 {
-                    addr = Numeric { op: NumericOp::I32Add, args: vec![
-                        addr,
-                        Const(Val::I32(memarg.offset.try_into().unwrap()))
-                    ]};
+                    addr = Binary(BinaryOp::I32Add, 
+                        Box::new(addr), 
+                        Box::new(Const(Val::I32(memarg.offset.try_into().expect("u32 to i32"))))
+                    );
                 }
 
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
@@ -614,9 +614,18 @@ fn wimplify_instrs<'module>(
                 expr_stack.push((Const(*val), ty.results()[0]))
             }
 
-            wasm::Numeric(op) => {
-                let args = expr_stack.split_off(expr_stack.len() - ty.inputs().len()).into_iter().map(|(expr, _ty)| expr).collect();
-                expr_stack.push((Numeric { op: *op, args }, ty.results()[0]))
+            wasm::Unary(op) => {
+                let (arg, type_) = expr_stack.pop().expect("unary operation expects argument on the stack");
+                assert_eq!(type_, ty.inputs()[0]);
+                expr_stack.push((Unary(*op, Box::new(arg)), ty.results()[0]))
+            }
+
+            wasm::Binary(op) => {
+                let (right, type_) = expr_stack.pop().expect("binary operation expects right argument on the stack");
+                assert_eq!(type_, ty.inputs()[1]);
+                let (left, type_) = expr_stack.pop().expect("binary operation expects left argument on the stack");
+                assert_eq!(type_, ty.inputs()[0]);
+                expr_stack.push((Binary(*op, Box::new(left), Box::new(right)), ty.results()[0]))
             }
         }
     }

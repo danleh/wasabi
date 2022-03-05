@@ -333,7 +333,8 @@ pub fn approx_i32_eval(expr: &Expr) -> I32Range {
     use Expr::*;
     use crate::Val;
     use crate::ValType;
-    use crate::highlevel::NumericOp::*;
+    use crate::highlevel::UnaryOp::*;
+    use crate::highlevel::BinaryOp::*;
     match expr {
         Const(Val::I32(val)) => I32Range::exact(*val as u32),
         Const(_) => panic!("should only be called with an i32 expression"),
@@ -350,44 +351,43 @@ pub fn approx_i32_eval(expr: &Expr) -> I32Range {
         CallIndirect { type_: _, table_idx: _, args: _ } => I32Range::default(),
 
         // Recursive "evaluation".
-        Numeric { op, args: _  } if op.to_type().results()[0] != ValType::I32 => panic!("should only be called with an i32 expression"),
+        Unary(op, _) if op.to_type().results()[0] != ValType::I32 => panic!("should only be called with an i32 expression"),
+        Binary(op, _, _) if op.to_type().results()[0] != ValType::I32 => panic!("should only be called with an i32 expression"),
+        
         // "Boolean" i32 results.
         // TODO Proper evaluation with ranged integer arithmetic.
-        Numeric { op: I32Eqz, args: _ } => I32Range::new(0, 1),
-        Numeric { op: I32Eq, args: _ } => I32Range::new(0, 1),
-        Numeric { op: I32Ne, args: _ } => I32Range::new(0, 1),
-        Numeric { op: I32LtS, args: _ } => I32Range::new(0, 1),
-        Numeric { op: I32LtU, args: _ } => I32Range::new(0, 1),
-        Numeric { op: I32GtS, args: _ } => I32Range::new(0, 1),
-        Numeric { op: I32GtU, args: _ } => I32Range::new(0, 1),
-        Numeric { op: I32LeS, args: _ } => I32Range::new(0, 1),
-        Numeric { op: I32LeU, args: _ } => I32Range::new(0, 1),
-        Numeric { op: I32GeS, args: _ } => I32Range::new(0, 1),
-        Numeric { op: I32GeU, args: _ } => I32Range::new(0, 1),
-        Numeric { op, args } => match &args[..] {
-            // TODO Implement I32Clz etc.
-            [_unary] => I32Range::default(),
-            [first, second] => match op {
-                I32Add => approx_i32_eval(first).add(approx_i32_eval(second)),
-                I32And => approx_i32_eval(first).bitand(approx_i32_eval(second)),
-                I32Or => approx_i32_eval(first).bitor(approx_i32_eval(second)),
+        Unary(I32Eqz, _) => I32Range::new(0, 1),
+        Binary(I32Eq, _, _) => I32Range::new(0, 1),
+        Binary(I32Ne, _, _) => I32Range::new(0, 1),
+        Binary(I32LtS, _, _) => I32Range::new(0, 1),
+        Binary(I32LtU, _, _) => I32Range::new(0, 1),
+        Binary(I32GtS, _, _) => I32Range::new(0, 1),
+        Binary(I32GtU, _, _) => I32Range::new(0, 1),
+        Binary(I32LeS, _, _) => I32Range::new(0, 1),
+        Binary(I32LeU, _, _) => I32Range::new(0, 1),
+        Binary(I32GeS, _, _) => I32Range::new(0, 1),
+        Binary(I32GeU, _, _) => I32Range::new(0, 1),
 
-                // TODO Implement more NumericOps.
-                // I32Sub => todo!(),
-                // I32Mul => todo!(),
-                // I32DivS => todo!(),
-                // I32DivU => todo!(),
-                // I32RemS => todo!(),
-                // I32RemU => todo!(),
-                // I32Xor => todo!(),
-                // I32Shl => todo!(),
-                // I32ShrS => todo!(),
-                // I32ShrU => todo!(),
-                // I32Rotl => todo!(),
-                // I32Rotr => todo!(),
-                _ => I32Range::default(),
-            },
-            _ => unreachable!("Wasm has only unary and binary numeric operations")
-        },
+        Binary(I32Add, first, second) => approx_i32_eval(first).add(approx_i32_eval(second)),
+        Binary(I32And, first, second) => approx_i32_eval(first).bitand(approx_i32_eval(second)),
+        Binary(I32Or, first, second) => approx_i32_eval(first).bitor(approx_i32_eval(second)),
+
+        // TODO Implement I32Clz etc.
+        Unary(_, _) => I32Range::default(),
+
+        // TODO Implement more NumericOps.
+        // I32Sub => todo!(),
+        // I32Mul => todo!(),
+        // I32DivS => todo!(),
+        // I32DivU => todo!(),
+        // I32RemS => todo!(),
+        // I32RemU => todo!(),
+        // I32Xor => todo!(),
+        // I32Shl => todo!(),
+        // I32ShrS => todo!(),
+        // I32ShrU => todo!(),
+        // I32Rotl => todo!(),
+        // I32Rotr => todo!(),
+        Binary(_, _, _) => I32Range::default(),
     }
 }
