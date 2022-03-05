@@ -92,14 +92,24 @@ pub enum FunctionId {
     Name(ArcIntern<String>),
     /// Otherwise, just refer to the function via its index, which is the same as in the original
     /// WebAssembly module.
-    Idx(usize),
+    Idx(u32),
 }
 
 impl FunctionId {
     pub fn from_idx(idx: Idx<highlevel::Function>, module: &highlevel::Module) -> Self {
-        match &module.function(idx).name {
-            Some(name) => FunctionId::Name(ArcIntern::from(name.clone())),
-            None => FunctionId::Idx(idx.to_usize()),
+        // Try different ways of getting a name for a WebAssembly function.
+        // First try if the debug name is present, because it's the most "original" or "close to the source".
+        let function = module.function(idx);
+        let debug_name = function.name.as_deref();
+        let first_export_name = function.export.first().map(|s| s.as_str());
+        let import_field_name = match &function.code {
+            highlevel::ImportOrPresent::Import(_module_name, field_name) => Some(field_name.as_str()),
+            highlevel::ImportOrPresent::Present(_) => None,
+        };
+        let name = debug_name.or(first_export_name).or(import_field_name);
+        match name {
+            Some(name) => FunctionId::Name(ArcIntern::from(name.to_owned())),
+            None => FunctionId::Idx(idx.to_u32()),
         }
     }
 }
