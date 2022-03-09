@@ -59,14 +59,15 @@ impl Module {
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub struct Function {
-    /// Either the name of a function (from debug info originally), or a
-    /// numerical index.
+    /// Either the name of a function (e.g., from debug info), or a numerical index.
     pub name: FunctionId,
     pub type_: FunctionType,
     // TODO what about imported functions? I think we should make body an Option.
     pub body: Body,
 
+    /// Export name(s) of this function.
     pub export: Vec<String>,
+    
     //pub param_names: Vec<Option<String>>,
 }
 
@@ -86,7 +87,8 @@ impl Function {
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Ord, PartialOrd)]
 pub enum FunctionId {
-    /// If the function had a debug name attached to it (from the `name` custom section).
+    /// If the function had a name attached to it (e.g., from debug information in the `name` 
+    /// custom section or from the export/import name).
     /// The string is stored in a string interner, i.e., deduplicated and such that equality can
     /// be a quick pointer equality.
     Name(ArcIntern<String>),
