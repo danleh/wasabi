@@ -5,6 +5,7 @@
 
 # .wat files of .wasm test binaries can be very large.
 /tests/wasm/*.wat
+/tests/**/*.wasm.wat
 
 # Callgraph evaluation table.
 /data.csv
