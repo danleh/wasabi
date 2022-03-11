@@ -1,5 +1,6 @@
 //! Conversion from standard WebAssembly to Wimpl.
 
+use std::collections::HashSet;
 use std::convert::TryInto;
 
 use crate::highlevel;
@@ -682,11 +683,19 @@ fn wimplify_function_body(function: &highlevel::Function, module: &highlevel::Mo
 }
 
 pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
+    // Make sure that the produced `FunctionId`s are unique (i.e., that no function names clash).
+    let mut function_ids = HashSet::new();
+
     let functions = module.functions().map(|(idx, function)| -> Result<Function, String> {
+        let name = FunctionId::from_idx(idx, module);
+        let name_clash = !function_ids.insert(name.clone());
+        if name_clash {
+            return Err(format!("duplication function.name '{}'!", name));
+        }
         Ok(Function {
             type_: function.type_,
             body: wimplify_function_body(function, module)?,
-            name: FunctionId::from_idx(idx, module),
+            name,
             export: function.export.clone(), 
         })
     }).collect::<Result<Vec<_>, _>>()?;
