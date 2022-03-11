@@ -36,6 +36,19 @@ fn main() {
     //     for stmt in fun.body.0 {
     //     }
     // }
+
+    let mut call_indirect_count = 0;
+    for func in &wimpl.functions {
+        func.body.visit_expr_pre_order(|expr| {
+            if let wimpl::Expr::CallIndirect { .. } = expr {
+                call_indirect_count += 1
+            };
+            // Continue recursively traversing expressions.
+            true
+        });
+    }
+    
+    println!("call_indirect count: {}", call_indirect_count);
     
     println!("call_indirect idx expressions:");
     let idx_exprs = collect_call_indirect_idx_expr(&wimpl);
