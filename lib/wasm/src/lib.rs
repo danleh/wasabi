@@ -17,8 +17,6 @@ pub use crate::error::{Error, ErrorKind};
 pub mod types;
 pub mod wimpl;
 
-pub mod callgraph;
-
 #[cfg(test)]
 mod tests;
 

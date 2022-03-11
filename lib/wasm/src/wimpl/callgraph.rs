@@ -177,7 +177,7 @@ pub fn reachable_callgraph(
     let mut worklist = reachable_funcs.iter().cloned().collect::<Vec<_>>();
     // let mut i = 0;
     while let Some(func) = worklist.pop() {
-        let calls = call_target_constraints.get(&func).expect("all functions should have been constraints computed for");            
+        let calls = call_target_constraints.get(&func).expect(&format!("all functions should have been constraints computed for, but not found for '{}'", func));            
 
         for call in calls {
             // Solve the constraints to concrete edges.
