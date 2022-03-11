@@ -114,6 +114,10 @@ impl FunctionId {
             None => FunctionId::Idx(idx.to_u32()),
         }
     }
+
+    pub fn from_name(name: String) -> Self {
+        FunctionId::Name(ArcIntern::from(name))
+    }
 }
 
 /// A sequence of instructions, typically as the body of a function or block.
