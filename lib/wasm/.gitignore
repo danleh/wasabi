@@ -3,8 +3,9 @@
 /target/
 /Cargo.lock
 
-# .wat files of .wasm test binaries can be very large.
-/tests/wasm/*.wat
+# Generated .wat and .wimpl files (for debugging) of .wasm test binaries can be very large.
+/tests/wasm/**/*.wat
+/tests/wasm/**/*.wimpl
 /tests/**/*.wasm.wat
 
 # Callgraph evaluation table.
