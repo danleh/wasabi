@@ -7,12 +7,18 @@ use crate::wimpl::wimplify::*;
 // Just needs two forward passes: 1. collect all branch targets in a HashSet, 2. unwrap block if not contained.
 // Useful to remove the block generated from WebAssembly ifs
 
-
 // TODO optimization to replace assignments to dead variables with expression statements.
 
-// TODO optimization to replace pure (side-effect free) expression statements.
+// TODO optimization to remove pure (side-effect free) expression statements.
 
 // TODO constant propagation
+
+// TODO copy propagation of stack variables that are read a single time (i.e., where the assignment
+// to a variable saves neither runtime, nor Wimpl code size). Must be careful to not propagate
+// the variable RHS over statements that could alter semantics.
+
+// TODO dead variable elimination: any assignment to a variable, whose variable is never read
+// can be replaced by an expression statement of the RHS (and if the RHS is pure, just removed).
 
 #[derive(Debug)]
 enum Value {

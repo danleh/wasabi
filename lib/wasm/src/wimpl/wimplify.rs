@@ -93,7 +93,14 @@ fn wimplify_instrs<'module>(
                         // variables are effectively in SSA form, unlike parameters, locals, or
                         // result variables).
                     }
-                    _ => {
+                    Const(_) => {
+                        // Optimization: The stack holds only a constant, no need to materialize
+                        // it into a variable, since it is side-effect free anyway and it doesn't
+                        // save Wimpl code size by not duplicating it (actually the opposite, since
+                        // creation and assignment of the materialized stack variable is additional
+                        // code).
+                    }
+                    expr => {
                         let var = create_fresh_stack_var(state);
                         let expr = std::mem::replace(expr, VarRef(var));
                         stmts_result.push(Stmt::Assign {
@@ -436,28 +443,31 @@ fn wimplify_instrs<'module>(
 
             wasm::Drop => {
                 let expr = expr_stack.pop().expect("drop expects a value on the stack").0;
+                
+                // Optimization:
+                match expr {
+                    // Don't generate an expression-statement, if the popped expression is just a 
+                    // variable reference, i.e., the expression statement won't have any effect.
+                    // Also, in that case, we don't execute any code at all, so no need to 
+                    // materialize the rest of the stack either.
+                    VarRef(_) => {}
+                    // The same argument also applies to constants.
+                    // TODO More generally, one could avoid generating statements for any 
+                    // expression without side-effects, e.g., via a method Expr::has_side_effect().
+                    Const(_) => {}
+                    // Otherwise, emit it as a statement, to at least execute it for its 
+                    // side-effects, e.g., if it was a call.
+                    _ => {
+                        materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
+                        stmts_result.push(Stmt::Expr(expr))
+                    }
+                }
 
-                // TODO An alternative could be to just materialize everything (including the drop
-                // argument), pop the (now in a variable) argument from the expression stack and 
-                // then just not use the variable again. This is slightly more general but creates
-                // more stack variables.
+                // TODO Another alternative is to just materialize everything (including 
+                // the drop argument, which is NOT materialized above), pop the (now in a variable) 
+                // argument from the expression stack and then just not use the variable again.
+                // This would be slightly more general but creates more stack variables.
                 // Finally a dead store/liveness analysis could then remove those variables.
-                materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
-                stmts_result.push(Stmt::Expr(expr));
-
-                // // Alternative Optimization:
-                // match expr {
-                //     // If the popped expression is in a variable already, just don't use it anymore,
-                //     // i.e., no statements emitted.
-                //     VarRef(_) => {}
-                    
-                //     // Otherwise, emit it as a statement, to at least execute it for its 
-                //     // side-effects, e.g., if it was a call.
-                //     _ => {
-                //         materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
-                //         stmts_result.push(Stmt::Expr(expr))
-                //     }
-                // }
             },
 
             // Translate as if block assigning to a fresh stack variable.
