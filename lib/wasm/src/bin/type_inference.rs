@@ -3,10 +3,13 @@ use std::{
     fmt,
 };
 
+use rustc_hash::FxHashMap;
 use wasm::{
-    wimpl::{self, analyze::param_exprs, Expr, Function, Module, Stmt, Var},
-    ValType,
+    wimpl::{self, analyze::{param_exprs, collect_call_indirect_args}, Expr, Function, Module, Stmt, Var},
+    ValType, highlevel::FunctionType,
 };
+
+use wasm::highlevel::{BinaryOp, UnaryOp, LoadOp, StoreOp};
 
 use TypeConstraint::*;
 use ValType::*;
@@ -18,34 +21,51 @@ pub fn main() {
     let wasm_path = &args[1];
     let module = wimpl::Module::from_wasm_file(wasm_path).unwrap();
 
+    println!("total function: {}", module.functions.len());
+
+    let mut call_indirect_args = BTreeMap::default();
+
     for function in &module.functions {
-        println!("{}:", function.name);
-        let var_constraints = collect_var_constraints(&module, function);
-        for (var, constraints) in var_constraints.0 {
-            let type_ = match var {
-                Var::Local(_) => continue,
-                Var::Global(i) => module.globals[i as usize].type_.0,
-                Var::Stack(_) => continue,
-                Var::Param(i) => function.type_.inputs()[i as usize],
-                Var::BlockResult(_) => continue,
-                Var::Return(_) => continue,
-            };
-            println!("  {}: {} (WebAssembly type), constraints:", var, type_);
-            for constraint in constraints {
-                println!("   {}", constraint);
-            }
+        // println!("{}:", function.name);
+        // let var_constraints = collect_var_constraints(&module, function);
+        call_indirect_args.extend(collect_call_indirect_args(function));
+        // for (var, constraint) in var_constraints.0 {
+        //     let type_ = match var {
+        //         Var::Local(_) => continue,
+        //         Var::Global(i) => module.globals[i as usize].type_.0,
+        //         Var::Stack(_) => continue,
+        //         Var::Param(i) => function.type_.inputs()[i as usize],
+        //         Var::BlockResult(_) => continue,
+        //         Var::Return(_) => continue,
+        //     };
+        //     println!("  {}:", var);
+        //     println!("    {} (WebAssembly type)", type_);
+        //     for constraint in constraint {
+        //         println!("    {}", constraint);
+        //     }
+        // }
+    }
+
+    for (func_ty, args) in call_indirect_args {
+        println!("{}: ({} potential targets by type)", func_ty, module.functions.iter().filter(|f| f.type_ == func_ty).count());
+        for args in args {
+            println!("  {}", args.join(", "));
         }
     }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct ConstraintMap(BTreeMap<Var, BTreeSet<TypeConstraint>>);
+// pub struct ConstraintMap(BTreeMap<Var, TypeConstraint>);
 
 impl ConstraintMap {
     pub fn add(&mut self, var: Var, constraint: TypeConstraint) {
-        if constraint != Any {
-            self.0.entry(var).or_default().insert(constraint);
+        if constraint == Any {
+            return;
         }
+        self.0.entry(var).or_default().insert(constraint);
+        // let in_map = self.0.entry(var).or_default();
+        // *in_map = in_map.meets(&constraint).expect(&format!("incompatible constraints for var {}!? {} and {}", var, in_map, constraint));
     }
 }
 
@@ -59,6 +79,8 @@ pub fn collect_var_constraints(module: &Module, function: &Function) -> Constrai
         module: &Module,
     ) {
         use Expr::*;
+        use UnaryOp::*;
+        use BinaryOp::*;
         match expr {
             VarRef(var) => {
                 constraints.add(*var, constraint);
@@ -76,11 +98,19 @@ pub fn collect_var_constraints(module: &Module, function: &Function) -> Constrai
                 // checked that its compatible with the incoming constraint.
                 collect_var_constraints(pages, Base(I32), constraints, module);
             }
-            Unary(op, _) => {
-                // TODO e.g. eqz
+            // Unary(op, arg) if op.to_type().inputs()[0] != I32 => {
+            //     // TODO e.g. eqz
+            //     collect_var_constraints(arg, constraint, constraints, module);
+            // }
+            Unary(_, _) => {
+                // TODO nothing
             }
-            Binary(op, _, _) => {
-                // TODO add for offsets
+            Binary(I32Add, left, right) => {
+                collect_var_constraints(left, constraint.clone(), constraints, module);
+                collect_var_constraints(right, constraint, constraints, module);
+            }
+            Binary(op, left, right) => {
+                // TODO handle more other pointer operations
             }
             Call { func, args } => {
                 // TODO add constraints for the called function's parameters
@@ -97,7 +127,7 @@ pub fn collect_var_constraints(module: &Module, function: &Function) -> Constrai
                 table_idx,
                 args,
             } => {
-                collect_var_constraints(table_idx, FuncPtr, constraints, module);
+                collect_var_constraints(table_idx, FuncPtr(*type_), constraints, module);
                 for (arg, ty) in args.iter().zip(type_.inputs().iter().copied()) {
                     collect_var_constraints(arg, Base(ty), constraints, module);
                 }
@@ -163,10 +193,20 @@ pub fn collect_var_constraints(module: &Module, function: &Function) -> Constrai
 pub enum TypeConstraint {
     Any,
     Base(ValType),
+    FuncPtr(FunctionType),
+    // TODO a single Ptr "capability" (cf. Polymorphic Type Inference for Machine Code) requires
+    // that ptrs are always unified, i.e. non-directional type inference!
+    // TODO We would need Load/Store capabilities, where Store(T) -> (implies) Load(T).
+    Ptr(Box<TypeConstraint>),
     // TODO I don't think bool actually helps a lot, because it doesn't require 0 or 1, any i32 works...
     // Bool,
-    FuncPtr,
-    Ptr(Box<TypeConstraint>),
+    // NonPtr, // an i32 that is certainly NOT a pointer
+}
+
+impl Default for TypeConstraint {
+    fn default() -> Self {
+        Any
+    }
 }
 
 pub fn ptr(t: TypeConstraint) -> TypeConstraint {
@@ -179,8 +219,8 @@ impl fmt::Display for TypeConstraint {
             Any => f.write_str("any"),
             Base(ty) => ty.fmt(f),
             // Bool => f.write_str("bool"),
-            FuncPtr => f.write_str("func_ptr"),
-            Ptr(t) => write!(f, "ptr({})", t),
+            FuncPtr(func_ty) => write!(f, "func_ptr({})", func_ty),
+            Ptr(ty) => write!(f, "ptr({})", ty),
         }
     }
 }
@@ -233,8 +273,8 @@ impl TypeConstraint {
             (Base(I64 | F32 | F64), _) | (_, Base(I64 | F32 | F64)) => None,
 
             // Func (technically: indices into the table) is a subtype of i32.
-            (FuncPtr, Base(I32)) | (Base(I32), FuncPtr) => Some(FuncPtr),
-            (FuncPtr, _) | (_, FuncPtr) => None,
+            (func_ptr @ FuncPtr(_), Base(I32)) | (Base(I32), func_ptr @ FuncPtr(_)) => Some(func_ptr.clone()),
+            (FuncPtr(_), _) | (_, FuncPtr(_)) => None,
 
             // Pointer is a subtype of i32.
             (t @ Ptr(_), Base(I32)) | (Base(I32), t @ Ptr(_)) => Some(t.clone()),

@@ -1,9 +1,9 @@
-use std::{cmp::Reverse, fmt::{self, Display}, iter::FromIterator, cell::RefCell, collections::HashMap, ops::{Add, BitAnd, BitOr, RangeInclusive}};
+use std::{cmp::Reverse, fmt::{self, Display}, iter::FromIterator, cell::RefCell, collections::{HashMap, BTreeMap}, ops::{Add, BitAnd, BitOr, RangeInclusive}};
 
 use regex::Regex;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{wimpl::{Body, Expr, Module, Stmt, Var}, highlevel::{StoreOp, LoadOp}};
+use crate::{wimpl::{Body, Expr, Module, Stmt, Var}, highlevel::{StoreOp, LoadOp, FunctionType}};
 
 use super::{FunctionId, Function};
 
@@ -82,6 +82,18 @@ impl<'module> fmt::Display for VarExprMap<'module> {
         }
         write!(f, "}}")
     }
+}
+
+pub fn collect_call_indirect_args(function: &Function) -> BTreeMap<FunctionType, Vec<Vec<String>>> {
+    let mut result: BTreeMap<FunctionType, Vec<Vec<String>>> = BTreeMap::default();
+    function.body.visit_expr_pre_order(|expr| {
+        if let Expr::CallIndirect { type_, table_idx: _, args } = expr {
+            let args = args.iter().map(abstract_expr).collect::<Vec<_>>();
+            result.entry(*type_).or_default().push(args)
+        }
+        true
+    });
+    result
 }
 
 pub fn param_exprs(function: &Function) {
