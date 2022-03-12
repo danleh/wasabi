@@ -103,15 +103,15 @@ impl FunctionId {
         // Try different ways of getting a name for a WebAssembly function.
         // First try if the debug name is present, because it's the most "original" or "close to the source".
         let function = module.function(idx);
-        let debug_name = function.name.as_deref();
-        let first_export_name = function.export.first().map(|s| s.as_str());
+        let debug_name = function.name.clone();
+        let first_export_name = function.export.first().cloned();
         let import_field_name = match &function.code {
-            highlevel::ImportOrPresent::Import(_module_name, field_name) => Some(field_name.as_str()),
+            highlevel::ImportOrPresent::Import(module_name, field_name) => Some(format!("{}.{}", module_name, field_name)),
             highlevel::ImportOrPresent::Present(_) => None,
         };
         let name = debug_name.or(first_export_name).or(import_field_name);
         match name {
-            Some(name) => FunctionId::Name(ArcIntern::from(name.to_owned())),
+            Some(name) => FunctionId::Name(ArcIntern::from(name)),
             None => FunctionId::Idx(idx.to_u32()),
         }
     }
