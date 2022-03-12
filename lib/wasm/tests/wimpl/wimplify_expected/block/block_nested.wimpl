@@ -1,6 +1,12 @@
 @label1: block {
-  s0: i32 = i32.const 42
-  @label2: block { i32.const 0 }
-  b1: i32 = i32.add(s0, i32.const 1)
+  // Optimization: the materialized stack variable s0 can be omitted, instead there is a form of
+  // constant propagation going on by keeping the constant in the expression stack.
+  // s0: i32 = i32.const 42
+  @label2: block { 
+    // Drop of constants is optimized out
+    // i32.const 0 
+  }
+  // Effect of the above optimization: use constant here directly, instead of s0
+  b1: i32 = i32.add(i32.const 42, i32.const 1)
 }
-b1
+// the block result b1 is dropped, so the variable reference is omitted

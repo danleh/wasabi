@@ -1,6 +1,5 @@
 (module
-  (func $constant
+  (func $constant (result i32)
     i32.const 3
-    drop
   )
 )

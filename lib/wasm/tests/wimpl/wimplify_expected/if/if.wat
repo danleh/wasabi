@@ -7,8 +7,6 @@
 		    call $1
 		  )		  
 		)
-		i32.const 42 
-		drop                  
     )
     (func $1 (param i32) 
     	nop 

@@ -1,16 +1,19 @@
 @label1: block {
-  s0: i64 = i64.const 42
+  // Optimization: the materialized stack variable i64.const 42 can be omitted, instead there is a form of
+  // constant propagation going on by keeping the constant in the expression stack.
+  // i64.const 42: i64 = i64.const 42
+  // Effect of the optimization below: all cases assign the constant directly, instead of s0
   switch (i32.const 1) {
     case 0: {
-      r0: i64 = s0
+      r0: i64 = i64.const 42
       br @label0
     }
     case 1: {
-      b1: i64 = s0
+      b1: i64 = i64.const 42
       br @label1
     }
     default: {
-      r0: i64 = s0 
+      r0: i64 = i64.const 42 
       br @label0
     }
   }  

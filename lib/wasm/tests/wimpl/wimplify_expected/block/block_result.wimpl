@@ -1,7 +1,8 @@
 @label1: block {
-  i32.const 42
+  // Drop of constants is optimized out
+  // i32.const 42
 }
 @label2: block {
   b2: i32 = i32.const 1337
 }
-b2
+// block result b2 is immediately dropped, so the variable reference is removed here

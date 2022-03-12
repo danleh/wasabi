@@ -1,4 +1,5 @@
-s0: f64 = f64.const 52.6
-s1: f64 = f64.const 46.9
-if (i32.const 0) { s2: f64 = s0 } else { s2: f64 = s1 }
-s2
+// Materialization of constants is optimized away
+// s0: f64 = f64.const 52.6
+// s1: f64 = f64.const 46.9
+if (i32.const 0) { s0: f64 = f64.const 52.6 } else { s0: f64 = f64.const 46.9 }
+// drop of if result variable is optimized away

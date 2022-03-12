@@ -10,6 +10,6 @@ s1: i32 = g0
 
 g0: i32 = i32.const 42
 
-g1 // drop
-s1 // drop
-s0 // drop
+// drop g1
+// drop s1
+// drop s0

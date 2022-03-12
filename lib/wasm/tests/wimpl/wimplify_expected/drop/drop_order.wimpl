@@ -1,9 +1,12 @@
 @label1: block {
-    i32.const 3
-    i32.const 7
+    // Drops of constants are optimized away
+    // i32.const 3
+    // i32.const 7
 }
 @label2: block {
-    s0: i32 = i32.const 3
-    i32.const 7
-    s0
+    // Materialization of constants is optimized away
+    // s0: i32 = i32.const 3
+    // Drop of constant is optimized away
+    // i32.const 7
+    // s0 is dropped, but because it is a variable reference, no statement is produced here
 }

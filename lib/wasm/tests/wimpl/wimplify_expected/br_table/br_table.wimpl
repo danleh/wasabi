@@ -1,7 +1,10 @@
-s0: i32 = i32.const 42 
+// Optimization: the materialized stack variable s0 can be omitted, instead there is a form of
+// constant propagation going on by keeping the constant in the expression stack.
+// s0: i32 = i32.const 42
 switch (i32.const 1) {
   default: {
-    r0: i32 = s0 
+    // Effect of the above optimization: use constant here directly, instead of s0
+    r0: i32 = i32.const 42
     br @label0 
   }
 }  
