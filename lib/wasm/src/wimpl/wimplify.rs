@@ -686,6 +686,7 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
     // Make sure that the produced `FunctionId`s are unique (i.e., that no function names clash).
     let mut function_ids = HashSet::new();
 
+    // TODO parallelize
     let functions = module.functions().map(|(idx, function)| -> Result<Function, String> {
         let name = FunctionId::from_idx(idx, module);
         let name_clash = !function_ids.insert(name.clone());
