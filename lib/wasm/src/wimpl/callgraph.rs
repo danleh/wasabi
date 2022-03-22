@@ -100,6 +100,8 @@ pub struct Options {
     pub with_type_constraint: bool,
     pub with_in_table_constraint: bool,
     pub with_index_constraint: bool,
+    // TODO if true, assumes that an imported function can call any exported function.
+    // pub imported_functions_conservative: bool,
 }
 
 pub fn reachable_callgraph(

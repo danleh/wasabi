@@ -124,11 +124,14 @@ fn wimplify_instrs<'module>(
         }
 
         fn create_block_label_and_var(state: &mut State, expr_stack: &mut Vec<(Expr, ValType)>, blocktype: BlockType, is_loop: bool) -> Label {
+            // Allocate a new label for this block.
             let label = Label(state.label_count);
             state.label_count += 1;
 
             let result_var = match blocktype.0 {
                 Some(type_) => {
+                    // Also allocate a new block result variable, with the number matching the 
+                    // block label number.
                     let result_var = BlockResult(label.0);
                     // The result of the block is then at the top of the stack after the block.
                     expr_stack.push((VarRef(result_var), type_));
@@ -483,6 +486,8 @@ fn wimplify_instrs<'module>(
                 let else_result_var = expr_stack.pop().expect("select expects else value on the stack").0;
                 let if_result_var = expr_stack.pop().expect("select expects if value on the stack").0;
 
+                // TODO Use a block result variable here? But then be careful to increase the label
+                // counter as well, because there is an invariant #label == #block result vars.
                 let result_var = create_fresh_stack_var(state);
                 expr_stack.push((VarRef(result_var), type_));
 

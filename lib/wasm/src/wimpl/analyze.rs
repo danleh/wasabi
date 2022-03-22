@@ -84,14 +84,14 @@ impl<'module> fmt::Display for VarExprMap<'module> {
     }
 }
 
-pub fn collect_call_indirect_args(function: &Function) -> BTreeMap<FunctionType, Vec<Vec<String>>> {
-    let mut result: BTreeMap<FunctionType, Vec<Vec<String>>> = BTreeMap::default();
+pub fn collect_call_indirect_args(function: &Function) -> BTreeMap<FunctionType, BTreeMap<Vec<String>, usize>> {
+    let mut result: BTreeMap<FunctionType, BTreeMap<Vec<String>, usize>> = BTreeMap::default();
     function.body.visit_expr_pre_order(|expr| {
         if let Expr::CallIndirect { type_, table_idx: _, args } = expr {
             let args = args.iter().map(abstract_expr).collect::<Vec<_>>();
-            result.entry(*type_).or_default().push(args)
+            *result.entry(*type_).or_default().entry(args).or_default() += 1;
         }
-        true
+        true // continue traversal
     });
     result
 }

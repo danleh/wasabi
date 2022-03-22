@@ -20,6 +20,10 @@ use crate::wimpl::wimplify::*;
 // TODO dead variable elimination: any assignment to a variable, whose variable is never read
 // can be replaced by an expression statement of the RHS (and if the RHS is pure, just removed).
 
+// TODO _de_-optimization pass on locals (in particular, parameters) that _de_-coalesces, e.g.,
+// rewrite assignment to parameters -> assignment to fresh stack variable (SSA) and then all 
+// subsequent reads of that parameter shall become reads of the fresh variable instead.
+
 #[derive(Debug)]
 enum Value {
     Top, //TODO we dont have any reassignments so top will never be assigned 

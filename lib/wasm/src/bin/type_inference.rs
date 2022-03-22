@@ -5,8 +5,8 @@ use std::{
 
 use rustc_hash::FxHashMap;
 use wasm::{
-    wimpl::{self, analyze::{param_exprs, collect_call_indirect_args}, Expr, Function, Module, Stmt, Var},
-    ValType, highlevel::FunctionType,
+    wimpl::{self, analyze::{param_exprs, collect_call_indirect_args, collect_call_indirect_idx_expr, print_map_count}, Expr, Function, Module, Stmt, Var, FunctionId},
+    ValType, highlevel::{FunctionType, MemoryOp},
 };
 
 use wasm::highlevel::{BinaryOp, UnaryOp, LoadOp, StoreOp};
@@ -22,13 +22,29 @@ pub fn main() {
     let module = wimpl::Module::from_wasm_file(wasm_path).unwrap();
 
     println!("total function: {}", module.functions.len());
+    
+    println!("most frequent call_indirect expressions:");
+    print_map_count(&collect_call_indirect_idx_expr(&module));
 
-    let mut call_indirect_args = BTreeMap::default();
+    return;
+
+    let mut call_indirect_args: BTreeMap<FunctionType, BTreeMap<Vec<String>, usize>> = BTreeMap::default();
+
+    // let mut var_constraints = BTreeSet::default();
 
     for function in &module.functions {
         // println!("{}:", function.name);
+
+        for (func_ty, args) in collect_call_indirect_args(function) {
+            let args_count_map = call_indirect_args.entry(func_ty).or_default();
+            for (args, count) in args {
+                *args_count_map.entry(args).or_default() += count;
+            }
+        }
+
+        // var_constraints.extend(collect_var_constraints(&module, function).0);
+
         // let var_constraints = collect_var_constraints(&module, function);
-        call_indirect_args.extend(collect_call_indirect_args(function));
         // for (var, constraint) in var_constraints.0 {
         //     let type_ = match var {
         //         Var::Local(_) => continue,
@@ -48,22 +64,30 @@ pub fn main() {
 
     for (func_ty, args) in call_indirect_args {
         println!("{}: ({} potential targets by type)", func_ty, module.functions.iter().filter(|f| f.type_ == func_ty).count());
-        for args in args {
-            println!("  {}", args.join(", "));
+        let mut args = args.into_iter().collect::<Vec<_>>();
+        args.sort_by_key(|(args, count)| (std::cmp::Reverse(*count), args.clone()));
+        for (args, count) in args {
+            println!("  {:6} × {}", count, args.join(", "));
         }
     }
+
+    // for (func, var, constraint) in var_constraints {
+    //     println!("{}.{} <: {}", func, var, constraint);
+    // }
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ConstraintMap(BTreeMap<Var, BTreeSet<TypeConstraint>>);
+// pub struct ConstraintMap(BTreeMap<Var, BTreeSet<TypeConstraint>>);
 // pub struct ConstraintMap(BTreeMap<Var, TypeConstraint>);
+pub struct ConstraintMap(BTreeSet<(FunctionId, Var, TypeConstraint)>);
 
 impl ConstraintMap {
-    pub fn add(&mut self, var: Var, constraint: TypeConstraint) {
+    pub fn add(&mut self, function: &Function, var: Var, constraint: TypeConstraint) {
         if constraint == Any {
             return;
         }
-        self.0.entry(var).or_default().insert(constraint);
+        self.0.insert((function.name.clone(), var, constraint));
+        // self.0.entry(var).or_default().insert(constraint);
         // let in_map = self.0.entry(var).or_default();
         // *in_map = in_map.meets(&constraint).expect(&format!("incompatible constraints for var {}!? {} and {}", var, in_map, constraint));
     }
@@ -72,23 +96,27 @@ impl ConstraintMap {
 pub fn collect_var_constraints(module: &Module, function: &Function) -> ConstraintMap {
     let mut constraints = ConstraintMap::default();
 
+    // TODO this should also RETURN a constraint for the current expression RESULT.
     fn collect_var_constraints(
         expr: &Expr,
         constraint: TypeConstraint,
         constraints: &mut ConstraintMap,
         module: &Module,
+        function: &Function,
     ) {
         use Expr::*;
         use UnaryOp::*;
         use BinaryOp::*;
         match expr {
             VarRef(var) => {
-                constraints.add(*var, constraint);
+                constraints.add(function, *var, constraint);
             }
             Const(_) => {}
             Load { op, addr } => {
-                // TODO get value type from op.
-                collect_var_constraints(addr, ptr(constraint), constraints, module);
+                let value_ty = op.to_type().results()[0];
+                // let constraint = constraint.meets(&Base(value_ty)).expect(&format!("illegal incoming constraint for load, incoming: {}, value type: {}", constraint, value_ty));
+                collect_var_constraints(addr, ptr(constraint), constraints, module, function);
+                collect_var_constraints(addr, ptr(Base(value_ty)), constraints, module, function);
             }
             MemorySize => {}
             MemoryGrow { pages } => {
@@ -96,7 +124,7 @@ pub fn collect_var_constraints(module: &Module, function: &Function) -> Constrai
                 // assert_eq!(constraint.join(&Base(I32)), Base(I32), "invalid constraint {} for memory.grow", constraint);
                 // Pass on i32 as the constraint since its the more specific and the assert just
                 // checked that its compatible with the incoming constraint.
-                collect_var_constraints(pages, Base(I32), constraints, module);
+                collect_var_constraints(pages, Base(I32), constraints, module, function);
             }
             // Unary(op, arg) if op.to_type().inputs()[0] != I32 => {
             //     // TODO e.g. eqz
@@ -106,20 +134,21 @@ pub fn collect_var_constraints(module: &Module, function: &Function) -> Constrai
                 // TODO nothing
             }
             Binary(I32Add, left, right) => {
-                collect_var_constraints(left, constraint.clone(), constraints, module);
-                collect_var_constraints(right, constraint, constraints, module);
+                // FIXME is this even correct?
+                collect_var_constraints(left, constraint.clone(), constraints, module, function);
+                collect_var_constraints(right, constraint, constraints, module, function);
             }
             Binary(op, left, right) => {
                 // TODO handle more other pointer operations
             }
             Call { func, args } => {
-                // TODO add constraints for the called function's parameters
                 let func_ty = module
                     .function(func.clone())
                     .expect("function not found")
                     .type_;
-                for (arg, ty) in args.iter().zip(func_ty.inputs().iter().copied()) {
-                    collect_var_constraints(arg, Base(ty), constraints, module);
+                // Add constraints for the called function's parameters.
+                for (i, (arg, ty)) in args.iter().zip(func_ty.inputs().iter().copied()).enumerate() {
+                    collect_var_constraints(arg, Var(func.clone(), wimpl::Var::Param(i as u32)), constraints, module, function);
                 }
             }
             CallIndirect {
@@ -127,16 +156,16 @@ pub fn collect_var_constraints(module: &Module, function: &Function) -> Constrai
                 table_idx,
                 args,
             } => {
-                collect_var_constraints(table_idx, FuncPtr(*type_), constraints, module);
+                collect_var_constraints(table_idx, FuncPtr(*type_), constraints, module, function);
                 for (arg, ty) in args.iter().zip(type_.inputs().iter().copied()) {
-                    collect_var_constraints(arg, Base(ty), constraints, module);
+                    collect_var_constraints(arg, Base(ty), constraints, module, function);
                 }
             }
         }
     }
     // Closure over constraints, such that we don't have to pass that argument always around.
     let mut collect_var_constraints =
-        |expr, constraint| collect_var_constraints(expr, constraint, &mut constraints, module);
+        |expr, constraint| collect_var_constraints(expr, constraint, &mut constraints, module, function);
 
     function.body.visit_stmt_pre_order(|stmt| {
         use Stmt::*;
@@ -145,12 +174,13 @@ pub fn collect_var_constraints(module: &Module, function: &Function) -> Constrai
             Expr(expr) => collect_var_constraints(expr, Any),
             Assign { lhs, type_, rhs } => {
                 // TODO should we add another constraint for lhs?
-                collect_var_constraints(rhs, Base(*type_));
+                collect_var_constraints(rhs, Var(function.name(), *lhs));
             }
             Store { op, addr, value } => {
-                collect_var_constraints(addr, ptr(Any));
+                let value_ty = op.to_type().inputs()[1];
+                collect_var_constraints(addr, ptr(Base(value_ty)));
                 // TODO get value type from store op.
-                collect_var_constraints(value, Any);
+                collect_var_constraints(value, Base(value_ty));
             }
             Br { target: _ } => {}
             Block {
@@ -194,6 +224,7 @@ pub enum TypeConstraint {
     Any,
     Base(ValType),
     FuncPtr(FunctionType),
+    Var(FunctionId, Var),
     // TODO a single Ptr "capability" (cf. Polymorphic Type Inference for Machine Code) requires
     // that ptrs are always unified, i.e. non-directional type inference!
     // TODO We would need Load/Store capabilities, where Store(T) -> (implies) Load(T).
@@ -218,6 +249,7 @@ impl fmt::Display for TypeConstraint {
         match self {
             Any => f.write_str("any"),
             Base(ty) => ty.fmt(f),
+            Var(func, var) => write!(f, "{}.{}", func, var),
             // Bool => f.write_str("bool"),
             FuncPtr(func_ty) => write!(f, "func_ptr({})", func_ty),
             Ptr(ty) => write!(f, "ptr({})", ty),
@@ -265,6 +297,7 @@ impl TypeConstraint {
     pub fn meets(&self, other: &TypeConstraint) -> Option<TypeConstraint> {
         match (self, other) {
             _ if self == other => Some(self.clone()),
+            (Var(..), _) | (_, Var(..)) => todo!(),
 
             // Everything is more specific than t.
             (t, Any) | (Any, t) => Some(t.clone()),
