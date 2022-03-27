@@ -57,7 +57,7 @@ impl highlevel::Module {
 
     pub fn from_file_with_offsets_wasmparser(path: impl AsRef<Path>) -> Result<(Self, Offsets), Box<dyn std::error::Error>> {
         let bytes = std::fs::read(path)?;
-        let (module, offsets, warnings) = ast::wasmparser::parse_module_with_offsets(&bytes)?;
+        let (module, offsets, warnings) = ast::wasmparser::parser::parse_module_with_offsets(&bytes)?;
         for warning in warnings {
             println!("warning: {}", warning);
         }
