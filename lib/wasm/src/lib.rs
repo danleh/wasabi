@@ -68,4 +68,13 @@ impl highlevel::Module {
         let module: lowlevel::Module = self.into();
         module.to_file(path)
     }
+
+    pub fn to_bytes<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        let module: lowlevel::Module = self.into();
+        module.encode(writer)
+    }
+
+    pub fn to_bytes_wasmparser<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        todo!()
+    }
 }

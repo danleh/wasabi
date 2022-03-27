@@ -28,7 +28,18 @@ fn wasmparser_equal_old_parser() {
         std::fs::write("ast-new.txt", format!("{:#?}", module_new)).unwrap();
 
         assert_eq!(module_new, module_old);
-        assert_eq!(offsets_new, offsets_old);        
+        assert_eq!(offsets_new, offsets_old);
+
+        let mut binary_old = Vec::new();
+        let binary_size_old = module_new.to_bytes(&mut binary_old)
+            .expect(&format!("could not encode valid wasm file '{}'", path.display()));
+
+        let mut binary_new = Vec::new();
+        let binary_size_new = module_new.to_bytes_wasmparser(&mut binary_new)
+            .expect(&format!("could not encode valid wasm file '{}'", path.display()));
+
+        assert_eq!(binary_size_new, binary_size_old);
+        assert_eq!(binary_new, binary_old);
     }
 }
 
