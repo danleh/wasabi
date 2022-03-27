@@ -75,6 +75,6 @@ impl highlevel::Module {
     }
 
     pub fn to_bytes_wasmparser<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        todo!()
+        ast::wasmparser::encode::encode_module(self, writer)
     }
 }

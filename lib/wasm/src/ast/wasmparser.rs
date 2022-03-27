@@ -1451,6 +1451,16 @@ pub mod parser {
 
 }
 
+pub mod encode {
+    use std::io;
+
+    use crate::highlevel::Module;
+
+    pub fn encode_module<W: io::Write>(module: &Module, writer: &mut W) -> io::Result<usize> {
+        todo!("use wasm-encoder or hand write wasm byte code directly?")
+    }
+}
+
 fn u32_to_usize(u: u32) -> usize {
     u.try_into().expect("u32 to usize should always succeed")
 }
