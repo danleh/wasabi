@@ -1,3 +1,0 @@
-init32
-update32
-digest32
