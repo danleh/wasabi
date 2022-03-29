@@ -1,0 +1,78 @@
+arguments:
+["/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/target/debug/dce", "sql-wasm.wasm", "reachable_exports.txt", "dce.wasm"]
+initially reachable functions:
+  M
+  Aa
+  Ja
+  Ha
+  za
+  Ba
+  Ia
+  Da
+  va
+  Q
+  P
+  ka
+  xa
+  N
+call_indirect count: 4358
+call_indirect idx expressions:
+    3645 (83.64%)  i32.load(i32.const <const>)
+     175 ( 4.02%)  i32.load(i32.add(<local>, i32.const <const>))
+     157 ( 3.60%)  <local>
+     140 ( 3.21%)  i32.load(i32.add(i32.load(<local>), i32.const <const>))
+      77 ( 1.77%)  i32.load(i32.add(<param>, i32.const <const>))
+      73 ( 1.68%)  i32.load(i32.add(i32.load(<param>), i32.const <const>))
+      65 ( 1.49%)  <param>
+       9 ( 0.21%)  i32.const <const>
+       6 ( 0.14%)  <stack>
+       5 ( 0.11%)  i32.load(i32.add(i32.load(i32.add(i32.load(<param>), i32.const <const>)), i32.const <const>))
+       3 ( 0.07%)  i32.load(i32.add(i32.load(i32.add(<param>, i32.const <const>)), i32.const <const>))
+       1 ( 0.02%)  i32.load(i32.load(i32.add(<param>, i32.const <const>)))
+       1 ( 0.02%)  i32.load(i32.add(i32.shl(<local>, i32.const <const>), i32.const <const>))
+       1 ( 0.02%)  i32.load(i32.add(i32.load(i32.add(<local>, i32.const <const>)), i32.const <const>))
+statistics:
+  number of retained functions: 1182
+  number of removed functions: 40 (3.27%)
+  removed functions:
+    a.p
+    a.q
+    f255
+    R
+    f1007
+    f1019
+    f1020
+    f1040
+    f1041
+    ya
+    wa
+    ta
+    sa
+    ra
+    qa
+    pa
+    oa
+    na
+    ma
+    la
+    ja
+    ha
+    ga
+    fa
+    _
+    Z
+    ca
+    Ka
+    Fa
+    Ea
+    Da
+    f1111
+    T
+    O
+    S
+    Ia
+    Ha
+    Ga
+    Ca
+    L
+  size reduction: 4824 bytes (0.40%)

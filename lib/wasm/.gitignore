@@ -17,3 +17,7 @@
 # Data from profiling / performance analysis.
 /flamegraph*.svg
 /perf.data*
+
+# Ignore all node_modules in tests 
+/tests/dce-examples/**/node_modules
+

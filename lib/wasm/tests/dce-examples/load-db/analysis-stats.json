@@ -1,0 +1,15 @@
+
+{
+    "wasm-file-analyzed": "node_modules/sql.js/dist/org-wasm/sql-wasm.wasm", 
+    "#total-exports": 52,
+    "#reachable-exports": 17,
+    "#functions": 1261, 
+    "#retained-functions": 1234, 
+    "#removed-functions": 27,
+    "#%removed": 2.14, 
+    "size-reduction(bytes)": 3953, 
+    "%size-reduction": 0.36, 
+    "highest-expr-for-idx": "i32.load(i32.const <const>)", 
+    "#%highest-expr-fox-idx-percent": 78.30     
+}
+    
