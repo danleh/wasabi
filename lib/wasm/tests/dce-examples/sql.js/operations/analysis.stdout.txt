@@ -1,0 +1,103 @@
+arguments:
+["/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/target/debug/dce", "node_modules/sql.js/dist/org-wasm/sql-wasm.wasm", "reachable-exports.txt", "dce.wasm"]
+initially reachable functions:
+  M
+  Aa
+  Ja
+  Ha
+  za
+  Ba
+  Da
+  ra
+  T
+  Ia
+  R
+  Q
+  va
+  P
+  ja
+  ka
+  ga
+  la
+  xa
+  N
+  ya
+  Z
+  V
+  ea
+  fa
+  ma
+  X
+  $
+  W
+  U
+  da
+  ba
+  _
+  ia
+  ha
+  aa
+  ua
+call_indirect count: 3037
+call_indirect idx expressions:
+    2378 (78.30%)  i32.load(i32.const <const>)
+     173 ( 5.70%)  i32.load(i32.add(<local>, i32.const <const>))
+     136 ( 4.48%)  <local>
+     116 ( 3.82%)  i32.load(i32.add(i32.load(<local>), i32.const <const>))
+      80 ( 2.63%)  i32.load(i32.add(i32.load(<param>), i32.const <const>))
+      71 ( 2.34%)  i32.load(i32.add(<param>, i32.const <const>))
+      58 ( 1.91%)  <param>
+       8 ( 0.26%)  i32.const <const>
+       6 ( 0.20%)  <stack>
+       5 ( 0.16%)  i32.load(i32.add(i32.load(i32.add(i32.load(<param>), i32.const <const>)), i32.const <const>))
+       3 ( 0.10%)  i32.load(i32.add(i32.load(i32.add(<param>, i32.const <const>)), i32.const <const>))
+       1 ( 0.03%)  i32.load(i32.load(i32.add(<param>, i32.const <const>)))
+       1 ( 0.03%)  i32.load(i32.add(i32.load(i32.add(<local>, i32.const <const>)), i32.const <const>))
+       1 ( 0.03%)  i32.load(i32.add(<stack>, <stack>))
+call_indirect i32.load constant addresses:
+    1067 (44.87%)  59580
+     953 (40.08%)  59572
+     156 ( 6.56%)  59568
+      79 ( 3.32%)  59584
+      22 ( 0.93%)  60296
+      14 ( 0.59%)  60224
+      11 ( 0.46%)  59664
+      10 ( 0.42%)  59668
+       7 ( 0.29%)  60272
+       7 ( 0.29%)  60260
+       6 ( 0.25%)  60212
+       5 ( 0.21%)  60236
+       3 ( 0.13%)  60404
+       3 ( 0.13%)  60344
+       3 ( 0.13%)  59680
+       2 ( 0.08%)  60512
+       2 ( 0.08%)  60464
+       2 ( 0.08%)  60452
+       2 ( 0.08%)  60440
+       2 ( 0.08%)  60416
+statistics:
+  number of retained functions: 1240
+  number of removed functions: 21 (1.67%)
+  removed functions:
+    f1072
+    f1073
+    f1093
+    f1094
+    wa
+    ta
+    sa
+    qa
+    oa
+    ga
+    fa
+    Z
+    ca
+    Ga
+    Fa
+    Ea
+    Ka
+    O
+    Ja
+    Ia
+    Ha
+  size reduction: 3401 bytes (0.31%)
