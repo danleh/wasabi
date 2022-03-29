@@ -93,6 +93,7 @@ fn main() {
     wasm.to_file(dce_wasm_path).unwrap();
 
     println!("statistics:");
+    println!("  number of retained functions: {}", wasm.functions.len()-num_removed_funcs); 
     println!("  number of removed functions: {} ({:.2}%)", num_removed_funcs, (num_removed_funcs as f64 / wasm.functions.len() as f64) * 100.0); 
     println!("  removed functions:");
     for func in removed_funcs {
