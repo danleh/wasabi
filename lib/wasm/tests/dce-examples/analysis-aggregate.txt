@@ -1,0 +1,7 @@
+wasm-file-analyzed, #total-exports, #reachable-exports, #functions, #retained-functions, #removed-functions, #%removed, size-reduction(bytes), %size-reduction, highest-expr-for-idx, #%highest-expr-fox-idx-percent
+sql-wasm.wasm, 52, 17, 1261, 1234, 27, 2.14, 3953, 0.36, i32.load(i32.const <const>), 78.3
+sql-wasm.wasm, 52, 37, 1261, 1240, 21, 1.67, 3401, 0.31, i32.load(i32.const <const>), 78.3
+sql-wasm.wasm, 52, 22, 1261, 1237, 24, 1.9, 3605, 0.33, i32.load(i32.const <const>), 78.3
+opencv.wasm, 275, 13, 10909, 9922, 987, 9.05, 357394, 5.14, i32.add(i32.and(<local>, i32.const <const>), i32.const <const>), 35.76
+opencv.wasm, 275, 8, 10909, 9922, 987, 9.05, 357394, 5.14, i32.add(i32.and(<local>, i32.const <const>), i32.const <const>), 35.76
+opencv.wasm, 275, 8, 10909, 9922, 987, 9.05, 357394, 5.14, i32.add(i32.and(<local>, i32.const <const>), i32.const <const>), 35.76
