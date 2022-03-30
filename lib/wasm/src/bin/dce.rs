@@ -57,22 +57,24 @@ fn main() {
     }
     
     println!("call_indirect count: {}", call_indirect_count);
-    
+     
     println!("call_indirect idx expressions:");
     let idx_exprs = collect_call_indirect_idx_expr(&wimpl);
     print_map_count(&idx_exprs);
-
+    
+     
     println!("call_indirect i32.load constant addresses:");
     let constant_addr = collect_call_indirect_load_const_addr(&wimpl);
     print_map_count(&constant_addr);
     dump_const_addr_json(&constant_addr);
-
+    
     let options = Options {
         with_type_constraint: true,
         with_in_table_constraint: true,
         with_index_constraint: true,
     };
     let callgraph = reachable_callgraph(&wimpl, reachable_funcs.into_iter().collect(), options).unwrap();
+    
     // DEBUG
     // println!("{:?}", callgraph);
     let reachable_funcs = callgraph.functions();
@@ -140,7 +142,7 @@ fn main() {
     \"size-reduction(bytes)\": {}, 
     \"%size-reduction\": {:.2}, 
     \"highest-expr-for-idx\": \"{}\", 
-    \"#%highest-expr-fox-idx-percent\": {:.2}     
+    \"#%highest-expr-fox-idx-percent\": {:.2} 
 }}
     ", 
     wasm_path, 

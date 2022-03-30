@@ -149,8 +149,9 @@ pub fn reachable_callgraph(
                     0
                 }
             };
-
+            
             for (idx_in_table, func_idx) in element.functions.iter().enumerate() {
+                
                 let idx_in_table = idx_in_table as u32;
 
                 let func = module.function_by_idx(*func_idx);
@@ -159,6 +160,8 @@ pub fn reachable_callgraph(
                 let duplicate_element_init = funcs_by_table_idx.insert(element_offset+idx_in_table, func.name());
                 assert_eq!(duplicate_element_init, None, "table index {} is initialized twice", element_offset+idx_in_table)
             }
+            
+            
         }
     }
 
@@ -168,16 +171,19 @@ pub fn reachable_callgraph(
     // Optimization: generate map from FuncTy -> Vec<Func>, such that we 
     // can quickly filter by function type in solve_constraints (~25% of total runtime!)
     // pass that to solve_constraints.
+    
     let mut funcs_by_type: FxHashMap<FunctionType, Vec<&Function>> = FxHashMap::default();
     for func in &module.functions {
         let funcs_with_type = funcs_by_type.entry(func.type_).or_default();
         funcs_with_type.push(func);
     }
     
+    
     // Solve constraints for all functions in "worklist" and add their targets to worklist, until
     // this is empty.
     let mut worklist = reachable_funcs.iter().cloned().collect::<Vec<_>>();
-    // let mut i = 0;
+    let mut i = 0;
+    println!("functions in worklist: {}", worklist.len()); 
     while let Some(func) = worklist.pop() {
         let calls = call_target_constraints.get(&func).expect(&format!("all functions should have been constraints computed for, but not found for '{}'", func));            
 
@@ -197,13 +203,14 @@ pub fn reachable_callgraph(
                 }
             }
         }
-
+        
         // DEBUG
-        // i += 1;
-        // if i % 1000 == 0 {
-        //     println!("[DONE] processing {} functions", i);
-        // }
+        i += 1;
+        if i % 1000 == 0 {
+            println!("[DONE] processing {} functions", i);
+        }
     }
+    
 
     // // FIXME quick and dirty output: which kinds of constraints do we have (and how frequenty are they).
     // let iter = UNIQUE_CONSTRAINT_EXPRS.lock().unwrap();
