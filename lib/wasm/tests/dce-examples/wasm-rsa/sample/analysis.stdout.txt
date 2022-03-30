@@ -3,6 +3,21 @@ arguments:
 initially reachable functions:
   rsapublickeypair_new
   rsaprivatekeypair_new
+  __wbindgen_malloc
+  rsaprivatekeypair_generate
+  __wbindgen_add_to_stack_pointer
+  rsaprivatekeypair_get_d
+  __wbindgen_free
+  rsaprivatekeypair_get_n
+  rsaprivatekeypair_get_e
+  rsaprivatekeypair_get_primes
+  rsapublickeypair_create
+  rsapublickeypair_get_n
+  rsapublickeypair_get_e
+  rsaprivatekeypair_sign_message
+  rsapublickeypair_verify_message
+  rsapublickeypair_encrypt
+  rsaprivatekeypair_decrypt
 call_indirect count: 107
 call_indirect idx expressions:
       29 (27.10%)  i32.load(i32.add(<param>, i32.const <const>))
@@ -18,235 +33,91 @@ call_indirect idx expressions:
        1 ( 0.93%)  <stack>
 call_indirect i32.load constant addresses:
        1 (100.00%)  1049860
-functions in worklist: 2
+functions in worklist: 17
 statistics:
-  number of retained functions: 302
-  number of removed functions: 483 (61.53%)
+  number of retained functions: 604
+  number of removed functions: 181 (23.06%)
   removed functions:
-    f5
-    f6
-    f7
-    f8
-    f9
-    f10
-    f11
-    f12
-    f13
-    f14
-    f15
-    f16
     f17
-    f19
-    f20
-    f21
-    f22
-    f23
-    f24
-    f25
-    f26
-    f27
     f28
-    f29
     f30
-    f31
-    f32
-    f33
-    f34
     f35
     f36
-    f37
-    f38
-    f39
     f40
     f43
-    f44
     f47
     f48
-    f54
-    f55
-    f56
-    f57
     f58
-    f59
-    f60
-    f63
     f64
-    f65
-    f66
-    f67
-    f69
-    f70
-    f71
     f73
-    f74
     f75
-    f76
     f77
-    f78
-    f80
-    f81
-    f82
-    f83
-    f85
-    f87
-    f88
-    f89
     f90
-    f92
     f93
-    f94
     f95
-    f96
     f97
-    f98
     f99
-    f100
-    f101
-    f102
     f103
     f105
-    f106
     f107
     f109
-    f110
-    f111
-    f112
-    f113
     f114
     f115
-    f118
-    f120
-    f121
-    f123
     f124
-    f125
-    f126
-    f127
     f128
     f129
     f130
-    f131
     f133
     f134
-    f135
     f136
     f137
-    f139
-    f140
-    f141
-    f142
-    f143
-    f144
     f147
     f148
-    f149
     f150
-    f152
-    f154
-    f155
-    f156
-    f157
-    f158
-    f159
-    f160
-    f161
     f162
-    f163
     f164
-    f166
-    f167
     f168
-    f170
-    f172
     f174
     f175
     f176
-    f178
     f179
     f180
-    f182
     f183
     f184
     f185
-    f186
     f189
     f192
     f193
     f194
     f195
     f196
-    f198
     rsaprivatekeypair_generate_from
     f202
-    f203
-    f205
     f206
-    f209
     f210
-    f212
     f214
-    f216
-    rsapublickeypair_encrypt
-    f221
-    f222
     f223
-    f224
-    f227
     f228
     f229
     f231
-    f233
-    f234
-    f235
-    f237
     f238
-    f240
-    f241
     f242
     f245
     f251
     f252
     f255
-    f256
-    f257
-    f258
-    f259
-    f260
-    f261
-    f262
-    f263
-    f264
-    f265
     f266
     f268
     f269
     f270
-    f271
     f272
     f273
     f274
-    f275
-    f276
     f277
-    f278
-    f279
     f280
     f283
-    f284
-    f285
     f286
-    f288
-    f289
-    f290
-    f291
-    f292
-    f293
     f295
-    f296
-    f297
-    rsaprivatekeypair_sign_message
-    rsaprivatekeypair_decrypt
-    f300
     f301
     f302
     f303
@@ -260,250 +131,92 @@ statistics:
     f311
     f314
     f315
-    f316
     f318
-    f319
-    f320
-    f321
     f322
     f323
     f324
     f325
     f330
     f331
-    rsapublickeypair_verify_message
     f333
     f334
     f335
-    f336
-    f337
-    rsapublickeypair_create
     f341
     f342
-    f344
-    f345
     f346
     f347
     f349
-    f352
     f356
     f358
-    rsaprivatekeypair_get_e
-    rsaprivatekeypair_get_d
-    rsaprivatekeypair_get_n
-    rsapublickeypair_get_e
-    rsapublickeypair_get_n
     f365
     f366
     f367
-    rsaprivatekeypair_get_primes
     rsaprivatekeypair_to_pkcs8_pem
     rsapublickeypair_to_pkcs8_pem
     f371
     f372
-    f373
     f375
-    f376
-    f377
-    f378
     f379
     f381
     f382
-    f383
-    f384
     f387
-    f390
     f395
     f396
-    f397
     f398
-    f399
     f400
     f401
-    f402
     f403
     f406
-    f407
-    f409
-    f410
-    rsaprivatekeypair_generate
     f412
     f414
     rsaprivatekeypair_from_pkcs8_pem
     rsapublickeypair_from_pkcs8_pem
     f417
     f419
-    f420
     f422
     f423
     f424
     f425
-    f426
-    f427
-    f430
-    f433
     f434
-    f436
     f437
-    f438
     f439
-    f440
     f443
-    f444
     f446
-    f447
-    f448
-    f449
-    f450
     f451
-    f452
-    f453
-    f455
-    f458
-    f459
-    f460
-    f468
-    f469
-    f470
-    f471
-    f472
-    f473
-    f479
-    f483
-    f484
     f485
-    f486
     f487
     f491
-    f492
     f493
-    f496
-    f498
-    f501
     f503
     f504
     f505
     f509
-    f510
-    f511
-    f515
-    f516
-    f517
     f518
-    f519
-    f521
-    f522
     f523
     f526
     f527
-    f528
-    f529
-    f530
-    f531
     __wbg_rsaprivatekeypair_free
-    f534
-    f535
     f536
-    f539
-    f541
-    f542
     __wbg_rsapublickeypair_free
-    f548
-    f549
-    f551
-    f553
-    f554
-    f556
     f557
-    f559
-    f560
-    f561
-    f562
-    f564
-    f565
-    f566
-    f567
     f568
-    f569
-    f571
-    f572
-    f575
-    f577
-    f578
-    f579
-    f580
-    __wbindgen_malloc
-    f582
-    f583
     f584
-    f586
-    f593
-    f595
-    f599
-    f600
-    f601
-    f602
     f603
-    f607
-    f608
-    f609
-    f613
     f617
-    f621
-    f622
-    f623
-    f625
-    f628
     f629
-    f632
     __wbindgen_realloc
-    f638
     f639
     f643
     f644
-    f645
     f646
     f647
     f648
     f649
-    f651
-    f652
-    f653
-    f655
     f660
     f661
     f662
-    f663
-    f664
-    f665
-    f672
-    f674
-    f675
-    f680
-    f681
-    f683
-    f684
-    __wbindgen_free
-    f689
-    f690
-    f694
-    f695
-    f699
-    f701
-    f702
-    f703
-    f708
     f709
-    f711
     __wbindgen_add_to_stack_pointer
     f729
-    f734
-    f735
-    f757
-    f758
-    f759
-    f767
-    f768
-    f769
     f772
-  size reduction: 272503 bytes (73.85%)
+  size reduction: 58370 bytes (15.82%)

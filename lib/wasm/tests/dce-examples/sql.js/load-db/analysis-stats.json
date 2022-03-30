@@ -1,15 +1,15 @@
 
 {
-    "wasm-file-analyzed": "node_modules/sql.js/dist/org-wasm/sql-wasm.wasm", 
+    "wasm-file-analyzed": "../sql-wasm.wasm", 
     "#total-exports": 52,
-    "#reachable-exports": 17,
+    "#reachable-exports": 14,
     "#functions": 1261, 
-    "#retained-functions": 1234, 
-    "#removed-functions": 27,
-    "#%removed": 2.14, 
-    "size-reduction(bytes)": 3953, 
-    "%size-reduction": 0.36, 
+    "#retained-functions": 1231, 
+    "#removed-functions": 30,
+    "#%removed": 2.38, 
+    "size-reduction(bytes)": 4407, 
+    "%size-reduction": 0.40, 
     "highest-expr-for-idx": "i32.load(i32.const <const>)", 
-    "#%highest-expr-fox-idx-percent": 78.30     
+    "#%highest-expr-fox-idx-percent": 78.30 
 }
     

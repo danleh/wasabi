@@ -1,0 +1,66 @@
+start hook not provided by Wasabi.analysis, add empty function as fallback
+if_ hook not provided by Wasabi.analysis, add empty function as fallback
+br hook not provided by Wasabi.analysis, add empty function as fallback
+br_if hook not provided by Wasabi.analysis, add empty function as fallback
+br_table hook not provided by Wasabi.analysis, add empty function as fallback
+end hook not provided by Wasabi.analysis, add empty function as fallback
+nop hook not provided by Wasabi.analysis, add empty function as fallback
+unreachable hook not provided by Wasabi.analysis, add empty function as fallback
+drop hook not provided by Wasabi.analysis, add empty function as fallback
+select hook not provided by Wasabi.analysis, add empty function as fallback
+call_post hook not provided by Wasabi.analysis, add empty function as fallback
+return_ hook not provided by Wasabi.analysis, add empty function as fallback
+const_ hook not provided by Wasabi.analysis, add empty function as fallback
+unary hook not provided by Wasabi.analysis, add empty function as fallback
+binary hook not provided by Wasabi.analysis, add empty function as fallback
+load hook not provided by Wasabi.analysis, add empty function as fallback
+memory_size hook not provided by Wasabi.analysis, add empty function as fallback
+memory_grow hook not provided by Wasabi.analysis, add empty function as fallback
+local hook not provided by Wasabi.analysis, add empty function as fallback
+global hook not provided by Wasabi.analysis, add empty function as fallback
+Set(17) {
+  '{"function_idx":54,"export":"__wbindgen_malloc","import":null}',
+  '{"function_idx":67,"export":null,"import":null}',
+  '{"function_idx":1,"export":null,"import":null}',
+  '{"function_idx":45,"export":"hash","import":null}',
+  '{"function_idx":33,"export":null,"import":null}',
+  '{"function_idx":59,"export":null,"import":null}',
+  '{"function_idx":4,"export":null,"import":null}',
+  '{"function_idx":21,"export":null,"import":null}',
+  '{"function_idx":53,"export":null,"import":null}',
+  '{"function_idx":9,"export":null,"import":null}',
+  '{"function_idx":68,"export":null,"import":null}',
+  '{"function_idx":5,"export":null,"import":null}',
+  '{"function_idx":31,"export":null,"import":null}',
+  '{"function_idx":2,"export":null,"import":null}',
+  '{"function_idx":6,"export":null,"import":null}',
+  '{"function_idx":64,"export":"__wbindgen_free","import":null}',
+  '{"function_idx":20,"export":null,"import":null}'
+}
+17 functions are the lower bound for the analysis.
+start hook not provided by Wasabi.analysis, add empty function as fallback
+if_ hook not provided by Wasabi.analysis, add empty function as fallback
+br hook not provided by Wasabi.analysis, add empty function as fallback
+br_if hook not provided by Wasabi.analysis, add empty function as fallback
+br_table hook not provided by Wasabi.analysis, add empty function as fallback
+end hook not provided by Wasabi.analysis, add empty function as fallback
+nop hook not provided by Wasabi.analysis, add empty function as fallback
+unreachable hook not provided by Wasabi.analysis, add empty function as fallback
+drop hook not provided by Wasabi.analysis, add empty function as fallback
+select hook not provided by Wasabi.analysis, add empty function as fallback
+call_post hook not provided by Wasabi.analysis, add empty function as fallback
+return_ hook not provided by Wasabi.analysis, add empty function as fallback
+const_ hook not provided by Wasabi.analysis, add empty function as fallback
+unary hook not provided by Wasabi.analysis, add empty function as fallback
+binary hook not provided by Wasabi.analysis, add empty function as fallback
+load hook not provided by Wasabi.analysis, add empty function as fallback
+memory_size hook not provided by Wasabi.analysis, add empty function as fallback
+memory_grow hook not provided by Wasabi.analysis, add empty function as fallback
+local hook not provided by Wasabi.analysis, add empty function as fallback
+global hook not provided by Wasabi.analysis, add empty function as fallback
+Set(3) {
+  '{"function_idx":54,"export":"__wbindgen_malloc","import":null}',
+  '{"function_idx":45,"export":"hash","import":null}',
+  '{"function_idx":64,"export":"__wbindgen_free","import":null}'
+}
+3 exported functions are reachable.

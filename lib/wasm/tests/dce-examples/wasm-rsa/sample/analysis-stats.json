@@ -2,13 +2,13 @@
 {
     "wasm-file-analyzed": "../rsa_lib_bg.wasm", 
     "#total-exports": 25,
-    "#reachable-exports": 2,
+    "#reachable-exports": 17,
     "#functions": 785, 
-    "#retained-functions": 302, 
-    "#removed-functions": 483,
-    "#%removed": 61.53, 
-    "size-reduction(bytes)": 272503, 
-    "%size-reduction": 73.85, 
+    "#retained-functions": 604, 
+    "#removed-functions": 181,
+    "#%removed": 23.06, 
+    "size-reduction(bytes)": 58370, 
+    "%size-reduction": 15.82, 
     "highest-expr-for-idx": "i32.load(i32.add(<param>, i32.const <const>))", 
     "#%highest-expr-fox-idx-percent": 27.10 
 }

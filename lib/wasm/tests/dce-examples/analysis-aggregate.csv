@@ -1,12 +1,12 @@
 wasm-file-analyzed; #total-exports; #reachable-exports; #functions; #retained-functions; #removed-functions; #%removed; size-reduction(bytes); %size-reduction; highest-expr-for-idx; #%highest-expr-fox-idx-percent
-sql-wasm.wasm; 52; 17; 1261; 1234; 27; 2.14; 3953; 0.36; i32.load(i32.const<const>); 78.3
-sql-wasm.wasm; 52; 37; 1261; 1240; 21; 1.67; 3401; 0.31; i32.load(i32.const<const>); 78.3
-sql-wasm.wasm; 52; 22; 1261; 1237; 24; 1.9; 3605; 0.33; i32.load(i32.const<const>); 78.3
+sql-wasm.wasm; 52; 14; 1261; 1231; 30; 2.38; 4407; 0.4; i32.load(i32.const<const>); 78.3
+sql-wasm.wasm; 52; 35; 1261; 1238; 23; 1.82; 3663; 0.33; i32.load(i32.const<const>); 78.3
+sql-wasm.wasm; 52; 20; 1261; 1235; 26; 2.06; 3867; 0.35; i32.load(i32.const<const>); 78.3
 opencv.wasm; 275; 13; 10909; 9922; 987; 9.05; 357394; 5.14; i32.add(i32.and(<local>,i32.const<const>),i32.const<const>); 35.76
 opencv.wasm; 275; 8; 10909; 9922; 987; 9.05; 357394; 5.14; i32.add(i32.and(<local>,i32.const<const>),i32.const<const>); 35.76
 opencv.wasm; 275; 8; 10909; 9922; 987; 9.05; 357394; 5.14; i32.add(i32.and(<local>,i32.const<const>),i32.const<const>); 35.76
 opencv.wasm; 275; 8; 10909; 9922; 987; 9.05; 357394; 5.14; i32.add(i32.and(<local>,i32.const<const>),i32.const<const>); 35.76
-rsa_lib_bg.wasm; 25; 2; 785; 302; 483; 61.53; 272503; 73.85; i32.load(i32.add(<param>,i32.const<const>)); 27.1
+rsa_lib_bg.wasm; 25; 17; 785; 604; 181; 23.06; 58370; 15.82; i32.load(i32.add(<param>,i32.const<const>)); 27.1
 blake3_js_bg.wasm; 13; 3; 81; 60; 21; 25.93; 2374; 6.9; i32.load(i32.add(i32.load(i32.add(<param>,i32.const<const>)),i32.const<const>)); 50.0
 blake3_js_bg.wasm; 13; 6; 81; 68; 13; 16.05; 1703; 4.95; i32.load(i32.add(i32.load(i32.add(<param>,i32.const<const>)),i32.const<const>)); 50.0
 graphviz.wasm; 14; 0; 2014; 0; 2014; 100.0; 760599; 82.06; i32.load(i32.add(<param>,i32.const<const>)); 36.07

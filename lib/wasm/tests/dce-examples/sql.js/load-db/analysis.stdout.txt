@@ -9,33 +9,12 @@ initially reachable functions:
   Ba
   Ia
   Da
-  R
-  Q
   va
+  Q
   P
   ka
-  ga
-  la
-  ja
   xa
   N
-  ya
-  Z
-  V
-  ea
-  fa
-  ma
-  X
-  $
-  W
-  U
-  da
-  ba
-  _
-  ia
-  ha
-  aa
-  ua
 call_indirect count: 3037
 call_indirect idx expressions:
     2378 (78.30%)  i32.load(i32.const <const>)
@@ -73,24 +52,31 @@ call_indirect i32.load constant addresses:
        2 ( 0.08%)  60452
        2 ( 0.08%)  60440
        2 ( 0.08%)  60416
-functions in worklist: 35
+functions in worklist: 14
 [DONE] processing 1000 functions
 statistics:
-  number of retained functions: 1238
-  number of removed functions: 23 (1.82%)
+  number of retained functions: 1231
+  number of removed functions: 30 (2.38%)
   removed functions:
+    R
     f1072
     f1073
     f1093
     f1094
+    ya
     wa
     ta
     sa
     ra
     qa
     oa
+    ma
+    la
+    ja
+    ha
     ga
     fa
+    _
     Z
     ca
     Ga
@@ -102,4 +88,4 @@ statistics:
     Ja
     Ia
     Ha
-  size reduction: 3663 bytes (0.33%)
+  size reduction: 4407 bytes (0.40%)
