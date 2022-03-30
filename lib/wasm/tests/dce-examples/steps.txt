@@ -1,0 +1,6 @@
+// TODO: script that does this for all the tests 
+
+node index.js //get lowerbound-reachable-functions.txt 
+node index.js --reachable-exports //get reachable-exports.txt 
+cargo run --bin dce ../rsa_lib_bg.wasm reachable-exports.txt dce.wasm // do the analysis
+
