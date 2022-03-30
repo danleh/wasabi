@@ -1,2 +1,17 @@
 rsapublickeypair_new
 rsaprivatekeypair_new
+__wbindgen_malloc
+rsaprivatekeypair_generate
+__wbindgen_add_to_stack_pointer
+rsaprivatekeypair_get_d
+__wbindgen_free
+rsaprivatekeypair_get_n
+rsaprivatekeypair_get_e
+rsaprivatekeypair_get_primes
+rsapublickeypair_create
+rsapublickeypair_get_n
+rsapublickeypair_get_e
+rsaprivatekeypair_sign_message
+rsapublickeypair_verify_message
+rsapublickeypair_encrypt
+rsaprivatekeypair_decrypt
