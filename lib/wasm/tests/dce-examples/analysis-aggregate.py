@@ -3,16 +3,16 @@ import json
 
 csv = open("analysis-aggregate.csv", "w")
 
-csv.write("wasm-file-analyzed"+", "+\
-    "#total-exports"+", "+\
-    "#reachable-exports"+", "+\
-    "#functions"+", "+\
-    "#retained-functions"+", "+\
-    "#removed-functions"+", "+\
-    "#%removed"+", "+\
-    "size-reduction(bytes)"+", "+\
-    "%size-reduction"+", "+\
-    "highest-expr-for-idx"+", "+\
+csv.write("wasm-file-analyzed"+"; "+\
+    "#total-exports"+"; "+\
+    "#reachable-exports"+"; "+\
+    "#functions"+"; "+\
+    "#retained-functions"+"; "+\
+    "#removed-functions"+"; "+\
+    "#%removed"+"; "+\
+    "size-reduction(bytes)"+"; "+\
+    "%size-reduction"+"; "+\
+    "highest-expr-for-idx"+"; "+\
     "#%highest-expr-fox-idx-percent\n")
 
 
@@ -36,16 +36,16 @@ for path in Path('../dce-examples').rglob('analysis-stats.json'):
     highest_expr_for_idx = json_obj["highest-expr-for-idx"]
     highest_expr_for_idx_percent = json_obj["#%highest-expr-fox-idx-percent"]
 
-    csv.write(str(file_analyzed) + ", " + \
-        str(total_exports) + ", " + \
-        str(reachable_exports) + ", " + \
-        str(functions) + ", " + \
-        str(retained_functions) + ", " + \
-        str(removed_functions) + ", " + \
-        str(removed_percent) + ", " + \
-        str(size_reduction) + ", " + \
-        str(size_reduction_percent) + ", " + \
-        str(highest_expr_for_idx) + ", " + \
+    csv.write(str(file_analyzed) + "; " + \
+        str(total_exports) + "; " + \
+        str(reachable_exports) + "; " + \
+        str(functions) + "; " + \
+        str(retained_functions) + "; " + \
+        str(removed_functions) + "; " + \
+        str(removed_percent) + "; " + \
+        str(size_reduction) + "; " + \
+        str(size_reduction_percent) + "; " + \
+        str("".join(highest_expr_for_idx.split())) + "; " + \
         str(highest_expr_for_idx_percent) + "\n")
 
     f.close()
