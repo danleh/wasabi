@@ -1,0 +1,6 @@
+__wbindgen_malloc
+hash
+__wbindgen_free
+create_keyed
+blake3hash_update
+blake3hash_digest
