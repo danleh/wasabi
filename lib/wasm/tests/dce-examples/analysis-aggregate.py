@@ -1,7 +1,7 @@
 from pathlib import Path
 import json 
 
-csv = open("analysis-aggregate.txt", "w")
+csv = open("analysis-aggregate.csv", "w")
 
 csv.write("wasm-file-analyzed"+", "+\
     "#total-exports"+", "+\
