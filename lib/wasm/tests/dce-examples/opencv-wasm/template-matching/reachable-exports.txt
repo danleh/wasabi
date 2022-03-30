@@ -1,0 +1,8 @@
+globalCtors
+_memcpy
+_memmove
+_malloc
+_free
+_memset
+___embind_register_native_and_builtin_types
+_rintf
