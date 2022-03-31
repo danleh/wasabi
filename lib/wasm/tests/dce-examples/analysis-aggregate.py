@@ -3,16 +3,17 @@ import json
 
 csv = open("analysis-aggregate.csv", "w")
 
-csv.write("wasm-file-analyzed"+"; "+\
-    "#total-exports"+"; "+\
-    "#reachable-exports"+"; "+\
-    "#functions"+"; "+\
-    "#retained-functions"+"; "+\
-    "#removed-functions"+"; "+\
-    "#%removed"+"; "+\
-    "size-reduction(bytes)"+"; "+\
-    "%size-reduction"+"; "+\
-    "highest-expr-for-idx"+"; "+\
+csv.write("wasm-file-analyzed; "+\
+    "#total-exports; "+\
+    "#reachable-exports; "+\
+    "#functions; "+\
+    "#retained-functions; "+\
+    "#lower-bound-retained-funcs; "+\
+    "#removed-functions; "+\
+    "#%removed; "+\
+    "size-reduction(bytes); "+\
+    "%size-reduction; "+\
+    "highest-expr-for-idx; "+\
     "#%highest-expr-fox-idx-percent\n")
 
 
@@ -36,11 +37,18 @@ for path in Path('../dce-examples').rglob('analysis-stats.json'):
     highest_expr_for_idx = json_obj["highest-expr-for-idx"]
     highest_expr_for_idx_percent = json_obj["#%highest-expr-fox-idx-percent"]
 
+    lower_bound = 0; 
+    with open(str(path)[:-19]+"lowerbound-reachable-functions.txt", mode='r') as lower_f: 
+        for line in lower_f: 
+            if line.strip(): 
+                lower_bound += 1
+    
     csv.write(str(file_analyzed) + "; " + \
         str(total_exports) + "; " + \
         str(reachable_exports) + "; " + \
         str(functions) + "; " + \
         str(retained_functions) + "; " + \
+        str(lower_bound) + "; " + \
         str(removed_functions) + "; " + \
         str(removed_percent) + "; " + \
         str(size_reduction) + "; " + \

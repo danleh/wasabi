@@ -13,6 +13,19 @@ exit_status () {
 for lib in */ ; 
 do  
     cd $lib
+    echo "$lib"
+    
+    if [ $lib = "hpcc-lib/" ]
+    then 
+    	cd ..
+        continue        
+    fi
+
+    if [ $lib = "sql.js/" ]
+    then 
+    	cd ..
+        continue        
+    fi
     
     wasm_file=`find . -maxdepth 1 -type f -name "*.wasm"`
     
@@ -30,14 +43,15 @@ do
         node index.js --reachable-exports >> index.js.stdout.txt 
         exit_status
         
-        echo -n "RUSTFLAGS=-Awarnings cargo -q run --bin dce ../${wasm_file:2} reachable-exports.txt dce.wasm > analysis.stdout.txt"
-        RUSTFLAGS=-Awarnings cargo -q run --bin dce ../${wasm_file:2} reachable-exports.txt dce.wasm > analysis.stdout.txt
+        echo -n "RUSTFLAGS=-Awarnings cargo -q run --release --bin dce ../${wasm_file:2} reachable-exports.txt dce.wasm > analysis.stdout.txt"
+        RUSTFLAGS=-Awarnings cargo -q run --release --bin dce ../${wasm_file:2} reachable-exports.txt dce.wasm > analysis.stdout.txt
         exit_status
         
         cd .. 
 
     done
     cd ..
-done  
+
+done
 
 python3 analysis-aggregate.py
