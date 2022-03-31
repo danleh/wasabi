@@ -21,3 +21,7 @@
 # Ignore all node_modules in tests 
 /tests/dce-examples/**/node_modules
 
+# Ignore all .stdout.txt and .json files in dce tests  
+/tests/dce-examples/**/*.stdout.txt
+/tests/dce-examples/**/*.json
+

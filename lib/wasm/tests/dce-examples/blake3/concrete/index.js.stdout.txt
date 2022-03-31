@@ -1,3 +1,0 @@
-OPTIONS:
-      --reachable-exports	to get the exported functions that reachable
-      --check-constants		to check that the constants in file call_indirect_load_const_addr.json are never written to      
