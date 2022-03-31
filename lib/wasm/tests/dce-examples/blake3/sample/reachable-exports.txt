@@ -1,3 +1,0 @@
-__wbindgen_malloc
-hash
-__wbindgen_free

@@ -21,7 +21,10 @@
 # Ignore all node_modules in tests 
 /tests/dce-examples/**/node_modules
 
-# Ignore all .stdout.txt and .json files in dce tests  
+# Ignore all dce.wasm, lowerbound-reachable-functions.txt, reachable-exports.txt, .stdout.txt and .json files in dce tests  
 /tests/dce-examples/**/*.stdout.txt
 /tests/dce-examples/**/*.json
-
+/tests/dce-examples/**/dce.wasm 
+/tests/dce-examples/**/lowerbound-reachable-functions.txt 
+/tests/dce-examples/**/reachable-exports.txt 
+/tests/dce-examples/**/callsite-sensitive-cg.txt
