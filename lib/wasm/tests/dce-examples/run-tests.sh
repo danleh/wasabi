@@ -10,6 +10,16 @@ exit_status () {
     fi 
 }
 
+GET_CALLSITE_INFO=0
+if [ "$1" = "--get-callsite-info" ]; 
+then 
+    GET_CALLSITE_INFO=1 
+elif [ "$1" = "--help" -o "$1" = "-h" ]; 
+then 
+    echo "--get-callsite-info : get static and dynamic callsite info for tests"
+    exit 0
+fi
+
 for lib in */ ; 
 do  
     cd $lib
@@ -33,15 +43,18 @@ do
     do 
         cd $test 
         
-        printf "\n$lib$test\n"
+        #printf "\n$lib$test\n"
 
-        echo -n "node index.js"
-        node index.js > index.js.stdout.txt 
+        echo -n "node index.js --reachable-exports --lower-bound"
+        node index.js --reachable-exports --lower-bound > index.js.stdout.txt 
         exit_status
         
-        echo -n "node index.js --reachable-exports"
-        node index.js --reachable-exports >> index.js.stdout.txt 
-        exit_status
+        if [ "$GET_CALLSITE_INFO" = 1 ]; 
+        then 
+            echo -n "node index.js --get-callsite-sensitive-cg"
+            node index.js --get-callsite-sensitive-cg > /dev/null
+            exit_status 
+        fi 
         
         echo -n "RUSTFLAGS=-Awarnings cargo -q run --release --bin dce ../${wasm_file:2} reachable-exports.txt dce.wasm > analysis.stdout.txt"
         RUSTFLAGS=-Awarnings cargo -q run --release --bin dce ../${wasm_file:2} reachable-exports.txt dce.wasm > analysis.stdout.txt

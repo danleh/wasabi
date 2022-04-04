@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex, iter::FromIterator, cmp::Reverse};
 
-use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count, approx_i32_eval, I32Range}}, highlevel::FunctionType, Val, ValType};
+use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count, approx_i32_eval, I32Range}}, highlevel::{FunctionType, self}, Val, ValType};
 
 use crate::wimpl::wimplify::*;
 
@@ -103,6 +103,8 @@ pub struct Options {
     // TODO if true, assumes that an imported function can call any exported function.
     // pub imported_functions_conservative: bool,
 }
+
+
 
 pub fn reachable_callgraph(
     module: &wimpl::Module,
@@ -223,10 +225,13 @@ pub fn reachable_callgraph(
     Ok(callgraph)
 }
 
+
+
 pub fn collect_target_constraints(
     src: &Function,
     options: Options
 ) -> FxHashSet<Target> {
+    
     // TODO how to handle imported functions? Can they each every exported function?
     // Do we add a direct edge there? Or do we add an abstract "host" node? 
     // Do we merge with a JavaScript call-graph analysis?

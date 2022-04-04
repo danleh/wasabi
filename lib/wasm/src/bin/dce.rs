@@ -1,7 +1,29 @@
-use std::{io::{self, BufRead, Write}, fs::{File, self}, collections::HashMap};
+use std::{io::{self, BufRead, Write}, fs::{File, self}, collections::{HashMap, BTreeMap}};
 
 use rustc_hash::{FxHashSet, FxHashMap};
 use wasm::{wimpl::{self, FunctionId, analyze::{print_map_count, collect_call_indirect_idx_expr}, callgraph::{Options, reachable_callgraph}}, highlevel::{self, Instr}, Val};
+
+pub fn get_callsite_info(module: &highlevel::Module) {
+    let mut callsite_cg = BTreeMap::new(); 
+    
+    for (src_name, src_func) in module.functions.iter().enumerate() {
+
+        if let Some(code) = src_func.code() {
+        for (idx, instr) in code.body.as_slice().iter().enumerate() {
+            if let highlevel::Instr::Call(func_index) = instr {
+                callsite_cg.insert((idx, src_name), format!("f{}->f{}", &src_name, func_index.to_usize())); 
+            }
+        }
+        }
+    }
+
+    //println!("{:?}",callsite_cg); 
+    let mut file = File::create("callsite_cg_static.txt").unwrap();
+    for ((linenum, src), val) in callsite_cg.iter() {
+        writeln!(file, "{} : {}", linenum, *val).unwrap(); 
+    }
+}
+
 
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
@@ -15,12 +37,16 @@ fn main() {
     let mut wasm = highlevel::Module::from_file(wasm_path).unwrap();
     let wimpl = wimpl::wimplify::wimplify(&wasm).unwrap();
 
+    get_callsite_info(&wasm); 
+
     let  mut total_num_exports = 0; 
     for func in &wasm.functions {
         if !func.export.is_empty() {
             total_num_exports += 1;
         }
     }
+    
+    
     
     let reachable_funcs = {
         let file = File::open(exported_funcs_path).unwrap();
