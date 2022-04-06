@@ -46,8 +46,8 @@ impl Stmt {
         }
 
         // Then traverse into the expressions and recursive statements.
-        use Stmt::*;
-        match self {
+        use super::StmtKind::*;
+        match &self.kind {
             // Non-recursive statements:
             Unreachable => {}
             Expr(expr) => {
@@ -98,8 +98,8 @@ impl Expr {
             return;
         }
 
-        use Expr::*;
-        match self {
+        use super::ExprKind::*;
+        match &self.kind {
             VarRef(_) => {},
             Const(_) => {},
             Load { op: _, addr } => {
@@ -169,10 +169,6 @@ impl Expr {
     // }
 }
 
-// trait Merge {
-//     fn merge(self, other: Self) -> Self;
-// }
-
 #[test]
 fn example_how_to_share_state_across_visitors() {
     use std::fmt::Write;
@@ -180,16 +176,16 @@ fn example_how_to_share_state_across_visitors() {
     let module = crate::wimpl::Module::from_wasm_file("tests/wimpl/wimplify_expected/block/block_nested.wasm").unwrap();
 
     // Must use RefCell because one cannot create two mutable references, one for each closure.
-    // So instead borrow check at runtime.
+    // So instead borrow check at runtime by wrapping `output` in a `RefCell`.
     let output = std::cell::RefCell::new(String::new());
     for func in &module.functions {
         func.body.visit_pre_order(
             |x| {
-                writeln!(output.borrow_mut(), "stmt: {x}\n").unwrap();
+                writeln!(output.borrow_mut(), "stmt:\n{x}\n").unwrap();
                 true
             }, 
             |x| {
-                writeln!(output.borrow_mut(), "expr: {x}\n").unwrap();
+                writeln!(output.borrow_mut(), "expr:\n{x}\n").unwrap();
                 true
             }
         );
@@ -203,18 +199,18 @@ fn example_collect_constants() {
 
     println!("{}", module);
 
-    // Because this state is only captured mutably in the expression closure, this doesn't need
-    // `RefCell`.
+    // Because this state is only captured mutably in a single expression closure, this example
+    // doesn't need `RefCell`.
     let mut all_constants = std::collections::BTreeSet::new();
     for func in &module.functions {
         func.body.visit_expr_pre_order(
             |expr| {
-                if let Expr::Const(val) = expr {
+                if let super::ExprKind::Const(val) = &expr.kind {
                     all_constants.insert(*val);
                 }
                 true
             }
         );
     }
-    println!("{:?}", all_constants)
+    println!("all constants in the module: {:?}", all_constants)
 }
