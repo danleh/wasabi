@@ -5,7 +5,7 @@ use std::{
 
 use rustc_hash::FxHashMap;
 use wasm::{
-    wimpl::{self, analyze::{param_exprs, collect_call_indirect_args, collect_call_indirect_idx_expr, print_map_count}, Expr, Function, Module, Stmt, Var, FunctionId},
+    wimpl::{self, analyze::{param_exprs, collect_call_indirect_args, collect_call_indirect_idx_expr, print_map_count}, ExprKind, Function, Module, StmtKind, Var, FunctionId, Expr},
     ValType, highlevel::{FunctionType, MemoryOp},
 };
 
@@ -25,8 +25,6 @@ pub fn main() {
     
     println!("most frequent call_indirect expressions:");
     print_map_count(&collect_call_indirect_idx_expr(&module));
-
-    return;
 
     let mut call_indirect_args: BTreeMap<FunctionType, BTreeMap<Vec<String>, usize>> = BTreeMap::default();
 
@@ -104,10 +102,10 @@ pub fn collect_var_constraints(module: &Module, function: &Function) -> Constrai
         module: &Module,
         function: &Function,
     ) {
-        use Expr::*;
+        use ExprKind::*;
         use UnaryOp::*;
         use BinaryOp::*;
-        match expr {
+        match &expr.kind {
             VarRef(var) => {
                 constraints.add(function, *var, constraint);
             }
@@ -168,8 +166,8 @@ pub fn collect_var_constraints(module: &Module, function: &Function) -> Constrai
         |expr, constraint| collect_var_constraints(expr, constraint, &mut constraints, module, function);
 
     function.body.visit_stmt_pre_order(|stmt| {
-        use Stmt::*;
-        match stmt {
+        use StmtKind::*;
+        match &stmt.kind {
             Unreachable => {}
             Expr(expr) => collect_var_constraints(expr, Any),
             Assign { lhs, type_, rhs } => {
