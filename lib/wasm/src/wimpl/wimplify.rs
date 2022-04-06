@@ -8,7 +8,7 @@ use crate::wimpl::*;
 
 /// The mutable state during conversion.
 pub struct State<'module> {
-    instrs_iter: std::slice::Iter<'module, highlevel::Instr>,
+    instrs_iter: std::iter::Enumerate<std::slice::Iter<'module, highlevel::Instr>>,
     type_checker: TypeChecker<'module>,
 
     label_count: u32,
@@ -16,6 +16,8 @@ pub struct State<'module> {
 
     #[allow(clippy::type_complexity)]
     label_stack: Vec<(Label, /* is_loop */ bool, Option<Var>)>,
+
+    function_metadata: HashMap<InstrId, WasmSrcLocation>,
 }
 
 /// The immutable context information required but never mutated during conversion.
@@ -23,6 +25,7 @@ pub struct State<'module> {
 pub struct Context<'module> {
     module: &'module highlevel::Module,
     func_ty: &'module FunctionType,
+    func_idx: Idx<highlevel::Function>,
 }
 
 fn wimplify_instrs<'module>(
@@ -32,13 +35,13 @@ fn wimplify_instrs<'module>(
 ) -> Result</* was_else */ bool, String> {
 
     use crate::highlevel::Instr as wasm;
-    use Expr::*;
+    use ExprKind::*;
     use Var::*;
 
     // State that is "local" to this nested block (unlike `state`, which is for the whole function).
     let mut expr_stack: Vec<(Expr, ValType)> = Vec::new();
 
-    while let Some(instr) = state.instrs_iter.next() {
+    while let Some((instr_idx, instr)) = state.instrs_iter.next() {
         let ty = state.type_checker.check_next_instr(instr).map_err(|e| e.to_string())?;
 
         // DEBUG
@@ -67,6 +70,29 @@ fn wimplify_instrs<'module>(
 
         // Utility functions for the conversion:
 
+        // Insert the current wasm instruction's location as metadata for the given generated
+        // wimpl Expr/Stmt.
+        let attach_current_wasm_src_location = |state: &mut State, id: InstrId| {
+            let wasm_src_location = WasmSrcLocation(context.func_idx, instr_idx.into());
+            state.function_metadata.insert(id, wasm_src_location);
+        };
+
+        // Append a statement to the result and attach the current WebAssembly instruction location
+        // as its source location.
+        let push_stmt = |stmts_result: &mut Vec<Stmt>, state: &mut State, stmt: StmtKind| {
+            let stmt = Stmt::new(stmt);
+            attach_current_wasm_src_location(state, stmt.id);
+            stmts_result.push(stmt);
+        };
+
+        // Push an expression on the stack and attach the current WebAssembly instruction location
+        // as its source location.
+        let push_expr = |expr_stack: &mut Vec<(Expr, ValType)>, state: &mut State, expr: ExprKind, ty: ValType| {
+            let expr = Expr::new(expr);
+            attach_current_wasm_src_location(state, expr.id);
+            expr_stack.push((expr, ty));
+        };
+
         // Only call this function when you have finished translating the instructions, i.e., after
         // you have popped all inputs from the `var_stack`, since this changes `var_stack`.
         fn create_fresh_stack_var(state: &mut State) -> Var {
@@ -86,7 +112,7 @@ fn wimplify_instrs<'module>(
         // and the the duplication is just refering to the inserted stack slot with a VarRef.
         fn materialize_all_exprs_as_stmts(state: &mut State, expr_stack: &mut Vec<(Expr, ValType)>, stmts_result: &mut Vec<Stmt>) {
             for (expr, type_) in expr_stack {
-                match expr {
+                match expr.kind {
                     VarRef(Stack(_)) => {
                         // Optimization: Expression already is in a stack variable, so no need to 
                         // materialize it again (and it also cannot be overwritten since stack 
@@ -100,14 +126,37 @@ fn wimplify_instrs<'module>(
                         // creation and assignment of the materialized stack variable is additional
                         // code).
                     }
-                    expr => {
+                    _ => {
+                        // All other cases:
+                        // 1. Create a fresh variable
+                        // 2. Replace the expression in the stack with a reference to that variable.
+                        // 3. Push out a statement, assigning the expression to the fresh variable.
+
                         let var = create_fresh_stack_var(state);
-                        let expr = std::mem::replace(expr, VarRef(var));
-                        stmts_result.push(Stmt::Assign {
+
+                        // Source location tracking:
+                        // The expression on the stack refers back to the original WebAssembly 
+                        // instruction that has produced the stack value. 
+                        // We reuse this source location also for the generated variable reference 
+                        // and the assignment statement.
+                        // In particular, it would be NOT correct to use the source location of the
+                        // current instruction that has only prompted us to materialize the 
+                        // expression.
+                        let wasm_src_location = state.function_metadata.get(&expr.id).expect("missing metadata for expression from expression stack").clone();
+                        
+                        let varref = Expr::new(VarRef(var));
+                        state.function_metadata.insert(varref.id, wasm_src_location.clone());
+                        
+                        let expr = std::mem::replace(expr, varref);
+                        // The `expr` already has the correct metadata attached, so nothing to do here...
+
+                        let stmt = Stmt::new(StmtKind::Assign {
                             lhs: var,
                             type_: *type_,
                             rhs: expr
-                        })
+                        });
+                        state.function_metadata.insert(stmt.id, wasm_src_location);
+                        stmts_result.push(stmt);
                     }
                 }
             }
@@ -123,7 +172,7 @@ fn wimplify_instrs<'module>(
             }
         }
 
-        fn create_block_label_and_var(state: &mut State, expr_stack: &mut Vec<(Expr, ValType)>, blocktype: BlockType, is_loop: bool) -> Label {
+        let create_block_label_and_var = |state: &mut State, expr_stack: &mut Vec<(Expr, ValType)>, blocktype: BlockType, is_loop: bool| -> Label {
             // Allocate a new label for this block.
             let label = Label(state.label_count);
             state.label_count += 1;
@@ -134,7 +183,7 @@ fn wimplify_instrs<'module>(
                     // block label number.
                     let result_var = BlockResult(label.0);
                     // The result of the block is then at the top of the stack after the block.
-                    expr_stack.push((VarRef(result_var), type_));
+                    push_expr(expr_stack, state, VarRef(result_var), type_);
                     Some(result_var)
                 },
                 None => None,
@@ -143,7 +192,7 @@ fn wimplify_instrs<'module>(
             state.label_stack.push((label, is_loop, result_var));
 
             label
-        }
+        };
 
         fn wasm_label_to_wimpl_label_and_block_var(state: &State, wasm_label: crate::Label) -> (Label, Option<Var>) {
             let (wimpl_label, is_loop, block_result) = *state.label_stack.iter().rev().nth(wasm_label.to_usize()).expect("invalid branch label, not in label stack");
@@ -159,19 +208,42 @@ fn wimplify_instrs<'module>(
             }
         }
 
+        // For loads and stores, convert the offset (that is part of the Wasm instruction, but Wimpl
+        // doesn't have) to a constant addition on the address.
+        // Also drops the memarg alignment hint, since that is only for optimization by the Wasm 
+        // runtime, but not useful for Wimpl static analysis. 
+        // (FIXME But that also means Wasm -> Wimpl -> Wasm doesn't roundtrip since information is lost.)
+        // Associate the same source location (the Wasm store instruction) with all that we
+        // generated, i.e., the constant and the addition.
+        let convert_memarg_offset_to_addr_expr = |state: &mut State, memarg: Memarg, addr_expr: &mut Expr| {
+            if memarg.offset != 0 {
+                let offset = Expr::new(Const(Val::I32(memarg.offset.try_into().expect("u32 to i32"))));
+                attach_current_wasm_src_location(state, offset.id);
+
+                let add = Expr::new(Binary(BinaryOp::I32Add, 
+                    Box::new(addr_expr.clone()), 
+                    Box::new(offset)
+                ));
+                attach_current_wasm_src_location(state, add.id);
+                
+                *addr_expr = add;
+            }
+        };
+
+
         // Conversion of each WebAssembly instruction to (one or more) Wimpl statements:
         match instr {
 
             wasm::Unreachable => {
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
-                stmts_result.push(Stmt::Unreachable)
+                push_stmt(stmts_result, state, StmtKind::Unreachable) 
             },
 
             wasm::Nop => {},
 
             wasm::Block(blocktype) => {
                 // Do this before any statements are pushed out, or expressions added to the stack
-                // (e.g., the variable holding the result.)
+                // (e.g., the block variable holding the result.)
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
                 let label = create_block_label_and_var(state, &mut expr_stack, *blocktype, false);
@@ -183,12 +255,10 @@ fn wimplify_instrs<'module>(
                 let ends_with_else = wimplify_instrs(&mut block_body, state, context)?;
                 assert!(!ends_with_else, "block should be terminated by end, not else");
 
-                stmts_result.push(
-                    Stmt::Block {
-                        body: Body(block_body),
-                        end_label: label,
-                    }
-                );
+                push_stmt(stmts_result, state, StmtKind::Block {
+                    body: Body(block_body),
+                    end_label: label,
+                });
             }
             wasm::Loop(blocktype) => {
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
@@ -199,8 +269,8 @@ fn wimplify_instrs<'module>(
                 let ends_with_else = wimplify_instrs(&mut loop_body, state, context)?;
                 assert!(!ends_with_else, "loop should be terminated by end, not else");
 
-                stmts_result.push(
-                    Stmt::Loop {
+                push_stmt(stmts_result, state, 
+                    StmtKind::Loop {
                         begin_label: label,
                         body: Body(loop_body),
                     }
@@ -229,12 +299,14 @@ fn wimplify_instrs<'module>(
 
                 // Wrap `if` inside a `block`, because Wimpl ifs don't have a label, but if a 
                 // branch wants to exit the if, it needs to target a label.
-                stmts_result.push(Stmt::Block {
-                    body: Body(vec![Stmt::If {
-                        condition,
-                        if_body: Body(if_body),
-                        else_body,
-                    }]),
+                let if_stmt = Stmt::new(StmtKind::If {
+                    condition,
+                    if_body: Body(if_body),
+                    else_body,
+                });
+                attach_current_wasm_src_location(state, if_stmt.id);
+                push_stmt(stmts_result, state, StmtKind::Block {
+                    body: Body(vec![if_stmt]),
                     end_label: label,
                 });
             },
@@ -251,7 +323,7 @@ fn wimplify_instrs<'module>(
                     // Because the stack should be empty at the end of a block, we don't need to
                     // materialize expressions here. See assert below.
                     
-                    stmts_result.push(Stmt::Assign {
+                    push_stmt(stmts_result, state, StmtKind::Assign {
                         lhs: if_result_var,
                         type_,
                         rhs: value,
@@ -273,7 +345,7 @@ fn wimplify_instrs<'module>(
                     // Because the stack should be empty at the end of a block, we don't need to
                     // materialize expressions here. See assert below.
                     
-                    stmts_result.push(Stmt::Assign {
+                    push_stmt(stmts_result, state, StmtKind::Assign {
                         lhs: block_result_var,
                         type_,
                         rhs: value,
@@ -296,7 +368,7 @@ fn wimplify_instrs<'module>(
 
                     materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
-                    stmts_result.push(Stmt::Assign {
+                    push_stmt(stmts_result, state, StmtKind::Assign {
                         lhs: return_var,
                         type_,
                         rhs: return_expr
@@ -305,7 +377,7 @@ fn wimplify_instrs<'module>(
                     materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
                 }
 
-                stmts_result.push(Stmt::Br { target: wimpl_label })
+                push_stmt(stmts_result, state, StmtKind::Br { target: wimpl_label })
             }
 
             wasm::Br(label) => {
@@ -317,7 +389,7 @@ fn wimplify_instrs<'module>(
                     
                     materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
                     
-                    stmts_result.push(Stmt::Assign {
+                    push_stmt(stmts_result, state, StmtKind::Assign {
                         lhs: block_var,
                         type_,
                         rhs: branch_value_var,
@@ -326,7 +398,7 @@ fn wimplify_instrs<'module>(
                     materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
                 }
 
-                stmts_result.push(Stmt::Br { target: wimpl_label })
+                push_stmt(stmts_result, state, StmtKind::Br { target: wimpl_label })
             },
 
             // Translate br_if as if + (unconditional) br.
@@ -344,23 +416,23 @@ fn wimplify_instrs<'module>(
                 // variable.
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
-                let mut if_body = Vec::with_capacity(2);
+                let mut if_body = Vec::with_capacity(1 + block_var.iter().len());
                 if let Some(block_var) = block_var {
-                    // The value "transported" by the branch, needs to be duplicated, in case the
+                    // The value "transported" by the branch needs to be duplicated, in case the
                     // branch is not taken.
                     // Since we just materialized this, this is going to be a `VarRef` and cloning
                     // it is fine (doesn't alter semantics or introduce duplicate expressions).
                     let (branch_value_var, type_) = expr_stack.last().expect("br_if to this label expects a value").clone();
                     
-                    if_body.push(Stmt::Assign {
+                    push_stmt(&mut if_body, state, StmtKind::Assign {
                         lhs: block_var,
                         type_,
                         rhs: branch_value_var,
                     });
                 }
-                if_body.push(Stmt::Br { target: wimpl_label });
+                push_stmt(&mut if_body, state, StmtKind::Br { target: wimpl_label });
 
-                stmts_result.push(Stmt::If {
+                push_stmt(stmts_result, state, StmtKind::If {
                     condition,
                     if_body: Body(if_body),
                     else_body: None,
@@ -374,31 +446,32 @@ fn wimplify_instrs<'module>(
                 // Same as for br_if above.
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
-                let br_with_maybe_assign = move |label: crate::Label, state: &mut State, expr_stack: &Vec<(Expr, ValType)>| -> Vec<Stmt> {
+                // Similar to br_if above, except that we do this for every target instead of just once.
+                let make_case_body = move |label: crate::Label, state: &mut State, expr_stack: &Vec<(Expr, ValType)>| -> Vec<Stmt> {
                     let (wimpl_label, block_var) = wasm_label_to_wimpl_label_and_block_var(state, label);
                     
+                    let mut case_body = Vec::with_capacity(1 + block_var.iter().len());
                     if let Some(block_var) = block_var {
                         // Same as for br_if above.
                         let (branch_value_var, type_) = expr_stack.last().expect("this br_table expects a value").clone();
 
-                        vec![
-                            Stmt::Assign {
-                                lhs: block_var,
-                                type_,
-                                rhs: branch_value_var,
-                            },
-                            Stmt::Br { target: wimpl_label }
-                        ]
-                    } else {
-                        vec![Stmt::Br { target: wimpl_label }]
+                        push_stmt(&mut case_body, state, StmtKind::Assign {
+                            lhs: block_var,
+                            type_,
+                            rhs: branch_value_var,
+                        });
                     }
+                    push_stmt(&mut case_body, state, StmtKind::Br { target: wimpl_label });
+
+                    case_body
                 };
 
-                stmts_result.push(Stmt::Switch {
+                let switch = StmtKind::Switch {
                     index: table_index_expr,
-                    cases: table.iter().map(|label| Body(br_with_maybe_assign(*label, state, &mut expr_stack))).collect(),
-                    default: Body(br_with_maybe_assign(*default, state, &mut expr_stack)),
-                })
+                    cases: table.iter().map(|label| Body(make_case_body(*label, state, &mut expr_stack))).collect(),
+                    default: Body(make_case_body(*default, state, &mut expr_stack)),
+                };
+                push_stmt(stmts_result, state, switch);
             }
 
             wasm::Call(func_index) => {
@@ -413,9 +486,14 @@ fn wimplify_instrs<'module>(
                 match ty.results() {
                     [] => {
                         materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
-                        stmts_result.push(Stmt::Expr(call_expr))
+                        // If we create an intermediate statement expression, also attach the source
+                        // location information to it (the information for the statement is attached
+                        // automatically by `push_stmt()`).
+                        let call_expr = Expr::new(call_expr);
+                        attach_current_wasm_src_location(state, call_expr.id);
+                        push_stmt(stmts_result, state, StmtKind::Expr(call_expr));
                     },
-                    [type_] => expr_stack.push((call_expr, *type_)),
+                    [type_] => push_expr(&mut expr_stack, state, call_expr, *type_),
                     _ => panic!("WebAssembly multi-value extension")
                 }
             },
@@ -437,9 +515,11 @@ fn wimplify_instrs<'module>(
                 match ty.results() {
                     [] => {
                         materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
-                        stmts_result.push(Stmt::Expr(call_expr))
+                        let call_expr = Expr::new(call_expr);
+                        attach_current_wasm_src_location(state, call_expr.id);
+                        push_stmt(stmts_result, state, StmtKind::Expr(call_expr));
                     },
-                    [type_] => expr_stack.push((call_expr, *type_)),
+                    [type_] => push_expr(&mut expr_stack, state, call_expr, *type_),
                     _ => panic!("WebAssembly multi-value extension")
                 }
             }
@@ -448,21 +528,21 @@ fn wimplify_instrs<'module>(
                 let expr = expr_stack.pop().expect("drop expects a value on the stack").0;
                 
                 // Optimization:
-                match expr {
+                match expr.kind {
                     // Don't generate an expression-statement, if the popped expression is just a 
                     // variable reference, i.e., the expression statement won't have any effect.
                     // Also, in that case, we don't execute any code at all, so no need to 
                     // materialize the rest of the stack either.
-                    VarRef(_) => {}
+                    VarRef(_) => { /* FIXME Leaks the metadata associated to the dropped `expr`. */ }
                     // The same argument also applies to constants.
                     // TODO More generally, one could avoid generating statements for any 
                     // expression without side-effects, e.g., via a method Expr::has_side_effect().
-                    Const(_) => {}
-                    // Otherwise, emit it as a statement, to at least execute it for its 
+                    Const(_) => { /* FIXME Leaks the metadata associated to the dropped `expr`. */ }
+                    // Otherwise, emit it as an expression statement, to at least execute it for its 
                     // side-effects, e.g., if it was a call.
                     _ => {
                         materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
-                        stmts_result.push(Stmt::Expr(expr))
+                        push_stmt(stmts_result, state, StmtKind::Expr(expr))
                     }
                 }
 
@@ -486,32 +566,38 @@ fn wimplify_instrs<'module>(
                 let else_result_var = expr_stack.pop().expect("select expects else value on the stack").0;
                 let if_result_var = expr_stack.pop().expect("select expects if value on the stack").0;
 
-                // TODO Use a block result variable here? But then be careful to increase the label
-                // counter as well, because there is an invariant #label == #block result vars.
+                // TODO Use a block result variable here for consistency with if block results?
+                // But then one have to be VERY careful to increase the label counter as well, 
+                // because we rely on the invariant that #label == #block result vars.
                 let result_var = create_fresh_stack_var(state);
-                expr_stack.push((VarRef(result_var), type_));
+                push_expr(&mut expr_stack, state, VarRef(result_var), type_);
 
-                stmts_result.push(
-                    Stmt::If {
+                let if_result_assign = Stmt::new(StmtKind::Assign {
+                    lhs: result_var,
+                    type_,
+                    rhs: if_result_var,
+                });
+                let else_result_assign = Stmt::new(StmtKind::Assign {
+                    lhs: result_var,
+                    type_,
+                    rhs: else_result_var,
+                });
+                // Use the same source location for the generated statements.
+                attach_current_wasm_src_location(state, if_result_assign.id);
+                attach_current_wasm_src_location(state, else_result_assign.id);
+                push_stmt(stmts_result, state, 
+                    StmtKind::If {
                         condition,
-                        if_body: Body(vec![Stmt::Assign {
-                            lhs: result_var,
-                            type_,
-                            rhs: if_result_var,
-                        }]),
-                        else_body: Some(Body(vec![Stmt::Assign {
-                            lhs: result_var,
-                            type_,
-                            rhs: else_result_var,
-                        }]))
+                        if_body: Body(vec![if_result_assign]),
+                        else_body: Some(Body(vec![else_result_assign]))
                     }
-                )
+                );
             }
 
             wasm::Local(highlevel::LocalOp::Get, local_idx) => {
                 let type_ = ty.results()[0];
 
-                expr_stack.push((VarRef(local_idx_to_var(context, *local_idx)), type_))
+                push_expr(&mut expr_stack, state, VarRef(local_idx_to_var(context, *local_idx)), type_);
             }
 
             wasm::Local(highlevel::LocalOp::Set, local_idx) => {
@@ -520,7 +606,7 @@ fn wimplify_instrs<'module>(
 
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
-                stmts_result.push(Stmt::Assign {
+                push_stmt(stmts_result, state, StmtKind::Assign {
                     lhs: local_idx_to_var(context, *local_idx),
                     type_,
                     rhs,
@@ -535,18 +621,18 @@ fn wimplify_instrs<'module>(
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
                 let local_var = local_idx_to_var(context, *local_idx);
-                stmts_result.push(Stmt::Assign {
+                push_stmt(stmts_result, state, StmtKind::Assign {
                     lhs: local_var,
                     type_,
                     rhs: value,
                 });
-                expr_stack.push((VarRef(local_var), type_));
+                push_expr(&mut expr_stack, state, VarRef(local_var), type_);
             }
 
             wasm::Global(highlevel::GlobalOp::Get, global_idx) => {
                 let type_ = ty.results()[0];
 
-                expr_stack.push((VarRef(Global(global_idx.to_u32())), type_))
+                push_expr(&mut expr_stack, state, VarRef(Global(global_idx.to_u32())), type_);
             }
 
             wasm::Global(highlevel::GlobalOp::Set, global_idx) => {
@@ -555,35 +641,24 @@ fn wimplify_instrs<'module>(
 
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
-                stmts_result.push(Stmt::Assign {
+                push_stmt(stmts_result, state, StmtKind::Assign {
                     lhs: Global(global_idx.to_u32()),
                     type_,
                     rhs,
-                })
+                });
             }
 
             wasm::Load(loadop, memarg) => {
                 let (mut addr, addr_ty) = expr_stack.pop().expect("load expects an address on the stack");
                 assert_eq!(addr_ty, ValType::I32);
 
+                convert_memarg_offset_to_addr_expr(state, *memarg, &mut addr);
+
                 let type_ = ty.results()[0];
-
-                // Convert offset to constant addition on address.
-                // Drop alignment hint, since that is only for optimization.
-                if memarg.offset != 0 {
-                    addr = Binary(BinaryOp::I32Add, 
-                        Box::new(addr), 
-                        Box::new(Const(Val::I32(memarg.offset.try_into().expect("u32 to i32"))))
-                    );
-                }
-
-                expr_stack.push((
-                    Load {
-                        op: *loadop,
-                        addr: Box::new(addr),
-                    },
-                    type_
-                ))
+                push_expr(&mut expr_stack, state, Load {
+                    op: *loadop,
+                    addr: Box::new(addr),
+                }, type_);
             }
 
             wasm::Store(op, memarg) => {
@@ -593,28 +668,22 @@ fn wimplify_instrs<'module>(
                 let (mut addr, addr_ty) = expr_stack.pop().expect("store expects an address on the stack");
                 assert_eq!(addr_ty, ValType::I32);
 
-                // Convert offset to constant addition on address.
-                // Drop alignment hint, since that is only for optimization.
-                if memarg.offset != 0 {
-                    addr = Binary(BinaryOp::I32Add, 
-                        Box::new(addr), 
-                        Box::new(Const(Val::I32(memarg.offset.try_into().expect("u32 to i32"))))
-                    );
-                }
+                convert_memarg_offset_to_addr_expr(state, *memarg, &mut addr);
 
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
-                stmts_result.push(Stmt::Store {
+                push_stmt(stmts_result, state, StmtKind::Store {
                     op: *op,
                     addr,
                     value,
-                })
+                });
             }
 
             wasm::MemorySize(memory_idx) => {
                 assert_eq!(memory_idx.to_usize(), 0, "Wasm MVP only has a single memory");
 
-                expr_stack.push((MemorySize, ty.results()[0]))
+                let result_type = ty.results()[0];
+                push_expr(&mut expr_stack, state, MemorySize, result_type);
             }
 
             wasm::MemoryGrow(memory_idx) => {
@@ -623,25 +692,31 @@ fn wimplify_instrs<'module>(
                 let (pages, pages_ty) = expr_stack.pop().expect("memory.grow expects a value on the stack");
                 assert_eq!(pages_ty, ValType::I32);
 
-                expr_stack.push((MemoryGrow { pages: Box::new(pages) }, ty.results()[0]))
+                let result_type = ty.results()[0];
+                push_expr(&mut expr_stack, state, MemoryGrow { pages: Box::new(pages) }, result_type);
             }
 
             wasm::Const(val) => {
-                expr_stack.push((Const(*val), ty.results()[0]))
+                push_expr(&mut expr_stack, state, Const(*val), val.to_type());
             }
 
             wasm::Unary(op) => {
                 let (arg, type_) = expr_stack.pop().expect("unary operation expects argument on the stack");
                 assert_eq!(type_, ty.inputs()[0]);
-                expr_stack.push((Unary(*op, Box::new(arg)), ty.results()[0]))
+
+                let result_type = ty.results()[0];
+                push_expr(&mut expr_stack, state, Unary(*op, Box::new(arg)), result_type);
             }
 
             wasm::Binary(op) => {
                 let (right, type_) = expr_stack.pop().expect("binary operation expects right argument on the stack");
                 assert_eq!(type_, ty.inputs()[1]);
+
                 let (left, type_) = expr_stack.pop().expect("binary operation expects left argument on the stack");
                 assert_eq!(type_, ty.inputs()[0]);
-                expr_stack.push((Binary(*op, Box::new(left), Box::new(right)), ty.results()[0]))
+                
+                let result_type = ty.results()[0];
+                push_expr(&mut expr_stack, state, Binary(*op, Box::new(left), Box::new(right)), result_type);
             }
         }
     }
@@ -649,9 +724,14 @@ fn wimplify_instrs<'module>(
     Ok(false)
 }
 
-fn wimplify_function_body(function: &highlevel::Function, module: &highlevel::Module) -> Result<Body, String> {
+fn wimplify_function_body(
+    function: &highlevel::Function,
+    function_idx: Idx<highlevel::Function>,
+    module: &highlevel::Module, 
+    module_metadata: &mut HashMap<InstrId, WasmSrcLocation>, 
+) -> Result<Body, String> {
     // The body will be at least the number of locals and often a nop or return instruction.
-    let mut stmts_result = Vec::with_capacity(function.local_count() + 1);
+    let mut stmts_result: Vec<Stmt> = Vec::with_capacity(function.local_count() + 1);
 
     // Initialize the local variables.
     for (local_idx, loc) in function.locals() {
@@ -659,11 +739,14 @@ fn wimplify_function_body(function: &highlevel::Function, module: &highlevel::Mo
         if let Some(_loc_name) = loc_name {
             todo!("you haven't yet implemented locals having names");
         } else {
-            stmts_result.push(Stmt::Assign {
+            stmts_result.push(StmtKind::Assign {
                 lhs: Var::Local(local_idx.to_u32() - function.type_.inputs().len() as u32),
-                rhs: Expr::Const(Val::get_default_value(loc_type)),
+                rhs: ExprKind::Const(Val::get_default_value(loc_type)).into(),
                 type_: loc_type,
-            })
+            }.into())
+            // Note that we do not attach metadata (Wasm source location info) to these generated
+            // assignments, because they are implicit, due to the zero-initialization of locals in
+            // WebAssembly.
         }
     }
 
@@ -672,15 +755,17 @@ fn wimplify_function_body(function: &highlevel::Function, module: &highlevel::Mo
     if let Some(code) = function.code() {
         let context = Context {
             module,
-            func_ty: &function.type_
+            func_ty: &function.type_, 
+            func_idx: function_idx, 
         };
 
         let mut state = State {
-            instrs_iter: code.body.as_slice().iter(),
+            instrs_iter: code.body.as_slice().iter().enumerate(),
             type_checker: TypeChecker::begin_function(function, module),
             label_stack: Vec::new(),
             label_count: 1, // 0 is already used by the function body block.
             stack_var_count: 0,
+            function_metadata: HashMap::new(),
         };
 
         let return_var = match function.type_.results() {
@@ -692,6 +777,8 @@ fn wimplify_function_body(function: &highlevel::Function, module: &highlevel::Mo
 
         let was_else = wimplify_instrs(&mut stmts_result, &mut state, context)?;
         assert!(!was_else, "function should not end with else");
+
+        module_metadata.extend(state.function_metadata.into_iter());
     }
 
     Ok(Body(stmts_result))
@@ -701,22 +788,24 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
     // Make sure that the produced `FunctionId`s are unique (i.e., that no function names clash).
     let mut function_ids = HashSet::new();
 
+    let mut metadata = HashMap::new();
+
     // TODO parallelize
-    let functions = module.functions().map(|(idx, function)| -> Result<Function, String> {
-        let name = FunctionId::from_idx(idx, module);
+    let functions = module.functions().map(|(function_idx, function)| -> Result<Function, String> {
+        let name = FunctionId::from_idx(function_idx, module);
         let name_clash = !function_ids.insert(name.clone());
         if name_clash {
             return Err(format!("duplication function.name '{}'!", name));
         }
         Ok(Function {
             type_: function.type_,
-            body: wimplify_function_body(function, module)?,
+            body: wimplify_function_body(function, function_idx, module, &mut metadata)?,
             name,
             export: function.export.clone(), 
         })
     }).collect::<Result<Vec<_>, _>>()?;
 
-    Ok(Module{
+    Ok(Module {
         functions,
 
         // TODO translate global init expr and table/memory offsets to Wimpl also.
@@ -726,5 +815,7 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
         tables: module.tables.clone(),
         
         // TODO add (a single) memory.
+        
+        metadata
     })
 }
