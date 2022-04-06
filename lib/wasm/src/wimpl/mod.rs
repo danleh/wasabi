@@ -160,7 +160,7 @@ pub struct Label(u32);
 
 /// Global, unique identifier for a Wimpl `Stmt` or `Expr` (which was formerly a WebAssembly 
 /// instruction, hence the name).
-#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, Ord, PartialOrd)]
+#[derive(Eq, PartialEq, Clone, Copy, Hash, Ord, PartialOrd)]
 pub struct InstrId(usize);
 
 static INSTR_ID_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -168,6 +168,12 @@ static INSTR_ID_COUNT: AtomicUsize = AtomicUsize::new(0);
 impl InstrId {
     pub fn fresh() -> Self {
         Self(INSTR_ID_COUNT.fetch_add(1, atomic::Ordering::SeqCst))
+    }
+}
+
+impl fmt::Debug for InstrId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "#{}", self.0)
     }
 }
 
