@@ -81,7 +81,14 @@ impl fmt::Display for Function {
             }
         }
         write!(f, ") {}: ", Label(0))?;
-        write!(f, "{}", self.body)
+        if let Some(body) = &self.body {
+            write!(f, "{}", body)
+        } else {
+            // FIXME Since whether a function is imported is only indicated by a comment, this makes
+            // the Wimpl text format not roundtrip.
+            // TODO Introduce a <imported> special token or something and adapt the parser as well.
+            write!(f, "{{\n{PRETTY_PRINT_INDENT}// imported\n}}")
+        }
     }
 }
 

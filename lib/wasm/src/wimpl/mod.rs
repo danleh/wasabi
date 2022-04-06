@@ -29,17 +29,21 @@ mod tests;
 pub struct Module {
     pub functions: Vec<Function>,
     pub globals: Vec<Global>,
-    pub tables: Vec<Table>,
+
+    pub table: Option<Table>,
+    // pub memory: Option<Memory>,
 
     // From the name section, if present, e.g., compiler-generated debug info.
     // pub name: Option<String>,
-    // pub memories: Vec<Memory>,
+
     // pub start: Option<Idx<Function>>,
+    
     // pub custom_sections: Vec<RawCustomSection>,
 
     /// Metadata associated with a particular wimpl `Stmt` or `Expr`, identified by its `InstrId`.
     /// Stored out-of-line in order to make the individual AST node not too large.
-    // TODO add more information, introduce a `Metadata` with `wasm_src_location` as a field.
+    // TODO add more information, e.g., the original names of variables or debug information.
+    // TODO in that case, introduce a `Metadata` struct with `wasm_src_location` as a field.
     // TODO Make `wasm_src_location` an `Option` because not everything originates from WebAssembly?
     pub metadata: HashMap<InstrId, WasmSrcLocation>,
 }
@@ -71,14 +75,14 @@ impl Module {
 pub struct Function {
     /// Either the name of a function (e.g., from debug info), or a numerical index.
     pub name: FunctionId,
+    
     pub type_: FunctionType,
-    // TODO what about imported functions? I think we should make body an Option.
-    pub body: Body,
+    
+    /// `None` for imported functions that don't have a body.
+    pub body: Option<Body>,
 
     /// Export name(s) of this function.
     pub export: Vec<String>,
-    
-    //pub param_names: Vec<Option<String>>,
 }
 
 impl Function {
@@ -102,6 +106,7 @@ pub enum FunctionId {
     /// The string is stored in a string interner, i.e., deduplicated and such that equality can
     /// be a quick pointer equality.
     Name(ArcIntern<String>),
+
     /// Otherwise, just refer to the function via its index, which is the same as in the original
     /// WebAssembly module.
     Idx(u32),
@@ -244,8 +249,11 @@ impl From<ExprKind> for Stmt {
 /// - Represent stack variables, locals, globals, and function parameters with
 /// a single `Variable` construct. As a side-effect of this replaces all
 /// local.* and global.* instructions with a single `Assign` instruction.
-// TODO Optimize this representation, in particular remove redundant assignments
-// between stack variables and locals/globals.
+/// - Everything is folded as much as possible while staying true to the original WebAssembly.
+/// If things cannot be folded because "intermediate results" are stored on the bottom parts of
+/// the stack, this is represented by added stack variables + assignments. This makes this more
+/// complete (wrt. to original Wasm semantics) than, e.g., Binaryen's IR, which sometimes needs to
+/// be in stack form for such cases.
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Ord, PartialOrd)]
 pub enum StmtKind {
 

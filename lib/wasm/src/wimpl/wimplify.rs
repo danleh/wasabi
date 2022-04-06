@@ -729,30 +729,29 @@ fn wimplify_function_body(
     function_idx: Idx<highlevel::Function>,
     module: &highlevel::Module, 
     module_metadata: &mut HashMap<InstrId, WasmSrcLocation>, 
-) -> Result<Body, String> {
-    // The body will be at least the number of locals and often a nop or return instruction.
-    let mut stmts_result: Vec<Stmt> = Vec::with_capacity(function.local_count() + 1);
-
-    // Initialize the local variables.
-    for (local_idx, loc) in function.locals() {
-        let (loc_name, loc_type) = (&loc.name, loc.type_);
-        if let Some(_loc_name) = loc_name {
-            todo!("you haven't yet implemented locals having names");
-        } else {
-            stmts_result.push(StmtKind::Assign {
-                lhs: Var::Local(local_idx.to_u32() - function.type_.inputs().len() as u32),
-                rhs: ExprKind::Const(Val::get_default_value(loc_type)).into(),
-                type_: loc_type,
-            }.into())
-            // Note that we do not attach metadata (Wasm source location info) to these generated
-            // assignments, because they are implicit, due to the zero-initialization of locals in
-            // WebAssembly.
-        }
-    }
-
-    // Translate the instructions in the function.
-    // FIXME Handle imported functions, where there is no body.
+) -> Result<Option<Body>, String> {
     if let Some(code) = function.code() {
+        // The body will be at least the number of locals and often a nop or return instruction.
+        let mut stmts_result: Vec<Stmt> = Vec::with_capacity(function.local_count() + 1);
+
+        // Initialize the local variables.
+        for (local_idx, loc) in function.locals() {
+            let (loc_name, loc_type) = (&loc.name, loc.type_);
+            if let Some(_loc_name) = loc_name {
+                todo!("you haven't yet implemented locals having names");
+            } else {
+                stmts_result.push(Stmt::new(StmtKind::Assign {
+                    lhs: Var::Local(local_idx.to_u32() - function.type_.inputs().len() as u32),
+                    rhs: ExprKind::Const(Val::get_default_value(loc_type)).into(),
+                    type_: loc_type,
+                }));
+                // Note that we do not attach metadata (Wasm source location info) to these generated
+                // assignments, because they are implicit, due to the zero-initialization of locals in
+                // WebAssembly.
+            }
+        }
+
+        // Translate the instructions in the function:
         let context = Context {
             module,
             func_ty: &function.type_, 
@@ -779,9 +778,11 @@ fn wimplify_function_body(
         assert!(!was_else, "function should not end with else");
 
         module_metadata.extend(state.function_metadata.into_iter());
-    }
 
-    Ok(Body(stmts_result))
+        Ok(Some(Body(stmts_result)))
+    } else {
+        Ok(None)
+    }
 }
 
 pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
@@ -811,8 +812,7 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
         // TODO translate global init expr and table/memory offsets to Wimpl also.
         globals: module.globals.clone(),
         
-        // TODO allow only for a single table, since we only care about the MVP.
-        tables: module.tables.clone(),
+        table: module.tables.first().cloned(),
         
         // TODO add (a single) memory.
         

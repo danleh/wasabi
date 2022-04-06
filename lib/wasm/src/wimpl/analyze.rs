@@ -6,6 +6,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::highlevel::{StoreOp, LoadOp, FunctionType};
 use crate::wimpl::{Body, Expr, Module, Stmt, Var, FunctionId, Function, StmtKind, ExprKind};
 
+use super::traverse::VisitOptionBodyExt;
+
 // TODO Analysis for identification of heap allocation function ("malloc")
 // Often required for "allocation site abstraction" in pointer analysis
 // But not apparent in WebAssembly

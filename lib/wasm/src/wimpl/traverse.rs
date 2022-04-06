@@ -25,6 +25,42 @@ impl Body {
     }
 }
 
+/// Convenience extension trait to allow visiting a `Option<Body>`, which is common for imported
+/// functions.
+pub trait VisitOptionBodyExt {
+    fn visit_pre_order<'a>(&'a self, f_stmt: impl FnMut(&'a Stmt) -> bool, f_expr: impl FnMut(&'a Expr) -> bool);
+    fn visit_stmt_pre_order<'a>(&'a self, f_stmt: impl FnMut(&'a Stmt) -> bool);
+    fn visit_expr_pre_order<'a>(&'a self, f_expr: impl FnMut(&'a Expr) -> bool);
+    fn visit_pre_order_<'a>(&'a self, f_stmt: &mut dyn FnMut(&'a Stmt) -> bool, f_expr: &mut dyn FnMut(&'a Expr) -> bool);
+}
+
+impl VisitOptionBodyExt for Option<Body> {
+    fn visit_pre_order<'a>(&'a self, f_stmt: impl FnMut(&'a Stmt) -> bool, f_expr: impl FnMut(&'a Expr) -> bool) {
+        if let Some(body) = self {
+            body.visit_pre_order(f_stmt, f_expr)
+        }
+    }
+
+    fn visit_stmt_pre_order<'a>(&'a self, f_stmt: impl FnMut(&'a Stmt) -> bool) {
+        if let Some(body) = self {
+            body.visit_stmt_pre_order(f_stmt)
+        }
+    }
+
+    fn visit_expr_pre_order<'a>(&'a self, f_expr: impl FnMut(&'a Expr) -> bool) {
+        if let Some(body) = self {
+            body.visit_expr_pre_order(f_expr)
+        }
+    }
+
+    fn visit_pre_order_<'a>(&'a self, f_stmt: &mut dyn FnMut(&'a Stmt) -> bool, f_expr: &mut dyn FnMut(&'a Expr) -> bool) {
+        if let Some(body) = self {
+            body.visit_pre_order_(f_stmt, f_expr)
+        }
+    }
+}
+
+
 impl Stmt {
     pub fn visit_pre_order<'a>(&'a self, mut f_stmt: impl FnMut(&'a Stmt) -> bool, mut f_expr: impl FnMut(&'a Expr) -> bool) {
         self.visit_pre_order_(&mut f_stmt, &mut f_expr)

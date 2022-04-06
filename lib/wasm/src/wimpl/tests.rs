@@ -28,7 +28,7 @@ lazy_static! {
             Module {
                 functions: Vec::new(),
                 globals: Vec::new(),
-                tables: Vec::new(),
+                table: None,
                 metadata: HashMap::new(),
             },
             "module {
@@ -42,18 +42,18 @@ lazy_static! {
                     Function {
                         name: FunctionId::Idx(0),
                         type_: FunctionType::default(),
-                        body: Body(Vec::new()), 
+                        body: Some(Body(Vec::new())), 
                         export: Vec::new()
                     },
                     Function {
                         name: FunctionId::Idx(1),
                         type_: FunctionType::default(),
-                        body: Body(Vec::new()), 
+                        body: Some(Body(Vec::new())), 
                         export: Vec::new()
                     },
                 ],
                 globals: Vec::new(),
-                tables: Vec::new(),
+                table: None,
                 metadata: HashMap::new(),
             },
             "module {
@@ -68,18 +68,18 @@ lazy_static! {
                     Function {
                         name: FunctionId::Idx(0),
                         type_: FunctionType::default(),
-                        body: Body(Vec::new()), 
+                        body: Some(Body(Vec::new())), 
                         export: vec!["name1".to_string(), "name2".to_string()],                        
                     },
                     Function {
                         name: FunctionId::Idx(1),
                         type_: FunctionType::default(),
-                        body: Body(Vec::new()), 
+                        body: Some(Body(Vec::new())), 
                         export: vec!["name3".to_string()],
                     },
                 ],
                 globals: Vec::new(),
-                tables: Vec::new(),
+                table: None,
                 metadata: HashMap::new(),
             },
             r#"module {
@@ -97,13 +97,13 @@ lazy_static! {
                     Function {
                         name: FunctionId::Idx(0),
                         type_: FunctionType::default(),
-                        body: Body(Vec::new()), 
+                        body: Some(Body(Vec::new())), 
                         export: Vec::new()
                     },
                     Function {
                         name: FunctionId::Idx(1),
                         type_: FunctionType::new(&[ValType::I32], &[ValType::F64]),
-                        body: Body(vec![
+                        body: Some(Body(vec![
                             Assign {
                                 lhs: Stack(0),
                                 rhs: Const(I32(3)).into(),
@@ -114,12 +114,12 @@ lazy_static! {
                                 rhs: Const(I32(4)).into(),
                                 type_: ValType::I32,
                             }.into(),
-                        ]), 
+                        ])), 
                         export: Vec::new()
                     },
                 ],
                 globals: Vec::new(),
-                tables: Vec::new(),
+                table: None,
                 metadata: HashMap::new(),
             },
             "module {
@@ -139,7 +139,7 @@ lazy_static! {
             Function {
                 name: FunctionId::Idx(0),
                 type_: FunctionType::default(),
-                body: Body(Vec::new()), 
+                body: Some(Body(Vec::new())), 
                 export: Vec::new()
             },
             "func f0 () -> () @label0: {}",
@@ -149,7 +149,7 @@ lazy_static! {
             Function {
                 name: FunctionId::Idx(1),
                 type_: FunctionType::new(&[ValType::I32], &[ValType::F64]),
-                body: Body(Vec::new()), 
+                body: Some(Body(Vec::new())), 
                 export: Vec::new()
             },
             "func f1 (p0: i32) -> (r0: f64) @label0: {}",
@@ -159,13 +159,13 @@ lazy_static! {
             Function {
                 name: FunctionId::Idx(1),
                 type_: FunctionType::new(&[ValType::I32], &[ValType::F64]),
-                body: Body(vec![
+                body: Some(Body(vec![
                     Assign {
                         lhs: Stack(0),
                         rhs: Const(I32(3)).into(),
                         type_: ValType::I32,
                     }.into()
-                ]), 
+                ])), 
                 export: Vec::new()
             },
             "func f1 (p0: i32) -> (r0: f64) @label0: { s0: i32 = i32.const 3 }",
@@ -175,7 +175,7 @@ lazy_static! {
             Function {
                 name: FunctionId::Idx(1),
                 type_: FunctionType::new(&[ValType::I32], &[ValType::F64]),
-                body: Body(vec![
+                body: Some(Body(vec![
                     Assign {
                         lhs: Stack(0),
                         rhs: Const(I32(3)).into(),
@@ -186,7 +186,7 @@ lazy_static! {
                         rhs: Const(I32(4)).into(),
                         type_: ValType::I32,
                     }.into(),
-                ]), 
+                ])), 
                 export: Vec::new()
             },
             "func f1 (p0: i32) -> (r0: f64) @label0: {
@@ -623,8 +623,8 @@ fn wimplify_with_expected_output() {
                 // Every wimpl file contains only a sequence of statements, not a whole module.
                 // Compare the first function from the .wasm binary, with all instructions of the
                 // .wimpl text file.
-                let actual = wimpl_module.functions[0].clone().body;
-                let expected = Body(Stmt::from_text_file(&wimpl_path).unwrap());
+                let actual = wimpl_module.functions[0].clone().body.expect("the first function of the example should not be imported");
+                let expected = Body(Stmt::from_text_file(&wimpl_path).expect("could not parse Wimpl text file"));
 
                 assert_eq!(actual, expected, "\ntestcase: {}\nexpected Wimpl: {}\nproduced Wimpl: {}\n", wimpl_path.display(), expected, actual);
             }

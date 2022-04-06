@@ -1,7 +1,7 @@
 use std::{io::{self, BufRead, Write}, fs::{File, self}, collections::{HashMap, BTreeMap}};
 
 use rustc_hash::{FxHashMap};
-use wasm::{wimpl::{self, FunctionId, analyze::{print_map_count, collect_call_indirect_idx_expr}, callgraph::{Options, reachable_callgraph}}, highlevel::{self, Instr}, Val};
+use wasm::{wimpl::{self, FunctionId, analyze::{print_map_count, collect_call_indirect_idx_expr}, callgraph::{Options, reachable_callgraph}, traverse::VisitOptionBodyExt}, highlevel::{self, Instr}, Val};
 
 pub fn get_callsite_info(module: &highlevel::Module) {
     let mut callsite_cg = BTreeMap::new(); 

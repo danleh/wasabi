@@ -137,7 +137,7 @@ pub fn reachable_callgraph(
 
     let mut funcs_in_table = FxHashSet::default();
     let mut funcs_by_table_idx: FxHashMap<u32, FunctionId> = FxHashMap::default();
-    for table in &module.tables {
+    if let Some(table) = &module.table {
         for element in &table.elements {
             let element_offset = &element.offset;
             use crate::highlevel::Instr as wasm;
@@ -163,8 +163,6 @@ pub fn reachable_callgraph(
                 let duplicate_element_init = funcs_by_table_idx.insert(element_offset+idx_in_table, func.name());
                 assert_eq!(duplicate_element_init, None, "table index {} is initialized twice", element_offset+idx_in_table)
             }
-            
-            
         }
     }
 
@@ -226,8 +224,6 @@ pub fn reachable_callgraph(
     Ok(callgraph)
 }
 
-
-
 pub fn collect_target_constraints(
     src: &Function,
     options: Options
@@ -236,7 +232,7 @@ pub fn collect_target_constraints(
     // TODO how to handle imported functions? Can they each every exported function?
     // Do we add a direct edge there? Or do we add an abstract "host" node? 
     // Do we merge with a JavaScript call-graph analysis?
-    let body = &src.body;
+    let body = src.body.as_ref().expect("FIXME handle imported functions!");
 
     // Step 1: Build a map of variables to expressions or an overapproximation when variables are
     // assigned multiple times.
@@ -499,8 +495,8 @@ fn data_gathering() {
         // } 
 
         let mut element_funcs = FxHashSet::default(); 
-        for tab in &wimpl_module.tables {
-            for elem in &tab.elements {
+        if let Some(table) = &wimpl_module.table {
+            for elem in &table.elements {
                 for func_idx in &elem.functions {
                     //let func = wimpl_module.function_by_idx(*func_idx);
                     element_funcs.insert(func_idx.to_u32()); 
