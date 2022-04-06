@@ -150,8 +150,9 @@ impl fmt::Display for Label {
 // - Curly braces { ... } for nesting.
 impl fmt::Display for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Stmt::*;
-        match self {
+        // The `InstrId` is only for our internal metadata, so don't display that.
+        use StmtKind::*;
+        match &self.kind {
 
             Unreachable => f.write_str("unreachable")?,
 
@@ -224,8 +225,9 @@ impl fmt::Display for Stmt {
 
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Expr::*;
-        match self {
+        // The `InstrId` is only for our internal metadata, so don't display that.
+        use ExprKind::*;
+        match &self.kind {
 
             VarRef(var) => write!(f, "{}", var),
 

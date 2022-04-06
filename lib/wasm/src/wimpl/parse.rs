@@ -196,26 +196,26 @@ fn arg_list(input: &str) -> NomResult<Vec<Expr>> {
 
 // Memarg parsing depends on result of previous LoadOp/StoreOp parsing.
 // This is easier to write in direct than in point-free style, so we do.
-fn load(input: &str) -> NomResult<Expr> {
+fn load(input: &str) -> NomResult<ExprKind> {
     let (input, op) = op::<LoadOp>(input)?;
     let (input, addr) = arg_single(input)?;
     Ok((
         input,
-        Expr::Load {
+        ExprKind::Load {
             op,
             addr: Box::new(addr),
         },
     ))
 }
 
-fn store(input: &str) -> NomResult<Stmt> {
+fn store(input: &str) -> NomResult<StmtKind> {
     let (input, op) = op::<StoreOp>(input)?;
     let (input, addr) = arg_single(input)?;
     let (input, ()) = ws(input)?;
     let (input, value) = arg_single(input)?;
     Ok((
         input,
-        Stmt::Store {
+        StmtKind::Store {
             op,
             addr,
             value,
@@ -224,7 +224,7 @@ fn store(input: &str) -> NomResult<Stmt> {
 }
 
 fn expr(input: &str) -> NomResult<Expr> {
-    use Expr::*;
+    use ExprKind::*;
 
     let var_ref = map(var, VarRef);
 
@@ -290,17 +290,22 @@ fn expr(input: &str) -> NomResult<Expr> {
             CallIndirect { type_, table_idx: Box::new(table_idx), args }
     );
 
-    alt((
-        var_ref, 
-        const_, 
-        load, 
-        memory_size, 
-        memory_grow, 
-        unary, 
-        binary, 
-        call, 
-        call_indirect
-    ))(input)
+    map(
+        // Parse `ExprKind`...
+        alt((
+            var_ref, 
+            const_, 
+            load, 
+            memory_size, 
+            memory_grow, 
+            unary, 
+            binary, 
+            call, 
+            call_indirect
+        )),
+        // ... and add fresh `InstrId`.
+        Expr::new
+    )(input)
 }
 
 /// Parse multiple statements, with possibly preceding and trailing whitespace.
@@ -314,7 +319,7 @@ fn body(input: &str) -> NomResult<Body> {
 
 /// Parse a single statement, without surrounding whitespace.
 fn stmt(input: &str) -> NomResult<Stmt> {
-    use Stmt::*;
+    use StmtKind::*;
 
     let unreachable = map(tag("unreachable"), |_| Unreachable);
 
@@ -384,20 +389,25 @@ fn stmt(input: &str) -> NomResult<Stmt> {
         }
     );
 
-    alt((
-        unreachable,
-        assign,
-        store,
-        br,
-        block,
-        loop_,
-        if_,
-        switch,
+    map(
+        // Parse `StmtKind`...
+        alt((
+            unreachable,
+            assign,
+            store,
+            br,
+            block,
+            loop_,
+            if_,
+            switch,
 
-        // HACK Put this case below assign, otherwise the parser parses a LHS variable, e.g.,
-        // `l0 = ...` as `Stmt::Expr(Expr::VarRef(...))` and then fails on the rest from `=` onward.
-        expr_stmt,
-    ))(input)
+            // HACK Put this case below assign, otherwise the parser parses a LHS variable, e.g.,
+            // `l0 = ...` as `Stmt::Expr(Expr::VarRef(...))` and then fails on the rest from `=` onward.
+            expr_stmt,
+        )),
+        // ... and add fresh `InstrId`.
+        Stmt::new
+    )(input)
 }
 
 // Adapt the nom parsers above such that they can be used with Rust `parse()` / `from_str`.
