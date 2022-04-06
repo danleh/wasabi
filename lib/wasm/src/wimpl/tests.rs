@@ -14,8 +14,8 @@ use crate::Val::*;
 use crate::ValType;
 
 use crate::wimpl::*;
-use crate::wimpl::Stmt::*;
-use crate::wimpl::Expr::*;
+use crate::wimpl::StmtKind::*;
+use crate::wimpl::ExprKind::*;
 use crate::wimpl::Var::*;
 
 // Macros for writing Wimpl statements in Rust.
@@ -29,6 +29,7 @@ lazy_static! {
                 functions: Vec::new(),
                 globals: Vec::new(),
                 tables: Vec::new(),
+                metadata: HashMap::new(),
             },
             "module {
 }
@@ -53,6 +54,7 @@ lazy_static! {
                 ],
                 globals: Vec::new(),
                 tables: Vec::new(),
+                metadata: HashMap::new(),
             },
             "module {
   func f0 () -> () @label0: {}
@@ -78,6 +80,7 @@ lazy_static! {
                 ],
                 globals: Vec::new(),
                 tables: Vec::new(),
+                metadata: HashMap::new(),
             },
             r#"module {
   export "name1", "name2"
@@ -103,20 +106,21 @@ lazy_static! {
                         body: Body(vec![
                             Assign {
                                 lhs: Stack(0),
-                                rhs: Const(I32(3)),
+                                rhs: Const(I32(3)).into(),
                                 type_: ValType::I32,
-                            },
+                            }.into(),
                             Assign {
                                 lhs: Stack(1),
-                                rhs: Const(I32(4)),
+                                rhs: Const(I32(4)).into(),
                                 type_: ValType::I32,
-                            },
+                            }.into(),
                         ]), 
                         export: Vec::new()
                     },
                 ],
                 globals: Vec::new(),
                 tables: Vec::new(),
+                metadata: HashMap::new(),
             },
             "module {
   func f0 () -> () @label0: {}
@@ -158,9 +162,9 @@ lazy_static! {
                 body: Body(vec![
                     Assign {
                         lhs: Stack(0),
-                        rhs: Const(I32(3)),
+                        rhs: Const(I32(3)).into(),
                         type_: ValType::I32,
-                    }
+                    }.into()
                 ]), 
                 export: Vec::new()
             },
@@ -174,14 +178,14 @@ lazy_static! {
                 body: Body(vec![
                     Assign {
                         lhs: Stack(0),
-                        rhs: Const(I32(3)),
+                        rhs: Const(I32(3)).into(),
                         type_: ValType::I32,
-                    },
+                    }.into(),
                     Assign {
                         lhs: Stack(1),
-                        rhs: Const(I32(4)),
+                        rhs: Const(I32(4)).into(),
                         type_: ValType::I32,
-                    },
+                    }.into(),
                 ]), 
                 export: Vec::new()
             },
@@ -200,13 +204,13 @@ lazy_static! {
     /// For these examples, the concrete syntax is in the "canonical pretty"
     /// format, i.e., with "standard" whitespace.
     static ref WIMPL_CANONICAL_SYNTAX_TESTCASES: Vec<(Stmt, &'static str, &'static str)> = vec![
-        (Unreachable, "unreachable", ""),
+        (Unreachable.into(), "unreachable", ""),
         (
             Assign {
                 lhs: Stack(0),
                 type_: ValType::I32,
-                rhs: MemorySize
-            },
+                rhs: MemorySize.into()
+            }.into(),
             "s0: i32 = memory.size",
             ""
         ),
@@ -214,31 +218,31 @@ lazy_static! {
             Assign {
                 lhs: Global(0),
                 type_: ValType::I32,
-                rhs: VarRef(Local(0))
-            },
+                rhs: VarRef(Local(0)).into()
+            }.into(),
             "g0: i32 = l0",
             "var ref on rhs"
         ),
         (
-            Expr(Const(I32(1337))),
+            Const(I32(1337)).into(),
             "i32.const 1337",
             ""
         ),
         (
             Assign {
                 lhs: Stack(0),
-                rhs: Const(I32(1337)),
+                rhs: Const(I32(1337)).into(),
                 type_: ValType::I32,
-            },
+            }.into(),
             "s0: i32 = i32.const 1337",
             ""
         ),
         (
             Assign {
                 lhs: Stack(1),
-                rhs: Binary(I32Add, Box::new(Const(Val::I32(7))), Box::new(VarRef(Stack(3)))),
+                rhs: Binary(I32Add, Const(Val::I32(7)).into(), VarRef(Stack(3)).into()).into(),
                 type_: ValType::I32,
-            },
+            }.into(),
             "s1: i32 = i32.add(i32.const 7, s3)",
             "nested non-variable expression"
         ),
@@ -247,25 +251,25 @@ lazy_static! {
                 lhs: Stack(1),
                 rhs: Load {
                     op: I32Load,
-                    addr: Box::new(VarRef(Stack(0))),
-                },
+                    addr: VarRef(Stack(0)).into(),
+                }.into(),
                 type_: ValType::I32,
-            },
+            }.into(),
             "s1: i32 = i32.load(s0)",
             ""
         ),
         (
             Br {
                 target: Label(0),
-            },
+            }.into(),
             "br @label0",
             ""
         ),
         (
-            Expr(Call {
+            Call {
                 func: FunctionId::Idx(7),
                 args: Vec::new(),
-            }),
+            }.into(),
             "call f7 ()",
             "call argument list is always printed, even if empty"
         ),
@@ -274,19 +278,19 @@ lazy_static! {
                 lhs: Stack(1),
                 rhs: CallIndirect {
                     type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
-                    table_idx: Box::new(VarRef(Stack(0))),
-                    args: vec![MemorySize, VarRef(Stack(3))],
-                },
+                    table_idx: VarRef(Stack(0)).into(),
+                    args: vec![MemorySize.into(), VarRef(Stack(3)).into()],
+                }.into(),
                 type_: ValType::I32,
-            },
+            }.into(),
             "s1: i32 = call_indirect [i32] -> [i32] (s0) (memory.size, s3)",
             ""
         ),
         (
             Block {
                 end_label: Label(0),
-                body: Body (vec![]),
-            },
+                body: Body(vec![]),
+            }.into(),
             "@label0: block {}",
             "empty block"
         ),
@@ -294,12 +298,13 @@ lazy_static! {
             Block {
                 end_label: Label(1),
                 body: Body(vec![
-                    Assign{
+                    Assign {
                         lhs: Stack(1),
                         type_: ValType::I32,
-                        rhs: VarRef(Stack(0)),
-                    }]),
-            },
+                        rhs: VarRef(Stack(0)).into(),
+                    }.into()
+                ]),
+            }.into(),
             "@label1: block { s1: i32 = s0 }",
             "block with a single instruction, on one line"
         ),
@@ -307,10 +312,10 @@ lazy_static! {
             Loop {
                 begin_label: Label(0),
                 body: Body (vec![
-                    Br { target: Label(0) },
-                    Unreachable
+                    Br { target: Label(0) }.into(),
+                    Unreachable.into()
                 ]),
-            },
+            }.into(),
             r"@label0: loop {
   br @label0
   unreachable
@@ -319,25 +324,27 @@ lazy_static! {
         ),
         (
             If {
-                    condition: VarRef(Stack(0)),
-                    if_body: Body (
-                        vec![Br {
+                condition: VarRef(Stack(0)).into(),
+                if_body: Body (
+                    vec![
+                        Br {
                             target: Label(0),
-                        }]),
-                    else_body: None,
-            },
+                        }.into()
+                    ]),
+                else_body: None,
+            }.into(),
             "if (s0) { br @label0 }",
             "if + br (which is our form of br_if)"
         ),
         (
             Switch {
-                    index: VarRef(Stack(0)),
-                    cases: vec![
-                        Body(vec![Unreachable]),
-                        Body(vec![Expr(MemorySize), Br { target: Label(1) }]),
-                    ],
-                    default: Body(vec![]),
-            },
+                index: VarRef(Stack(0)).into(),
+                cases: vec![
+                    Body(vec![Unreachable.into()]),
+                    Body(vec![MemorySize.into(), Br { target: Label(1) }.into()]),
+                ],
+                default: Body(vec![]),
+            }.into(),
             r"switch (s0) {
   case 0: { unreachable }
   case 1: {
@@ -358,14 +365,14 @@ lazy_static! {
                             Assign{
                                 lhs: Stack(0),
                                 type_: ValType::F64,
-                                rhs: VarRef(Stack(1))
-                            },
-                            Unreachable,
+                                rhs: VarRef(Stack(1)).into()
+                            }.into(),
+                            Unreachable.into(),
                         ])
-                    },
-                    Br { target: Label(1) },
+                    }.into(),
+                    Br { target: Label(1) }.into(),
                 ])
-            },
+            }.into(),
             r"@label1: loop {
   @label2: block {
     s0: f64 = s1
@@ -384,15 +391,15 @@ lazy_static! {
             Assign {
                 lhs: Stack(1),
                 type_: ValType::I32,
-                rhs: MemoryGrow { pages: Box::new(VarRef(Stack(0))) },
-            },
+                rhs: MemoryGrow { pages: VarRef(Stack(0)).into() }.into(),
+            }.into(),
             "s1: i32 = memory.grow ( s0 )",
             "extra space around arguments"),
         (
-            Expr(Call {
+            Call {
                 func: FunctionId::Idx(2),
-                args: vec![VarRef(Stack(2)), VarRef(Stack(3))],
-            }),
+                args: vec![VarRef(Stack(2)).into(), VarRef(Stack(3)).into()],
+            }.into(),
             "call f2 ( s2, s3 )",
             "extra space around call arguments"
         ),
@@ -401,29 +408,29 @@ lazy_static! {
                 lhs: Stack(1),
                 rhs: CallIndirect {
                     type_: FunctionType::new(&[ValType::I32], &[ValType::I32]),
-                    table_idx: Box::new(VarRef(Stack(0))),
+                    table_idx: VarRef(Stack(0)).into(),
                     args: vec![],
-                },
+                }.into(),
                 type_: ValType::I32,
-            },
+            }.into(),
             "s1: i32 = call_indirect [  i32  ] ->[i32] (s0) ()",
             "non-standard spacing around function type"
         ),
         (
             Assign{
                 lhs: Stack(1),
-                rhs: Binary(I32Add, Box::new(VarRef(Stack(2))), Box::new(VarRef(Stack(3)))),
+                rhs: Binary(I32Add, VarRef(Stack(2)).into(), VarRef(Stack(3)).into()).into(),
                 type_: ValType::I32,
-            },
+            }.into(),
             "s1: i32 = i32.add (s2,s3)",
             "space before arguments, no space after comma"
         ),
         (
             Store {
                 op: I64Store8,
-                value: VarRef(Stack(1)),
-                addr: VarRef(Stack(2)),
-            },
+                value: VarRef(Stack(1)).into(),
+                addr: VarRef(Stack(2)).into(),
+            }.into(),
             "i64.store8(s2)(s1)",
             "minimal spacing around arguments"
         ),
@@ -431,7 +438,7 @@ lazy_static! {
             Block {
                 end_label: Label(0),
                 body: Body(vec![]),
-            },
+            }.into(),
             "@label0:block{}",
             "minimal space in block"
         ),
@@ -441,12 +448,12 @@ lazy_static! {
                     body: Body(vec![
                         Assign {
                             lhs: Stack(1),
-                            rhs: VarRef(Stack(0)),
+                            rhs: VarRef(Stack(0)).into(),
                             type_: ValType::I32,
-                        },
-                        Expr(VarRef(Stack(1)))
+                        }.into(),
+                        Expr(VarRef(Stack(1)).into()).into()
                     ]),
-            },
+            }.into(),
             "@label2: block { s1: i32 = s0 s1 }",
             "weird but valid parse: expression statement with only a variable reference"
         )
@@ -519,10 +526,10 @@ fn parse_func_id() {
 
 #[test]
 fn parse_expr() {
-    assert_eq!(Ok(MemorySize), "memory.size".parse());
-    assert_eq!(Ok(MemoryGrow { pages: Box::new(VarRef(Local(0))) }), "memory.grow (l0)".parse());
-    assert_eq!(Ok(VarRef(Global(1))), "g1".parse());
-    assert_eq!(Ok(Binary(I32Add, Box::new(VarRef(Stack(0))), Box::new(VarRef(Local(1))))), "i32.add(s0, l1)".parse());
+    assert_eq!(Ok(wimpl::Expr::new(MemorySize)), "memory.size".parse());
+    assert_eq!(Ok(wimpl::Expr::new(MemoryGrow { pages: VarRef(Local(0)).into() })), "memory.grow (l0)".parse());
+    assert_eq!(Ok(wimpl::Expr::new(VarRef(Global(1)))), "g1".parse());
+    assert_eq!(Ok(wimpl::Expr::new(Binary(I32Add, VarRef(Stack(0)).into(), VarRef(Local(1)).into()))), "i32.add(s0, l1)".parse());
     // More complex expressions are tested in the statements.
 }
 
