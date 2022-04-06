@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex, iter::FromIterator, cmp::Reverse};
 
-use crate::{wimpl::{Module, FunctionId, self, Expr::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count, approx_i32_eval, I32Range}}, highlevel::{FunctionType, self}, Val, ValType};
+use crate::{wimpl::{Module, FunctionId, self, ExprKind::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count, approx_i32_eval, I32Range}, Expr}, highlevel::{FunctionType, self}, Val, ValType};
 
 use crate::wimpl::wimplify::*;
 
@@ -89,8 +89,9 @@ pub enum Target {
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Constraint {
     Type(FunctionType),
-    // FIXME doesn't refer to a particular table, wouldn't be precise in Wasm post MVP.
+    // TODO Doesn't refer to a particular table, wouldn't be precise in Wasm post MVP.
     InTable,
+    // FIXME Add constraint that this can go to any exported function:
     // Exported
     TableIndexExpr(wimpl::Expr),
 }
@@ -247,9 +248,9 @@ pub fn collect_target_constraints(
     // Step 2:
     // Collect one set of constraints (conjuncts) per call/call_indirect.
     let mut targets = FxHashSet::default();
-    use wimpl::Expr::*;
+    use wimpl::ExprKind::*;
     body.visit_expr_pre_order(|expr| {
-        match expr {
+        match &expr.kind {
             Call { func, args: _} => {
                 targets.insert(Target::Direct(func.clone()));
             }
@@ -264,7 +265,7 @@ pub fn collect_target_constraints(
                 if options.with_index_constraint {
                     let expr = match table_idx.as_ref() {
                         // The table_idx expression refers to a variable, try to resolve that...
-                        VarRef(var) => match var_expr.get(*var) {
+                        Expr { id: _, kind: VarRef(var) } => match var_expr.get(*var) {
                             VarExprMapResult::Precise(expr) => Some(expr),
                             VarExprMapResult::Top => None,
                             // TODO handle parameter variables with inter-procedural analysis, 
@@ -323,7 +324,7 @@ pub fn solve_constraints<'a>(
                     .map(|vec| Box::new(vec.iter().cloned()) as Box<dyn Iterator<Item=&Function>>)
                     .unwrap_or_else(|| Box::new(module.functions.iter()) as Box<dyn Iterator<Item=&Function>>);
             for constraint in constraints {
-                use wimpl::Expr::*;
+                use wimpl::ExprKind::*;
                 // Build up filtering iterator at runtime, adding all constraints from before.
                 filtered_iter = match constraint {
                     Constraint::Type(ty) => Box::new(filtered_iter.filter(move |f| &f.type_ == ty)),
@@ -340,12 +341,12 @@ pub fn solve_constraints<'a>(
                     // TODO If we have a TableIndexExpr constraint, we already know the function 
                     // immediately, so just use the result of `funcs_by_table_idx.get()` instead of
                     // filtering.
-                    Constraint::TableIndexExpr(Const(Val::I32(idx))) => Box::new(filtered_iter.filter(move |f| {
+                    Constraint::TableIndexExpr(Expr { id: _, kind: Const(Val::I32(idx)) }) => Box::new(filtered_iter.filter(move |f| {
                         let idx = *idx as u32;
                         Some(&f.name) == funcs_by_table_idx.get(&idx)
                     })),
                     Constraint::TableIndexExpr(expr) => {
-                        let is_i32_expr = match expr {
+                        let is_i32_expr = match &expr.kind {
                             Unary(op, _) => op.to_type().results()[0] == ValType::I32, 
                             Binary(op, _, _) => op.to_type().results()[0] == ValType::I32,
                             _ => false,
@@ -457,44 +458,45 @@ fn data_gathering() {
         let mut num_funcs_with_memory_access = 0; 
 
         // FIXME Wrong after recursive Wimpl!! Use traverse::visit_pre_order
-        for fun in wimpl_module.functions {
-            let mut flag_call_ind = false; 
-            let mut flag_load_store = false; 
+        todo!("FIXME!!! these results cannot be trusted, all if this here below must be replaced with traverse::visit_pre_order!");
+        // for fun in wimpl_module.functions {
+        //     let mut flag_call_ind = false; 
+        //     let mut flag_load_store = false; 
             
-            for stmt in fun.body.0 {
-                use wimpl::Stmt::*;
-                use wimpl::Expr::*;
-                match stmt {
-                    Assign { lhs: _, rhs: Call{ func: _, args: _}, type_: _ } |
-                    Expr(Call { func: _, args: _}) => {
-                        num_calls += 1; 
-                    }, 
+        //     for stmt in fun.body.0 {
+        //         use wimpl::StmtKind::*;
+        //         use wimpl::ExprKind::*;
+        //         match &stmt.kind {
+        //             Assign { lhs: _, rhs: Call{ func: _, args: _}, type_: _ } |
+        //             Expr(Call { func: _, args: _}) => {
+        //                 num_calls += 1; 
+        //             }, 
 
-                    Assign { lhs: _, rhs: CallIndirect { type_: _, table_idx: _, args: _ }, type_: _ } |
-                    Expr(CallIndirect { type_: _, table_idx: _, args: _ }) => {
-                        num_ind_calls += 1;
-                        flag_call_ind = true; 
-                    },
+        //             Assign { lhs: _, rhs: CallIndirect { type_: _, table_idx: _, args: _ }, type_: _ } |
+        //             Expr(CallIndirect { type_: _, table_idx: _, args: _ }) => {
+        //                 num_ind_calls += 1;
+        //                 flag_call_ind = true; 
+        //             },
                     
-                    Store { op: _, addr: _, value: _ } |
-                    Assign { lhs:_, type_:_, rhs: Load{op:_, addr:_} } |
-                    Expr(Load{op:_, addr:_}) => {
-                        flag_load_store = true; 
-                    }, 
+        //             Store { op: _, addr: _, value: _ } |
+        //             Assign { lhs:_, type_:_, rhs: Load{op:_, addr:_} } |
+        //             Expr(Load{op:_, addr:_}) => {
+        //                 flag_load_store = true; 
+        //             }, 
 
-                    _ => (), 
+        //             _ => (), 
                     
-                }
-            }
+        //         }
+        //     }
             
-            if flag_call_ind {
-                num_funcs_with_call_ind += 1; 
-                if flag_load_store {
-                    num_funcs_with_memory_access += 1; 
-                }
-            }
+        //     if flag_call_ind {
+        //         num_funcs_with_call_ind += 1; 
+        //         if flag_load_store {
+        //             num_funcs_with_memory_access += 1; 
+        //         }
+        //     }
 
-        } 
+        // } 
 
         let mut element_funcs = FxHashSet::default(); 
         for tab in &wimpl_module.tables {
