@@ -122,7 +122,7 @@ pub fn param_exprs(function: &Function) {
         function.body.visit_expr_pre_order(|expr| {
             let mut is_in_expr = false;
             expr.visit_pre_order(|subexpr| {
-                if &subexpr.kind == &ExprKind::VarRef(var) {
+                if subexpr.kind == ExprKind::VarRef(var) {
                     is_in_expr = true;
                     return false;
                 }

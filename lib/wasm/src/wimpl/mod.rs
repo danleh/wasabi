@@ -14,10 +14,10 @@ use crate::{
 
 // TODO(Michelle): fix compile errors in wimpl_opt, add tests, only then include in module hierarchy.
 // pub mod optimize;
-// pub mod analyze;
-// pub mod callgraph;
+pub mod analyze;
+pub mod callgraph;
 pub mod wimplify;
-// pub mod traverse;
+pub mod traverse;
 
 mod pretty_print;
 mod parse;
@@ -180,7 +180,7 @@ impl fmt::Debug for InstrId {
 #[derive(Debug, Eq, Clone)]
 pub struct Stmt {
     id: InstrId,
-    kind: StmtKind
+    pub kind: StmtKind
 }
 
 impl Stmt {
@@ -326,7 +326,7 @@ pub enum StmtKind {
 #[derive(Debug, Eq, Clone)]
 pub struct Expr {
     id: InstrId,
-    kind: ExprKind,
+    pub kind: ExprKind,
 }
 
 impl Expr {

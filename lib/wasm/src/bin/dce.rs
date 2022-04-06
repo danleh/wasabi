@@ -1,6 +1,6 @@
 use std::{io::{self, BufRead, Write}, fs::{File, self}, collections::{HashMap, BTreeMap}};
 
-use rustc_hash::{FxHashSet, FxHashMap};
+use rustc_hash::{FxHashMap};
 use wasm::{wimpl::{self, FunctionId, analyze::{print_map_count, collect_call_indirect_idx_expr}, callgraph::{Options, reachable_callgraph}}, highlevel::{self, Instr}, Val};
 
 pub fn get_callsite_info(module: &highlevel::Module) {
@@ -74,7 +74,7 @@ fn main() {
     let mut call_indirect_count = 0;
     for func in &wimpl.functions {
         func.body.visit_expr_pre_order(|expr| {
-            if let wimpl::Expr::CallIndirect { .. } = expr {
+            if let wimpl::ExprKind::CallIndirect { .. } = &expr.kind {
                 call_indirect_count += 1
             };
             // Continue recursively traversing expressions.
@@ -92,7 +92,7 @@ fn main() {
     println!("call_indirect i32.load constant addresses:");
     let constant_addr = collect_call_indirect_load_const_addr(&wimpl);
     print_map_count(&constant_addr);
-    dump_const_addr_json(&constant_addr);
+    dump_const_addr_json(&constant_addr).unwrap();
     
     let options = Options {
         with_type_constraint: true,
@@ -153,7 +153,7 @@ fn main() {
     
     println!("  size reduction: {} bytes ({:.2}%)", delta_file_size, delta_file_percentage); 
     let total: f64 = idx_exprs.iter().map(|(_, count)| *count as f64).sum();
-    let (highest_expr, highest_expr_count) = idx_exprs.iter().max_by(|a,b|a.1.cmp(&b.1)).unwrap(); 
+    let (highest_expr, highest_expr_count) = idx_exprs.iter().max_by(|a,b|a.1.cmp(b.1)).unwrap(); 
     let highest_expr_percent = *highest_expr_count as f64 / total * 100.0; 
     let mut f = File::create("analysis-stats.json").unwrap();
     writeln!(f, "
@@ -181,21 +181,21 @@ fn main() {
     delta_file_size,
     delta_file_percentage, 
     highest_expr, 
-    highest_expr_percent);         
+    highest_expr_percent).unwrap();
 }
 
 /// Returns a slightly abstracted form of the call_indirect expressions, sorted descending by count.
 pub fn collect_call_indirect_load_const_addr(module: &wimpl::Module) -> FxHashMap<u32, usize> {
     let mut result: FxHashMap<u32, usize> = FxHashMap::default();
     for func in &module.functions {
-        use wimpl::Expr::*;
+        use wimpl::ExprKind::*;
         func.body.visit_expr_pre_order(|expr| {
-            if let CallIndirect { type_: _, table_idx, args: _ } = expr {
+            if let CallIndirect { type_: _, table_idx, args: _ } = &expr.kind {
                 if let Load {
                     op: crate::highlevel::LoadOp::I32Load,
                     addr,
-                } = &**table_idx {
-                    if let Const(Val::I32(const_addr)) = &**addr {
+                } = &table_idx.kind {
+                    if let Const(Val::I32(const_addr)) = &addr.kind {
                         *result.entry(*const_addr as u32).or_default() += 1;
                     }
                 }
