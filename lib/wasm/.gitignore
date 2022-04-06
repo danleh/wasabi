@@ -29,3 +29,9 @@
 /tests/dce-examples/**/lowerbound-reachable-functions.txt 
 /tests/dce-examples/**/reachable-exports.txt 
 /tests/dce-examples/**/callsite-sensitive-cg.txt
+
+# some manual investigation/output/note files from Daniel
+/Figma type inference problems.wimpl
+/call_indirect-idx-after-map.txt
+/call_indirect-idx-expr.txt
+/param-usages.txt
