@@ -3,9 +3,8 @@ use std::{cmp::Reverse, fmt::{self, Display}, iter::FromIterator, cell::RefCell,
 use regex::Regex;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{wimpl::{Body, Expr, Module, Stmt, Var}, highlevel::{StoreOp, LoadOp, FunctionType}};
-
-use super::{FunctionId, Function};
+use crate::highlevel::{StoreOp, LoadOp, FunctionType};
+use crate::wimpl::{Body, Expr, Module, Stmt, Var, FunctionId, Function, StmtKind, ExprKind};
 
 // TODO Analysis for identification of heap allocation function ("malloc")
 // Often required for "allocation site abstraction" in pointer analysis
@@ -30,8 +29,11 @@ pub struct VarExprMap<'module>(FxHashMap<Var, Option<&'module Expr>>);
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum VarExprMapResult<'module> {
+    /// There was only a single assignment to this variable.
     Precise(&'module Expr),
+    /// E.g., because of loops or two assignments to a local/global.
     Top,
+    /// E.g., because of function parameters or globals.
     Uninitialized(Var),
 }
 
@@ -40,7 +42,7 @@ impl<'module> VarExprMap<'module> {
         let mut map = Self::default();
 
         body.visit_stmt_pre_order(|stmt| {
-            if let Stmt::Assign { lhs, type_: _, rhs } = stmt {
+            if let StmtKind::Assign { lhs, type_: _, rhs } = &stmt.kind {
                 map.add(*lhs, rhs)
             }
             true
@@ -60,7 +62,7 @@ impl<'module> VarExprMap<'module> {
     pub fn get(&self, var: Var) -> VarExprMapResult {
         match self.0.get(&var) {
             // Expression itself refers to a variable, resolve that recursively:
-            Some(Some(Expr::VarRef(var))) => self.get(*var),
+            Some(Some(Expr { id: _, kind: ExprKind::VarRef(var) })) => self.get(*var),
             // Non-recursive case: non-var expression.
             Some(Some(other_expr)) => VarExprMapResult::Precise(other_expr),
             // Overapproximated (e.g., because the variable was assigned twice):
@@ -87,7 +89,7 @@ impl<'module> fmt::Display for VarExprMap<'module> {
 pub fn collect_call_indirect_args(function: &Function) -> BTreeMap<FunctionType, BTreeMap<Vec<String>, usize>> {
     let mut result: BTreeMap<FunctionType, BTreeMap<Vec<String>, usize>> = BTreeMap::default();
     function.body.visit_expr_pre_order(|expr| {
-        if let Expr::CallIndirect { type_, table_idx: _, args } = expr {
+        if let ExprKind::CallIndirect { type_, table_idx: _, args } = &expr.kind {
             let args = args.iter().map(abstract_expr).collect::<Vec<_>>();
             *result.entry(*type_).or_default().entry(args).or_default() += 1;
         }
@@ -120,7 +122,7 @@ pub fn param_exprs(function: &Function) {
         function.body.visit_expr_pre_order(|expr| {
             let mut is_in_expr = false;
             expr.visit_pre_order(|subexpr| {
-                if subexpr == &Expr::VarRef(var) {
+                if &subexpr.kind == &ExprKind::VarRef(var) {
                     is_in_expr = true;
                     return false;
                 }
@@ -176,9 +178,9 @@ pub fn abstract_expr(expr: &Expr) -> String {
 pub fn collect_call_indirect_idx_expr(module: &Module) -> FxHashMap<String, usize> {
     let mut result: FxHashMap<String, usize> = FxHashMap::default();
     for func in &module.functions {
-        use Expr::*;
+        use ExprKind::*;
         func.body.visit_expr_pre_order(|expr| {
-            if let CallIndirect { type_: _, table_idx, args: _ } = expr {
+            if let CallIndirect { type_: _, table_idx, args: _ } = &expr.kind {
                 let table_idx = abstract_expr(table_idx);
                 *result.entry(table_idx).or_default() += 1;
             }
@@ -196,19 +198,19 @@ pub fn collect_i32_load_store_arg_expr(module: &Module) -> (
     let addrs: RefCell<FxHashMap<String, usize>> = RefCell::new(FxHashMap::default());
     let mut values: FxHashMap<String, usize> = FxHashMap::default();
     for func in &module.functions {
-        use crate::wimpl::Expr::*;
-        use crate::wimpl::Stmt::*;
+        use crate::wimpl::ExprKind::*;
+        use crate::wimpl::StmtKind::*;
         // TODO / FIXME Can we make the assumption that call_indirect idx are always loaded/stored
         // via full i32s?
         func.body.visit_pre_order(|expr| {
-            if let Store { op: StoreOp::I32Store, addr, value } = expr {
+            if let Store { op: StoreOp::I32Store, addr, value } = &expr.kind {
                 *addrs.borrow_mut().entry(abstract_expr(addr)).or_default() += 1;
                 *values.entry(abstract_expr(value)).or_default() += 1;
             }
             true
         },
         |expr| {
-            if let Load { op: LoadOp::I32Load, addr } = expr {
+            if let Load { op: LoadOp::I32Load, addr } = &expr.kind {
                 *addrs.borrow_mut().entry(abstract_expr(addr)).or_default() += 1;
             }
             true
@@ -222,9 +224,9 @@ pub fn collect_memory_functions(module: &Module) -> Vec<(FunctionId, bool, bool)
     for func in &module.functions {
         let mut has_memory_size = false;
         let mut has_memory_grow = false;
-        use crate::wimpl::Expr::*;
+        use crate::wimpl::ExprKind::*;
         func.body.visit_expr_pre_order(|expr| {
-            match expr {
+            match &expr.kind {
                 MemorySize => has_memory_size = true,
                 MemoryGrow { pages: _ } => has_memory_grow = true,
                 _ => {}
@@ -242,9 +244,9 @@ pub fn collect_memory_functions(module: &Module) -> Vec<(FunctionId, bool, bool)
 pub fn collect_function_direct_call_count(module: &Module) -> FxHashMap<FunctionId, usize> {
     let mut result: FxHashMap<FunctionId, usize> = FxHashMap::default();
     for func in &module.functions {
-        use crate::wimpl::Expr::*;
+        use crate::wimpl::ExprKind::*;
         func.body.visit_expr_pre_order(|expr| {
-            if let Call { func, args: _ } = expr { 
+            if let Call { func, args: _ } = &expr.kind { 
                 *result.entry(func.clone()).or_default() += 1 
             }
             true
@@ -342,12 +344,12 @@ fn test_add_without_overflow() {
 
 /// Panics if called with a non-i32 expression.
 pub fn approx_i32_eval(expr: &Expr) -> I32Range {
-    use Expr::*;
     use crate::Val;
     use crate::ValType;
     use crate::highlevel::UnaryOp::*;
     use crate::highlevel::BinaryOp::*;
-    match expr {
+    use ExprKind::*;
+    match &expr.kind {
         Const(Val::I32(val)) => I32Range::exact(*val as u32),
         Const(_) => panic!("should only be called with an i32 expression"),
 
