@@ -1,7 +1,7 @@
 use std::{
     fmt::{self, Write},
     io::{self, ErrorKind},
-    path::Path,
+    path::Path, sync::atomic::{AtomicUsize, self}, collections::HashMap, cmp::Ordering, hash::{Hash, Hasher},
 };
 
 use arc_interner::ArcIntern;
@@ -14,10 +14,10 @@ use crate::{
 
 // TODO(Michelle): fix compile errors in wimpl_opt, add tests, only then include in module hierarchy.
 // pub mod optimize;
-pub mod analyze;
-pub mod callgraph;
+// pub mod analyze;
+// pub mod callgraph;
 pub mod wimplify;
-pub mod traverse;
+// pub mod traverse;
 
 mod pretty_print;
 mod parse;
@@ -36,7 +36,16 @@ pub struct Module {
     // pub memories: Vec<Memory>,
     // pub start: Option<Idx<Function>>,
     // pub custom_sections: Vec<RawCustomSection>,
+
+    /// Metadata associated with a particular wimpl `Stmt` or `Expr`, identified by its `InstrId`.
+    /// Stored out-of-line in order to make the individual AST node not too large.
+    // TODO add more information, introduce a `Metadata` with `wasm_src_location` as a field.
+    // TODO Make `wasm_src_location` an `Option` because not everything originates from WebAssembly?
+    pub metadata: HashMap<InstrId, WasmSrcLocation>,
 }
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct WasmSrcLocation(Idx<highlevel::Function>, Idx<highlevel::Instr>);
 
 impl Module {
     pub fn from_wasm_file(path: impl AsRef<Path>) -> Result<Module, String> {
@@ -149,6 +158,77 @@ pub enum Var {
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, Ord, PartialOrd, Default)]
 pub struct Label(u32);
 
+/// Global, unique identifier for a Wimpl `Stmt` or `Expr` (which was formerly a WebAssembly 
+/// instruction, hence the name).
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, Ord, PartialOrd)]
+pub struct InstrId(usize);
+
+static INSTR_ID_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+impl InstrId {
+    pub fn fresh() -> Self {
+        Self(INSTR_ID_COUNT.fetch_add(1, atomic::Ordering::SeqCst))
+    }
+}
+
+#[derive(Debug, Eq, Clone)]
+pub struct Stmt {
+    id: InstrId,
+    kind: StmtKind
+}
+
+impl Stmt {
+    pub fn new(kind: StmtKind) -> Self {
+        Self { id: InstrId::fresh(), kind }
+    }
+
+    /// Convenience constructor for creating a `Stmt::Expr(...)`.
+    pub fn expr(expr_kind: ExprKind) -> Self {
+        Stmt::new(StmtKind::Expr(Expr::new(expr_kind)))
+    }
+}
+
+// Need to manually implement `PartialEq`, `PartialOrd`, `Ord`, and `Hash` to ignore the `id` field 
+// in comparisons.
+
+impl PartialEq for Stmt {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
+}
+
+impl PartialOrd for Stmt {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Stmt {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.kind.cmp(&other.kind)
+    }
+}
+
+impl Hash for Stmt {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.kind.hash(state);
+    }
+}
+
+impl From<StmtKind> for Stmt {
+    fn from(kind: StmtKind) -> Self {
+        Self::new(kind)
+    }
+}
+
+// Convenience, to create an expression statement (wrapping the `wimpl::Expr` in a 
+// `wimpl::Stmt::Expr` and adding unique `id`s to both in one swoop).
+impl From<ExprKind> for Stmt {
+    fn from(expr_kind: ExprKind) -> Self {
+        Stmt::expr(expr_kind)
+    }
+}
+
 /// Wimpl instructions make the following major changes over high-level Wasm:
 /// - Remove the evaluation/operand stack completely, every instruction takes
 /// explicit arguments and optionally produces a (in the Wasm MVP) single LHS.
@@ -161,7 +241,7 @@ pub struct Label(u32);
 // TODO Optimize this representation, in particular remove redundant assignments
 // between stack variables and locals/globals.
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Ord, PartialOrd)]
-pub enum Stmt {
+pub enum StmtKind {
 
     // Simplify nop: Not necessary for analysis.
 
@@ -237,8 +317,65 @@ pub enum Stmt {
 
 }
 
+#[derive(Debug, Eq, Clone)]
+pub struct Expr {
+    id: InstrId,
+    kind: ExprKind,
+}
+
+impl Expr {
+    pub fn new(kind: ExprKind) -> Self {
+        Self { id: InstrId::fresh(), kind }
+    }
+
+    /// Convenience constructor for creating a `Box<Expr>`.
+    pub fn boxed(kind: ExprKind) -> Box<Self> {
+        Box::new(Self::new(kind))
+    }
+}
+
+// Need to manually implement `PartialEq`, `PartialOrd`, `Ord`, and `Hash` to ignore the `id` field 
+// in comparisons.
+
+impl PartialEq for Expr {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
+}
+
+impl PartialOrd for Expr {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Expr {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.kind.cmp(&other.kind)
+    }
+}
+
+impl Hash for Expr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.kind.hash(state);
+    }
+}
+
+impl From<ExprKind> for Expr {
+    fn from(kind: ExprKind) -> Self {
+        Self::new(kind)
+    }
+}
+
+// Conveniece, typically for creating recursive expressions.
+impl From<ExprKind> for Box<Expr> {
+    fn from(kind: ExprKind) -> Self {
+        Expr::boxed(kind)
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Ord, PartialOrd)]
-pub enum Expr {
+pub enum ExprKind {
 
     VarRef(Var),
 
