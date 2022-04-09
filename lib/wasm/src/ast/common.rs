@@ -99,6 +99,7 @@ impl fmt::Display for FunctionType {
     }
 }
 
+// TODO replace all occurrences with FunctionType once we support non-MVP binaries, then remove.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct BlockType(pub Option<ValType>);
 
@@ -111,7 +112,7 @@ impl fmt::Display for BlockType {
     }
 }
 
-#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(WasmBinary, Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct TableType(pub ElemType, pub Limits);
 
 // TODO remove once low-level parser is replaced by wasmparser.
@@ -124,10 +125,10 @@ pub enum ElemType {
 }
 
 // TODO replace with just limits
-#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(WasmBinary, Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MemoryType(pub Limits);
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Limits {
     pub initial_size: u32,
     pub max_size: Option<u32>,
@@ -166,6 +167,9 @@ impl<T> Idx<T> {
     // TODO replace with two functions, `to_u32` and `to_usize` (the latter is useful, e.g., when
     // indexing into vectors).
     pub fn into_inner(self) -> usize { self.0 as usize }
+
+    #[inline]
+    pub fn to_u32(self) -> u32 { self.0 }
 }
 
 // TODO replace with TryFrom with custom NonU32IndexError
@@ -238,6 +242,12 @@ impl<T> Serialize for Idx<T> {
 // TODO make consistent with Idx: make field private, use into_inner().
 #[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Label(pub u32);
+
+impl Label {
+    pub fn to_u32(self) -> u32 {
+        self.0
+    }
+}
 
 impl Serialize for Label {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

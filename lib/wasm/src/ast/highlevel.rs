@@ -1142,7 +1142,7 @@ impl<'a> ParamOrLocalRef<'a> {
     pub fn name(self) -> Option<&'a str> {
         match self {
             ParamOrLocalRef::Param(param) => param.name,
-            ParamOrLocalRef::Local(local) => local.name.as_ref().map(String::as_str),
+            ParamOrLocalRef::Local(local) => local.name.as_deref(),
         }
     }
 }

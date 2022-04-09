@@ -797,6 +797,7 @@ fn to_lowlevel_instr(instr: &hl::Instr, state: &EncodeState) -> ll::Instr {
         hl::Instr::Load(hl::LoadOp::I64Load16U, memarg) => ll::Instr::I64Load16U(memarg),
         hl::Instr::Load(hl::LoadOp::I64Load32S, memarg) => ll::Instr::I64Load32S(memarg),
         hl::Instr::Load(hl::LoadOp::I64Load32U, memarg) => ll::Instr::I64Load32U(memarg),
+        
         hl::Instr::Store(hl::StoreOp::I32Store, memarg) => ll::Instr::I32Store(memarg),
         hl::Instr::Store(hl::StoreOp::I64Store, memarg) => ll::Instr::I64Store(memarg),
         hl::Instr::Store(hl::StoreOp::F32Store, memarg) => ll::Instr::F32Store(memarg),
