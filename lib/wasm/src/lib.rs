@@ -75,6 +75,10 @@ impl highlevel::Module {
     }
 
     pub fn to_bytes_wasmparser<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        ast::wasmparser::encode::encode_module(self, writer)
+        // TODO it's a bit stupid to serialize to a vector first and then to a file,
+        // but this is what wasm-encode offers...
+        let bytes = ast::wasmparser::encode::encode_module(self).map_err(|_| io::Error::new(io::ErrorKind::Other, "TODO"))?;
+        writer.write_all(&bytes)?;
+        Ok(bytes.len())
     }
 }
