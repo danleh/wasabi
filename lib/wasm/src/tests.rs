@@ -38,8 +38,8 @@ fn wasmparser_equal_old_parser() {
         let binary_size_new = module_new.to_bytes_wasmparser(&mut binary_new)
             .expect(&format!("could not encode valid wasm file '{}'", path.display()));
 
-        assert_eq!(binary_size_new, binary_size_old);
-        assert_eq!(binary_new, binary_old);
+        assert_eq!(binary_size_new, binary_size_old, "difference in encoded binary length, left = wasmparser, right = old");
+        assert_eq!(binary_new, binary_old, "difference in encoded binary bytes, left = wasmparser, right = old");
     }
 }
 
