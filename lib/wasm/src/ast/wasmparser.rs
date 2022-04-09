@@ -1506,10 +1506,9 @@ pub mod encode {
         // "locally-defined" (i.e., non-imported) elements.
         // We thus have to re-index functions, globals, etc. and use this here to do so.
         function_idx: HashMap<Idx<hl::Function>, Idx<marker::ll::Function>>,
-        global_idx: HashMap<Idx<hl::Global>, Idx<marker::ll::Global>>,
-
         table_idx: HashMap<Idx<hl::Table>, Idx<marker::ll::Table>>,
         memory_idx: HashMap<Idx<hl::Memory>, Idx<marker::ll::Memory>>,
+        global_idx: HashMap<Idx<hl::Global>, Idx<marker::ll::Global>>,
     }
 
     macro_rules! encode_state_idx_fns {
@@ -1521,28 +1520,26 @@ pub mod encode {
             fn $insert_fn(&mut self, highlevel_idx: Idx<hl::$ty>) -> Idx<marker::ll::$ty> {
                 let new_lowlevel_idx = Idx::from(self.$field.len());
                 let was_new = self.$field.insert(highlevel_idx, new_lowlevel_idx).is_none();
-                assert!(was_new, "highlevel index {:?} was inserted twice", highlevel_idx);
+                assert!(was_new, "high-level index {:?} was inserted twice", highlevel_idx);
                 new_lowlevel_idx
             }
 
             fn $map_fn(&self, highlevel_idx: Idx<hl::$ty>) -> Idx<marker::ll::$ty> {
-                *self.$field.get(&highlevel_idx).expect("high-level index was not present in mapping, but should have been")
+                *self.$field.get(&highlevel_idx).unwrap_or_else(|| panic!("high-level index {:?} was not present in mapping, but should have been", highlevel_idx))
             }
         };
     }
         
     impl EncodeState {
         fn get_or_insert_type(&mut self, type_: FunctionType) -> Idx<marker::ll::FunctionType> {
-            // This means types are ordered by their first appearance in the module.
             let new_idx = Idx::from(self.types_idx.len());
             *self.types_idx.entry(type_).or_insert(new_idx)
         }
 
         encode_state_idx_fns!(insert_function_idx, map_function_idx, function_idx, Function);
-        encode_state_idx_fns!(insert_global_idx, map_global_idx, global_idx, Global);
-
         encode_state_idx_fns!(insert_table_idx, map_table_idx, table_idx, Table);
         encode_state_idx_fns!(insert_memory_idx, map_memory_idx, memory_idx, Memory);
+        encode_state_idx_fns!(insert_global_idx, map_global_idx, global_idx, Global);
     }
     
     pub fn encode_module(module: &hl::Module) -> Result<Vec<u8>, EncodeError> {
@@ -1566,11 +1563,10 @@ pub mod encode {
 
         // Then traverse all non-imported functions, globals, etc., such that their indices and
         // types are in `state`.
-        let (function_section, code_section) = encode_functions(module, &mut state);
-        let global_section = encode_globals(module, &mut state)?;
-
+        let function_section = encode_functions(module, &mut state);
         let (table_section, element_section) = encode_tables(module, &mut state)?;
         let (memory_section, data_section) = encode_memories(module, &mut state)?;
+        let global_section = encode_globals(module, &mut state)?;
 
         // Now, `state` contains all types that appear in the module, so we are ready encode the
         // type section.
@@ -1608,14 +1604,19 @@ pub mod encode {
         if !element_section.is_empty() {
             lowlevel.section(&element_section);
         }
+        let code_section = encode_code(module, &mut state);
         if !code_section.is_empty() {
             lowlevel.section(&code_section);
         }
         if !data_section.is_empty() {
             lowlevel.section(&data_section);
         }
-
-        // TODO .name
+        // Custom name section is only valid after data section, see
+        // https://webassembly.github.io/spec/core/appendix/custom.html#name-section
+        let name_section = encode_names(module, &state);
+        if let Some(name_section) = name_section {
+            lowlevel.section(&name_section);
+        }
 
         // TODO custom sections in between all the others
         
@@ -1641,10 +1642,9 @@ pub mod encode {
         }
 
         add_imports!(functions, insert_function_idx, Function, |f: &hl::Function| state.get_or_insert_type(f.type_.clone()).to_u32());
-        add_imports!(globals, insert_global_idx, Global, |g: &hl::Global| ll::GlobalType::from(g.type_));
-
         add_imports!(tables, insert_table_idx, Table, |t: &hl::Table| ll::TableType::from(t.type_));
         add_imports!(memories, insert_memory_idx, Memory, |m: &hl::Memory| ll::MemoryType::from(m.type_));
+        add_imports!(globals, insert_global_idx, Global, |g: &hl::Global| ll::GlobalType::from(g.type_));
 
         import_section
     }
@@ -1666,58 +1666,61 @@ pub mod encode {
         }
 
         add_exports!(functions, Function, map_function_idx);
-        add_exports!(globals, Global, map_global_idx);
-
         add_exports!(tables, Table, map_table_idx);
         add_exports!(memories, Memory, map_memory_idx);
+        add_exports!(globals, Global, map_global_idx);
 
         export_section
     }
 
-    fn encode_functions(module: &hl::Module, state: &mut EncodeState) -> (ll::FunctionSection, ll::CodeSection) {
+    /// Encode the types in the order in that we gave indices to them.
+    fn encode_types(state: &EncodeState) -> ll::TypeSection {
+        let mut type_section = ll::TypeSection::new();
+        
+        let mut types_ordered: Vec<(&FunctionType, Idx<marker::ll::FunctionType>)> = state.types_idx.iter().map(|(t, i)| (t, *i)).collect();
+        types_ordered.sort_unstable_by_key(|&(_, idx)| idx);
+        assert_eq!(
+            state.types_idx.len(),
+            types_ordered.last().map(|(_, idx)| idx.into_inner() + 1).unwrap_or(0),
+            "type index space should not have any holes, mapping: {:?}",
+            state.types_idx
+        );
+        for (type_, _) in types_ordered {
+            type_section.function(
+                type_.params.iter().copied().map(ll::ValType::from),
+                type_.results.iter().copied().map(ll::ValType::from)
+            );
+        }
+
+        type_section
+    }
+
+    fn encode_functions(module: &hl::Module, state: &mut EncodeState) -> ll::FunctionSection {
         let mut function_section = ll::FunctionSection::new();
-        let mut code_section = ll::CodeSection::new();
 
         for (function_idx, function) in module.functions() {
-            if let Some(code) = function.code() {
+            if let Some(_code) = function.code() {
                 state.insert_function_idx(function_idx);
 
                 let ll_type_idx = state.get_or_insert_type(function.type_.clone());
                 function_section.function(ll_type_idx.to_u32());
-
-                let ll_locals_iter = code.locals.iter().map(|local| ll::ValType::from(local.type_));
-                let mut ll_function = ll::Function::new_with_locals_types(ll_locals_iter);
-                for instr in &code.body {
-                    ll_function.instruction(&encode_instruction(instr, state));
-                }
-                code_section.function(&ll_function);
             }
         }
 
-        (function_section, code_section)
-    }
-
-    fn encode_globals(module: &hl::Module, state: &mut EncodeState) -> Result<ll::GlobalSection, EncodeError> {
-        let mut global_section = ll::GlobalSection::new();
-
-        for (global_idx, global) in module.globals() {
-            if let Some(init) = global.init() {
-                state.insert_global_idx(global_idx);
-                let ll_init = encode_single_instruction_with_end(init, state)?;
-                global_section.global(ll::GlobalType::from(global.type_), &ll_init);
-            }
-        }
-
-        Ok(global_section)
+        function_section
     }
 
     fn encode_tables(module: &hl::Module, state: &mut EncodeState) -> Result<(ll::TableSection, ll::ElementSection), EncodeError> {
         let mut table_section = ll::TableSection::new();
         let mut element_section = ll::ElementSection::new();
 
-        for (table_idx, table) in module.tables() {
-            let ll_table_idx = state.insert_table_idx(table_idx);
-            table_section.table(ll::TableType::from(table.type_));
+        for (hl_table_idx, table) in module.tables() {
+            let ll_table_idx = if table.import.is_none() {
+                table_section.table(ll::TableType::from(table.type_));
+                state.insert_table_idx(hl_table_idx)
+            } else {
+                state.map_table_idx(hl_table_idx)
+            };
 
             for hl_element in &table.elements {
                 // `wasm-encoder` uses None as the table index to signify the MVP binary format.
@@ -1743,9 +1746,13 @@ pub mod encode {
         let mut memory_section = ll::MemorySection::new();
         let mut data_section = ll::DataSection::new();
 
-        for (memory_idx, memory) in module.memories() {
-            let ll_memory_idx = state.insert_memory_idx(memory_idx);
-            memory_section.memory(ll::MemoryType::from(memory.type_));
+        for (hl_memory_idx, memory) in module.memories() {
+            let ll_memory_idx = if memory.import.is_none() {
+                memory_section.memory(ll::MemoryType::from(memory.type_));
+                state.insert_memory_idx(hl_memory_idx)
+            } else {
+                state.map_memory_idx(hl_memory_idx)
+            };
 
             for data in &memory.data {
                 let ll_offset = encode_single_instruction_with_end( &data.offset, state)?;
@@ -1755,6 +1762,37 @@ pub mod encode {
         }
 
         Ok((memory_section, data_section))
+    }
+
+    fn encode_globals(module: &hl::Module, state: &mut EncodeState) -> Result<ll::GlobalSection, EncodeError> {
+        let mut global_section = ll::GlobalSection::new();
+
+        for (global_idx, global) in module.globals() {
+            if let Some(init) = global.init() {
+                state.insert_global_idx(global_idx);
+                let ll_init = encode_single_instruction_with_end(init, state)?;
+                global_section.global(ll::GlobalType::from(global.type_), &ll_init);
+            }
+        }
+
+        Ok(global_section)
+    }
+
+    fn encode_code(module: &hl::Module, state: &mut EncodeState) -> ll::CodeSection {
+        let mut code_section = ll::CodeSection::new();
+
+        for function in &module.functions {
+            if let Some(code) = function.code() {
+                let ll_locals_iter = code.locals.iter().map(|local| ll::ValType::from(local.type_));
+                let mut ll_function = ll::Function::new_with_locals_types(ll_locals_iter);
+                for instr in &code.body {
+                    ll_function.instruction(&encode_instruction(instr, state));
+                }
+                code_section.function(&ll_function);
+            }
+        }
+
+        code_section
     }
 
     fn encode_single_instruction_with_end(instrs: &[hl::Instr], state: &mut EncodeState) -> Result<ll::Instruction<'static>, EncodeError> {
@@ -1957,28 +1995,44 @@ pub mod encode {
         }
     }
 
-    /// Encode the types in the order in that we gave indices to them.
-    fn encode_types(state: &EncodeState) -> ll::TypeSection {
-        let mut type_section = ll::TypeSection::new();
-        
-        let mut types_ordered: Vec<(&FunctionType, Idx<marker::ll::FunctionType>)> = state.types_idx.iter().map(|(t, i)| (t, *i)).collect();
-        types_ordered.sort_unstable_by_key(|&(_, idx)| idx);
-        assert_eq!(
-            state.types_idx.len(),
-            types_ordered.last().map(|(_, idx)| idx.into_inner() + 1).unwrap_or(0),
-            "type index space should not have any holes, mapping: {:?}",
-            state.types_idx
-        );
-        for (type_, _) in types_ordered {
-            type_section.function(
-                type_.params.iter().copied().map(ll::ValType::from),
-                type_.results.iter().copied().map(ll::ValType::from)
-            );
+    fn encode_names(module: &hl::Module, state: &EncodeState) -> Option<ll::NameSection> {
+        // Because `wasm-encode`s name section and name subsections don't track whether they are
+        // empty, and we don't want to write empty sections, wrap them in an `Option` here and
+        // lazily initialize on access. Then, write them only if they are not `None`.
+        let mut functions_subsection: Option<ll::NameMap> = None;
+        let mut locals_subsection: Option<ll::IndirectNameMap> = None;
+        for (hl_function_idx, function) in module.functions() {
+            let ll_function_idx = state.map_function_idx(hl_function_idx).to_u32();
+
+            if let Some(name) = &function.name {
+                functions_subsection.get_or_insert_with(Default::default).append(ll_function_idx, name);
+            }
+
+            let mut local_names: Option<ll::NameMap> = None;
+            for (local_idx, local) in function.param_or_locals() {
+                if let Some(name) = local.name() {
+                    local_names.get_or_insert_with(Default::default).append(local_idx.to_u32(), name);
+                }
+            }
+            if let Some(local_names) = local_names {
+                locals_subsection.get_or_insert_with(Default::default).append(ll_function_idx, &local_names);
+            }
         }
 
-        type_section
-    }
+        let mut name_section: Option<ll::NameSection> = None;
+        if let Some(module_name) = &module.name {
+            name_section.get_or_insert_with(Default::default).module(module_name);
+        }
+        if let Some(functions_subsection) = &functions_subsection {
+            name_section.get_or_insert_with(Default::default).functions(functions_subsection);
+        }
+        if let Some(locals_subsection) = &locals_subsection {
+            name_section.get_or_insert_with(Default::default).locals(locals_subsection);
+        }
 
+        name_section
+    }
+    
     impl From<crate::GlobalType> for ll::GlobalType {
         fn from(hl_global_type: crate::GlobalType) -> Self {
             Self {
