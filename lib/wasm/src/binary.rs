@@ -1,5 +1,4 @@
 use std::io;
-use std::marker::PhantomData;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use ordered_float::OrderedFloat;
