@@ -530,9 +530,14 @@ impl WasmBinary for Limits {
     }
 }
 
-impl<T> WasmBinary for PhantomData<T> {
-    fn decode<R: io::Read>(_: &mut R, _: &mut DecodeState) -> Result<Self, Error> { Ok(PhantomData) }
-    fn encode<W: io::Write>(&self, _: &mut W) -> io::Result<usize> { Ok(0) }
+impl<T> WasmBinary for Idx<T> {
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
+        let idx = u32::decode(reader, state).set_err_elem::<Self>()?;
+        Ok(Idx::from(idx))
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        self.into_inner().encode(writer)
+    }
 }
 
 /* Custom sections and name subsection parsing. */

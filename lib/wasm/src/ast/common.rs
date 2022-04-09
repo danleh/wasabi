@@ -154,17 +154,21 @@ pub enum Mutability {
 
 /* Indices */
 
-#[derive(WasmBinary)]
-// T is only used for static distinction between different index spaces, but has no representation
-// at runtime. Since we don't own T, we don't want a "drop check" and must use fn() -> T, as is
-// recommended in the rustonomicon: https://doc.rust-lang.org/beta/nomicon/phantom-data.html
+/// A WebAssembly index into one of the possible "index spaces" (e.g., functions, globals, etc.)
+/// 
+/// The type parameter T is only used for static distinction between the different index spaces, 
+/// but has no representation at runtime.
+/// Since we don't own T, we don't want a "drop check" and must use fn() -> T, as is
+/// recommended in the rustonomicon: https://doc.rust-lang.org/beta/nomicon/phantom-data.html
 pub struct Idx<T>(u32, PhantomData<fn() -> T>);
 
 impl<T> Idx<T> {
+    // TODO replace with two functions, `to_u32` and `to_usize` (the latter is useful, e.g., when
+    // indexing into vectors).
     pub fn into_inner(self) -> usize { self.0 as usize }
 }
 
-// TODO remove and replace with u32 only
+// TODO replace with TryFrom with custom NonU32IndexError
 // Why accept + convert to a usize if its anyway always u32?
 impl<T> From<usize> for Idx<T> {
     #[inline]
@@ -180,8 +184,8 @@ impl<T> From<u32> for Idx<T> {
     }
 }
 
-// custom Debug: print index type T, don't print PhantomData
-// e.g. Idx<Function>(3, PhantomData) as "Function 3"
+// Custom `Debug`: print a human-readable version of the index space T, but don't print PhantomData.
+// E.g. print `Idx<Function>(3, PhantomData)` as `Function 3`
 impl<T> fmt::Debug for Idx<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let type_name = std::any::type_name::<T>().split("::").last().unwrap();
@@ -189,8 +193,8 @@ impl<T> fmt::Debug for Idx<T> {
     }
 }
 
-// implement some traits manually, since derive(Copy/Eq) add requirements like T: Clone/PartialEq,
-// which we do not want (T is only a marker and not actually contained).
+// Implement some traits manually, because derive adds unnecessary requirements due to the `T` type
+// parameter, which we don't want. (T is only a marker and not actually contained in Idx<T>.)
 impl<T> Clone for Idx<T> {
     #[inline]
     fn clone(&self) -> Self { self.into_inner().into() }
@@ -212,12 +216,6 @@ impl<T> hash::Hash for Idx<T> {
     }
 }
 
-impl<T> Serialize for Idx<T> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0.serialize(serializer)
-    }
-}
-
 impl<T> PartialOrd for Idx<T> {
     fn partial_cmp(&self, other: &Idx<T>) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -227,6 +225,12 @@ impl<T> PartialOrd for Idx<T> {
 impl<T> Ord for Idx<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.0.cmp(&other.0)
+    }
+}
+
+impl<T> Serialize for Idx<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
     }
 }
 
