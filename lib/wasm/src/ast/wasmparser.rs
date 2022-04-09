@@ -31,7 +31,7 @@ mod error {
             index_space: &'static str,
         },
 
-        #[error("unsupported WebAssembly extension at offset 0x{:x}: {} (see also the repository at {})", offset, extension.name(), extension.url())]
+        #[error("unsupported WebAssembly extension at offset 0x{:x}: {} (see also {})", offset, extension.name(), extension.url())]
         Unsupported {
             offset: usize,
             extension: WasmExtension
