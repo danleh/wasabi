@@ -1,5 +1,20 @@
 use std::convert::TryInto;
 
+/*
+ TODO WHEN CONTINUING
+ - rename ParseErrorInner to ParseIssue because its used for warnings and errors
+ - fix clippy lints, especially _or_else problems
+ - make make encoding of CodeSection parallel
+ - add SectionId type that is used on both OLD and NEW parser and in the AST to order custom sections
+ - then serialize sections according to this in both OLD and NEW parser
+ - merge (NOT rebase) wasmparser and wimpl branches
+ - update wasmparser and wasm-encoder dependencies
+ - make AST blocks nested, remove end/else opcodes
+ - remove blocktype, replace with function type (this should make our AST multi-value capable)
+ - rename wasm crate to wasabi-wasm
+ - pull wimpl out into own wimpl crate (also in libs)
+*/
+
 mod error {
     use crate::extensions::WasmExtension;
 
@@ -1798,6 +1813,7 @@ pub mod encode {
     fn encode_code(module: &hl::Module, state: &mut EncodeState) -> Result<ll::CodeSection, EncodeError> {
         let mut code_section = ll::CodeSection::new();
 
+        // TODO encode ll_function in parallel (which would require synchronization or a concurrent hashmap for state)
         for function in &module.functions {
             if let Some(code) = function.code() {
                 let ll_locals_iter = code.locals.iter().map(|local| ll::ValType::from(local.type_));
