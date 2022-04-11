@@ -48,8 +48,9 @@ pub struct Module {
     pub metadata: HashMap<InstrId, WasmSrcLocation>,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
 pub struct WasmSrcLocation(Idx<highlevel::Function>, Idx<highlevel::Instr>);
+
 
 impl Module {
     pub fn from_wasm_file(path: impl AsRef<Path>) -> Result<Module, String> {

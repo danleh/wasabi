@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex, iter::FromIterator, cmp::Reverse};
+use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex, iter::FromIterator, cmp::Reverse, default};
 
 use crate::{wimpl::{Module, FunctionId, self, ExprKind::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count, approx_i32_eval, I32Range}, Expr}, highlevel::{FunctionType, self}, Val, ValType};
 
@@ -7,6 +7,8 @@ use crate::wimpl::wimplify::*;
 
 use rustc_hash::{FxHashSet, FxHashMap};
 use test_utilities::*;
+
+use super::InstrId;
 
 #[derive(Default, Clone, Eq, PartialEq)]
 pub struct CallGraph(FxHashMap<FunctionId, FxHashSet<FunctionId>>);
@@ -105,19 +107,44 @@ pub struct Options {
     // pub imported_functions_conservative: bool,
 }
 
+// Get each edge in the call graph 
+#[derive(Default)]
+//pub struct CallSites(std::collections::BTreeMap<wimpl::WasmSrcLocation, FunctionId>);
+pub struct CallSites(std::collections::BTreeMap<(crate::Idx<highlevel::Instr>, crate::Idx<highlevel::Function>), FunctionId>);
 
+impl CallSites {
+    pub fn add_edge(&mut self, wasm_loc: crate::Idx<highlevel::Instr>, src: crate::Idx<highlevel::Function>, target: FunctionId) {
+        self.0.insert(
+            (wasm_loc, src), 
+            target, 
+        );
+    }
+    
+    pub fn to_file(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        let mut file = File::create(path)?;    
+        for ((instr_num, src), val) in self.0.clone() {
+            // TODO: val can be an imported function in which case the function is refered to by the name 
+            // It seems that if it has multiple names, you refer to it by name1.name2 ? and the FunctionId is lost 
+            // Wasabi on the other hand does not seem retain import function names and refers to them by Id 
+            writeln!(file, "{}: f{} -> {}", instr_num.to_u32(), src.to_u32(), val).unwrap(); 
+        }; 
+        Ok(())
+    }
+}
 
 pub fn reachable_callgraph(
     module: &wimpl::Module,
     mut reachable_funcs: FxHashSet<FunctionId>,
     options: Options,
-) -> anyhow::Result<CallGraph> {
+) -> anyhow::Result<(CallGraph, CallSites)> {
     
     let mut callgraph = CallGraph::default();
 
+    let mut callsites = CallSites::default(); 
+
     // Collect "declarative constraints" once per function.
     // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
-    let call_target_constraints: FxHashMap<FunctionId, FxHashSet<Target>> = module.functions.iter()
+    let call_target_constraints: FxHashMap<FunctionId, FxHashSet<(wimpl::InstrId, Target)>> = module.functions.iter()
         .map(|func| {
             (func.name(), collect_target_constraints(func, options))
         })
@@ -185,17 +212,25 @@ pub fn reachable_callgraph(
     let mut worklist = reachable_funcs.iter().cloned().collect::<Vec<_>>();
     let mut i = 0;
     println!("functions in worklist: {}", worklist.len()); 
-    while let Some(func) = worklist.pop() {
-        let calls = call_target_constraints.get(&func).expect(&format!("all functions should have been constraints computed for, but not found for '{}'", func));            
+    while let Some(func) = worklist.pop() {        
 
-        for call in calls {
+        let calls = call_target_constraints.get(&func).unwrap_or_else(|| panic!("all functions should have been constraints computed for, but not found for '{}'", func));            
+
+        for (instr_id, call) in calls {
             // Solve the constraints to concrete edges.
             let targets = solve_constraints(module, &funcs_by_type, &funcs_in_table, &funcs_by_table_idx, call);
 
             // Add those as edges to the concrete call graph.
             for target in targets {
                 callgraph.add_edge(func.clone(), target.clone());
-
+                    
+                let wasm_loc = (*module.metadata.get(instr_id).expect("Each Wimpl instruction should be mapped back to Wasm instruction.")).clone(); 
+                callsites.add_edge(
+                    wasm_loc.1,
+                    wasm_loc.0, 
+                    target.clone() 
+                ); 
+                
                 // Add target to worklist, if it wasn't already processed 
                 // (and everything reachable was processed).
                 // TODO Is this check expensive? If yes, can we use a bit set for the set of reachable functions?
@@ -221,18 +256,25 @@ pub fn reachable_callgraph(
     //     println!("{:10} {:30}", count, expr);
     // }
 
-    Ok(callgraph)
+    Ok((callgraph, callsites))
 }
 
 pub fn collect_target_constraints(
     src: &Function,
     options: Options
-) -> FxHashSet<Target> {
+) -> FxHashSet<(wimpl::InstrId, Target)> {
     
     // TODO how to handle imported functions? Can they each every exported function?
     // Do we add a direct edge there? Or do we add an abstract "host" node? 
     // Do we merge with a JavaScript call-graph analysis?
-    let body = src.body.as_ref().expect("FIXME handle imported functions!");
+    let body = src.body.as_ref(); //.expect("FIXME handle imported functions!");
+
+    // TODO: REMOVE! covers up the FIXME for Michelle's tests 
+    let body = match body {
+        Some(body) => body,
+        None => return FxHashSet::default(),
+    }; 
+    
 
     // Step 1: Build a map of variables to expressions or an overapproximation when variables are
     // assigned multiple times.
@@ -245,10 +287,11 @@ pub fn collect_target_constraints(
     // Collect one set of constraints (conjuncts) per call/call_indirect.
     let mut targets = FxHashSet::default();
     use wimpl::ExprKind::*;
+    
     body.visit_expr_pre_order(|expr| {
         match &expr.kind {
             Call { func, args: _} => {
-                targets.insert(Target::Direct(func.clone()));
+                targets.insert((expr.id, Target::Direct(func.clone())));
             }
             CallIndirect { type_, table_idx, args: _ } => {
                 let mut constraints = Vec::default();
@@ -281,7 +324,7 @@ pub fn collect_target_constraints(
                         constraints.push(Constraint::TableIndexExpr(expr.clone()));
                     }
                 }
-                targets.insert(Target::Constrained(constraints));
+                targets.insert((expr.id, Target::Constrained(constraints)));
             }
             _ => {}
         }
@@ -388,7 +431,7 @@ fn main() {
         ..Options::default()
     };
     let reachable = vec![FunctionId::Name("main".to_string().into())].into_iter().collect();
-    let callgraph = reachable_callgraph(&wimpl_module, reachable, options).unwrap();
+    let (callgraph, _callsites) = reachable_callgraph(&wimpl_module, reachable, options).unwrap();
 
     println!("{}", callgraph.to_dot());
     callgraph.to_pdf("tests/callgraph/out/callgraph.pdf").unwrap();
@@ -427,7 +470,7 @@ fn data_gathering() {
 
     for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
         println!("{}", path.display());
-        let wimpl_module = Module::from_wasm_file(&path).expect(&format!("could not decode valid wasm file '{}'", path.display()));
+        let wimpl_module = Module::from_wasm_file(&path).unwrap_or_else(|_| panic!("could not decode valid wasm file '{}'", path.display()));
 
         let idx_exprs = collect_call_indirect_idx_expr(&wimpl_module);
         for (expr, count) in idx_exprs.iter() {
@@ -511,7 +554,7 @@ fn data_gathering() {
                 .map(|func| func.name())
                 .collect::<FxHashSet<_>>();
             
-            reachable_callgraph(&wimpl_module, exported_funcs, options).unwrap().functions().len() as f64 
+            reachable_callgraph(&wimpl_module, exported_funcs, options).unwrap().0.functions().len() as f64 
                 / wimpl_module.functions.len() as f64
         }
         
@@ -526,7 +569,7 @@ fn data_gathering() {
             let sum_reachable_count: u64 = exported_funcs.iter().map(|f| {
                 let mut reachable = FxHashSet::default();
                 reachable.insert(f.clone());
-                let reachable_funcs_count = reachable_callgraph(&wimpl_module, reachable, options).unwrap().functions().len();
+                let reachable_funcs_count = reachable_callgraph(&wimpl_module, reachable, options).unwrap().0.functions().len();
                 reachable_funcs_count as u64
             }).sum();
             (sum_reachable_count as f64) / (exported_funcs.len() as f64)

@@ -48,7 +48,7 @@ fn main() {
         .map(|func| func.name())
         .collect();
 
-    let callgraph = callgraph::reachable_callgraph(&wimpl, exported_funcs.clone(), options).unwrap();
+    let (callgraph, _callsites) = callgraph::reachable_callgraph(&wimpl, exported_funcs.clone(), options).unwrap();
 
     println!("number of functions: {}", wimpl.functions.len());
     println!("number of exported functions: {}", exported_funcs.len());
