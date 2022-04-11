@@ -18,6 +18,9 @@
 /flamegraph*.svg
 /perf.data*
 
+# Ignore all the hidden files
+.*
+
 # Ignore all node_modules in tests 
 /tests/dce-examples/**/node_modules
 
@@ -28,7 +31,8 @@
 /tests/dce-examples/**/call_indirect_load_const_addr.json
 /tests/dce-examples/**/lowerbound-reachable-functions.txt 
 /tests/dce-examples/**/reachable-exports.txt 
-/tests/dce-examples/**/callsite-sensitive-cg.txt
+/tests/dce-examples/**/callsite_cg_static.txt
+/tests/dce-examples/**/callsite_cg_dynamic.txt
 
 # some manual investigation/output/note files from Daniel
 /Figma type inference problems.wimpl
