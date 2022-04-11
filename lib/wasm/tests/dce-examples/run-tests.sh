@@ -31,22 +31,22 @@ do
         continue        
     fi
 
-    if [ $lib = "sql.js/" ]
-    then 
-    	cd ..
-        continue        
-    fi
-    
     wasm_file=`find . -maxdepth 1 -type f -name "*.wasm"`
     
     for test in */ ; 
     do 
         cd $test 
         
-        #printf "\n$lib$test\n"
+        rm -r output_files > /dev/null
+        rm -r analysis_data > /dev/null
+
+        mkdir output_files
+        mkdir analysis_data
+        
+        printf "\n$lib$test\n"
 
         echo -n "node index.js --reachable-exports --lower-bound"
-        node index.js --reachable-exports --lower-bound > index.js.stdout.txt 
+        node index.js --reachable-exports --lower-bound > ./output_files/index.js.stdout.txt 
         exit_status
         
         if [ "$GET_CALLSITE_INFO" = 1 ]; 
@@ -57,7 +57,7 @@ do
         fi 
         
         echo -n "RUSTFLAGS=-Awarnings cargo -q run --release --bin dce ../${wasm_file:2} reachable-exports.txt dce.wasm > analysis.stdout.txt"
-        RUSTFLAGS=-Awarnings cargo -q run --release --bin dce ../${wasm_file:2} reachable-exports.txt dce.wasm > analysis.stdout.txt
+        RUSTFLAGS=-Awarnings cargo -q run --release --bin dce ../${wasm_file:2} ./analysis_data/reachable-exports.txt dce.wasm > ./output_files/analysis.stdout.txt
         exit_status
         
         cd .. 

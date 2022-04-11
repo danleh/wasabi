@@ -78,7 +78,7 @@ fn main() {
     };
     let (callgraph, callsites) = reachable_callgraph(&wimpl, reachable_funcs.into_iter().collect(), options).unwrap();
     
-    callsites.to_file("callsite_cg_static.txt").expect("Error while writing callsite info to file"); 
+    callsites.to_file("./analysis_data/callsite_cg_static.txt").expect("Error while writing callsite info to file"); 
 
     // DEBUG
     // println!("{:?}", callgraph);
@@ -134,7 +134,7 @@ fn main() {
     let total: f64 = idx_exprs.iter().map(|(_, count)| *count as f64).sum();
     let (highest_expr, highest_expr_count) = idx_exprs.iter().max_by(|a,b|a.1.cmp(b.1)).unwrap(); 
     let highest_expr_percent = *highest_expr_count as f64 / total * 100.0; 
-    let mut f = File::create("analysis-stats.json").unwrap();
+    let mut f = File::create("./analysis_data/analysis-stats.json").unwrap();
     writeln!(f, "
 {{
     \"wasm-file-analyzed\": \"{}\", 
@@ -186,7 +186,7 @@ pub fn collect_call_indirect_load_const_addr(module: &wimpl::Module) -> FxHashMa
 }
 
 fn dump_const_addr_json(addr_to_count: &FxHashMap<u32, usize>) -> io::Result<()> {
-    let mut f = File::create("call_indirect_load_const_addr.json")?;
+    let mut f = File::create("./analysis_data/call_indirect_load_const_addr.json")?;
     writeln!(f, "[")?;
     for (idx, (addr, _count)) in addr_to_count.iter().enumerate() {
         if idx == addr_to_count.len()-1 {
