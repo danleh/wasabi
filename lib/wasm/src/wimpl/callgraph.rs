@@ -24,24 +24,30 @@ pub struct CallGraph(FxHashMap<FunctionId, FxHashSet<FunctionId>>);
 #[derive(Default, Clone, Eq, PartialEq)]
 pub struct CallSites(std::collections::BTreeMap<
     (crate::Idx<highlevel::Function>, crate::Idx<highlevel::Instr>), 
-    crate::Idx<highlevel::Function>
+    (crate::Idx<highlevel::Function>, Target)
 >);
 
 impl CallSites {
     pub fn add_edge(&mut self, 
         wasm_loc: crate::Idx<highlevel::Instr>, 
         src: crate::Idx<highlevel::Function>, 
-        target: crate::Idx<highlevel::Function>) {
+        target: crate::Idx<highlevel::Function>,
+        target_info: Target, 
+    ){
         self.0.insert(
             (src, wasm_loc), 
-            target, 
+            (target, target_info), 
         );
     }
     
     pub fn to_file(&self, path: impl AsRef<Path>) -> io::Result<()> {
         let mut file = File::create(path)?;    
-        for ((instr_num, src), val) in self.0.clone() {
-            writeln!(file, "f{}:{} -> f{}", instr_num.to_u32(), src.to_u32(), val.to_u32()).unwrap(); 
+        for ((instr_num, src), (target, target_info)) in self.0.clone() {
+            write!(file, "f{}:{} -> f{} ", instr_num.to_u32(), src.to_u32(), target.to_u32())?; 
+            match target_info {
+                Target::Direct(_) => writeln!(file, "(direct call)")?,
+                Target::Constrained(_) => writeln!(file, "(indirect call)")?,
+            }
         }; 
         Ok(())
     }
@@ -245,7 +251,8 @@ pub fn reachable_callgraph(
                 wimpl_callgraph.callsites.add_edge(
                     wasm_loc.1,
                     wasm_loc.0, 
-                    *module.metadata.func_name_map.get(&target).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>")
+                    *module.metadata.func_name_map.get(&target).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>"),
+                    (*call).clone()
                 ); 
                 
                 // Add target to worklist, if it wasn't already processed 
