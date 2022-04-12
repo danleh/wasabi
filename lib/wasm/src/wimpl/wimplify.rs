@@ -794,10 +794,7 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
         instr_location_map: HashMap::new(),
         func_name_map: HashMap::new(),
     }; 
-
-    //let mut instr_location_map = HashMap::new();
-    //let mut func_name_map = HashMap::new(); 
-
+    
     // TODO parallelize
     let functions = module.functions().map(|(function_idx, function)| -> Result<Function, String> {
         let name = FunctionId::from_idx(function_idx, module);

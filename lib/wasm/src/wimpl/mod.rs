@@ -1,7 +1,7 @@
 use std::{
     fmt::{self, Write},
     io::{self, ErrorKind},
-    path::Path, sync::atomic::{AtomicUsize, self}, collections::HashMap, cmp::Ordering, hash::{Hash, Hasher},
+    path::Path, sync::atomic::{AtomicUsize, self, AtomicIsize}, collections::HashMap, cmp::Ordering, hash::{Hash, Hasher},
 };
 
 use arc_interner::ArcIntern;
@@ -175,9 +175,9 @@ pub struct Label(u32);
 /// Global, unique identifier for a Wimpl `Stmt` or `Expr` (which was formerly a WebAssembly 
 /// instruction, hence the name).
 #[derive(Eq, PartialEq, Clone, Copy, Hash, Ord, PartialOrd)]
-pub struct InstrId(usize);
+pub struct InstrId(isize);
 
-static INSTR_ID_COUNT: AtomicUsize = AtomicUsize::new(0);
+static INSTR_ID_COUNT: AtomicIsize = AtomicIsize::new(0);
 
 impl InstrId {
     pub fn fresh() -> Self {

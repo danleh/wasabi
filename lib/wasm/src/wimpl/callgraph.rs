@@ -20,16 +20,20 @@ pub struct WimplCallGraph {
 #[derive(Default, Clone, Eq, PartialEq)]
 pub struct CallGraph(FxHashMap<FunctionId, FxHashSet<FunctionId>>);
 
+// FIXME: Fix to the right type 
 // Get each edge in the call graph 
 #[derive(Default, Clone, Eq, PartialEq)]
 pub struct CallSites(std::collections::BTreeMap<
-    (crate::Idx<highlevel::Function>, crate::Idx<highlevel::Instr>), 
+    //(crate::Idx<highlevel::Function>, crate::Idx<highlevel::Instr>), 
+    (crate::Idx<highlevel::Function>, usize), 
     (crate::Idx<highlevel::Function>, Target)
 >);
+// TODO: instead of Target, use Constraint so that we can see which constraint is creating this edge 
 
 impl CallSites {
     pub fn add_edge(&mut self, 
-        wasm_loc: crate::Idx<highlevel::Instr>, 
+        //wasm_loc: crate::Idx<highlevel::Instr>, 
+        wasm_loc: usize, 
         src: crate::Idx<highlevel::Function>, 
         target: crate::Idx<highlevel::Function>,
         target_info: Target, 
@@ -43,7 +47,7 @@ impl CallSites {
     pub fn to_file(&self, path: impl AsRef<Path>) -> io::Result<()> {
         let mut file = File::create(path)?;    
         for ((instr_num, src), (target, target_info)) in self.0.clone() {
-            write!(file, "f{}:{} -> f{} ", instr_num.to_u32(), src.to_u32(), target.to_u32())?; 
+            write!(file, "f{}:{} -> f{} ", instr_num.to_u32(), src, target.to_u32())?; 
             match target_info {
                 Target::Direct(_) => writeln!(file, "(direct call)")?,
                 Target::Constrained(_) => writeln!(file, "(indirect call)")?,
@@ -134,8 +138,8 @@ pub enum Constraint {
     Type(FunctionType),
     // TODO Doesn't refer to a particular table, wouldn't be precise in Wasm post MVP.
     InTable,
-    // FIXME Add constraint that this can go to any exported function:
-    // Exported
+    // This can go to any exported function:
+    Exported, 
     TableIndexExpr(wimpl::Expr),
 }
 
@@ -244,17 +248,26 @@ pub fn reachable_callgraph(
             for target in targets {
                 wimpl_callgraph.callgraph.add_edge(func.clone(), target.clone());
                     
-                let wasm_loc = (*module.metadata.instr_location_map.
-                        get(instr_id).
-                        expect("Each Wimpl instruction should be mapped back to Wasm instruction."))
-                        .clone(); 
-                wimpl_callgraph.callsites.add_edge(
-                    wasm_loc.1,
-                    wasm_loc.0, 
-                    *module.metadata.func_name_map.get(&target).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>"),
-                    (*call).clone()
-                ); 
+                let wasm_loc = module.metadata.instr_location_map.get(instr_id); 
                 
+                let wasm_target = *module.metadata.func_name_map.get(&target).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>"); 
+                let wasm_target_info = (*call).clone(); 
+                match wasm_loc {
+                    Some(wasm_loc) => {
+                        wimpl_callgraph.callsites.add_edge(
+                        wasm_loc.1.to_usize(), wasm_loc.0,
+                        wasm_target, wasm_target_info);                         
+                    }, 
+                    None => {
+                        // This is a function without a body, which is why there is no entry in the instr_location_map.
+                        // We insert 
+                        wimpl_callgraph.callsites.add_edge(
+                            0, *module.metadata.func_name_map.get(&func).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>"), 
+                            wasm_target, wasm_target_info);  
+
+                    }
+                };   
+
                 // Add target to worklist, if it wasn't already processed 
                 // (and everything reachable was processed).
                 // TODO Is this check expensive? If yes, can we use a bit set for the set of reachable functions?
@@ -288,17 +301,18 @@ pub fn collect_target_constraints(
     options: Options
 ) -> FxHashSet<(wimpl::InstrId, Target)> {
     
-    // TODO how to handle imported functions? Can they each every exported function?
+    // TODO: Discuss
+    // How to handle imported functions? Can they each every exported function?
     // Do we add a direct edge there? Or do we add an abstract "host" node? 
     // Do we merge with a JavaScript call-graph analysis?
-    let body = src.body.as_ref(); //.expect("FIXME handle imported functions!");
-
-    // TODO: REMOVE! covers up the FIXME for Michelle's tests 
-    let body = match body {
+    let body = match src.body.as_ref() {
         Some(body) => body,
-        None => return FxHashSet::default(),
-    }; 
-    
+        None => {
+            let mut target = FxHashSet::default(); 
+            target.insert((InstrId(0), Target::Constrained(vec![Constraint::Exported])));              
+            return target
+        },
+    };     
 
     // Step 1: Build a map of variables to expressions or an overapproximation when variables are
     // assigned multiple times.
@@ -436,6 +450,15 @@ pub fn solve_constraints<'a>(
                                 false
                             }))
                         }
+                    },
+                    Constraint::Exported => {
+                        //let targets = Vec::new();
+                        //for func in module.functions.iter(){
+                        //    if !func.export.is_empty() {
+                        //        targets.push(func); 
+                        //    }
+                        //};  
+                        Box::new(filtered_iter.filter(move |f| !&f.export.is_empty()))
                     },
                     // TODO Load expressions -> needs pointer analysis
                 }

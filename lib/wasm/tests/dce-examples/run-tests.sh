@@ -40,6 +40,13 @@ fi
 
 for lib in */ ; 
 do  
+    
+    #if [ $lib = "blake3/" ]
+    #then 
+    #    continue       
+    #elif [ $lib = "hpcc-lib-graphviz/" ]
+    #then 
+    #fi
 
     cd $lib
     
@@ -56,12 +63,12 @@ do
         cd $test 
                 
         # remove old analysis and stdout files 
-        rm -r output_files > /dev/null
-        rm -r analysis_data > /dev/null
+        #rm -r output_files > /dev/null
+        #rm -r analysis_data > /dev/null
 
         # make directories to save analysis and stdout files 
-        mkdir output_files
-        mkdir analysis_data
+        #mkdir output_files
+        #mkdir analysis_data
         
         printf "\n$lib$test\n"
 
@@ -73,8 +80,8 @@ do
         # if user wants to, get the dynamic callsite information 
         if [ "$GET_CALLSITE_INFO" = 1 ]; 
         then 
-            echo -n "node instrumented_index.js --get-callsite-sensitive-cg"
-            node instrumented_index.js --get-callsite-sensitive-cg > /dev/null
+            echo -n "node instrumented_index.js --callsite-sensitive-cg"
+            node instrumented_index.js --callsite-sensitive-cg &>> ./output_files/index.js.stdout.txt
             exit_status 
         fi 
         
@@ -137,8 +144,9 @@ do
     cd ..
 
 done
-
 # aggregate the results 
 echo ""
 echo "Aggregating the results - check analysis-aggregate.csv"
+mv analysis-aggregate.csv analysis-aggregate-old.csv
 python3 analysis-aggregate.py
+echo "For the old analysis check analysis-aggregate-old.csv"
