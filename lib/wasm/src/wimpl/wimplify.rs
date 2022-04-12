@@ -17,7 +17,7 @@ pub struct State<'module> {
     #[allow(clippy::type_complexity)]
     label_stack: Vec<(Label, /* is_loop */ bool, Option<Var>)>,
 
-    function_metadata: HashMap<InstrId, WasmSrcLocation>,
+    instr_loc_map: HashMap<InstrId, WasmSrcLocation>,
 }
 
 /// The immutable context information required but never mutated during conversion.
@@ -74,7 +74,7 @@ fn wimplify_instrs<'module>(
         // wimpl Expr/Stmt.
         let attach_current_wasm_src_location = |state: &mut State, id: InstrId| {
             let wasm_src_location = WasmSrcLocation(context.func_idx, instr_idx.into());
-            state.function_metadata.insert(id, wasm_src_location);
+            state.instr_loc_map.insert(id, wasm_src_location);
         };
 
         // Append a statement to the result and attach the current WebAssembly instruction location
@@ -142,10 +142,10 @@ fn wimplify_instrs<'module>(
                         // In particular, it would be NOT correct to use the source location of the
                         // current instruction that has only prompted us to materialize the 
                         // expression.
-                        let wasm_src_location = state.function_metadata.get(&expr.id).expect("missing metadata for expression from expression stack").clone();
+                        let wasm_src_location = state.instr_loc_map.get(&expr.id).expect("missing metadata for expression from expression stack").clone();
                         
                         let varref = Expr::new(VarRef(var));
-                        state.function_metadata.insert(varref.id, wasm_src_location.clone());
+                        state.instr_loc_map.insert(varref.id, wasm_src_location.clone());
                         
                         let expr = std::mem::replace(expr, varref);
                         // The `expr` already has the correct metadata attached, so nothing to do here...
@@ -155,7 +155,7 @@ fn wimplify_instrs<'module>(
                             type_: *type_,
                             rhs: expr
                         });
-                        state.function_metadata.insert(stmt.id, wasm_src_location);
+                        state.instr_loc_map.insert(stmt.id, wasm_src_location);
                         stmts_result.push(stmt);
                     }
                 }
@@ -728,7 +728,8 @@ fn wimplify_function_body(
     function: &highlevel::Function,
     function_idx: Idx<highlevel::Function>,
     module: &highlevel::Module, 
-    module_metadata: &mut HashMap<InstrId, WasmSrcLocation>, 
+    module_metadata: &mut Metadata, 
+    //module_metadata: &mut HashMap<InstrId, WasmSrcLocation>, 
 ) -> Result<Option<Body>, String> {
     if let Some(code) = function.code() {
         // The body will be at least the number of locals and often a nop or return instruction.
@@ -764,7 +765,7 @@ fn wimplify_function_body(
             label_stack: Vec::new(),
             label_count: 1, // 0 is already used by the function body block.
             stack_var_count: 0,
-            function_metadata: HashMap::new(),
+            instr_loc_map: HashMap::new(), 
         };
 
         let return_var = match function.type_.results() {
@@ -777,7 +778,7 @@ fn wimplify_function_body(
         let was_else = wimplify_instrs(&mut stmts_result, &mut state, context)?;
         assert!(!was_else, "function should not end with else");
 
-        module_metadata.extend(state.function_metadata.into_iter());
+        module_metadata.instr_location_map.extend(state.instr_loc_map.into_iter());
 
         Ok(Some(Body(stmts_result)))
     } else {
@@ -789,7 +790,13 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
     // Make sure that the produced `FunctionId`s are unique (i.e., that no function names clash).
     let mut function_ids = HashSet::new();
 
-    let mut metadata = HashMap::new();
+    let mut metadata = Metadata {
+        instr_location_map: HashMap::new(),
+        func_name_map: HashMap::new(),
+    }; 
+
+    //let mut instr_location_map = HashMap::new();
+    //let mut func_name_map = HashMap::new(); 
 
     // TODO parallelize
     let functions = module.functions().map(|(function_idx, function)| -> Result<Function, String> {
@@ -798,6 +805,7 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
         if name_clash {
             return Err(format!("duplication function.name '{}'!", name));
         }
+        metadata.func_name_map.insert(name.clone(),function_idx); 
         Ok(Function {
             type_: function.type_,
             body: wimplify_function_body(function, function_idx, module, &mut metadata)?,
@@ -816,6 +824,6 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
         
         // TODO add (a single) memory.
         
-        metadata
+        metadata,
     })
 }

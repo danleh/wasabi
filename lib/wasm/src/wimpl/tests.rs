@@ -29,7 +29,7 @@ lazy_static! {
                 functions: Vec::new(),
                 globals: Vec::new(),
                 table: None,
-                metadata: HashMap::new(),
+                metadata: Metadata::default(),
             },
             "module {
 }
@@ -54,7 +54,7 @@ lazy_static! {
                 ],
                 globals: Vec::new(),
                 table: None,
-                metadata: HashMap::new(),
+                metadata: Metadata::default(),
             },
             "module {
   func f0 () -> () @label0: {}
@@ -80,7 +80,7 @@ lazy_static! {
                 ],
                 globals: Vec::new(),
                 table: None,
-                metadata: HashMap::new(),
+                metadata: Metadata::default(),
             },
             r#"module {
   export "name1", "name2"
@@ -120,7 +120,7 @@ lazy_static! {
                 ],
                 globals: Vec::new(),
                 table: None,
-                metadata: HashMap::new(),
+                metadata: Metadata::default(),
             },
             "module {
   func f0 () -> () @label0: {}

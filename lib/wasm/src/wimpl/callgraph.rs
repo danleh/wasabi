@@ -107,13 +107,20 @@ pub struct Options {
     // pub imported_functions_conservative: bool,
 }
 
+//TODO: merge into CallGraph 
 // Get each edge in the call graph 
 #[derive(Default)]
-//pub struct CallSites(std::collections::BTreeMap<wimpl::WasmSrcLocation, FunctionId>);
-pub struct CallSites(std::collections::BTreeMap<(crate::Idx<highlevel::Instr>, crate::Idx<highlevel::Function>), FunctionId>);
+pub struct CallSites(std::collections::BTreeMap<
+    (crate::Idx<highlevel::Instr>, crate::Idx<highlevel::Function>), 
+//    crate::Idx<highlevel::Function>
+    FunctionId
+>);
 
 impl CallSites {
-    pub fn add_edge(&mut self, wasm_loc: crate::Idx<highlevel::Instr>, src: crate::Idx<highlevel::Function>, target: FunctionId) {
+    pub fn add_edge(&mut self, 
+        wasm_loc: crate::Idx<highlevel::Instr>, 
+        src: crate::Idx<highlevel::Function>, 
+        target: FunctionId) {
         self.0.insert(
             (wasm_loc, src), 
             target, 
@@ -126,7 +133,7 @@ impl CallSites {
             // TODO: val can be an imported function in which case the function is refered to by the name 
             // It seems that if it has multiple names, you refer to it by name1.name2 ? and the FunctionId is lost 
             // Wasabi on the other hand does not seem retain import function names and refers to them by Id 
-            writeln!(file, "{}: f{} -> {}", instr_num.to_u32(), src.to_u32(), val).unwrap(); 
+            writeln!(file, "{}: f{} -> f{}", instr_num.to_u32(), src.to_u32(), val).unwrap(); 
         }; 
         Ok(())
     }
@@ -218,13 +225,18 @@ pub fn reachable_callgraph(
 
         for (instr_id, call) in calls {
             // Solve the constraints to concrete edges.
+
+            // TODO: make targets (FunctionId, Idx<Function>) 
             let targets = solve_constraints(module, &funcs_by_type, &funcs_in_table, &funcs_by_table_idx, call);
 
             // Add those as edges to the concrete call graph.
             for target in targets {
                 callgraph.add_edge(func.clone(), target.clone());
                     
-                let wasm_loc = (*module.metadata.get(instr_id).expect("Each Wimpl instruction should be mapped back to Wasm instruction.")).clone(); 
+                let wasm_loc = (*module.metadata.instr_location_map.
+                        get(instr_id).
+                        expect("Each Wimpl instruction should be mapped back to Wasm instruction."))
+                        .clone(); 
                 callsites.add_edge(
                     wasm_loc.1,
                     wasm_loc.0, 
@@ -351,6 +363,7 @@ pub fn solve_constraints<'a>(
     match target_constraints {
         Target::Direct(f) => Box::new(std::iter::once(f.clone())),
         Target::Constrained(constraints) => {
+            
             let mut filtered_iter: Box<dyn Iterator<Item=&Function>> = 
                 constraints.iter()
                     // If there is a type constraint, start with the much narrowed down set of
@@ -362,7 +375,8 @@ pub fn solve_constraints<'a>(
                     .and_then(|ty| funcs_by_type.get(&ty))
                     .map(|vec| Box::new(vec.iter().cloned()) as Box<dyn Iterator<Item=&Function>>)
                     .unwrap_or_else(|| Box::new(module.functions.iter()) as Box<dyn Iterator<Item=&Function>>);
-            for constraint in constraints {
+            
+                    for constraint in constraints {
                 use wimpl::ExprKind::*;
                 // Build up filtering iterator at runtime, adding all constraints from before.
                 filtered_iter = match constraint {

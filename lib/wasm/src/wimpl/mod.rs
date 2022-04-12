@@ -45,8 +45,16 @@ pub struct Module {
     // TODO add more information, e.g., the original names of variables or debug information.
     // TODO in that case, introduce a `Metadata` struct with `wasm_src_location` as a field.
     // TODO Make `wasm_src_location` an `Option` because not everything originates from WebAssembly?
-    pub metadata: HashMap<InstrId, WasmSrcLocation>,
+    pub metadata: Metadata//HashMap<InstrId, WasmSrcLocation>,
 }
+
+
+#[derive(Debug, Eq, PartialEq, Clone, Default)]
+pub struct Metadata {
+    instr_location_map : HashMap<InstrId, WasmSrcLocation>,
+    func_name_map : HashMap<FunctionId, crate::Idx<highlevel::Function>>, 
+}
+
 
 #[derive(Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
 pub struct WasmSrcLocation(Idx<highlevel::Function>, Idx<highlevel::Instr>);
