@@ -23,7 +23,7 @@ pub struct CallGraph(FxHashMap<FunctionId, FxHashSet<FunctionId>>);
 // Get each edge in the call graph 
 #[derive(Default, Clone, Eq, PartialEq)]
 pub struct CallSites(std::collections::BTreeMap<
-    (crate::Idx<highlevel::Instr>, crate::Idx<highlevel::Function>), 
+    (crate::Idx<highlevel::Function>, crate::Idx<highlevel::Instr>), 
     crate::Idx<highlevel::Function>
 >);
 
@@ -33,7 +33,7 @@ impl CallSites {
         src: crate::Idx<highlevel::Function>, 
         target: crate::Idx<highlevel::Function>) {
         self.0.insert(
-            (wasm_loc, src), 
+            (src, wasm_loc), 
             target, 
         );
     }
@@ -41,7 +41,7 @@ impl CallSites {
     pub fn to_file(&self, path: impl AsRef<Path>) -> io::Result<()> {
         let mut file = File::create(path)?;    
         for ((instr_num, src), val) in self.0.clone() {
-            writeln!(file, "{}: f{} -> f{}", instr_num.to_u32(), src.to_u32(), val.to_u32()).unwrap(); 
+            writeln!(file, "f{}:{} -> f{}", instr_num.to_u32(), src.to_u32(), val.to_u32()).unwrap(); 
         }; 
         Ok(())
     }
