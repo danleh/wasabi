@@ -112,15 +112,14 @@ pub struct Options {
 #[derive(Default)]
 pub struct CallSites(std::collections::BTreeMap<
     (crate::Idx<highlevel::Instr>, crate::Idx<highlevel::Function>), 
-//    crate::Idx<highlevel::Function>
-    FunctionId
+    crate::Idx<highlevel::Function>
 >);
 
 impl CallSites {
     pub fn add_edge(&mut self, 
         wasm_loc: crate::Idx<highlevel::Instr>, 
         src: crate::Idx<highlevel::Function>, 
-        target: FunctionId) {
+        target: crate::Idx<highlevel::Function>) {
         self.0.insert(
             (wasm_loc, src), 
             target, 
@@ -133,7 +132,7 @@ impl CallSites {
             // TODO: val can be an imported function in which case the function is refered to by the name 
             // It seems that if it has multiple names, you refer to it by name1.name2 ? and the FunctionId is lost 
             // Wasabi on the other hand does not seem retain import function names and refers to them by Id 
-            writeln!(file, "{}: f{} -> f{}", instr_num.to_u32(), src.to_u32(), val).unwrap(); 
+            writeln!(file, "{}: f{} -> f{}", instr_num.to_u32(), src.to_u32(), val.to_u32()).unwrap(); 
         }; 
         Ok(())
     }
@@ -240,7 +239,7 @@ pub fn reachable_callgraph(
                 callsites.add_edge(
                     wasm_loc.1,
                     wasm_loc.0, 
-                    target.clone() 
+                    *module.metadata.func_name_map.get(&target).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>")
                 ); 
                 
                 // Add target to worklist, if it wasn't already processed 
