@@ -75,7 +75,9 @@ fn main() {
         with_in_table_constraint: true,
         with_index_constraint: true,
     };
-    let (callgraph, callsites) = reachable_callgraph(&wimpl, reachable_funcs.into_iter().collect(), options).unwrap();
+    let wimpl_callgraph = reachable_callgraph(&wimpl, reachable_funcs.into_iter().collect(), options).unwrap();
+    let callgraph = wimpl_callgraph.callgraph; 
+    let callsites = wimpl_callgraph.callsites; 
     
     callsites.to_file("./analysis_data/callsite_cg_static.txt").expect("Error while writing callsite info to file"); 
 

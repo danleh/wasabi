@@ -10,8 +10,43 @@ use test_utilities::*;
 
 use super::InstrId;
 
+
+#[derive(Default, Clone, Eq, PartialEq)]
+pub struct WimplCallGraph {
+    pub callgraph: CallGraph, 
+    pub callsites: CallSites
+}
+
 #[derive(Default, Clone, Eq, PartialEq)]
 pub struct CallGraph(FxHashMap<FunctionId, FxHashSet<FunctionId>>);
+
+// Get each edge in the call graph 
+#[derive(Default, Clone, Eq, PartialEq)]
+pub struct CallSites(std::collections::BTreeMap<
+    (crate::Idx<highlevel::Instr>, crate::Idx<highlevel::Function>), 
+    crate::Idx<highlevel::Function>
+>);
+
+impl CallSites {
+    pub fn add_edge(&mut self, 
+        wasm_loc: crate::Idx<highlevel::Instr>, 
+        src: crate::Idx<highlevel::Function>, 
+        target: crate::Idx<highlevel::Function>) {
+        self.0.insert(
+            (wasm_loc, src), 
+            target, 
+        );
+    }
+    
+    pub fn to_file(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        let mut file = File::create(path)?;    
+        for ((instr_num, src), val) in self.0.clone() {
+            writeln!(file, "{}: f{} -> f{}", instr_num.to_u32(), src.to_u32(), val.to_u32()).unwrap(); 
+        }; 
+        Ok(())
+    }
+}
+
 
 impl fmt::Debug for CallGraph {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -107,46 +142,17 @@ pub struct Options {
     // pub imported_functions_conservative: bool,
 }
 
-//TODO: merge into CallGraph 
-// Get each edge in the call graph 
-#[derive(Default)]
-pub struct CallSites(std::collections::BTreeMap<
-    (crate::Idx<highlevel::Instr>, crate::Idx<highlevel::Function>), 
-    crate::Idx<highlevel::Function>
->);
-
-impl CallSites {
-    pub fn add_edge(&mut self, 
-        wasm_loc: crate::Idx<highlevel::Instr>, 
-        src: crate::Idx<highlevel::Function>, 
-        target: crate::Idx<highlevel::Function>) {
-        self.0.insert(
-            (wasm_loc, src), 
-            target, 
-        );
-    }
-    
-    pub fn to_file(&self, path: impl AsRef<Path>) -> io::Result<()> {
-        let mut file = File::create(path)?;    
-        for ((instr_num, src), val) in self.0.clone() {
-            // TODO: val can be an imported function in which case the function is refered to by the name 
-            // It seems that if it has multiple names, you refer to it by name1.name2 ? and the FunctionId is lost 
-            // Wasabi on the other hand does not seem retain import function names and refers to them by Id 
-            writeln!(file, "{}: f{} -> f{}", instr_num.to_u32(), src.to_u32(), val.to_u32()).unwrap(); 
-        }; 
-        Ok(())
-    }
-}
-
 pub fn reachable_callgraph(
     module: &wimpl::Module,
     mut reachable_funcs: FxHashSet<FunctionId>,
     options: Options,
-) -> anyhow::Result<(CallGraph, CallSites)> {
+) -> anyhow::Result<WimplCallGraph> {
     
-    let mut callgraph = CallGraph::default();
+    let mut wimpl_callgraph = WimplCallGraph::default(); 
+    
+    //let mut callgraph = CallGraph::default();
 
-    let mut callsites = CallSites::default(); 
+    //let mut callsites = CallSites::default(); 
 
     // Collect "declarative constraints" once per function.
     // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
@@ -230,13 +236,13 @@ pub fn reachable_callgraph(
 
             // Add those as edges to the concrete call graph.
             for target in targets {
-                callgraph.add_edge(func.clone(), target.clone());
+                wimpl_callgraph.callgraph.add_edge(func.clone(), target.clone());
                     
                 let wasm_loc = (*module.metadata.instr_location_map.
                         get(instr_id).
                         expect("Each Wimpl instruction should be mapped back to Wasm instruction."))
                         .clone(); 
-                callsites.add_edge(
+                wimpl_callgraph.callsites.add_edge(
                     wasm_loc.1,
                     wasm_loc.0, 
                     *module.metadata.func_name_map.get(&target).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>")
@@ -267,7 +273,7 @@ pub fn reachable_callgraph(
     //     println!("{:10} {:30}", count, expr);
     // }
 
-    Ok((callgraph, callsites))
+    Ok(wimpl_callgraph)
 }
 
 pub fn collect_target_constraints(
@@ -444,7 +450,7 @@ fn main() {
         ..Options::default()
     };
     let reachable = vec![FunctionId::Name("main".to_string().into())].into_iter().collect();
-    let (callgraph, _callsites) = reachable_callgraph(&wimpl_module, reachable, options).unwrap();
+    let callgraph = reachable_callgraph(&wimpl_module, reachable, options).unwrap().callgraph;
 
     println!("{}", callgraph.to_dot());
     callgraph.to_pdf("tests/callgraph/out/callgraph.pdf").unwrap();
@@ -567,7 +573,7 @@ fn data_gathering() {
                 .map(|func| func.name())
                 .collect::<FxHashSet<_>>();
             
-            reachable_callgraph(&wimpl_module, exported_funcs, options).unwrap().0.functions().len() as f64 
+            reachable_callgraph(&wimpl_module, exported_funcs, options).unwrap().callgraph.functions().len() as f64 
                 / wimpl_module.functions.len() as f64
         }
         
@@ -582,7 +588,7 @@ fn data_gathering() {
             let sum_reachable_count: u64 = exported_funcs.iter().map(|f| {
                 let mut reachable = FxHashSet::default();
                 reachable.insert(f.clone());
-                let reachable_funcs_count = reachable_callgraph(&wimpl_module, reachable, options).unwrap().0.functions().len();
+                let reachable_funcs_count = reachable_callgraph(&wimpl_module, reachable, options).unwrap().callgraph.functions().len();
                 reachable_funcs_count as u64
             }).sum();
             (sum_reachable_count as f64) / (exported_funcs.len() as f64)
