@@ -428,6 +428,23 @@ pub enum ExprKind {
 
 }
 
+impl ExprKind {
+    fn get_expr_kind (&self) -> String {
+        match self {
+            ExprKind::VarRef(_) => "VarRef".to_owned(),
+            ExprKind::Const(_) => "Const".to_owned(),
+            ExprKind::Load { op: _, addr: _ } => "Load".to_owned(),
+            ExprKind::MemorySize => "MemorySize".to_owned(),
+            ExprKind::MemoryGrow { pages: _ } => "MemoryGrow".to_owned(),
+            ExprKind::Unary(_, _) => "Unary".to_owned(),
+            ExprKind::Binary(_, _, _) => "Binary".to_owned(),
+            ExprKind::Call { func: _, args: _ } => "Call".to_owned(),
+            ExprKind::CallIndirect { type_: _, table_idx: _, args: _ } => "CallIndirect".to_owned(),
+        }
+
+    }
+}
+
 
 /// Convenience macro to write Wimpl statements in Rust.
 #[macro_export]

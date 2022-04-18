@@ -24,16 +24,15 @@ pub struct CallGraph(FxHashMap<FunctionId, FxHashSet<FunctionId>>);
 #[derive(Default, Clone, Eq, PartialEq)]
 pub struct CallSites(std::collections::BTreeMap<
     (crate::Idx<highlevel::Function>, Option<crate::Idx<highlevel::Instr>>), 
-    (crate::Idx<highlevel::Function>, Target)
+    (crate::Idx<highlevel::Function>, Option<Vec<Constraint>>)
 >);
-// TODO: instead of Target, use Constraint so that we can see which constraint is creating this edge 
 
 impl CallSites {
     pub fn add_edge(&mut self, 
         wasm_loc: Option<crate::Idx<highlevel::Instr>>, 
         src: crate::Idx<highlevel::Function>, 
         target: crate::Idx<highlevel::Function>,
-        target_info: Target, 
+        target_info: Option<Vec<Constraint>>, 
     ){
         self.0.insert(
             (src, wasm_loc), 
@@ -53,18 +52,33 @@ impl CallSites {
 
     pub fn to_detailed_info_file(&self, path: impl AsRef<Path>) -> io::Result<()> {
         let mut file = File::create(path)?;    
-        for ((instr_num, src), (target, target_info)) in self.0.clone() {
+        for ((instr_num, src), (target, target_constraints)) in self.0.clone() {
             write!(file, "f{}", instr_num.to_u32())?; 
             if let Some(src) = src { write!(file, ":{}", src.to_u32())? }; 
             write!(file, " -> f{} ", target.to_u32())?; 
             if src.is_none() {
                 write!(file, "(f{} is an imported func) ", target.to_u32())?
             }; 
-            match target_info {
-                Target::Direct(_) => write!(file, "(direct call)")?,
-                Target::Constrained(_) => write!(file, "(indirect call)")?,
+            match target_constraints {
+                None => write!(file, "(direct call)")?,
+                Some(target_constraints) => {
+                    write!(file, "(indirect call) ")?;
+                    write!(file, "[")?; 
+                    for (idx, constraint) in target_constraints.iter().enumerate() {
+                        match constraint {
+                            Constraint::Type(_func_ty) => write!(file, "Type")?,
+                            Constraint::InTable => write!(file, "InTable")?,
+                            Constraint::Exported => write!(file, "Exported")?,
+                            Constraint::TableIndexExpr(expr) => write!(file, "TableIndexExpr({})", expr.kind.get_expr_kind())?,
+                        }
+                        if idx < target_constraints.len()-1 {
+                            write!(file, ", ")?; 
+                        }                         
+                    } 
+                    write!(file, "]")?; 
+                },
             }
-            writeln!(file); 
+            writeln!(file)?; 
         }; 
         Ok(())
     }
@@ -179,7 +193,7 @@ pub fn reachable_callgraph(
 
     // Collect "declarative constraints" once per function.
     // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
-    let call_target_constraints: FxHashMap<FunctionId, FxHashSet<(Option<wimpl::InstrId>, Target)>> = module.functions.iter()
+    let call_target_constraints: FxHashMap<FunctionId, FxHashSet<(Option<wimpl::InstrId>, Target, Option<Vec<Constraint>>)>> = module.functions.iter()
         .map(|func| {
             (func.name(), collect_target_constraints(func, options))
         })
@@ -251,7 +265,7 @@ pub fn reachable_callgraph(
 
         let calls = call_target_constraints.get(&func).unwrap_or_else(|| panic!("all functions should have been constraints computed for, but not found for '{}'", func));            
 
-        for (instr_id, call) in calls {
+        for (instr_id, call, constraint) in calls {
             // Solve the constraints to concrete edges.
 
             // TODO: make targets (FunctionId, Idx<Function>) 
@@ -273,7 +287,7 @@ pub fn reachable_callgraph(
                 }; 
                 
                 let wasm_target = *module.metadata.func_name_map.get(&target).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>"); 
-                let wasm_target_info = (*call).clone(); 
+                let wasm_target_info = (*constraint).clone(); 
                 wimpl_callgraph.callsites.add_edge(
                     wasm_loc, wasm_src_id,
                     wasm_target, wasm_target_info);
@@ -313,7 +327,7 @@ pub fn reachable_callgraph(
 pub fn collect_target_constraints(
     src: &Function,
     options: Options
-) -> FxHashSet<(Option<wimpl::InstrId>, Target)> {
+) -> FxHashSet<(Option<wimpl::InstrId>, Target, Option<Vec<Constraint>>)> {
     
     // TODO: Discuss
     // How to handle imported functions? Can they each every exported function?
@@ -323,7 +337,7 @@ pub fn collect_target_constraints(
         Some(body) => body,
         None => {
             let mut target = FxHashSet::default(); 
-            target.insert((None, Target::Constrained(vec![Constraint::Exported])));              
+            target.insert((None, Target::Constrained(vec![Constraint::Exported]), Some(vec![Constraint::Exported])));              
             return target
         },
     };     
@@ -343,7 +357,7 @@ pub fn collect_target_constraints(
     body.visit_expr_pre_order(|expr| {
         match &expr.kind {
             Call { func, args: _} => {
-                targets.insert((Some(expr.id), Target::Direct(func.clone())));
+                targets.insert((Some(expr.id), Target::Direct(func.clone()), None));
             }
             CallIndirect { type_, table_idx, args: _ } => {
                 let mut constraints = Vec::default();
@@ -376,7 +390,7 @@ pub fn collect_target_constraints(
                         constraints.push(Constraint::TableIndexExpr(expr.clone()));
                     }
                 }
-                targets.insert((Some(expr.id), Target::Constrained(constraints)));
+                targets.insert((Some(expr.id), Target::Constrained(constraints.clone()), Some(constraints)));
             }
             _ => {}
         }
