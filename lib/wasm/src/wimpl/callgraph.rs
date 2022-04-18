@@ -20,20 +20,17 @@ pub struct WimplCallGraph {
 #[derive(Default, Clone, Eq, PartialEq)]
 pub struct CallGraph(FxHashMap<FunctionId, FxHashSet<FunctionId>>);
 
-// FIXME: Fix to the right type 
 // Get each edge in the call graph 
 #[derive(Default, Clone, Eq, PartialEq)]
 pub struct CallSites(std::collections::BTreeMap<
-    //(crate::Idx<highlevel::Function>, crate::Idx<highlevel::Instr>), 
-    (crate::Idx<highlevel::Function>, usize), 
+    (crate::Idx<highlevel::Function>, Option<crate::Idx<highlevel::Instr>>), 
     (crate::Idx<highlevel::Function>, Target)
 >);
 // TODO: instead of Target, use Constraint so that we can see which constraint is creating this edge 
 
 impl CallSites {
     pub fn add_edge(&mut self, 
-        //wasm_loc: crate::Idx<highlevel::Instr>, 
-        wasm_loc: usize, 
+        wasm_loc: Option<crate::Idx<highlevel::Instr>>, 
         src: crate::Idx<highlevel::Function>, 
         target: crate::Idx<highlevel::Function>,
         target_info: Target, 
@@ -46,12 +43,28 @@ impl CallSites {
     
     pub fn to_file(&self, path: impl AsRef<Path>) -> io::Result<()> {
         let mut file = File::create(path)?;    
+        for ((instr_num, src), (target, _target_info)) in self.0.clone() {
+            write!(file, "f{}", instr_num.to_u32())?; 
+            if let Some(src) = src { write!(file, ":{}", src.to_u32())? }; 
+            writeln!(file, " -> f{} ", target.to_u32())?; 
+        }; 
+        Ok(())
+    }
+
+    pub fn to_detailed_info_file(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        let mut file = File::create(path)?;    
         for ((instr_num, src), (target, target_info)) in self.0.clone() {
-            write!(file, "f{}:{} -> f{} ", instr_num.to_u32(), src, target.to_u32())?; 
+            write!(file, "f{}", instr_num.to_u32())?; 
+            if let Some(src) = src { write!(file, ":{}", src.to_u32())? }; 
+            write!(file, " -> f{} ", target.to_u32())?; 
+            if src.is_none() {
+                write!(file, "(f{} is an imported func) ", target.to_u32())?
+            }; 
             match target_info {
-                Target::Direct(_) => writeln!(file, "(direct call)")?,
-                Target::Constrained(_) => writeln!(file, "(indirect call)")?,
+                Target::Direct(_) => write!(file, "(direct call)")?,
+                Target::Constrained(_) => write!(file, "(indirect call)")?,
             }
+            writeln!(file); 
         }; 
         Ok(())
     }
@@ -166,7 +179,7 @@ pub fn reachable_callgraph(
 
     // Collect "declarative constraints" once per function.
     // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
-    let call_target_constraints: FxHashMap<FunctionId, FxHashSet<(wimpl::InstrId, Target)>> = module.functions.iter()
+    let call_target_constraints: FxHashMap<FunctionId, FxHashSet<(Option<wimpl::InstrId>, Target)>> = module.functions.iter()
         .map(|func| {
             (func.name(), collect_target_constraints(func, options))
         })
@@ -248,25 +261,23 @@ pub fn reachable_callgraph(
             for target in targets {
                 wimpl_callgraph.callgraph.add_edge(func.clone(), target.clone());
                     
-                let wasm_loc = module.metadata.instr_location_map.get(instr_id); 
+                let (wasm_loc, wasm_src_id) = match instr_id {
+                    Some(instr_id) => {
+                        let wasm_loc = module.metadata.instr_location_map.get(instr_id).expect("Metadata should contain all instruction ids"); 
+                        (Some(wasm_loc.1), wasm_loc.0)
+                    },
+                    None => {
+                        // this is an imported function 
+                        (None, *module.metadata.func_name_map.get(&func).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>"))
+                    },
+                }; 
                 
                 let wasm_target = *module.metadata.func_name_map.get(&target).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>"); 
                 let wasm_target_info = (*call).clone(); 
-                match wasm_loc {
-                    Some(wasm_loc) => {
-                        wimpl_callgraph.callsites.add_edge(
-                        wasm_loc.1.to_usize(), wasm_loc.0,
-                        wasm_target, wasm_target_info);                         
-                    }, 
-                    None => {
-                        // This is a function without a body, which is why there is no entry in the instr_location_map.
-                        // We insert 
-                        wimpl_callgraph.callsites.add_edge(
-                            0, *module.metadata.func_name_map.get(&func).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>"), 
-                            wasm_target, wasm_target_info);  
-
-                    }
-                };   
+                wimpl_callgraph.callsites.add_edge(
+                    wasm_loc, wasm_src_id,
+                    wasm_target, wasm_target_info);
+                   
 
                 // Add target to worklist, if it wasn't already processed 
                 // (and everything reachable was processed).
@@ -285,6 +296,9 @@ pub fn reachable_callgraph(
     }
     
 
+    // FIXME: go through tables, check if exported 
+    // if exported, add all functions in table to graph 
+
     // // FIXME quick and dirty output: which kinds of constraints do we have (and how frequenty are they).
     // let iter = UNIQUE_CONSTRAINT_EXPRS.lock().unwrap();
     // let mut stats: Vec<_> = iter.iter().map(|(expr, count)| (count, expr)).collect();
@@ -299,7 +313,7 @@ pub fn reachable_callgraph(
 pub fn collect_target_constraints(
     src: &Function,
     options: Options
-) -> FxHashSet<(wimpl::InstrId, Target)> {
+) -> FxHashSet<(Option<wimpl::InstrId>, Target)> {
     
     // TODO: Discuss
     // How to handle imported functions? Can they each every exported function?
@@ -309,7 +323,7 @@ pub fn collect_target_constraints(
         Some(body) => body,
         None => {
             let mut target = FxHashSet::default(); 
-            target.insert((InstrId(0), Target::Constrained(vec![Constraint::Exported])));              
+            target.insert((None, Target::Constrained(vec![Constraint::Exported])));              
             return target
         },
     };     
@@ -329,7 +343,7 @@ pub fn collect_target_constraints(
     body.visit_expr_pre_order(|expr| {
         match &expr.kind {
             Call { func, args: _} => {
-                targets.insert((expr.id, Target::Direct(func.clone())));
+                targets.insert((Some(expr.id), Target::Direct(func.clone())));
             }
             CallIndirect { type_, table_idx, args: _ } => {
                 let mut constraints = Vec::default();
@@ -362,7 +376,7 @@ pub fn collect_target_constraints(
                         constraints.push(Constraint::TableIndexExpr(expr.clone()));
                     }
                 }
-                targets.insert((expr.id, Target::Constrained(constraints)));
+                targets.insert((Some(expr.id), Target::Constrained(constraints)));
             }
             _ => {}
         }
@@ -452,13 +466,7 @@ pub fn solve_constraints<'a>(
                         }
                     },
                     Constraint::Exported => {
-                        //let targets = Vec::new();
-                        //for func in module.functions.iter(){
-                        //    if !func.export.is_empty() {
-                        //        targets.push(func); 
-                        //    }
-                        //};  
-                        Box::new(filtered_iter.filter(move |f| !&f.export.is_empty()))
+                       Box::new(filtered_iter.filter(move |f| !&f.export.is_empty()))
                     },
                     // TODO Load expressions -> needs pointer analysis
                 }
@@ -483,7 +491,7 @@ fn main() {
     let callgraph = reachable_callgraph(&wimpl_module, reachable, options).unwrap().callgraph;
 
     println!("{}", callgraph.to_dot());
-    callgraph.to_pdf("tests/callgraph/out/callgraph.pdf").unwrap();
+    callgraph.to_pdf("tests/callgraph/out/callgraph.pdf");
 }
 
 // #[test]

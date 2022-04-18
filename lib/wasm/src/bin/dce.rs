@@ -80,6 +80,7 @@ fn main() {
     let callsites = wimpl_callgraph.callsites; 
 
     callsites.to_file("./analysis_data/callsite_cg_static.txt").expect("Error while writing callsite info to file"); 
+    callsites.to_detailed_info_file("./analysis_data/callsite_cg_static_detailed.txt").expect("Error while writing callsite info to file"); 
 
     // DEBUG
     // println!("{:?}", callgraph);
@@ -126,12 +127,9 @@ fn main() {
     
     let original_wasm_file_size = fs::metadata(wasm_path).unwrap().len();
     let dce_wasm_file_size = fs::metadata(dce_wasm_path).unwrap().len();
-    println!("{} - {}", original_wasm_file_size, dce_wasm_file_size); 
-    //FIXME: We do NOT need abs_sub. This is an error 
-    let delta_file_size = f64::abs_sub(original_wasm_file_size as f64, dce_wasm_file_size as f64);
+    
+    let delta_file_size = (original_wasm_file_size as f64) - (dce_wasm_file_size as f64);
     let delta_file_percentage = (delta_file_size as f64 / original_wasm_file_size as f64) * 100.0; 
-    
-    
     
     println!("  size reduction: {} bytes ({:.2}%)", delta_file_size, delta_file_percentage); 
     let total: f64 = idx_exprs.iter().map(|(_, count)| *count as f64).sum();
