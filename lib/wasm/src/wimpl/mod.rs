@@ -6,7 +6,7 @@ use std::{
 
 use arc_interner::ArcIntern;
 
-use crate::{highlevel::{MemoryOp, Global, Table}, types::{InferredInstructionType, TypeChecker}, Val, ValType, Idx, BlockType};
+use crate::{highlevel::{MemoryOp, Global}, types::{InferredInstructionType, TypeChecker}, Val, ValType, Idx, BlockType};
 use crate::{
     highlevel::{self, LoadOp, UnaryOp, BinaryOp, StoreOp, FunctionType},
     Memarg,
@@ -80,7 +80,7 @@ impl Module {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash, Ord, PartialOrd)]
 pub struct Function {
     /// Either the name of a function (e.g., from debug info), or a numerical index.
     pub name: FunctionId,
@@ -444,6 +444,57 @@ impl ExprKind {
 
     }
 }
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct Table {
+    pub type_: TableType,
+    pub import: Option<(String, String)>,
+    pub elements: Vec<Element>,
+    pub export: Vec<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct TableType(pub ElemType, pub Limits);
+
+// TODO: move to highlevel rs and make operation on self
+impl TableType {
+    pub fn wimplify (wasm_ty: crate::TableType) -> TableType {
+        TableType(ElemType::wimplify(wasm_ty.0), Limits::wimplify(wasm_ty.1)) 
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct Element {
+    pub offset: Vec<highlevel::Instr>,
+    pub functions: Vec<FunctionId>,
+}
+
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum ElemType {
+    // only value in WASM version 1
+    // #[tag = 0x70] //FIXME: what is this?
+    Anyfunc,
+}
+
+impl ElemType {
+    pub fn wimplify (_wasm_ty: crate::ElemType) -> ElemType {
+        ElemType::Anyfunc
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct Limits {
+    pub initial_size: u32,
+    pub max_size: Option<u32>,
+}
+
+impl Limits {
+    pub fn wimplify (wasm_ty: crate::Limits) -> Limits {
+        Limits { initial_size: wasm_ty.initial_size, max_size: wasm_ty.max_size }
+    } 
+}
+
 
 
 /// Convenience macro to write Wimpl statements in Rust.

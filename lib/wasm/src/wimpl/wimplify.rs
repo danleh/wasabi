@@ -794,6 +794,7 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
         instr_location_map: HashMap::new(),
         func_name_map: HashMap::new(),
     }; 
+    let mut wasm_to_wimpl_fn_map = HashMap::new(); 
     
     // TODO parallelize
     let functions = module.functions().map(|(function_idx, function)| -> Result<Function, String> {
@@ -803,6 +804,7 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
             return Err(format!("duplication function.name '{}'!", name));
         }
         metadata.func_name_map.insert(name.clone(),function_idx); 
+        wasm_to_wimpl_fn_map.insert(function_idx, name.clone()); 
         Ok(Function {
             type_: function.type_,
             body: wimplify_function_body(function, function_idx, module, &mut metadata)?,
@@ -811,13 +813,33 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
         })
     }).collect::<Result<Vec<_>, _>>()?;
 
+    let wimpl_table = if let Some(table) = module.tables.first().clone() {
+        let mut elements = Vec::new(); 
+        for elem in &table.elements {
+            let offset = (*elem.offset).to_vec(); 
+            let mut functions = Vec::new(); 
+            for func in &elem.functions {  
+                functions.push(wasm_to_wimpl_fn_map.get(&func).expect("Each Wasm function id should be mapped to its corresponding Wimpl function name").clone()); 
+            }
+            elements.push(Element { offset, functions})
+        }
+        Some(Table{
+            type_: TableType::wimplify(table.type_.clone()), //TODO: make it .wimplify()
+            import: table.import.clone(),
+            elements,
+            export: table.export.clone(),
+        })
+    } else {
+        None
+    }; 
+
     Ok(Module {
         functions,
 
-        // TODO translate global init expr and table/memory offsets to Wimpl also.
+        // TODO translate global init expr and memory offsets to Wimpl also.
         globals: module.globals.clone(),
         
-        table: module.tables.first().cloned(),
+        table: wimpl_table,
         
         // TODO add (a single) memory.
         

@@ -187,6 +187,27 @@ pub fn reachable_callgraph(
     
     let mut wimpl_callgraph = WimplCallGraph::default(); 
     
+
+    // Make everything in the table initially reachable if the table is exported
+    // We do this here instead of at the end because at the end we have a graph 
+    // already and I was unclear what the edge would be, etc.   
+    if let Some(table) = module.table.clone() {
+        if !table.export.is_empty() {
+            // The table is exported so add all the functions in the table to the graph
+            /* //FIXME: how to disreagard bool value returned by insert? 
+            table.elements.into_iter().map(
+                |elem| elem.functions.into_iter(
+                |func| reachable_funcs.insert(func)
+            ));
+            */
+            for elem in table.elements {                
+                for func in elem.functions {
+                    reachable_funcs.insert(func);   
+                } 
+            }
+        }
+    }
+
     //let mut callgraph = CallGraph::default();
 
     //let mut callsites = CallSites::default(); 
@@ -233,7 +254,7 @@ pub fn reachable_callgraph(
                 
                 let idx_in_table = idx_in_table as u32;
 
-                let func = module.function_by_idx(*func_idx);
+                let func = module.function((*func_idx).clone()).expect("Each Wimpl function name should map to its corresponding function");
                 funcs_in_table.insert(func.name());
 
                 let duplicate_element_init = funcs_by_table_idx.insert(element_offset+idx_in_table, func.name());
@@ -309,10 +330,7 @@ pub fn reachable_callgraph(
         }
     }
     
-
-    // FIXME: go through tables, check if exported 
-    // if exported, add all functions in table to graph 
-
+    
     // // FIXME quick and dirty output: which kinds of constraints do we have (and how frequenty are they).
     // let iter = UNIQUE_CONSTRAINT_EXPRS.lock().unwrap();
     // let mut stats: Vec<_> = iter.iter().map(|(expr, count)| (count, expr)).collect();
@@ -505,7 +523,7 @@ fn main() {
     let callgraph = reachable_callgraph(&wimpl_module, reachable, options).unwrap().callgraph;
 
     println!("{}", callgraph.to_dot());
-    callgraph.to_pdf("tests/callgraph/out/callgraph.pdf");
+    callgraph.to_pdf("tests/callgraph/out/callgraph.pdf").expect("Error which making pdf of callgraph");
 }
 
 // #[test]
@@ -613,7 +631,7 @@ fn data_gathering() {
             for elem in &table.elements {
                 for func_idx in &elem.functions {
                     //let func = wimpl_module.function_by_idx(*func_idx);
-                    element_funcs.insert(func_idx.to_u32()); 
+                    element_funcs.insert(func_idx); 
                 }
             }
         }
