@@ -1,14 +1,14 @@
 use core::fmt;
-use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex, iter::FromIterator, cmp::Reverse, default};
+use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex, iter::FromIterator, cmp::Reverse, default, collections::HashSet};
 
-use crate::{wimpl::{Module, FunctionId, self, ExprKind::Call, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count, approx_i32_eval, I32Range}, Expr}, highlevel::{FunctionType, self}, Val, ValType};
+use crate::{wimpl::{Module, FunctionId, self, ExprKind::{Call, self}, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count, approx_i32_eval, I32Range}, Expr, Stmt}, highlevel::{FunctionType, self}, Val, ValType};
 
 use crate::wimpl::wimplify::*;
 
 use rustc_hash::{FxHashSet, FxHashMap};
 use test_utilities::*;
 
-use super::InstrId;
+use super::{InstrId, StmtKind};
 
 
 #[derive(Default, Clone, Eq, PartialEq)]
@@ -732,4 +732,168 @@ fn data_gathering() {
     println!("i32 store value expressions for all binaries:");
     print_map_count(&all_i32_store_value_exprs);
 
+}
+
+// A variable v is live at a program point p, if some path from p to program exit contains 
+// an r-value occurrence of v which is not preceded by an l-value occurrence of v.
+
+// Gen_n = { v | var v is used (rhs occurance) in a basic block n 
+//               and is not preceded by a definition (lhs occurance) of v }
+// Kill_n = { v | basic block n contains a definition of v }
+
+// For each block we define an In and Out set which tells us which variables ar live at the start and end of a block.
+
+// In_k = Gen_k ∪ ( Out_k - Kill_k )
+// Out_k = { if end of block, {} 
+//           else,            In_i ∪ In_j
+
+fn get_gen_kill_sets (stmt: &StmtKind) -> (HashSet<Var>, HashSet<Var>) {
+    
+    // TODO: make HashSet<&Var>?
+    let mut gen = HashSet::new();
+    let mut kill = HashSet::new();  
+
+    fn gen_kill_expr (expr: &ExprKind, gen: &mut HashSet<Var>, kill: &mut HashSet<Var>) {
+        match expr {
+            
+            // rhs contains a variable so add it to the Gen set. 
+            ExprKind::VarRef(var) => {
+                gen.insert(*var);
+            },
+            // TODO: disregard bool value returned by insert
+            
+            // Constant values, MemorySize have no effect on the Gen and Kill sets. 
+            ExprKind::Const(_) => (),
+            ExprKind::MemorySize => (),
+
+            // addr can also be an expression, so recursively call it 
+            ExprKind::Load { op: _, addr } => {
+                gen_kill_expr(&addr.as_ref().kind, gen, kill);                                                                                                                               
+            },
+            
+            ExprKind::MemoryGrow { pages } => {
+                gen_kill_expr(&pages.as_ref().kind, gen, kill);
+            },
+
+            ExprKind::Unary(_, subexpr) => {
+                gen_kill_expr(&subexpr.as_ref().kind, gen, kill);
+            },
+            
+            ExprKind::Binary(_, subexpr1, subexpr2) => {
+                gen_kill_expr(&subexpr1.as_ref().kind, gen, kill);
+                gen_kill_expr(&subexpr2.as_ref().kind, gen, kill);
+            },
+
+            Call { func: _, args } => {
+                for arg in args {
+                    gen_kill_expr(&arg.kind, gen, kill);
+                }
+            },
+
+            ExprKind::CallIndirect { type_: _, table_idx, args } => {
+                gen_kill_expr(&table_idx.as_ref().kind, gen, kill);
+                for arg in args {
+                    gen_kill_expr(&arg.kind, gen, kill);
+                }                
+            },
+        }; 
+    }
+
+    match stmt {        
+        
+        StmtKind::Unreachable => (),
+        StmtKind::Br { target: _ } => (),
+        
+        StmtKind::Assign { lhs, type_: _, rhs } => {
+            kill.insert(*lhs); 
+            gen_kill_expr (&rhs.kind, &mut gen, &mut kill); 
+        },
+
+        StmtKind::Expr(expr) => {
+            gen_kill_expr(&expr.kind, &mut gen, &mut kill);             
+        },        
+ 
+        StmtKind::Store { op: _,  addr, value } => {
+            gen_kill_expr(&addr.kind, &mut gen, &mut kill);
+            gen_kill_expr(&value.kind, &mut gen, &mut kill);
+        },
+
+        StmtKind::Block { body, end_label: _ } |
+        StmtKind::Loop { begin_label: _, body } => {
+            println!("PROCESSING LOOP/BLOCK"); 
+            for stmt in &body.0 {
+                let (gen_block, kill_block) = get_gen_kill_sets(&stmt.kind);
+                println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
+            }
+        },
+        
+        StmtKind::If { condition, if_body, else_body } => {
+            gen_kill_expr(&condition.kind, &mut gen, &mut kill); 
+            for stmt in &if_body.0 {
+                let (gen_block, kill_block) = get_gen_kill_sets(&stmt.kind);
+                println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
+            }
+            if let Some(else_body) = else_body {
+                for stmt in &else_body.0 {
+                    let (gen_block, kill_block) = get_gen_kill_sets(&stmt.kind);
+                    println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
+                }
+            }
+        },
+        
+        StmtKind::Switch { index, cases, default } => {
+            gen_kill_expr(&index.kind, &mut gen, &mut kill); 
+            for case in cases {
+                for stmt in &case.0 {
+                    let (gen_block, kill_block) = get_gen_kill_sets(&stmt.kind);
+                    println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
+                }    
+            }
+            for stmt in &default.0 {
+                let (gen_block, kill_block) = get_gen_kill_sets(&stmt.kind);
+                println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
+            }
+        },
+    }
+    (gen, kill) 
+}
+
+
+fn liveness_analysis (module: Module) {
+    for func in module.functions {
+        if let Some(body) = func.body {
+            for stmt in body.0 {
+                let (gen, kill) = get_gen_kill_sets(&stmt.kind);
+                println!("!Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen, kill); 
+            }            
+        }
+    } 
+    println!(); 
+    println!(); 
+}
+
+#[test]
+fn main_ () {
+    const WIMPL_TEST_INPUTS_DIR: &str = "tests/wimpl/wimplify_expected/";
+    
+    // Sort for deterministic order.
+    let mut files: Vec<std::path::PathBuf> = walkdir::WalkDir::new(&WIMPL_TEST_INPUTS_DIR).into_iter().map(|entry| entry.unwrap().path().to_owned()).collect();
+    files.sort();
+
+    for wimpl_path in files {
+        // Find all files, where a <name>.wimpl file and a <name>.wasm file are next to each other.
+        if let Some("wimpl") = wimpl_path.extension().and_then(|os_str| os_str.to_str()) {
+            let wasm_path = wimpl_path.with_extension("wasm");
+            if wasm_path.exists() {
+                println!("\t{}", wimpl_path.display());
+                
+                let wimpl_module = Module::from_wasm_file(wasm_path).unwrap();
+
+                liveness_analysis(wimpl_module); 
+                //let actual = wimpl_module.functions[0].clone().body.expect("the first function of the example should not be imported");
+
+                //println!("{}",actual); 
+            }
+        }
+    }
 }
