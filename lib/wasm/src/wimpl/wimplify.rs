@@ -813,7 +813,6 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
         id_stmt_map: HashMap::new(),
         id_expr_map: HashMap::new(), 
     }; 
-    let mut wasm_to_wimpl_fn_map = HashMap::new(); 
     
     // TODO parallelize
     let functions = module.functions().map(|(function_idx, function)| -> Result<Function, String> {
@@ -823,7 +822,6 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
             return Err(format!("duplication function.name '{}'!", name));
         }
         metadata.func_name_map.insert(name.clone(),function_idx); 
-        wasm_to_wimpl_fn_map.insert(function_idx, name.clone()); 
         Ok(Function {
             type_: function.type_,
             body: wimplify_function_body(function, function_idx, module, &mut metadata)?,
@@ -838,7 +836,7 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
             let offset = (*elem.offset).to_vec(); 
             let mut functions = Vec::new(); 
             for func in &elem.functions {  
-                functions.push(wasm_to_wimpl_fn_map.get(&func).expect("Each Wasm function id should be mapped to its corresponding Wimpl function name").clone()); 
+                functions.push(FunctionId::from_idx(*func, module)); 
             }
             elements.push(Element { offset, functions})
         }
