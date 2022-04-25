@@ -749,20 +749,26 @@ fn wimplify_function_body(
         // The body will be at least the number of locals and often a nop or return instruction.
         let mut stmts_result: Vec<Stmt> = Vec::with_capacity(function.local_count() + 1);
 
+        let mut id_stmt_map = HashMap::new(); 
+
         // Initialize the local variables.
         for (local_idx, loc) in function.locals() {
             let (loc_name, loc_type) = (&loc.name, loc.type_);
             if let Some(_loc_name) = loc_name {
                 todo!("you haven't yet implemented locals having names");
             } else {
-                stmts_result.push(Stmt::new(StmtKind::Assign {
+                let local_var_initalization_stmt = Stmt::new(StmtKind::Assign {
                     lhs: Var::Local(local_idx.to_u32() - function.type_.inputs().len() as u32),
                     rhs: ExprKind::Const(Val::get_default_value(loc_type)).into(),
                     type_: loc_type,
-                }));
+                }); 
                 // Note that we do not attach metadata (Wasm source location info) to these generated
                 // assignments, because they are implicit, due to the zero-initialization of locals in
                 // WebAssembly.
+                // TODO: we want id -> stmt metadata tho 
+                id_stmt_map.insert(local_var_initalization_stmt.id, local_var_initalization_stmt.clone()); 
+
+                stmts_result.push(local_var_initalization_stmt);
             }
         }
 
@@ -795,6 +801,7 @@ fn wimplify_function_body(
         assert!(!was_else, "function should not end with else");
 
         module_metadata.instr_location_map.extend(state.instr_loc_map.into_iter());
+        module_metadata.id_stmt_map.extend(id_stmt_map.into_iter()); 
         module_metadata.id_stmt_map.extend(state.id_stmt_map.into_iter()); 
 
         Ok(Some(Body(stmts_result)))

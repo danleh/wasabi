@@ -740,118 +740,59 @@ fn data_gathering() {
 // TODO: use traverse for gen-kill set creation, cannot use for In, Out 
 // fixed point iteration vs [worklist] - delay for later 
 // pen vs paper 
-// map: id -> gen-kill sets 
 // reaching definitions analysis - maybe not 
-
 
 fn get_gen_kill_sets (stmt: &Stmt, gen_kill_map : &mut HashMap<InstrId, (HashSet<Var>, HashSet<Var>)>) {
     
-    // TODO: make HashSet<&Var>?
-    let mut gen = HashSet::new();
-    let mut kill = HashSet::new();  
+    let mut gen: HashSet<Var> = HashSet::new();
+    let mut kill: HashSet<Var> = HashSet::new();
 
-    fn gen_kill_expr (expr: &ExprKind, gen: &mut HashSet<Var>, kill: &mut HashSet<Var>) {
-        match expr {
-            
-            // rhs contains a variable so add it to the Gen set. 
-            ExprKind::VarRef(var) => {
-                gen.insert(*var);
-            },
-            // TODO: disregard bool value returned by insert
-            
-            // Constant values, MemorySize have no effect on the Gen and Kill sets. 
+    fn expr_gen_kill (expr:&Expr, gen: &mut HashSet<Var>) {
+        match &expr.kind {
+            ExprKind::VarRef(var) => {gen.insert(*var);},
             ExprKind::Const(_) => (),
             ExprKind::MemorySize => (),
-
-            // addr can also be an expression, so recursively call it 
-            ExprKind::Load { op: _, addr } => {
-                gen_kill_expr(&addr.as_ref().kind, gen, kill);                                                                                                                               
-            },
-            
-            ExprKind::MemoryGrow { pages } => {
-                gen_kill_expr(&pages.as_ref().kind, gen, kill);
-            },
-
-            ExprKind::Unary(_, subexpr) => {
-                gen_kill_expr(&subexpr.as_ref().kind, gen, kill);
-            },
-            
+            ExprKind::Load { op: _, addr } => expr_gen_kill(addr.as_ref(), gen),
+            ExprKind::MemoryGrow { pages } => expr_gen_kill(pages.as_ref(), gen),
+            ExprKind::Unary(_, subexpr) => expr_gen_kill(subexpr.as_ref(), gen),
             ExprKind::Binary(_, subexpr1, subexpr2) => {
-                gen_kill_expr(&subexpr1.as_ref().kind, gen, kill);
-                gen_kill_expr(&subexpr2.as_ref().kind, gen, kill);
+                expr_gen_kill(subexpr1.as_ref(), gen); 
+                expr_gen_kill(subexpr2.as_ref(), gen);                             
             },
-
-            Call { func: _, args } => {
-                for arg in args {
-                    gen_kill_expr(&arg.kind, gen, kill);
-                }
-            },
-
+            Call { func: _, args } => args.iter().for_each(|arg| expr_gen_kill(arg, gen)),
             ExprKind::CallIndirect { type_: _, table_idx, args } => {
-                gen_kill_expr(&table_idx.as_ref().kind, gen, kill);
-                for arg in args {
-                    gen_kill_expr(&arg.kind, gen, kill);
-                }                
+                expr_gen_kill(table_idx.as_ref(), gen); 
+                args.iter().for_each(|arg| expr_gen_kill(arg, gen)); 
             },
-        }; 
-    }
+        }
+    } 
 
-    match &stmt.kind {        
-        
+    match &stmt.kind {
         StmtKind::Unreachable => (),
-        StmtKind::Br { target: _ } => (),
-        
+        StmtKind::Expr(expr) => expr_gen_kill(expr, &mut gen),
         StmtKind::Assign { lhs, type_: _, rhs } => {
             kill.insert(*lhs); 
-            gen_kill_expr (&rhs.kind, &mut gen, &mut kill); 
+            expr_gen_kill(rhs, &mut gen); 
         },
-
-        StmtKind::Expr(expr) => {
-            gen_kill_expr(&expr.kind, &mut gen, &mut kill);             
-        },        
- 
-        StmtKind::Store { op: _,  addr, value } => {
-            gen_kill_expr(&addr.kind, &mut gen, &mut kill);
-            gen_kill_expr(&value.kind, &mut gen, &mut kill);
+        StmtKind::Store { op: _, addr, value } => {
+            expr_gen_kill(addr, &mut gen);
+            expr_gen_kill(value, &mut gen);
         },
-
-        StmtKind::Block { body, end_label: _ } |
-        StmtKind::Loop { begin_label: _, body } => {
-            println!("PROCESSING LOOP/BLOCK"); 
-            for stmt in &body.0 {
-                get_gen_kill_sets(stmt, gen_kill_map);
-                //println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
-            }
-        },
-        
+        StmtKind::Br { target: _ } => (),
+        StmtKind::Loop { begin_label: _, body } |
+        StmtKind::Block { body, end_label: _ } => body.0.iter().for_each(|stmt| get_gen_kill_sets(stmt, gen_kill_map)), 
         StmtKind::If { condition, if_body, else_body } => {
-            gen_kill_expr(&condition.kind, &mut gen, &mut kill); 
-            for stmt in &if_body.0 {
-                get_gen_kill_sets(stmt, gen_kill_map);
-                //println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
-            }
-            if let Some(else_body) = else_body {
-                for stmt in &else_body.0 {
-                    get_gen_kill_sets(stmt, gen_kill_map);
-                    //println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
-                }
-            }
+            expr_gen_kill(condition, &mut gen); 
+            if_body.0.iter().for_each(|stmt| get_gen_kill_sets(stmt, gen_kill_map));
+            if let Some(else_body) = else_body { else_body.0.iter().for_each(|stmt| get_gen_kill_sets(stmt, gen_kill_map)); }            
         },
-        
         StmtKind::Switch { index, cases, default } => {
-            gen_kill_expr(&index.kind, &mut gen, &mut kill); 
-            for case in cases {
-                for stmt in &case.0 {
-                    get_gen_kill_sets(stmt, gen_kill_map);
-                    //println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
-                }    
-            }
-            for stmt in &default.0 {
-                get_gen_kill_sets(stmt, gen_kill_map);
-                //println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
-            }
+            expr_gen_kill(index, &mut gen); 
+            cases.iter().for_each(|case|case.0.iter().for_each(|stmt| get_gen_kill_sets(stmt, gen_kill_map))); 
+            default.0.iter().for_each(|stmt|get_gen_kill_sets(stmt, gen_kill_map)); 
         },
     }
+
     gen_kill_map.insert(stmt.id, (gen, kill)); 
 }
 
@@ -865,15 +806,15 @@ fn liveness_analysis (module: Module) {
                 //println!("!Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen, kill); 
             }            
         } 
-    } 
-    //println!("{:?}", module.metadata.id_stmt_map);
-    //println!("{:?}", module.metadata.id_expr_map);
+    }
+    
+    // TODO: make one hashmap instead of two? create HashMap<InstrId, Instr> where enum Instr { Stmt, Expr }
     for (id, (gen, kill)) in gen_kill_map {
         let stmt =  module.metadata.id_stmt_map.get(&id); 
         match stmt {
             Some(stmt) => println!("Stmt:{}, Gen:{:?}, Kill:{:?}", stmt, gen, kill), 
             None =>  {
-                println!("Stmt:{:?}, Gen:{:?}, Kill:{:?}", module.metadata.id_expr_map.get(&id), gen, kill); 
+                println!("Stmt:{}, Gen:{:?}, Kill:{:?}", module.metadata.id_expr_map.get(&id).expect("msg"), gen, kill); 
             },
         }; 
     }
