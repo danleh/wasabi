@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex, iter::FromIterator, cmp::Reverse, default, collections::HashSet};
+use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex, iter::FromIterator, cmp::Reverse, default, collections::{HashSet, HashMap}};
 
 use crate::{wimpl::{Module, FunctionId, self, ExprKind::{Call, self}, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count, approx_i32_eval, I32Range}, Expr, Stmt}, highlevel::{FunctionType, self}, Val, ValType};
 
@@ -194,12 +194,6 @@ pub fn reachable_callgraph(
     if let Some(table) = module.table.clone() {
         if !table.export.is_empty() {
             // The table is exported so add all the functions in the table to the graph
-            /* //FIXME: how to disreagard bool value returned by insert? 
-            table.elements.into_iter().map(
-                |elem| elem.functions.into_iter(
-                |func| reachable_funcs.insert(func)
-            ));
-            */
             for elem in table.elements {                
                 for func in elem.functions {
                     reachable_funcs.insert(func);   
@@ -207,10 +201,6 @@ pub fn reachable_callgraph(
             }
         }
     }
-
-    //let mut callgraph = CallGraph::default();
-
-    //let mut callsites = CallSites::default(); 
 
     // Collect "declarative constraints" once per function.
     // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
@@ -737,8 +727,8 @@ fn data_gathering() {
 // A variable v is live at a program point p, if some path from p to program exit contains 
 // an r-value occurrence of v which is not preceded by an l-value occurrence of v.
 
-// Gen_n = { v | var v is used (rhs occurance) in a basic block n 
-//               and is not preceded by a definition (lhs occurance) of v }
+// Gen_n  = { v | var v is used (rhs occurance) in a basic block n 
+//                and is not preceded by a definition (lhs occurance) of v }
 // Kill_n = { v | basic block n contains a definition of v }
 
 // For each block we define an In and Out set which tells us which variables ar live at the start and end of a block.
@@ -747,7 +737,14 @@ fn data_gathering() {
 // Out_k = { if end of block, {} 
 //           else,            In_i ∪ In_j
 
-fn get_gen_kill_sets (stmt: &StmtKind) -> (HashSet<Var>, HashSet<Var>) {
+// TODO: use traverse for gen-kill set creation, cannot use for In, Out 
+// fixed point iteration vs [worklist] - delay for later 
+// pen vs paper 
+// map: id -> gen-kill sets 
+// reaching definitions analysis - maybe not 
+
+
+fn get_gen_kill_sets (stmt: &Stmt, gen_kill_map : &mut HashMap<InstrId, (HashSet<Var>, HashSet<Var>)>) {
     
     // TODO: make HashSet<&Var>?
     let mut gen = HashSet::new();
@@ -799,7 +796,7 @@ fn get_gen_kill_sets (stmt: &StmtKind) -> (HashSet<Var>, HashSet<Var>) {
         }; 
     }
 
-    match stmt {        
+    match &stmt.kind {        
         
         StmtKind::Unreachable => (),
         StmtKind::Br { target: _ } => (),
@@ -822,21 +819,21 @@ fn get_gen_kill_sets (stmt: &StmtKind) -> (HashSet<Var>, HashSet<Var>) {
         StmtKind::Loop { begin_label: _, body } => {
             println!("PROCESSING LOOP/BLOCK"); 
             for stmt in &body.0 {
-                let (gen_block, kill_block) = get_gen_kill_sets(&stmt.kind);
-                println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
+                get_gen_kill_sets(stmt, gen_kill_map);
+                //println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
             }
         },
         
         StmtKind::If { condition, if_body, else_body } => {
             gen_kill_expr(&condition.kind, &mut gen, &mut kill); 
             for stmt in &if_body.0 {
-                let (gen_block, kill_block) = get_gen_kill_sets(&stmt.kind);
-                println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
+                get_gen_kill_sets(stmt, gen_kill_map);
+                //println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
             }
             if let Some(else_body) = else_body {
                 for stmt in &else_body.0 {
-                    let (gen_block, kill_block) = get_gen_kill_sets(&stmt.kind);
-                    println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
+                    get_gen_kill_sets(stmt, gen_kill_map);
+                    //println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
                 }
             }
         },
@@ -845,29 +842,41 @@ fn get_gen_kill_sets (stmt: &StmtKind) -> (HashSet<Var>, HashSet<Var>) {
             gen_kill_expr(&index.kind, &mut gen, &mut kill); 
             for case in cases {
                 for stmt in &case.0 {
-                    let (gen_block, kill_block) = get_gen_kill_sets(&stmt.kind);
-                    println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
+                    get_gen_kill_sets(stmt, gen_kill_map);
+                    //println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
                 }    
             }
             for stmt in &default.0 {
-                let (gen_block, kill_block) = get_gen_kill_sets(&stmt.kind);
-                println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
+                get_gen_kill_sets(stmt, gen_kill_map);
+                //println!("Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen_block, kill_block); 
             }
         },
     }
-    (gen, kill) 
+    gen_kill_map.insert(stmt.id, (gen, kill)); 
 }
 
 
 fn liveness_analysis (module: Module) {
+    let mut gen_kill_map = HashMap::new();
     for func in module.functions {
         if let Some(body) = func.body {
             for stmt in body.0 {
-                let (gen, kill) = get_gen_kill_sets(&stmt.kind);
-                println!("!Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen, kill); 
+                get_gen_kill_sets(&stmt, &mut gen_kill_map);
+                //println!("!Stmt:{} Gen:{:?} Kill:{:?}", stmt, gen, kill); 
             }            
-        }
+        } 
     } 
+    //println!("{:?}", module.metadata.id_stmt_map);
+    //println!("{:?}", module.metadata.id_expr_map);
+    for (id, (gen, kill)) in gen_kill_map {
+        let stmt =  module.metadata.id_stmt_map.get(&id); 
+        match stmt {
+            Some(stmt) => println!("Stmt:{}, Gen:{:?}, Kill:{:?}", stmt, gen, kill), 
+            None =>  {
+                println!("Stmt:{:?}, Gen:{:?}, Kill:{:?}", module.metadata.id_expr_map.get(&id), gen, kill); 
+            },
+        }; 
+    }
     println!(); 
     println!(); 
 }

@@ -18,6 +18,8 @@ pub struct State<'module> {
     label_stack: Vec<(Label, /* is_loop */ bool, Option<Var>)>,
 
     instr_loc_map: HashMap<InstrId, WasmSrcLocation>,
+    id_stmt_map: HashMap<InstrId, Stmt>,
+    id_expr_map: HashMap<InstrId, Expr>, 
 }
 
 /// The immutable context information required but never mutated during conversion.
@@ -82,6 +84,7 @@ fn wimplify_instrs<'module>(
         let push_stmt = |stmts_result: &mut Vec<Stmt>, state: &mut State, stmt: StmtKind| {
             let stmt = Stmt::new(stmt);
             attach_current_wasm_src_location(state, stmt.id);
+            state.id_stmt_map.insert(stmt.id, stmt.clone()); 
             stmts_result.push(stmt);
         };
 
@@ -90,6 +93,7 @@ fn wimplify_instrs<'module>(
         let push_expr = |expr_stack: &mut Vec<(Expr, ValType)>, state: &mut State, expr: ExprKind, ty: ValType| {
             let expr = Expr::new(expr);
             attach_current_wasm_src_location(state, expr.id);
+            state.id_expr_map.insert(expr.id, expr.clone());
             expr_stack.push((expr, ty));
         };
 
@@ -146,7 +150,8 @@ fn wimplify_instrs<'module>(
                         
                         let varref = Expr::new(VarRef(var));
                         state.instr_loc_map.insert(varref.id, wasm_src_location.clone());
-                        
+                        state.id_expr_map.insert(varref.id, varref.clone()); 
+
                         let expr = std::mem::replace(expr, varref);
                         // The `expr` already has the correct metadata attached, so nothing to do here...
 
@@ -156,6 +161,8 @@ fn wimplify_instrs<'module>(
                             rhs: expr
                         });
                         state.instr_loc_map.insert(stmt.id, wasm_src_location);
+                        state.id_stmt_map.insert(stmt.id, stmt.clone()); 
+
                         stmts_result.push(stmt);
                     }
                 }
@@ -219,13 +226,15 @@ fn wimplify_instrs<'module>(
             if memarg.offset != 0 {
                 let offset = Expr::new(Const(Val::I32(memarg.offset.try_into().expect("u32 to i32"))));
                 attach_current_wasm_src_location(state, offset.id);
+                state.id_expr_map.insert(offset.id, offset.clone());
 
                 let add = Expr::new(Binary(BinaryOp::I32Add, 
                     Box::new(addr_expr.clone()), 
                     Box::new(offset)
                 ));
                 attach_current_wasm_src_location(state, add.id);
-                
+                state.id_expr_map.insert(add.id, add.clone()); 
+
                 *addr_expr = add;
             }
         };
@@ -305,6 +314,7 @@ fn wimplify_instrs<'module>(
                     else_body,
                 });
                 attach_current_wasm_src_location(state, if_stmt.id);
+                state.id_stmt_map.insert(if_stmt.id, if_stmt.clone()); 
                 push_stmt(stmts_result, state, StmtKind::Block {
                     body: Body(vec![if_stmt]),
                     end_label: label,
@@ -491,6 +501,7 @@ fn wimplify_instrs<'module>(
                         // automatically by `push_stmt()`).
                         let call_expr = Expr::new(call_expr);
                         attach_current_wasm_src_location(state, call_expr.id);
+                        state.id_expr_map.insert(call_expr.id, call_expr.clone()); 
                         push_stmt(stmts_result, state, StmtKind::Expr(call_expr));
                     },
                     [type_] => push_expr(&mut expr_stack, state, call_expr, *type_),
@@ -517,6 +528,7 @@ fn wimplify_instrs<'module>(
                         materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
                         let call_expr = Expr::new(call_expr);
                         attach_current_wasm_src_location(state, call_expr.id);
+                        state.id_expr_map.insert(call_expr.id, call_expr.clone()); 
                         push_stmt(stmts_result, state, StmtKind::Expr(call_expr));
                     },
                     [type_] => push_expr(&mut expr_stack, state, call_expr, *type_),
@@ -584,7 +596,9 @@ fn wimplify_instrs<'module>(
                 });
                 // Use the same source location for the generated statements.
                 attach_current_wasm_src_location(state, if_result_assign.id);
+                state.id_stmt_map.insert(if_result_assign.id, if_result_assign.clone()); 
                 attach_current_wasm_src_location(state, else_result_assign.id);
+                state.id_stmt_map.insert(else_result_assign.id, else_result_assign.clone()); 
                 push_stmt(stmts_result, state, 
                     StmtKind::If {
                         condition,
@@ -766,6 +780,8 @@ fn wimplify_function_body(
             label_count: 1, // 0 is already used by the function body block.
             stack_var_count: 0,
             instr_loc_map: HashMap::new(), 
+            id_stmt_map: HashMap::new(),
+            id_expr_map: HashMap::new(),  
         };
 
         let return_var = match function.type_.results() {
@@ -779,6 +795,7 @@ fn wimplify_function_body(
         assert!(!was_else, "function should not end with else");
 
         module_metadata.instr_location_map.extend(state.instr_loc_map.into_iter());
+        module_metadata.id_stmt_map.extend(state.id_stmt_map.into_iter()); 
 
         Ok(Some(Body(stmts_result)))
     } else {
@@ -793,6 +810,8 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
     let mut metadata = Metadata {
         instr_location_map: HashMap::new(),
         func_name_map: HashMap::new(),
+        id_stmt_map: HashMap::new(),
+        id_expr_map: HashMap::new(), 
     }; 
     let mut wasm_to_wimpl_fn_map = HashMap::new(); 
     

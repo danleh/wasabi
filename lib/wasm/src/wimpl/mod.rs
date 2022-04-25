@@ -51,10 +51,11 @@ pub struct Module {
 
 #[derive(Debug, Eq, PartialEq, Clone, Default)]
 pub struct Metadata {
+    id_stmt_map: HashMap<InstrId, Stmt>,
+    id_expr_map: HashMap<InstrId, Expr>, 
     instr_location_map : HashMap<InstrId, WasmSrcLocation>,
     func_name_map : HashMap<FunctionId, crate::Idx<highlevel::Function>>, 
 }
-
 
 #[derive(Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
 pub struct WasmSrcLocation(Idx<highlevel::Function>, Idx<highlevel::Instr>);
@@ -453,6 +454,7 @@ pub struct Table {
     pub export: Vec<String>,
 }
 
+// TODO: remove only use Limits 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct TableType(pub ElemType, pub Limits);
 
@@ -475,6 +477,7 @@ pub enum ElemType {
     // only value in WASM version 1
     // #[tag = 0x70] //FIXME: what is this?
     Anyfunc,
+    // TODO: remove
 }
 
 impl ElemType {
