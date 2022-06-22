@@ -1,15 +1,12 @@
 #![no_std]
-#![feature(lang_items)]
-#![feature(start)]
+#![no_main]
 
-#[lang="panic_fmt"]
-extern fn panic_fmt(_: ::core::fmt::Arguments, _: &'static str, _: u32) -> ! {
-  loop {}
+use core::panic::PanicInfo;
+
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    loop {}
 }
-
-// cannot use #![no_main] due to Fatal error "Unknown start function: `$main`" (I suspect something in the wasm assembler)
-#[start]
-pub fn main(_argc: isize, _argv: *const *const u8) -> isize { 0 }
 
 #[no_mangle]
 pub fn ackermann(m: u32, n: u32) -> u32 {
