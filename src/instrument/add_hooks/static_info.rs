@@ -10,17 +10,18 @@ use super::block_stack::{BlockStack, BlockStackElement};
  */
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ModuleInfo {
     pub functions: Vec<FunctionInfo>,
     #[serde(serialize_with = "serialize_types")]
     pub globals: Vec<ValType>,
     pub start: Option<Idx<Function>>,
-    #[serde(rename = "tableExportName")]
     pub table_export_name: Option<String>,
-    //    #[serde(rename = "firstFunctionExportName")]
-    //    pub first_function_export_name: Option<String>,
-    #[serde(rename = "brTables")]
     pub br_tables: Vec<BrTableInfo>,
+    // For mapping indices of indirectly called functions to the original indices, see 
+    // `resolveTableIdx` in `runtime.js`.
+    pub original_function_imports_count: usize,
+    pub inserted_wasabi_hooks_count: usize,
 }
 
 impl<'a> From<&'a Module> for ModuleInfo {
@@ -33,10 +34,10 @@ impl<'a> From<&'a Module> for ModuleInfo {
             table_export_name: module
                 .tables
                 .get(0)
-                .and_then(|table| table.export.iter().cloned().next()),
-            // FIXME is this a valid workaround for wrong Firefox exported function .name property?
-            //            first_function_export_name: module.functions.get(0).and_then(|func| func.export.iter().cloned().next()),
+                .and_then(|table| table.export.get(0).cloned()),
             br_tables: vec![],
+            original_function_imports_count: module.functions.iter().filter_map(Function::import).count(),
+            inserted_wasabi_hooks_count: 0,
         }
     }
 }
