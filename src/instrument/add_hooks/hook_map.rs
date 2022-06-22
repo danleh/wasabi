@@ -112,13 +112,13 @@ pub struct HookMap {
     map: RwLock<HashMap<String, Hook>>,
     /// needed to determine the function index of the created hooks (should start after the functions
     /// that are already present in the module)
-    function_count: usize,
+    original_function_count: usize,
 }
 
 impl HookMap {
     pub fn new(module: &Module) -> Self {
         HookMap {
-            function_count: module.functions.len(),
+            original_function_count: module.functions.len(),
             map: RwLock::new(HashMap::new()),
         }
     }
@@ -364,7 +364,7 @@ impl HookMap {
             Some(hook_idx) => hook_idx,
             None => {
                 let mut map = RwLockUpgradableReadGuard::upgrade(map);
-                let idx = (self.function_count + map.len()).into();
+                let idx = (self.original_function_count + map.len()).into();
                 map.insert(hook_name, Hook { idx, ..hook });
                 idx
             }
