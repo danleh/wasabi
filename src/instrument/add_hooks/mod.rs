@@ -769,9 +769,6 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
     //    }
     //    println!("{:?}", hook_list.iter().max_by_key(|hook| hook.1.params.len()));
 
-    let mut module_info = module_info.into_inner();
-    module_info.inserted_wasabi_hooks_count = hooks.len();
-
     let mut js_hooks = Vec::new();
     for hook in hooks {
         js_hooks.push(hook.js);
@@ -779,7 +776,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
         module.functions.push(hook.wasm);
     }
 
-    Some(generate_js(module_info, &js_hooks, node_js))
+    Some(generate_js(module_info.into_inner(), &js_hooks, node_js))
 }
 
 /// convenience to hand (function/instr/local/global) indices to hooks

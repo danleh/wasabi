@@ -21,7 +21,6 @@ pub struct ModuleInfo {
     // For mapping indices of indirectly called functions to the original indices, see 
     // `resolveTableIdx` in `runtime.js`.
     pub original_function_imports_count: usize,
-    pub inserted_wasabi_hooks_count: usize,
 }
 
 impl<'a> From<&'a Module> for ModuleInfo {
@@ -37,7 +36,6 @@ impl<'a> From<&'a Module> for ModuleInfo {
                 .and_then(|table| table.export.get(0).cloned()),
             br_tables: vec![],
             original_function_imports_count: module.functions.iter().filter_map(Function::import).count(),
-            inserted_wasabi_hooks_count: 0,
         }
     }
 }
