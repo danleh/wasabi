@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::File, sync::Mutex, iter::FromIterator, cmp::Reverse, default, collections::{HashSet, HashMap}};
+use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::{File, self}, sync::Mutex, iter::FromIterator, cmp::Reverse, default, collections::{HashSet, HashMap}};
 
 use crate::{wimpl::{Module, FunctionId, self, ExprKind::{Call, self}, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count, approx_i32_eval, I32Range}, Expr, Stmt}, highlevel::{FunctionType, self}, Val, ValType};
 
@@ -120,6 +120,22 @@ impl CallGraph {
         result
     }
 
+    pub fn to_dot_file(&self, path: impl AsRef<Path>) {
+        let mut dot_file: String = "".to_owned();
+        dot_file.push_str("digraph G {\n"); 
+        dot_file.push_str("\trankdir=\"LR\";\n");
+
+        // Sort edges to make output deterministic.
+        let mut edges = self.edges().collect::<Vec<_>>();
+        edges.sort();
+
+        for (from_fn, to_fn) in edges {
+            dot_file.push_str(&format!("\t\"{}\"->\"{}\";\n", from_fn, to_fn)); 
+        }
+        dot_file.push_str("}\n");         
+        fs::write(path, dot_file).expect("Unable to write file");
+    }
+
     pub fn to_dot(&self) -> String {
         let mut dot_file: String = "".to_owned();
         dot_file.push_str("digraph G {\n"); 
@@ -133,6 +149,7 @@ impl CallGraph {
             dot_file.push_str(&format!("\t\"{}\"->\"{}\";\n", from_fn, to_fn)); 
         }
         dot_file.push_str("}\n");         
+        
         dot_file
     }
 

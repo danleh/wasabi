@@ -68,7 +68,7 @@ fn main() {
     println!("call_indirect i32.load constant addresses:");
     let constant_addr = collect_call_indirect_load_const_addr(&wimpl);
     print_map_count(&constant_addr);
-    dump_const_addr_json(&constant_addr).unwrap();
+    dump_const_addr_json(&constant_addr);
     
     let options = Options {
         with_type_constraint: true,
@@ -79,6 +79,7 @@ fn main() {
     let callgraph = wimpl_callgraph.callgraph; 
     let callsites = wimpl_callgraph.callsites; 
 
+    callgraph.to_dot_file("callgraph.dot"); 
     callsites.to_file("./analysis_data/callsite_cg_static.txt").expect("Error while writing callsite info to file"); 
     callsites.to_detailed_info_file("./analysis_data/callsite_cg_static_detailed.txt").expect("Error while writing callsite info to file"); 
 
