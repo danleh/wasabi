@@ -1,0 +1,24 @@
+=== graph ===
+root: func$4$4
+root: func$5$5
+root: func$3$3
+root: func$2$2
+root: main
+node: func$5$5
+  is function 5
+node: func$4$4
+  is function 4
+node: func$2$2
+  is function 2
+node: func$1$1
+  is function 1
+node: func$3$3
+  is function 3
+node: func$0$0
+  is function 0
+  reaches: func$4$4
+  reaches: func$1$1
+node: main
+  is export _main, 0
+  reaches: func$0$0
+=============

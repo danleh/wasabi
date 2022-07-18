@@ -1,0 +1,3 @@
+wavm compile --format=unoptimized-llvmir callgraph.wasm wavm.bc //get .bc file 
+opt-12 wavm.bc -o wam.dot --dot-callgraph //get dot file 
+dot -Tps wavm.bc.callgraph.dot -o wavm.ps //get ps file
