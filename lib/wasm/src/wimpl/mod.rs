@@ -123,6 +123,7 @@ pub enum FunctionId {
 }
 
 impl FunctionId {
+    
     pub fn from_idx(idx: Idx<highlevel::Function>, module: &highlevel::Module) -> Self {
         // Try different ways of getting a name for a WebAssembly function.
         // First try if the debug name is present, because it's the most "original" or "close to the source".

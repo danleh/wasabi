@@ -204,10 +204,7 @@ pub fn reachable_callgraph(
     
     let mut wimpl_callgraph = WimplCallGraph::default(); 
     
-
     // Make everything in the table initially reachable if the table is exported
-    // We do this here instead of at the end because at the end we have a graph 
-    // already and I was unclear what the edge would be, etc.   
     if let Some(table) = module.table.clone() {
         if !table.export.is_empty() {
             // The table is exported so add all the functions in the table to the graph
@@ -219,6 +216,7 @@ pub fn reachable_callgraph(
         }
     }
 
+    println!("{:?}", reachable_funcs);
     // Collect "declarative constraints" once per function.
     // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
     let call_target_constraints: FxHashMap<FunctionId, FxHashSet<(Option<wimpl::InstrId>, Target, Option<Vec<Constraint>>)>> = module.functions.iter()
@@ -228,8 +226,10 @@ pub fn reachable_callgraph(
         .collect();
     
     // DEBUG
-    // println!("[DONE] collect constraints");
-    // println!("constraints: {:?}", function_targets_constraints);
+    /* println!("[DONE] collect constraints");
+    for (id, c) in &call_target_constraints {
+        println!("ID:{:?}, constraints: {:?}\n", id, c);
+    } */
 
 
     // TODO I tried various probabilistic set membership datastructures and implementations, but
@@ -421,6 +421,8 @@ pub fn collect_target_constraints(
         }
         true
     });
+    //println!("Func:{:?} targets: {:?}\n", src.name , targets);
+    
     targets
 }
 

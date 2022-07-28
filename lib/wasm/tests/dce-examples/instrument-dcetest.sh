@@ -11,7 +11,7 @@
 
 # $1 has path to wasm file to instrument 
 # raise error if not passed 
-if [ -z "$1"]
+if [ -z "$1" ]
 then 
     echo "Pass in path to the directory with .wasm file to be instrumented."
     exit 1 
@@ -25,6 +25,7 @@ cd $1
 
 # save the name of the wasmfile we want to instrument and instrument it 
 wasm_file=`find . -maxdepth 1 -type f -name "*.wasm"`
+echo $wasm_file
 wasabi --node --hooks=begin,call,store $wasm_file
 
 # create new directory to save the original wasm file 
