@@ -10,9 +10,7 @@ from itertools import count, groupby
 # TODO: tests :) 
 
 TEST_SUITE_PATH = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tests/callgraph-eval/test-suite" 
-
 DATA_PATH = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tests/callgraph-eval/data/library_data"
-
 JSON_PATH = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tests/callgraph-eval/data/data.json"
 
 OURTOOL_DIR = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm"
@@ -33,18 +31,6 @@ TWIGGY_FUNC_RE = "code\[(\d+)\]"
 def extract_lib(path): 
 	path = path[:path.rfind("/")]
 	return path[path.rfind("/")+1:]
-
-def extract_wasm_paths(): 
-    wasm_file_paths = []
-    # Extract paths of the wasm files to be tested
-    for item1 in os.listdir(TEST_SUITE_PATH):
-        item1_path = os.path.join(TEST_SUITE_PATH, item1)
-        if os.path.isdir(item1_path): 
-            for item2 in os.listdir(item1_path):
-                item2_path = os.path.join(item1_path, item2)
-                if os.path.splitext(item2_path)[1] == ".wasm":
-                    wasm_file_paths.append(item2_path)
-    return wasm_file_paths 
 
 def execute_command(command, program, output_file, write_stdout=True): 
     MAX_PROGRAM_LEN = 24
@@ -73,7 +59,7 @@ def execute_command(command, program, output_file, write_stdout=True):
         
     program = "Executing {}".format(program)
     program = program + " "*(MAX_PROGRAM_LEN-len(program))
-    if flag_stderr: print("{} .....ERROR Error recorded in {}.".format(program, output_file_pretty))
+    if flag_stderr: print("{} .....ERROR. Error recorded in {}.".format(program, output_file_pretty))
     else: print("{} ...SUCCESS. {:.2f}ms".format(program, exec_time))
         
     return (not flag_stderr, stdout, exec_time)    
@@ -280,120 +266,136 @@ def pretty_print_reachable_funcs(counts):
 def main():
 
     args = sys.argv[1:]
-    if len(args)>0: # This script should not be passed any arguments. Also incase user sends --help or -h
-        print("Usage: tools-update-json.py")
-        print("This script runs all the tools that are being evaluated.")
+    if args[0] == "-h" or args[0] == "--help": 
+        print("Usage: get-tools-data.py [OPTION] WASM_FILE")
+        print("This script runs all the tools that are being evaluated on the wasm file that is passed in.")
         print("Each tools reachability graph as well as stdout and stderr are located in data/library_data/lib/CG_tools_data/tool/.")
-        print("The set of reachable functions is extracted from the reachability graph for each tool")
-        print("and data.json is updated to include this set for each tool.")
+        print("The set of reachable functions is extracted from the reachability graph for each tool.")
+        print("--update-json\tUpdate data.json with the set of reachable functions for each tool information.")
         sys.exit()
 
-    # build ourtool 
-    os.system('RUSTFLAGS=-Awarnings cargo build -q --package wasm --bin dce --release')
+    update_json = False
+    wasm_file = "" 
+    if len(args) == 1: 
+        if re.search(".*\.wasm", args[0]): wasm_file = args[0]
+        else: print("WebAssembly binary (.wasm) expected. {} found.".format(args[0]))
+    elif len(args) == 2: 
+        if args[0] == '--update-json': 
+            update_json = True
+            if re.search(".*\.wasm", args[1]): wasm_file = args[1]
+            else: print("WebAssembly binary (.wasm) expected. {} found.".format(args[1]))
+        else:
+            print("Usage: get-tools-data.py [OPTION] WASM_FILE")
+            print("This script runs all the tools that are being evaluated on the wasm file that is passed in.")
+            print("Each tools reachability graph as well as stdout and stderr are located in data/library_data/lib/CG_tools_data/tool/.")
+            print("The set of reachable functions is extracted from the reachability graph for each tool.")
+            print("--update-json\tUpdate data.json with the set of reachable functions for each tool information.")
+            sys.exit()
+    
+    print("Computing set of reachable functions for each tool being evaluated...")
 
     data = json.load(open(JSON_PATH))
-    wasm_file_paths = extract_wasm_paths() 
-    for wasm_file in wasm_file_paths:
-        
-        lib = extract_lib(wasm_file)        
-        print(lib)
 
-        lib_obj = [l for l in data['library_data'] if l['library_name'] == lib][0]
-        lib_obj["tools"] = []
-
-        ourtool_status, ourtool_time   = run_ourtool(wasm_file, lib, lib_obj)
-        wassail_status, wassail_time   = run_wassail(wasm_file, lib)
-        metadce_status, metadce_time   = run_metadce(wasm_file, lib, lib_obj)
-        twiggy_status,  twiggy_time    = run_twiggy (wasm_file, lib)
-        awsm_status,    awsm_time      = run_awsm   (wasm_file, lib)
-        wavm_status,    wavm_time      = run_wavm   (wasm_file, lib) 
-        
-        ourtool_status = False
-        wassail_status = False
-        metadce_status = False
-        twiggy_status = False
-        awsm_status = False
-        wavm_status = False
-
-        reachable_funcs_count = [0]*4
-
-        if ourtool_status: 
-            cg_path = "{}/{}/CG_tools_data/our_tool/callgraph.dot".format(DATA_PATH, lib)
-            reachable_funcs = get_reachable_funcs_from_dot(cg_path, lib)
-            lib_obj["tools"].append({
-                "name": "ourtool",
-                "callgraph_construction": True, 
-                "dce" : False,
-                "execution_time": ourtool_time, 
-                "reachable_functions": {
-                    "names": list(reachable_funcs), 
-                    "count": len(reachable_funcs)
-                }
-            })
-            reachable_funcs_count.append(len(reachable_funcs))
-                            
-        if wassail_status: 
-            cg_path = "{}/{}/CG_tools_data/wassail/callgraph.dot".format(DATA_PATH, lib)
-            reachable_funcs = get_reachable_funcs_from_dot(cg_path, lib)
-            lib_obj["tools"].append({
-                "name": "wassail",
-                "callgraph_construction": True, 
-                "dce" : False,
-                "execution_time": wassail_time, 
-                "reachable_functions": {
-                    "names": list(reachable_funcs), 
-                    "count": len(reachable_funcs)
-                }
-            })
-            reachable_funcs_count.append(len(reachable_funcs))
-        
-        # FIXME: opencv execution gives different ouputs for each execution!?
-        # - dump input to metadce from binaryen? and figure out the right way to make a reachability graph 
-        # - commit to metadce tool help to have better documententation 
-        # FIXME: metadce obviously not giving us the right reachability graph. the input graph is probably wrong. 
-        if metadce_status and 'opencv' not in lib:
-            new_graph_path = '{}/{}/CG_tools_data/metadce/new-graph.txt'.format(DATA_PATH, lib)
-            reachable_funcs, garbage_funcs = process_metadce(new_graph_path)
-            lib_obj["tools"].append({
-                "name": "metadce",
-                "callgraph_construction": False,
-                "dce" : True,
-                "execution_time": metadce_time, # TODO 
-                "reachable_functions": {
-                    "names": list(reachable_funcs), 
-                    "count": len(reachable_funcs)
-                },
-                "garbage_functions": {
-                    "names": list(garbage_funcs), 
-                    "count": len(garbage_funcs)
-                }
-            })
-            reachable_funcs_count.append(len(reachable_funcs))
-        
-        if twiggy_status: 
-            internal_ir_path = '{}/{}/CG_tools_data/twiggy/internal_ir.txt'.format(DATA_PATH, lib)
-            garbage_path = '{}/{}/CG_tools_data/twiggy/garbage.txt'.format(DATA_PATH, lib)
-            reachable_funcs, garbage_funcs = process_twiggy(internal_ir_path, garbage_path)
-            lib_obj["tools"].append({
-                "name": "twiggy",
-                "callgraph_construction": False,
-                "dce" : True,
-                "execution_time": twiggy_time, # TODO 
-                "reachable_functions": {
-                    "names": list(reachable_funcs), 
-                    "count": len(reachable_funcs)
-                },
-                "garbage_functions": {
-                    "names": list(garbage_funcs), 
-                    "count": len(garbage_funcs)
-                }
-            })
-            reachable_funcs_count.append(len(reachable_funcs))
-
-        #pretty_print_reachable_funcs(reachable_funcs_count)
-        print()
+    lib = extract_lib(wasm_file)        
     
-    json.dump(data, open(JSON_PATH, 'w'), indent=2)
+    lib_obj = [l for l in data['library_data'] if l['library_name'] == lib][0]
+    lib_obj["tools"] = []
+
+    ourtool_status, ourtool_time   = run_ourtool(wasm_file, lib, lib_obj)
+    wassail_status, wassail_time   = run_wassail(wasm_file, lib)
+    metadce_status, metadce_time   = run_metadce(wasm_file, lib, lib_obj)
+    twiggy_status,  twiggy_time    = run_twiggy (wasm_file, lib)
+    awsm_status,    awsm_time      = run_awsm   (wasm_file, lib)
+    wavm_status,    wavm_time      = run_wavm   (wasm_file, lib) 
+    
+    #ourtool_status = False
+    #wassail_status = False
+    #metadce_status = False
+    #twiggy_status = False
+    #awsm_status = False
+    #wavm_status = False
+
+    reachable_funcs_count = [0]*4
+
+    if ourtool_status: 
+        cg_path = "{}/{}/CG_tools_data/our_tool/callgraph.dot".format(DATA_PATH, lib)
+        reachable_funcs = get_reachable_funcs_from_dot(cg_path, lib)
+        lib_obj["tools"].append({
+            "name": "ourtool",
+            "callgraph_construction": True, 
+            "dce" : False,
+            "execution_time": ourtool_time, 
+            "reachable_functions": {
+                "names": list(reachable_funcs), 
+                "count": len(reachable_funcs)
+            }
+        })
+        reachable_funcs_count[0] = len(reachable_funcs)
+                        
+    if wassail_status: 
+        cg_path = "{}/{}/CG_tools_data/wassail/callgraph.dot".format(DATA_PATH, lib)
+        reachable_funcs = get_reachable_funcs_from_dot(cg_path, lib)
+        lib_obj["tools"].append({
+            "name": "wassail",
+            "callgraph_construction": True, 
+            "dce" : False,
+            "execution_time": wassail_time, 
+            "reachable_functions": {
+                "names": list(reachable_funcs), 
+                "count": len(reachable_funcs)
+            }
+        })
+        reachable_funcs_count[1] = len(reachable_funcs)
+    
+    # FIXME: opencv execution gives different ouputs for each execution!?
+    # - dump input to metadce from binaryen? and figure out the right way to make a reachability graph 
+    # - commit to metadce tool help to have better documententation 
+    # FIXME: metadce obviously not giving us the right reachability graph. the input graph is probably wrong. 
+    if metadce_status and 'opencv' not in lib:
+        new_graph_path = '{}/{}/CG_tools_data/metadce/new-graph.txt'.format(DATA_PATH, lib)
+        reachable_funcs, garbage_funcs = process_metadce(new_graph_path)
+        lib_obj["tools"].append({
+            "name": "metadce",
+            "callgraph_construction": False,
+            "dce" : True,
+            "execution_time": metadce_time, # TODO 
+            "reachable_functions": {
+                "names": list(reachable_funcs), 
+                "count": len(reachable_funcs)
+            },
+            "garbage_functions": {
+                "names": list(garbage_funcs), 
+                "count": len(garbage_funcs)
+            }
+        })
+        reachable_funcs_count[2] = len(reachable_funcs)
+    
+    if twiggy_status: 
+        internal_ir_path = '{}/{}/CG_tools_data/twiggy/internal_ir.txt'.format(DATA_PATH, lib)
+        garbage_path = '{}/{}/CG_tools_data/twiggy/garbage.txt'.format(DATA_PATH, lib)
+        reachable_funcs, garbage_funcs = process_twiggy(internal_ir_path, garbage_path)
+        lib_obj["tools"].append({
+            "name": "twiggy",
+            "callgraph_construction": False,
+            "dce" : True,
+            "execution_time": twiggy_time, # TODO 
+            "reachable_functions": {
+                "names": list(reachable_funcs), 
+                "count": len(reachable_funcs)
+            },
+            "garbage_functions": {
+                "names": list(garbage_funcs), 
+                "count": len(garbage_funcs)
+            }
+        })
+        reachable_funcs_count[3] = len(reachable_funcs)
+
+    pretty_print_reachable_funcs(reachable_funcs_count)
+    
+    if update_json:
+        print("Updating data.json...")
+        json.dump(data, open(JSON_PATH, 'w'), indent=2)
  
+
 if __name__ == "__main__":
     main()

@@ -1,15 +1,18 @@
-import os
+import os, sys
 import json 
 
 # This script reads the Wasabi output files and saves the data in data.json by updating it  
 
+args = sys.argv[1:]
+if len(args)>0: 
+	print("Usage: get-dyn-data.py")
+	print("This script reads the Wasabi output files and saves the data in data.json by updating it.")
+	sys.exit()
 
 def get_file_data(path): 
 	return [line.strip() for line in open(path, "r").readlines()]	
-
 				
 dyn_data = dict() # {library -> {test_name -> {reachable ->, lowerbound -> }}}
-
 
 # Extract the reachable exports and reachable functions sets from the data 
 for root, dirs, files in os.walk("../data/library_data"):
@@ -46,7 +49,7 @@ for lib in dyn_data:
 
 # Update the data.json file 
 data = json.load(open("../data/data.json"))
-
+print("Updating data.json with data extracted by Wasabi for each test case...")
 for lib in dyn_data.keys(): 	 
 	lib_obj = [l for l in data['library_data'] if l['library_name'] == lib][0]
 		
@@ -56,17 +59,17 @@ for lib in dyn_data.keys():
 		
 		lib_obj["tests"][ind_test]["dyn_reachable_exports"] = {
 			"names": list(dyn_data[lib]["tests"][test]["reachable_exports"]), 
-			"number": len(dyn_data[lib]["tests"][test]["reachable_exports"])
+			"count": len(dyn_data[lib]["tests"][test]["reachable_exports"])
 		}
 		
 		lib_obj["tests"][ind_test]["dyn_reachable_functions"] = {
 			"names": list(dyn_data[lib]["tests"][test]["reachable_functions"]), 
-			"number": len(dyn_data[lib]["tests"][test]["reachable_functions"])
+			"count": len(dyn_data[lib]["tests"][test]["reachable_functions"])
 		}
 		
 		lib_obj["dyn_total_reachable_functions"] = {
 			"names" : list(dyn_data[lib]["total_reachable_funcs"]), 
-			"number" : len(dyn_data[lib]["total_reachable_funcs"])
+			"count" : len(dyn_data[lib]["total_reachable_funcs"])
 		}	
 					
 json.dump(data, open("../data/data.json", "w"), indent=2)
