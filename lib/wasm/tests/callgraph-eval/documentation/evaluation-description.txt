@@ -1,0 +1,40 @@
+The data collected during the evaluation is updated in data/data.json. 
+
+First, we extract some static information from the binary and update it in data.json. This is done by get-static-data.py. We extract this information from the unfolded .wat file, which is obtained from the .wasm file using wasm2wat. We extract information using compilicated regular expressions that mimic the grammar patterns in the wat file. We extract and save the following information:
+  - number of types
+  - number of functions
+  - Imports
+    - names which are stored as the type of import, module it is imported from, export name within that module and the internal id in the current wasm binary
+    - total number of imports
+    - total number of imported functions 
+    - whether a table is being imported
+    - whether memory is being imported 
+  - Exports 
+    - names which are stored as type of export, name and internal id in the current wasm binary
+    - total number of exports
+    - total number of exported functions 
+    - whether a table is being exported 
+    - whether memory is being exported 
+  - Tables
+    - id of the table which is mapped to 
+      - size of the table and, 
+      - elements in the table for which we save, 
+        - start index of the element section as type (variable or constant start) and the actual value 
+        - entries in the element section
+        - number of entries 
+  - Calls
+    - functions that are called in the binary 
+    - total number of calls
+    - total number of unique calls
+  - Call Indirects 
+    - total number of indirect calls 
+    - types that are called indirectly 
+  
+We then evaluate the tools on the wasm library binaries. Each wasm library is run on the tools one by one and their outputs (.dot files, etc) are stored in data/library_data/library-name/CG_tools_data/tool_name. Each of the outputs is then processes and data.json is updated with the execution time of the tool as well as the names and number of functions that are made reachable by this tool.
+
+We then extract dynamic information for each test case in the library using Wasabi. For each test case, we run the instrumented tests whose output is saved in data/library_data/library-name/tests/test-name/. get-dyn-data.py then runs through these output files and extracts information about which exports in the wasm binary were called by the testcase as well as the functions that were reachable in this specific execution. This information is saved in data.json.
+
+The tests have been instrumented using instrument-test.sh on each testcase. This script runs Wasabi and generates hooks for the calls in the function, store instructions and begining of a function in the wasm file. It also creates an instrumented-index.js file which can be run to profile the JS application. 
+
+After this, analysis.py is run which computes the precision and recall for each wasm binary and coverage for each testcase per library. This is then updated in data.json. latexify.py then generates LaTeX tables (and ASCII tables on stdout) that can be easily plugged into the paper. 
+
