@@ -1,0 +1,41 @@
+\begin{table}[h]
+\centering
+\begin{tabular}{cccccccccc}
+    \toprule
+    \textbf{Library} & \multicolumn{2}{c}{\textbf{Ourtool}} & \multicolumn{2}{c}{\textbf{Wassail}} & \multicolumn{2}{c}{\textbf{Metadce}} & \multicolumn{2}{c}{\textbf{Twiggy}}\\
+    & \textbf{P} & \textbf{R} & \textbf{P} & \textbf{R} & \textbf{P} & \textbf{R} & \textbf{P} & \textbf{R}\\
+    \midrule
+     sql.js & 0.28 & 0.90 & 0.31 & 0.99 & 0.00 & 0.00 & 0.32 & 1.00\\ 
+    \rowcolor{gray!20} opencv-wasm & 0.06 & 0.94 & 0.07 & 0.96 & 0.00 & 0.00 & 0.09 & 0.10\\ 
+     wasm-rsa & 0.33 & 0.94 & 0.35 & 1.00 & 0.00 & 0.00 & 0.35 & 1.00\\ 
+    \rowcolor{gray!20} blake3 & 0.20 & 0.71 & 0.27 & 1.00 & 0.00 & 0.00 & 0.26 & 1.00\\ 
+     magic & 0.25 & 0.86 & 0.30 & 0.99 & 0.00 & 0.00 & 0.30 & 0.93\\ 
+    \rowcolor{gray!20} hpcc-lib-graphviz & 0.38 & 0.97 & 0.39 & 1.00 & 0.00 & 0.00 & 0.39 & 0.98\\ 
+    \bottomrule
+\end{tabular}
+\end {table}
+
+
+
+\begin{table}[h]
+\centering
+\begin{tabular}{cccc}
+    \toprule
+    \textbf{Library} & \textbf{Test Name} & \textbf{\%Reachable Exports} & \textbf{\%Reachable Funcs}\\
+    \midrule
+      & load-db & 32.69 & 31.05\\
+     \multirow{-2}{*}{sql.js} & load-saved-db & 42.31 & 31.86\\
+    \rowcolor{gray!20}  & sample & 4.73 & 6.31\\
+    \rowcolor{gray!20}  & canvas & 2.91 & 5.85\\
+    \rowcolor{gray!20}  & dilation & 2.91 & 5.85\\
+    \rowcolor{gray!20} \multirow{-4}{*}{opencv-wasm} & template-matching & 2.91 & 5.85\\
+     \multirow{-1}{*}{wasm-rsa} & sample & 68.00 & 34.87\\
+    \rowcolor{gray!20}  & sample & 21.43 & 21.25\\
+    \rowcolor{gray!20} \multirow{-2}{*}{blake3} & concrete & 42.86 & 26.25\\
+      & sample & 28.57 & 31.69\\
+     \multirow{-2}{*}{magic} & test & 28.57 & 31.69\\
+    \rowcolor{gray!20}  & sample & 46.67 & 31.02\\
+    \rowcolor{gray!20} \multirow{-2}{*}{hpcc-lib-graphviz} & test & 53.33 & 39.72\\
+    \bottomrule
+\end{tabular}
+\end {table}

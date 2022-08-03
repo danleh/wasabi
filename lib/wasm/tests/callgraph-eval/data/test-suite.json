@@ -1,0 +1,147 @@
+{
+	"library_data": [
+		{
+			"library_name": "sql.js",
+			"metadata": {
+				"github-link": "",
+				"version": "", 
+				"wasm_extensions": null,
+				"wasm_validate_no_extensions": true,
+				"custom_sections": [],
+				"source_language": "", 
+				"compiler": "", 
+				"compiler_version": 0
+			},
+			"tests":[
+				{
+					"test_name": "load-db",
+					"description": ""	
+				},
+				{
+					"test_name": "load-saved-db",
+					"description": ""	
+				}
+			]
+		},
+		{
+			"library_name": "opencv-wasm",
+			"metadata": {
+				"github-link": "",
+				"version": "", 
+				"wasm_extensions": null,
+				"wasm_validate_no_extensions": true,
+				"custom_sections": [],
+				"source_language": "",
+				"compiler": "", 
+				"compiler_version": 0
+			},
+			"tests":[
+				{
+					"test_name": "sample",
+					"description": ""	
+				},
+				{
+					"test_name": "canvas",
+					"description": ""	
+				},
+				{
+					"test_name": "dilation",
+					"description": ""	
+				},
+				{
+					"test_name": "template-matching",
+					"description": ""	
+				}
+			]
+		},
+		{
+			"library_name": "wasm-rsa",
+			"metadata": {
+				"github-link": "",
+				"version": "", 
+				"wasm_extensions": null,
+				"wasm_validate_no_extensions": true,
+				"custom_sections": [],
+				"source_language": "",
+				"compiler": "", 
+				"compiler_version": 0
+
+			},
+			"tests":[
+				{
+					"test_name": "sample",
+					"description": ""	
+				}
+			]
+		},
+		{
+			"library_name": "blake3",
+			"metadata": {
+				"github-link": "",
+				"version": "", 
+				"wasm_extensions": null,
+				"wasm_validate_no_extensions": true,
+				"custom_sections": [],
+				"source_language": "",
+				"compiler": "", 
+				"compiler_version": 0
+			},
+			"tests":[
+				{
+					"test_name": "sample",
+					"description": ""	
+				},
+				{
+					"test_name": "concrete",
+					"description": ""	
+				}
+			]
+		},
+		{
+			"library_name": "magic",
+			"metadata": {
+				"github-link": "",
+				"version": "", 
+				"wasm_extensions": null,
+				"wasm_validate_no_extensions": true,
+				"custom_sections": [],
+				"source_language": "",
+				"compiler": "", 
+				"compiler_version": 0
+			},
+			"tests":[
+				{
+					"test_name": "sample",
+					"description": ""	
+				},
+				{
+					"test_name": "test",
+					"description": ""	
+				}
+			]
+		},
+		{
+			"library_name": "hpcc-lib-graphviz",
+			"metadata": {
+				"github-link": "",
+				"version": "", 
+				"wasm_extensions": null,
+				"wasm_validate_no_extensions": true,
+				"custom_sections": [],
+				"source_language": "",
+				"compiler": "", 
+				"compiler_version": 0
+			},
+			"tests":[
+				{
+					"test_name": "sample",
+					"description": ""	
+				},
+				{
+					"test_name": "test",
+					"description": ""	
+				}
+			]
+		}
+	]
+}
