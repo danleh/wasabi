@@ -104,7 +104,8 @@ def main():
     args = sys.argv[1:]
     if len(args) > 0:
         print("Usage: latexify.py")
-        print("")
+        print("Generates LaTeX tables that are saved in data/latex-tables.txt")
+        print("Also prints ASCII tables in stdout of the computed results.")
         sys.exit()
 
     data = json.load(open(JSON_PATH))

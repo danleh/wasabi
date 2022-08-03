@@ -4,7 +4,7 @@ import json, re
 import time
 from itertools import count, groupby
 
-# Note: If you aren't Michelle, change variable 'wassail_path' in line {TODO} to your wassail binary path 
+# Note: If you aren't Michelle, change variable 'wassail_path' in function run_wassail() to your wassail binary path 
 # or see if the wassail command runs on the shell without any path being specified.  
 
 # TODO: tests :) 
@@ -265,13 +265,16 @@ def pretty_print_reachable_funcs(counts):
 
 def main():
 
-    args = sys.argv[1:]
-    if args[0] == "-h" or args[0] == "--help": 
+    def help_message():
         print("Usage: get-tools-data.py [OPTION] WASM_FILE")
         print("This script runs all the tools that are being evaluated on the wasm file that is passed in.")
         print("Each tools reachability graph as well as stdout and stderr are located in data/library_data/lib/CG_tools_data/tool/.")
         print("The set of reachable functions is extracted from the reachability graph for each tool.")
         print("--update-json\tUpdate data.json with the set of reachable functions for each tool information.")
+
+    args = sys.argv[1:]
+    if args[0] == "-h" or args[0] == "--help": 
+        help_message()
         sys.exit()
 
     update_json = False
@@ -285,11 +288,7 @@ def main():
             if re.search(".*\.wasm", args[1]): wasm_file = args[1]
             else: print("WebAssembly binary (.wasm) expected. {} found.".format(args[1]))
         else:
-            print("Usage: get-tools-data.py [OPTION] WASM_FILE")
-            print("This script runs all the tools that are being evaluated on the wasm file that is passed in.")
-            print("Each tools reachability graph as well as stdout and stderr are located in data/library_data/lib/CG_tools_data/tool/.")
-            print("The set of reachable functions is extracted from the reachability graph for each tool.")
-            print("--update-json\tUpdate data.json with the set of reachable functions for each tool information.")
+            help_message()
             sys.exit()
     
     print("Computing set of reachable functions for each tool being evaluated...")

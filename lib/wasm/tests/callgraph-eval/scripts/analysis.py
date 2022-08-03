@@ -10,14 +10,13 @@ def main():
         print("Compute precision, recall for each library and coverage for each library test case")
         sys.exit()
 
-
     data = json.load(open(JSON_PATH))
-
     
     # for each tool precision = |Mdyn \cap Mstat| / |Mstat|
     # for each tool recall    = |Mdyn \cap Mstat| / |Mdyn|
-    # coverage = {
-    #   percent_exported_funcs = (|dyn_exports| / |total_exports|)*100
+    # coverage for each test_case = {
+    #   exported_covered = (|dyn_exports| / |total_exports|)*100
+    #   funcs_convered = (|dyn_funcs| / |total_funcs|)*100
     # } 
     
     for lib in data["library_data"]:
