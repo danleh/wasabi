@@ -140,7 +140,7 @@ declare i64 @i64_rem(i64, i64)
 declare void @awsm_abi__trap_unreachable()
 
 ; Function Attrs: nounwind
-define void @wasmf_main() #1 {
+define void @wasmf__main() #1 {
 entry:
   %0 = call i32 @wasmf_internal_4(i32 42, i32 7)
   call void @wasmf_internal_1(i32 %0)
