@@ -11,37 +11,52 @@ LATEX_PATH = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tests/callgra
 def recall_precision_latex_table(f, data):
     table_rows = []
 
-    f.write("\\begin{table}[h]\n")
+    f.write("\\begin{table*}[h]\n")
     f.write("\centering\n")
-    f.write("\\begin{tabular}{cccccccccc}\n")
+    f.write("\\begin{tabular}{c|c|cc|cc|cc|cc}\n")
     f.write("    \\toprule\n")
-    f.write("    \\textbf{Library} & \multicolumn{2}{c}{\\textbf{Ourtool}} & \multicolumn{2}{c}{\\textbf{Wassail}} & \multicolumn{2}{c}{\\textbf{Metadce}} & \multicolumn{2}{c}{\\textbf{Twiggy}}\\\\\n")
-    f.write("    & \\textbf{P} & \\textbf{R} & \\textbf{P} & \\textbf{R} & \\textbf{P} & \\textbf{R} & \\textbf{P} & \\textbf{R}\\\\\n")
+    f.write("    \\textbf{Library} &\n")
+    f.write("    \\textbf{$\\textbf{M}_{\\textbf{DYN}}$} &\n")
+    f.write("    \multicolumn{2}{c|}{\\textbf{Ourtool}} & \n")
+    f.write("    \multicolumn{2}{c|}{\\textbf{Wassail}} &\n")
+    f.write("    \multicolumn{2}{c|}{\\textbf{Metadce}} & \n")
+    f.write("    \multicolumn{2}{c}{\\textbf{Twiggy}}\\\\\n")
+    f.write("    & & \\textbf{$\\textbf{M}_{\\textbf{STAT}}$} & \\textbf{Recall} & \n")
+    f.write("    \\textbf{$\\textbf{M}_{\\textbf{STAT}}$} & \\textbf{Recall} & \n")
+    f.write("    \\textbf{$\\textbf{M}_{\\textbf{STAT}}$} & \\textbf{Recall} & \n")
+    f.write("    \\textbf{$\\textbf{M}_{\\textbf{STAT}}$} & \\textbf{Recall} \\\\ \n")
     f.write("    \midrule\n")
 
     counter = 0
     for lib in data['library_data']:
+        lib_dyn = lib["dyn_total_reachable_functions"]["count"]
         for tool in lib["tools"]:
-            if tool["name"] == "ourtool": ourtool_p, ourtool_r = tool["precision"], tool["recall"]
-            if tool["name"] == "wassail": wassail_p, wassail_r = tool["precision"], tool["recall"]
-            if tool["name"] == "metadce": metadce_p, metadce_r = tool["precision"], tool["recall"]
-            if tool["name"] == "twiggy":  twiggy_p,  twiggy_r  = tool["precision"], tool["recall"]               
+            if tool["name"] == "ourtool": ourtool_stat, ourtool_r = tool["reachable_functions"]["count"], tool["recall"]
+            if tool["name"] == "wassail": wassail_stat, wassail_r = tool["reachable_functions"]["count"], tool["recall"]
+            if tool["name"] == "metadce": metadce_stat, metadce_r = tool["reachable_functions"]["count"], tool["recall"]
+            if tool["name"] == "twiggy":  twiggy_stat,  twiggy_r  = tool["reachable_functions"]["count"], tool["recall"]               
         gray = ""
         if counter%2 != 0: gray = "\\rowcolor{gray!20}" 
         counter += 1
-        f.write("    {} {} & {:.2f} & {:.2f} & {:.2f} & {:.2f} & {:.2f} & {:.2f} & {:.2f} & {:.2f}\\\\ \n".format(
+        f.write("    {} {} & {} & {} & {:.2f} & {} & {:.2f} & {} & {:.2f} & {} & {:.2f}\\\\\n".format(
             gray,
-            lib["library_name"],
-            ourtool_p, ourtool_r, 
-            wassail_p, wassail_r, 
-            metadce_p, metadce_r, 
-            twiggy_p,  twiggy_r
+            lib["library_name"], lib_dyn,
+            ourtool_stat, ourtool_r,
+            wassail_stat, wassail_r, 
+            metadce_stat, metadce_r, 
+            twiggy_stat, twiggy_r 
         ))
-        table_rows.append([lib["library_name"], ourtool_p, ourtool_r, wassail_p, wassail_r, metadce_p, metadce_r, twiggy_p,  twiggy_r])
+        table_rows.append([lib["library_name"], lib_dyn,
+            ourtool_stat, ourtool_r,
+            wassail_stat, wassail_r, 
+            metadce_stat, metadce_r, 
+            twiggy_stat, twiggy_r
+        ])
+        #table_rows.append([lib["library_name"], ourtool_p, ourtool_r, wassail_p, wassail_r, metadce_p, metadce_r, twiggy_p,  twiggy_r])
 
     f.write("    \\bottomrule\n")
     f.write("\end{tabular}\n")
-    f.write("\end {table}\n")
+    f.write("\end{table*}\n")
 
     return table_rows
 
@@ -85,8 +100,12 @@ def coverage_latex_table(f, data):
 
 def recall_precision_pretty_table(data):
     table = PrettyTable()
-    table.title = "Precision and Recall of every tool on each library"
-    table.field_names = ["Library", "Ourtool P", "Ourtool R", "Wassail P", "Wassail R", "Metadce P", "Metadce R", "Twiggy P", "Twiggy R"] 
+    table.title = "Recall of every tool on each library"
+    table.field_names = ["Library", "M_DYN", 
+                         "Ourtool M_STAT", "Ourtool R", 
+                         "Wassail M_STAT", "Wassail R", 
+                         "Metadce M_STAT", "Metadce R", 
+                         "Twiggy M_STAT", "Twiggy R"] 
     table.add_rows(data)
     table.float_format = '.2'
     print(table)
