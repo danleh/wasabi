@@ -75,7 +75,6 @@ def main():
             sys.exit()
 
     
-
     # Start "fresh" by removing the old results and copying test-suite.json to data.json.
     if flag_fresh:
         execute_command("rm {}".format(DATA_JSON_PATH))

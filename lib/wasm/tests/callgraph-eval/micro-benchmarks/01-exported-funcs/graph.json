@@ -1,0 +1,12 @@
+[
+    {
+        "name": "export1",
+        "root": true,
+        "export": "export1"
+    }, 
+    {
+        "name": "export2",
+        "root": true,
+        "export": "export2"
+    }
+]
