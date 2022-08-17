@@ -117,7 +117,7 @@ def run_metadce(wasm_file, lib, lib_obj):
     status, output, exec_time = execute_command(metadce_command, "wasm-metadce", tool_shell_output, False)
     with open(new_graph_path, 'w') as f: 
         f.write(output)
-    return (status, exec_time)
+    return (dce_path, status, exec_time)
 
 def run_twiggy(wasm_file, lib): 
     # Twiggy 
@@ -179,12 +179,14 @@ def process_metadce(new_graph_path):
     
     reachable_funcs = set()
     garbage_funcs = set()
+    temp_map = {} # sometimes, you may not know that the node you are processing is reachable yet 
+    processed_nodes = set()
     for lines in graph_lines: 
         if len(lines) == 1: 
             root = re.search(METADCE_ROOT_RE, lines[0])
             if root:
-                root = [node for node in root.groups() if node != None][0]
-                reachable_funcs.update(root)
+                root = "".join([node for node in root.groups() if node != None][0])
+                reachable_funcs.add(root)
             else: 
                 unused = re.search(METADCE_UNUSED_RE, lines[0])                
                 # TODO: don't report everything to be garbage. Make sure it's a function
@@ -192,14 +194,44 @@ def process_metadce(new_graph_path):
                 else: sys.exit("unknown line(s) in metadce new graph: {}".format(lines))
         else:   
             node = [node for node in re.search(METADCE_NODE_RE, lines[0]).groups() if node != None][0]
+            #print("{} {}".format(lines, node))
+            
+            # add to map 
+            targets = []
+            for t in lines[2:]:
+                target = re.search(METADCE_REACHES_RE, t)
+                if target:
+                    targets.append([node for node in target.groups() if node != None][0])          
+            #print(targets)
+            temp_map[node] = targets
+            #print(temp_map)
+
+            # add to reachable funcs 
             if node in reachable_funcs:
+                for target in targets: 
+                    worklist = [target]
+                    while len(worklist) != 0:
+                        node = worklist.pop()
+                        reachable_funcs.add(node)
+                        #print("add {}".format(node))
+                        processed_nodes.add(node)
+                        if node in temp_map:
+                            for node_target in temp_map[node]:
+                                if node_target not in processed_nodes: worklist.append(node_target)
+                                reachable_funcs.add(node_target)
+                                #print("add {}".format(node_target))
+                        
+            #if node in reachable_funcs:
+            #    print("True")
             # They record if the target is a imported function or an internal function 
             # I am not differenciating between those two 
-                for targets in lines[2:]:
-                    target = re.search(METADCE_REACHES_RE, targets)
-                    if target:
-                        target = [node for node in target.groups() if node != None][0]                        
-                        reachable_funcs.update(target)
+            #    for targets in lines[2:]:
+            #        target = re.search(METADCE_REACHES_RE, targets)
+            #        if target:
+            #            target = [node for node in target.groups() if node != None][0]                        
+            #            reachable_funcs.add(target)
+    
+    reachable_funcs = [int(f) for f in reachable_funcs if f.isnumeric()]
     
     return (list(reachable_funcs), list(garbage_funcs))
          
@@ -257,7 +289,7 @@ def process_twiggy(internal_ir_path, garbage_path):
 
 def pretty_print_reachable_funcs(counts):
     tools = ["ourtool", "wassail", "metadce", "twiggy"]
-    MAX_COUNT_LEN = len(str(max(counts)))
+    MAX_COUNT_LEN = len(str(max([count for count in counts if type(count)==int])))
     for tool, count in zip(tools, counts):
         count = str(count)
         count_pretty = ' '*(MAX_COUNT_LEN-len(count)) + count
@@ -302,7 +334,7 @@ def main():
 
     ourtool_status, ourtool_time   = run_ourtool(wasm_file, lib, lib_obj)
     wassail_status, wassail_time   = run_wassail(wasm_file, lib)
-    metadce_status, metadce_time   = run_metadce(wasm_file, lib, lib_obj)
+    metadce_dce_path, metadce_status, metadce_time   = run_metadce(wasm_file, lib, lib_obj)
     twiggy_status,  twiggy_time    = run_twiggy (wasm_file, lib)
     awsm_status,    awsm_time      = run_awsm   (wasm_file, lib)
     wavm_status,    wavm_time      = run_wavm   (wasm_file, lib) 
@@ -314,7 +346,7 @@ def main():
     #awsm_status = False
     #wavm_status = False
 
-    reachable_funcs_count = [0]*4
+    reachable_funcs_count = ["DNE"]*4
 
     if ourtool_status: 
         cg_path = "{}/{}/CG_tools_data/our_tool/callgraph.dot".format(DATA_PATH, lib)
@@ -349,25 +381,40 @@ def main():
     # FIXME: opencv execution gives different ouputs for each execution!?
     # - dump input to metadce from binaryen? and figure out the right way to make a reachability graph 
     # - commit to metadce tool help to have better documententation 
-    # FIXME: metadce obviously not giving us the right reachability graph. the input graph is probably wrong. 
-    if metadce_status and 'opencv' not in lib:
-        new_graph_path = '{}/{}/CG_tools_data/metadce/new-graph.txt'.format(DATA_PATH, lib)
-        reachable_funcs, garbage_funcs = process_metadce(new_graph_path)
-        lib_obj["tools"].append({
-            "name": "metadce",
-            "callgraph_construction": False,
-            "dce" : True,
-            "execution_time": metadce_time, # TODO 
-            "reachable_functions": {
-                "names": list(reachable_funcs), 
-                "count": len(reachable_funcs)
-            },
-            "garbage_functions": {
-                "names": list(garbage_funcs), 
-                "count": len(garbage_funcs)
-            }
-        })
-        reachable_funcs_count[2] = len(reachable_funcs)
+    if metadce_status:
+        if "opencv" in lib:
+            lib_obj["tools"].append({
+                "name": "metadce",
+                "callgraph_construction": False,
+                "dce" : True,
+                "execution_time": metadce_time, # TODO 
+                "reachable_functions": {
+                    "names": "DNE", 
+                    "count": "DNE"
+                },
+                "garbage_functions": {
+                    "names": "DNE", 
+                    "count": "DNE"
+                }
+            })
+        else:
+            new_graph_path = '{}/{}/CG_tools_data/metadce/new-graph.txt'.format(DATA_PATH, lib)
+            reachable_funcs, garbage_funcs = process_metadce(new_graph_path)
+            lib_obj["tools"].append({
+                "name": "metadce",
+                "callgraph_construction": False,
+                "dce" : True,
+                "execution_time": metadce_time, # TODO 
+                "reachable_functions": {
+                    "names": list(reachable_funcs), 
+                    "count": len(reachable_funcs)
+                },
+                "garbage_functions": {
+                    "names": list(garbage_funcs), 
+                    "count": len(garbage_funcs)
+                }
+            })
+            reachable_funcs_count[2] = len(reachable_funcs)
     
     if twiggy_status: 
         internal_ir_path = '{}/{}/CG_tools_data/twiggy/internal_ir.txt'.format(DATA_PATH, lib)
