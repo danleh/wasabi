@@ -7,55 +7,81 @@ JSON_PATH = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tests/callgrap
 
 LATEX_PATH = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tests/callgraph-eval/data/latex-tables.txt"
 
+#def static_info():
+    # report on static information of each of the libraries as well. 
+
 # LaTeX table that compares precision and recall for each tool, per library 
 def recall_precision_latex_table(f, data):
     table_rows = []
 
-    f.write("\\begin{table*}[h]\n")
+    f.write("\\begin{table*}[t]\n")
+    f.write("\\small\n")
     f.write("\centering\n")
-    f.write("\\begin{tabular}{c|c|cc|cc|cc|cc}\n")
+    f.write("\michael{(1) $F_{STAT}$ should never be larger than $F_{TOTAL}$, but somehow it is. Why? (2) Let's add after the absolute $F_{STAT}$ results the percentage over $F_{TOTAL}$, so people see how much an analysis could reduce a binary.}\n")
+    f.write("\captionsetup{justification=centering}\n")
+    f.write("\\begin{tabular}{m{4em}|m{2.5em}|m{2em}|\n")
+    f.write("    m{2em}m{2em}m{2.4em}|\n")
+    f.write("    m{2em}m{2em}m{2.4em}|\n")
+    f.write("    m{2em}m{2em}m{2.4em}|\n")
+    f.write("    m{2em}m{2em}m{2.4em}}\n")
     f.write("    \\toprule\n")
-    f.write("    \\textbf{Library} &\n")
-    f.write("    \\textbf{$\\textbf{M}_{\\textbf{DYN}}$} &\n")
-    f.write("    \multicolumn{2}{c|}{\\textbf{Ourtool}} & \n")
-    f.write("    \multicolumn{2}{c|}{\\textbf{Wassail}} &\n")
-    f.write("    \multicolumn{2}{c|}{\\textbf{Metadce}} & \n")
-    f.write("    \multicolumn{2}{c}{\\textbf{Twiggy}}\\\\\n")
-    f.write("    & & \\textbf{$\\textbf{M}_{\\textbf{STAT}}$} & \\textbf{Recall} & \n")
-    f.write("    \\textbf{$\\textbf{M}_{\\textbf{STAT}}$} & \\textbf{Recall} & \n")
-    f.write("    \\textbf{$\\textbf{M}_{\\textbf{STAT}}$} & \\textbf{Recall} & \n")
-    f.write("    \\textbf{$\\textbf{M}_{\\textbf{STAT}}$} & \\textbf{Recall} \\\\ \n")
+    f.write("    \\textbf{Library} & $\\textbf{F}_{\\textbf{TOTAL}}$ &\n")
+    f.write("    $\\textbf{F}_{\\textbf{DYN}}$ &\n")
+    f.write("    \multicolumn{3}{c|}{\\textbf{Ourtool}} & \n")
+    f.write("    \multicolumn{3}{c|}{\\textbf{Wassail}} &\n")
+    f.write("    \multicolumn{3}{c|}{\\textbf{Metadce}} & \n")
+    f.write("    \multicolumn{3}{c}{\\textbf{Twiggy}}\\\\\n")
+    f.write("    & & & \n")
+    f.write("    $\\textbf{F}_{\\textbf{STAT}}$ & \% & \\textbf{Recall} & \n")
+    f.write("    $\\textbf{F}_{\\textbf{STAT}}$ & \% & \\textbf{Recall} & \n")
+    f.write("    $\\textbf{F}_{\\textbf{STAT}}$ & \% & \\textbf{Recall} & \n")
+    f.write("    $\\textbf{F}_{\\textbf{STAT}}$ & \% & \\textbf{Recall} \\\\")
     f.write("    \midrule\n")
 
     counter = 0
     for lib in data['library_data']:
+        lib_total = lib["static_info"]["count_functions"] + lib["static_info"]["imports"]["count_imported_funcs"]
         lib_dyn = lib["dyn_total_reachable_functions"]["count"]
         for tool in lib["tools"]:
-            if tool["name"] == "ourtool": ourtool_stat, ourtool_r = tool["reachable_functions"]["count"], tool["recall"]
-            if tool["name"] == "wassail": wassail_stat, wassail_r = tool["reachable_functions"]["count"], tool["recall"]
-            if tool["name"] == "metadce": metadce_stat, metadce_r = tool["reachable_functions"]["count"], tool["recall"]
-            if tool["name"] == "twiggy":  twiggy_stat,  twiggy_r  = tool["reachable_functions"]["count"], tool["recall"]               
+            if tool["name"] == "ourtool": 
+                ourtool_stat, ourtool_r = tool["reachable_functions"]["count"], tool["recall"]
+                ourtool_percent = ((lib_total - ourtool_stat)/lib_total)*100
+            if tool["name"] == "wassail": 
+                wassail_stat, wassail_r = tool["reachable_functions"]["count"], tool["recall"]
+                wassail_percent = ((lib_total - wassail_stat)/lib_total)*100
+            if tool["name"] == "metadce": 
+                metadce_stat, metadce_r = tool["reachable_functions"]["count"], tool["recall"]
+                if metadce_stat == "DNE": 
+                    metadce_percent = "-"
+                    metadce_r = "-"
+                else: 
+                    metadce_percent = "{:.2f}".format(((lib_total - metadce_stat)/lib_total)*100)
+                    metadce_r = "{:.2f}".format(float(metadce_r))
+            if tool["name"] == "twiggy": 
+                twiggy_stat,  twiggy_r  = tool["reachable_functions"]["count"], tool["recall"]               
+                twiggy_percent = ((lib_total - twiggy_stat)/lib_total)*100
         gray = ""
         if counter%2 != 0: gray = "\\rowcolor{gray!20}" 
         counter += 1
-        f.write("    {} {} & {} & {} & {:.2f} & {} & {:.2f} & {} & {:.2f} & {} & {:.2f}\\\\\n".format(
+        f.write("    {} {} & {} & {} & {} & {:.2f} & {:.2f} & {} & {:.2f} & {:.2f} & {} & {} & {} & {} & {:.2f} & {:.2f}\\\\\n".format(
             gray,
-            lib["library_name"], lib_dyn,
-            ourtool_stat, ourtool_r,
-            wassail_stat, wassail_r, 
-            metadce_stat, metadce_r, 
-            twiggy_stat, twiggy_r 
+            lib["library_name"], lib_total, lib_dyn,
+            ourtool_stat, ourtool_percent, ourtool_r,
+            wassail_stat, wassail_percent, wassail_r, 
+            metadce_stat, metadce_percent, metadce_r, 
+            twiggy_stat, twiggy_percent, twiggy_r 
         ))
-        table_rows.append([lib["library_name"], lib_dyn,
+        table_rows.append([lib["library_name"], lib_total, lib_dyn, 
             ourtool_stat, ourtool_r,
             wassail_stat, wassail_r, 
             metadce_stat, metadce_r, 
             twiggy_stat, twiggy_r
         ])
-        #table_rows.append([lib["library_name"], ourtool_p, ourtool_r, wassail_p, wassail_r, metadce_p, metadce_r, twiggy_p,  twiggy_r])
-
+    
     f.write("    \\bottomrule\n")
     f.write("\end{tabular}\n")
+    f.write("\caption{Comparison of dynamically reachable functions $\\text{F}_\\text{DYN}$ of each library\\\\with the statically reachable functions $\\text{F}_\\text{STAT}$ and recall of each tool.}\n")
+    f.write("\label{recall}\n")
     f.write("\end{table*}\n")
 
     return table_rows
@@ -101,11 +127,11 @@ def coverage_latex_table(f, data):
 def recall_precision_pretty_table(data):
     table = PrettyTable()
     table.title = "Recall of every tool on each library"
-    table.field_names = ["Library", "M_DYN", 
-                         "Ourtool M_STAT", "Ourtool R", 
-                         "Wassail M_STAT", "Wassail R", 
-                         "Metadce M_STAT", "Metadce R", 
-                         "Twiggy M_STAT", "Twiggy R"] 
+    table.field_names = ["Library", "F_TOTAL", "F_DYN", 
+                         "Ourtool F_STAT", "Ourtool R", 
+                         "Wassail F_STAT", "Wassail R", 
+                         "Metadce F_STAT", "Metadce R", 
+                         "Twiggy F_STAT", "Twiggy R"] 
     table.add_rows(data)
     table.float_format = '.2'
     print(table)
