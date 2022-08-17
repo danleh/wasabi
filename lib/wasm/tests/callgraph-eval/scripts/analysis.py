@@ -20,14 +20,30 @@ def main():
     # } 
     
     for lib in data["library_data"]:
-
+        
         M_dyn  = set(lib["dyn_total_reachable_functions"]["names"])
         for tool in lib["tools"]:            
-            M_stat = set(tool["reachable_functions"]["names"])
-            cap_set = M_stat.intersection(M_dyn)            
-            recall, precision = len(cap_set)/len(M_dyn), len(cap_set)/len(M_stat)            
-            tool["precision"] = precision
-            tool["recall"] = recall
+            if tool["reachable_functions"]["names"] == "DNE":
+                tool["precision"] = "DNE"
+                tool["recall"] = "DNE"
+            else:
+                M_stat_ = tool["reachable_functions"]["names"]
+                M_stat = set()
+                export_names = {item['name']:item['internal_id'] for item in lib['static_info']['exports']['names'] if item['type'] == 'function'}
+                import_names = {item["module_name"]+"."+item["export_name_within_module"]: item['internal_name'] for item in lib['static_info']['imports']['names'] if item['type'] == "function"}
+                for f in M_stat_:
+                    if not str(f).isdigit(): #it is an exported or imported function index and has to be replaced with its internal id 
+                        if f in export_names.keys(): M_stat.add(int(export_names[f]))
+                        elif f in import_names.keys(): M_stat.add(int(import_names[f]))
+                        else: sys.exit("Unknown string found {}".format(f))
+                    else: M_stat.add(f)
+                
+                cap_set = M_stat.intersection(M_dyn)            
+                
+                recall, precision = len(cap_set)/len(M_dyn), len(cap_set)/len(M_stat)            
+                tool["reachable_functions"]["names"] = list(M_stat)
+                tool["precision"] = precision
+                tool["recall"] = recall
 
         M_stat_exports = lib["static_info"]["exports"]["count_exported_funcs"]
         M_stat_funcs = lib["static_info"]["count_functions"]
