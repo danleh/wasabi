@@ -3,6 +3,8 @@ import json
 
 # This script reads the Wasabi output files and saves the data in data.json by updating it  
 
+TEST_SUITE_DATA_JSON_PATH = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tests/callgraph-eval/data/test-suite-data.json"
+
 args = sys.argv[1:]
 if len(args)>0: 
 	print("Usage: get-dyn-data.py")
@@ -46,9 +48,8 @@ for lib in dyn_data:
 	dyn_data[lib]["total_reachable_funcs"] = total_reachable
 
 
-
 # Update the data.json file 
-data = json.load(open("../data/data.json"))
+data = json.load(open(TEST_SUITE_DATA_JSON_PATH))
 print("Updating data.json with data extracted by Wasabi for each test case...")
 for lib in dyn_data.keys(): 	 
 	lib_obj = [l for l in data['library_data'] if l['library_name'] == lib][0]
@@ -72,7 +73,7 @@ for lib in dyn_data.keys():
 			"count" : len(dyn_data[lib]["total_reachable_funcs"])
 		}	
 					
-json.dump(data, open("../data/data.json", "w"), indent=2)
+json.dump(data, open(TEST_SUITE_DATA_JSON_PATH, "w"), indent=2)
 
 
 

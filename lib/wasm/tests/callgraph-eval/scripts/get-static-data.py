@@ -6,15 +6,15 @@ TEST_SUITE_PATH = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tests/ca
 
 DATA_PATH = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tests/callgraph-eval/data/library_data"
 
-JSON_PATH = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tests/callgraph-eval/data/data.json"
-
+TEST_SUITE_DATA_JSON_PATH = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tests/callgraph-eval/data/test-suite-data.json"
+MICROBENCH_DATA_JSON_PATH = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tests/callgraph-eval/data/microbench-data.json"
 
 #TODO: Modularize  
 #TODO: make groups and extract output via groups! 
 type_re = "\(type \(;[0-9]+;\) \(func( \(param ((i|f)(32|64) ?)+\))?( \(result ((i|f)(32|64) ?)+\))?\)\)"
 func_re = "\(func \(;[0-9]+;\) \(type [0-9]+\)( \(param ((i|f)(32|64) ?)+\))?( \(result ((i|f)(32|64) ?)+\))?$"
 import_re = "\(import \".+\" (\(global \(;\d+;\) (i|f)(32|64)\)|\(memory \(;\d+;\) \d+ \d+\)|\(func \(;[0-9]+;\) \(type [0-9]+\)?\)|\(table \(;\d+;\) \d+( \d+)? (funcref|anyref)\))\)$"
-export_re = "\(export \".+\" \((memory|func|table) \d+\)\)$"
+export_re = "\(export \".+\" \((memory|func|table) \d+\)\)"
 elem_re = "\(elem \(;[0-9]+;\) (\(global\.get \d+\)|\(i(32|64)\.const \d+\)) func (\d+ )*\d+\)$"
 table_re = "\(table \(;\d+;\) \d+( \d+)? (funcref|anyref)\)$"
 call_re = "call \d+"
@@ -30,23 +30,31 @@ args = sys.argv[1:]
 if args[0] == "-h" or args[0] == "--help": 
 	print("Usage: get-static-data.py [OPTION] WASM_FILE")
 	print("This script analyzes the given WebAssembly binary and report static information about the binary.")
-	print("--update-json\tUpdate data.json with the binaries static information.")
+	print("--real-update-json\tUpdate test-suite-data.json with the binaries static information.")
+	print("--micro-update-json\tUpdate microbench-data.json with the binaries static information.")
 	sys.exit()
 
-update_json = False
+update_real_json = False
+update_micro_json = False
 wasm_file = "" 
 if len(args) == 1: 
 	if re.search(".*\.wasm", args[0]): wasm_file = args[0]
 	else: print("WebAssembly binary (.wasm) expected. {} found.".format(args[0]))
 elif len(args) == 2: 
-	if args[0] == '--update-json': 
-		update_json = True
+	if args[0] == '--real-update-json': 
+		update_real_json = True
 		if re.search(".*\.wasm", args[1]): wasm_file = args[1]
 		else: print("WebAssembly binary (.wasm) expected. {} found.".format(args[1]))
+	elif args[0] == "--micro-update-json":  		
+		update_micro_json = True
+		if re.search(".*\.wasm", args[1]): wasm_file = args[1]
+		else: print("WebAssembly binary (.wasm) expected. {} found.".format(args[1]))
+
 	else:
 		print("Usage: static-update-json.py [OPTION] WASM_FILE")
 		print("This script analyzes the given WebAssembly binary and report static information about the binary.")
-		print("--update-json\tUpdate data.json with the binaries static information.")
+		print("--real-update-json\tUpdate test-suite-data.json with the binaries static information.")
+		print("--micro-update-json\tUpdate microbench-data.json with the binaries static information.")
 		sys.exit()
 
 r_data = {} # raw data 
@@ -58,7 +66,7 @@ lib = extract_lib(wasm_file)
 
 wasm_file_pretty = wasm_file.split("/")
 wasm_file_pretty = wasm_file_pretty[len(wasm_file_pretty)-1]
-print("Extracting static information from {}".format(wasm_file_pretty))
+print("Extracting static information from {}/{}".format(lib, wasm_file_pretty))
 
 r_data[lib] = {
 	'types': [],
@@ -81,7 +89,8 @@ with open(wasm_file+".wat") as wat_file:
 		elif re.search(func_re, line): 
 			r_data[lib]['funcs'].append(line)
 		elif re.search(import_re, line): r_data[lib]['imports'].append(line)
-		elif re.search(export_re, line): r_data[lib]['exports'].append(line)
+		elif re.search(export_re, line): 
+			r_data[lib]['exports'].append(line)
 		elif re.search(elem_re, line): r_data[lib]['elems'].append(line)		
 		elif re.search(table_re, line): r_data[lib]['tables'].append(line)
 		elif re.search(call_re, line): r_data[lib]['calls'].append(line)
@@ -172,7 +181,7 @@ for imp in r_data[lib]['imports']:
 		'type': imp_type, 
 		'module_name': imp_module, 
 		'export_name_within_module': imp_name, 
-		'internal_name': imp_ind, 
+		'internal_id': imp_ind, 
 	})
 	
 
@@ -202,7 +211,7 @@ flag_exp_mem, flag_exp_tab = False, False
 for exp in r_data[lib]['exports']: 
 	exp_split = exp.split(" ")
 	exp_name = exp_split[1][1:-1]
-	exp_internal_id = int(exp_split[3][:-2])
+	exp_internal_id = int("".join([s for s in exp_split[len(exp_split)-1] if s.isdigit()]))
 	exp_name = re.search("\".*\"", exp)[0][1:-1]
 	if "table " in exp: 
 		exp_type = 'table'
@@ -287,11 +296,11 @@ for call in r_data[lib]['call_inds']:
 	
 
 # Update the data.json file 
-if update_json:
-	print("Updating data.json...")
-	data = json.load(open(JSON_PATH))
-	lib_obj = [l for l in data['library_data'] if l['library_name'] == lib][0]
-	lib_obj['static_info'] = {
+if update_real_json:
+	print("Updating test-suite-data.json...")
+	data = json.load(open(TEST_SUITE_DATA_JSON_PATH))
+	test = [l for l in data['library_data'] if l['library_name'] == lib][0]
+	test['static_info'] = {
 		'count_types': p_data[lib]['types'], 
 		'count_functions': p_data[lib]['funcs'],		
 		'tables': p_data[lib]['tables'], 
@@ -307,7 +316,20 @@ if update_json:
 			'types_called_indirectly': list(set(p_data[lib]['call_inds']))
 		}
 	}	
-	json.dump(data, open(JSON_PATH, 'w'), indent=2)
+	json.dump(data, open(TEST_SUITE_DATA_JSON_PATH, 'w'), indent=2)
+
+elif update_micro_json: 
+	print("Updating microbench-data.json...")
+	data = json.load(open(MICROBENCH_DATA_JSON_PATH))
+	test_name_key = lib.split("-")[0]
+	test = data[test_name_key]
+	test['static_info'] = {
+		'tables': p_data[lib]['tables'], 
+		'imports': p_data[lib]['imports'], 
+		'exports': p_data[lib]['exports'], 
+	}	
+	json.dump(data, open(MICROBENCH_DATA_JSON_PATH, 'w'), indent=2)
+
 else:
 	MAX_LEFT_LEN = 25
 	print("#types:{}{}".format(" "*(MAX_LEFT_LEN-7),p_data[lib]['types'],)) 
