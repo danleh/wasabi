@@ -219,7 +219,7 @@ pub fn reachable_callgraph(
     println!("{:?}", reachable_funcs);
     // Collect "declarative constraints" once per function.
     // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
-    let call_target_constraints: FxHashMap<FunctionId, FxHashSet<(Option<wimpl::InstrId>, Target, Option<Vec<Constraint>>)>> = module.functions.iter()
+    let call_target_constraints: FxHashMap<FunctionId, FxHashSet<(Option<wimpl::InstrId>, Target)>> = module.functions.iter()
         .map(|func| {
             (func.name(), collect_target_constraints(func, options))
         })
@@ -293,7 +293,7 @@ pub fn reachable_callgraph(
 
         let calls = call_target_constraints.get(&func).unwrap_or_else(|| panic!("all functions should have been constraints computed for, but not found for '{}'", func));            
 
-        for (instr_id, call, constraint) in calls {
+        for (instr_id, call) in calls {
             // Solve the constraints to concrete edges.
 
             // TODO: make targets (FunctionId, Idx<Function>) 
@@ -315,7 +315,11 @@ pub fn reachable_callgraph(
                 }; 
                 
                 let wasm_target = *module.metadata.func_name_map.get(&target).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>"); 
-                let wasm_target_info = (*constraint).clone(); 
+                // FIXME cleanup this, I think we don't use callsite information anyway?
+                let wasm_target_info = match call {
+                    Target::Direct(_function_id) => None,
+                    Target::Constrained(constraints) => Some(constraints.clone()),
+                }; 
                 wimpl_callgraph.callsites.add_edge(
                     wasm_loc, wasm_src_id,
                     wasm_target, wasm_target_info);
@@ -352,17 +356,22 @@ pub fn reachable_callgraph(
 pub fn collect_target_constraints(
     src: &Function,
     options: Options
-) -> FxHashSet<(Option<wimpl::InstrId>, Target, Option<Vec<Constraint>>)> {
+) -> FxHashSet<(Option<wimpl::InstrId>, Target)> {
     
     // TODO: Discuss
     // How to handle imported functions? Can they each every exported function?
     // Do we add a direct edge there? Or do we add an abstract "host" node? 
     // Do we merge with a JavaScript call-graph analysis?
+    // What if the table is also exported? 
     let body = match src.body.as_ref() {
         Some(body) => body,
+        // Imported function:
         None => {
             let mut target = FxHashSet::default(); 
-            target.insert((None, Target::Constrained(vec![Constraint::Exported]), Some(vec![Constraint::Exported])));              
+            target.insert((None, Target::Constrained(vec![Constraint::Exported])));              
+            // if table.is_exported() {
+            //     target.insert(...);
+            // }
             return target
         },
     };     
@@ -382,7 +391,7 @@ pub fn collect_target_constraints(
     body.visit_expr_pre_order(|expr| {
         match &expr.kind {
             Call { func, args: _} => {
-                targets.insert((Some(expr.id), Target::Direct(func.clone()), None));
+                targets.insert((Some(expr.id), Target::Direct(func.clone())));
             }
             CallIndirect { type_, table_idx, args: _ } => {
                 let mut constraints = Vec::default();
@@ -415,7 +424,7 @@ pub fn collect_target_constraints(
                         constraints.push(Constraint::TableIndexExpr(expr.clone()));
                     }
                 }
-                targets.insert((Some(expr.id), Target::Constrained(constraints.clone()), Some(constraints)));
+                targets.insert((Some(expr.id), Target::Constrained(constraints)));
             }
             _ => {}
         }
@@ -457,7 +466,7 @@ pub fn solve_constraints<'a>(
                     .map(|vec| Box::new(vec.iter().cloned()) as Box<dyn Iterator<Item=&Function>>)
                     .unwrap_or_else(|| Box::new(module.functions.iter()) as Box<dyn Iterator<Item=&Function>>);
             
-                    for constraint in constraints {
+            for constraint in constraints {
                 use wimpl::ExprKind::*;
                 // Build up filtering iterator at runtime, adding all constraints from before.
                 filtered_iter = match constraint {
@@ -507,7 +516,9 @@ pub fn solve_constraints<'a>(
                         }
                     },
                     Constraint::Exported => {
-                       Box::new(filtered_iter.filter(move |f| !&f.export.is_empty()))
+                        Box::new(filtered_iter.filter(move |f| {
+                            !&f.export.is_empty()
+                        }))
                     },
                     // TODO Load expressions -> needs pointer analysis
                 }
