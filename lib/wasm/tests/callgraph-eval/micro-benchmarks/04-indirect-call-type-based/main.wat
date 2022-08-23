@@ -18,4 +18,5 @@
     ;; Here: only $a is in table AND type-compatible with call_indirect type.
     ;; $main -> $a -> $print
     ;; NOT $main -> $b -> $print
+    ;; 1 -> 2 -> 0
 )

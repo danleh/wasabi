@@ -16,4 +16,5 @@
     ;; Call graph depends on this assumption.
     ;; $main -> $imported (JavaScript) -> $export2 -> $print
     ;; NOT $main -> $imported (JavaScript) -> $export1 -> $print
+    ;; 2 -> 1, 1 -> [3,4], 3->0, 4->0
 )

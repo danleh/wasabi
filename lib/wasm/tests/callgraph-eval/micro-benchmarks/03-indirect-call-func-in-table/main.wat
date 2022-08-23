@@ -13,9 +13,10 @@
         call $print
     )
     (table $table 1 funcref)
-    (elem $table (i32.const 0$a)
+    (elem $table (i32.const 0) $a)
     ;; Targets of the call indirect must be in the table.
     ;; Here: only $a is in table.
     ;; $main -> $a -> $print
     ;; NOT $main -> $b -> $print
+    ;; 1 -> 2 -> 0
 )

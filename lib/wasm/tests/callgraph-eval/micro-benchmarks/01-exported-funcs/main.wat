@@ -18,4 +18,6 @@
     ;; Call graph depends on this assumption.
     ;; A) $export1 -> $a -> $print
     ;; B) $export2 -> $b -> $print
+    ;; 1 -> 3 -> 0
+    ;; 2 -> 4 -> 0
 )
