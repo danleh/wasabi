@@ -204,14 +204,14 @@ pub fn reachable_callgraph(
     
     let mut wimpl_callgraph = WimplCallGraph::default(); 
     
-    // Make everything in the table initially reachable if the table is exported
-    if let Some(table) = module.table.clone() {
+    // Make everything in the table initially reachable if the table is exported.
+    if let Some(table) = &module.table {
         if !table.export.is_empty() {
-            // The table is exported so add all the functions in the table to the graph
-            for elem in table.elements {                
-                for func in elem.functions {
-                    reachable_funcs.insert(func);   
-                } 
+            // The table is exported so add all the functions in the table to the graph.
+            for elem in &table.elements {                
+                for func in &elem.functions {
+                    reachable_funcs.insert(func.clone());   
+                }
             }
         }
     }
@@ -221,7 +221,7 @@ pub fn reachable_callgraph(
     // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
     let call_target_constraints: FxHashMap<FunctionId, FxHashSet<(Option<wimpl::InstrId>, Target)>> = module.functions.iter()
         .map(|func| {
-            (func.name(), collect_target_constraints(func, options))
+            (func.name(), collect_target_constraints(func, module, options))
         })
         .collect();
     
@@ -355,6 +355,7 @@ pub fn reachable_callgraph(
 
 pub fn collect_target_constraints(
     src: &Function,
+    module: &wimpl::Module,
     options: Options
 ) -> FxHashSet<(Option<wimpl::InstrId>, Target)> {
     
@@ -368,10 +369,18 @@ pub fn collect_target_constraints(
         // Imported function:
         None => {
             let mut target = FxHashSet::default(); 
-            target.insert((None, Target::Constrained(vec![Constraint::Exported])));              
-            // if table.is_exported() {
-            //     target.insert(...);
-            // }
+
+            // Any exported function can be called from an imported function.
+            target.insert((None, Target::Constrained(vec![Constraint::Exported])));
+
+            // And also the host code can reach functions through the table, if the table itself
+            // is exported.
+            if let Some(table) = &module.table {
+                if !table.export.is_empty() {
+                    target.insert((None, Target::Constrained(vec![Constraint::InTable])));              
+                }
+            }
+            
             return target
         },
     };     
