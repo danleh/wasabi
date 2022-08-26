@@ -327,6 +327,15 @@ pub enum StmtKind {
     // -> if (cond) { br (value) @label }
     // -> if (cond) { b0 = value; br @label }
     // -> switch (cond) { case 0: {} default: { b0 = value; br @label } }
+    // Alternative design: make switch "partial", i.e.
+    // Switch { index: Expr, cases: Vec<Body> } and if no case matches it falls through
+    // and then translate if above to
+    // -> switch (i32.eqz(cond)) { case 0: { b0 = value; br @label } }
+    // Then, we could simplify the `cond` with some peekhole optimizations, because i32.eqz is 
+    // effectively a bool.not operation. E.g.
+    // i32.eqz(i32.eq(a, b)) == i32.ne(a, b)
+    // i32.eqz(i32.eqz(a)) == i32.eqz(i32.eq(a, i32.const 0)) == i32.ne(a, i32.const 0)
+    // TODO collect data on most common conditions in ifs to inform most important peekhole optimizations
     If {
         condition: Expr,
         if_body: Body,
