@@ -51,8 +51,9 @@ def main():
         print("--micro   Compare callgraphs produced by each tool with the precise callgraph")
         sys.exit()
 
-    def get_reachable_funcs(graph, initially_reachable_funcs):
+    def get_reachable_funcs_and_edges(graph, initially_reachable_funcs):
         reachable_funcs = initially_reachable_funcs 
+        edges = set()
         worklist = set(reachable_funcs)
         processed_list = set()
         while len(worklist) != 0:
@@ -62,8 +63,9 @@ def main():
                 processed_list.add(node)
                 for target in list(graph[node]):
                     if target not in processed_list: 
+                        edges.add((node, target))
                         worklist.add(target)
-        return set(reachable_funcs)    
+        return set(reachable_funcs), edges    
 
     flag_real, flag_micro = False, False
     if len(args) == 0: help_message()
@@ -78,24 +80,58 @@ def main():
         data = json.load(open(MICRO_DATA_JSON_PATH))
 
         for test in data: 
-            #print("{} {}".format(test, data[test]["name"]))
             test = data[test]
-            precise_callgraph = test["precise-callgraph"]
+            
             export_names = {item['name']: {"type":item["type"], "internal_id": item['internal_id']} for item in test["static_info"]["exports"]["names"]}
             import_names = {item["module_name"]+"."+item["export_name_within_module"]: {"type":item["type"], "internal_id": item['internal_id']} for item in test["static_info"]["imports"]["names"]}
 
+            precise_callgraph = test["precise_callgraph"]
             reachable_funcs = set([int(e["internal_id"]) for e in test["static_info"]["exports"]["names"] if e["type"] == "function"])
-            
             precise_callgraph = graph_names_normalize(precise_callgraph, export_names, import_names)
-            precise_reachable_funcs = get_reachable_funcs(precise_callgraph, reachable_funcs) 
+            precise_reachable_funcs, precise_edges = get_reachable_funcs_and_edges(precise_callgraph, reachable_funcs) 
             
+            test["precise_callgraph"] = {
+                "graph": precise_callgraph, 
+                "reachable_functions": {
+                    "names": list(precise_reachable_funcs), 
+                    "count": len(precise_reachable_funcs)
+                }, 
+                "reachable_edges": {
+                    "names": list(precise_edges), 
+                    "count": len(precise_edges)
+                }
+            }
+
             for tool in test["tools"]:
-                _tool_graph = graph_names_normalize(tool["graph"], export_names, import_names)
-                tool_reachable_funcs = tool["reachable_functions"]
-                if tool_reachable_funcs == None: tool["sound"] = None
-                else:
-                    tool_reachable_funcs = set(tool_reachable_funcs["names"])
-                    tool["sound"] = tool_reachable_funcs.intersection(precise_reachable_funcs) == precise_reachable_funcs
+                #print(tool['name'])
+                if tool["callgraph"] == None: 
+                    tool["sound"] = None
+                else: 
+                    #_tool_graph = graph_names_normalize(tool["callgraph"]["graph"], export_names, import_names)
+
+                    tool_reachable_functions = set(tool["callgraph"]["reachable_functions"]["names"])
+                    tool_reachable_edges = set()
+                    for node, child in tool["callgraph"]["reachable_edges"]["names"]:
+                        tool_reachable_edges.add((node, child))
+
+                    edges_missing = precise_edges.difference(tool_reachable_edges)
+                    superflous_edges = tool_reachable_edges.difference(precise_edges)
+                    
+                    tool["soundness"] = {
+                        # the precise reachable functions should be a subset of the tool reachable functions for the analysis to be sound 
+                        "sound": tool_reachable_functions.intersection(precise_reachable_funcs) == precise_reachable_funcs, 
+                        "missing_edges": {
+                            "names": list(edges_missing), 
+                            "count": len(edges_missing), 
+                        }
+                    }
+                    tool["precision"] = {
+                        "precise": tool_reachable_edges == precise_edges,
+                        "superflous_edges": {
+                            "names": list(superflous_edges), 
+                            "count": len(superflous_edges), 
+                        }
+                    }
         
         json.dump(data, open(MICRO_DATA_JSON_PATH, 'w'), indent=2)
 
@@ -108,34 +144,33 @@ def main():
         #   exported_covered = (|dyn_exports| / |total_exports|)*100
         #   funcs_convered = (|dyn_funcs| / |total_funcs|)*100
         # } 
-        magic_metadce_m_stat = []
-        magic_twiggy_m_stat = []
-        graphviz_metadce_m_stat = []
-        graphviz_twiggy_m_stat = []
         for lib in data["library_data"]:
             lib_total = lib["static_info"]["count_functions"] + lib["static_info"]["imports"]["count_imported_funcs"]
             M_total = set(range(0, lib_total))
             M_dyn  = set(lib["dyn_total_reachable_functions"]["names"])
             for tool in lib["tools"]:            
-                if tool["reachable_functions"] == None:
+                if tool["callgraph"] == None:
                     tool["precision"] = None
                     tool["recall"] = None
                 else:
-                    M_stat = set(tool["reachable_functions"]["names"])
+                    M_stat = set(tool["callgraph"]["reachable_functions"]["names"])
                     cap_set = M_stat.intersection(M_dyn)                                
                     recall = len(cap_set)/len(M_dyn)            
                     M_missing = M_dyn.difference(M_stat)
+                    
+                    #print(f"{lib['library_name']} {tool['name']} {M_missing}")
+                    
                     M_removed = M_total.difference(M_stat)
-
+                    
                     tool["recall"] = recall
-                    tool["missing_funcs"] = {
+                    tool['callgraph']["missing_functions"] = {
                         "names": list(M_missing),
-                        "number": len(M_missing), 
+                        "count": len(M_missing), 
                         "percent": (len(M_missing)/len(M_dyn))*100
                     }
-                    tool["removed_funcs"] = {
+                    tool['callgraph']["removed_functions"] = {
                         "names": list(M_removed), 
-                        "number": len(M_removed), 
+                        "count": len(M_removed), 
                         "percent": (len(M_removed)/len(M_total))*100
                     }
 

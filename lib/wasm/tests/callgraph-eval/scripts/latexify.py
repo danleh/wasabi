@@ -11,36 +11,49 @@ LATEX_COVERAGE_TABLE = "/home/michelle/Documents/sa-for-wasm/wasm-call-graph-cha
 LATEX_MICRO_EVAL_TABLE = "/home/michelle/Documents/sa-for-wasm/wasm-call-graph-challenges-paper/sections/micro-eval.tex"
 
 def recall_precision_latex_table(f, data):
+    
+    def multirow(num, data): return "\multirow{"+str(num)+"}{*}{"+str(data)+"}"
+    def make_bold_red(data): return "\\textcolor{red}{\\textbf{"+str(data)+"}}"
+
     table_rows = []
 
-    f.write("\\newcommand{\Ft}{{$\\textbf{F}_{\\textbf{t}}$}}\n")
-    f.write("\\newcommand{\Fs}{{$\\textbf{F}_{\\textbf{s}}$}}\n")
-    f.write("\\newcommand{\Fd}{{$\\textbf{F}_{\\textbf{d}}$}}\n")
-
+    f.write("\\newcommand{\BFt}{{$\\textbf{F}_{\\textbf{t}}$}}\n")
+    f.write("\\newcommand{\BFs}{{$\\textbf{F}_{\\textbf{s}}$}}\n")
+    f.write("\\newcommand{\BFd}{{$\\textbf{F}_{\\textbf{d}}$}}\n")
+    f.write("\\newcommand{\BFm}{{$\\textbf{F}_{\\textbf{m}}$}}\n")
+    f.write("\\newcommand{\BFr}{{$\\textbf{F}_{\\textbf{r}}$}}\n")
+    f.write("\\newcommand{\Ft}{{$\\text{F}_\\text{t}$}}\n")
+    f.write("\\newcommand{\Fs}{{$\\text{F}_\\text{s}$}}\n")
+    f.write("\\newcommand{\Fd}{{$\\text{F}_\\text{d}$}}\n")
+    f.write("\\newcommand{\Fm}{{$\\text{F}_\\text{m}$}}\n")
+    f.write("\\newcommand{\Fr}{{$\\text{F}_\\text{r}$}}\n")
+    
+    f.write("\setlength{\extrarowheight}{0.2em}\n")
+    
     f.write("\\begin{table*}[t]\n")
     f.write("\\small\n")
     f.write("\centering\n")
     f.write("\captionsetup{justification=centering}\n")
-    
-    f.write("\\begin{tabular}{m{3.2em}|m{2.4em}|m{1.7em}|\n")
-    f.write("    m{1.8em}m{1.3em}m{2em}|\n")
-    f.write("    m{1.5em}m{1.7em}m{2em}|\n")
-    f.write("    m{1.4em}m{1.3em}m{2em}|\n")
-    f.write("    m{1.4em}m{1.3em}m{2em}|\n")
-    f.write("    m{1em}m{1.7em}m{2em}}\n")
+
+    f.write("\\begin{tabular}{l|r|r|\n")
+    f.write("    rrr|\n")
+    f.write("    rrr|\n")
+    f.write("    rrr|\n")
+    f.write("    rrr}\n")
     f.write("    \\toprule\n")
-    f.write("    \\textbf{Library} & \Ft & \Fd &\n")
-    f.write("    \multicolumn{3}{c|}{\\textbf{Ourtool}} & \n")
+
+    f.write("    \multirow{2}{*}{\\textbf{Library}} & \multirow{2}{*}{\BFt} & \multirow{2}{*}{\BFd} &\n")
     f.write("    \multicolumn{3}{c|}{\\textbf{Wassail}} &\n")
     f.write("    \multicolumn{3}{c|}{\\textbf{Metadce}} & \n")
     f.write("    \multicolumn{3}{c|}{\\textbf{Twiggy}} & \n")
-    f.write("    \multicolumn{3}{c}{\\textbf{WAVM}}\\\\\n")
+    f.write("    \multicolumn{3}{c}{\\textbf{WAVM + LLVM opt}}\\\\\n")
+
     f.write("    & & & \n")
-    f.write("    \Fs & \\thead{\Fd-\\Fs} & \\thead{\Ft-\\Fs} & \n")
-    f.write("    \Fs & \\thead{\Fd-\\Fs} & \\thead{\Ft-\\Fs} & \n")
-    f.write("    \Fs & \\thead{\Fd-\\Fs} & \\thead{\Ft-\\Fs} & \n")
-    f.write("    \Fs & \\thead{\Fd-\\Fs} & \\thead{\Ft-\\Fs} & \n")
-    f.write("    \Fs & \\thead{\Fd-\\Fs} & \\thead{\Ft-\\Fs} \\\\\n")    
+    f.write("    \BFs & \BFm & \BFr & \n")
+    f.write("    \BFs & \BFm & \BFr & \n")
+    f.write("    \BFs & \BFm & \BFr & \n")
+    f.write("    \BFs & \BFm & \BFr \\\\\n")
+
     f.write("    \midrule\n")
     
     counter = 0
@@ -49,33 +62,51 @@ def recall_precision_latex_table(f, data):
         lib_dyn = lib["dyn_total_reachable_functions"]["count"]
 
         tool_recall_data = ""
+        tool_percent_data = ""
         tool_ascii_data = []
         for tool in lib["tools"]:
-            if tool["reachable_functions"] == None:
-                tool_recall_data += "\multicolumn{3}{c|}{Did Not Execute} & "
+            if "ourtool" in tool["name"]: continue 
+            
+            if tool["callgraph"] == None:
+                tool_recall_data += "& & & "
+                tool_percent_data += "\multicolumn{3}{c|}{\multirow{-2}{*}{Did Not Execute}} & "
                 tool_ascii_data.append("DNE")
             else:
-                f_stat = f"{tool['reachable_functions']['count']}"
-                f_missing = "\\thead{" + f"{tool['missing_funcs']['number']}\\\\"+"({:.0f}\%)".format(tool['missing_funcs']['percent'])+"}"
-                f_removed = "\\thead{" + f"{tool['removed_funcs']['number']}\\\\"+"({:.0f}\%)".format(tool['removed_funcs']['percent'])+"}"
-                tool_recall_data += "{} & {} & {} & ".format(
-                    f_stat, f_missing, f_removed
-                )
+                missing_funcs = tool['callgraph']['missing_functions']['count']
+                missing_percent = "({:.0f}\%)".format(tool['callgraph']['missing_functions']['percent'])
+
+                if tool['callgraph']['missing_functions']['count'] > 0: 
+                    missing_funcs = make_bold_red(missing_funcs)
+                    missing_percent = make_bold_red(missing_percent)
+                    
+                tool_recall_data += ("& "
+                                     f"{missing_funcs} & "
+                                     f"{tool['callgraph']['removed_functions']['count']} & ")
+                tool_percent_data += "{} & {} & ({:.0f}\%) & ".format(
+                    multirow(-2, tool['callgraph']['reachable_functions']['count']),
+                    missing_percent, 
+                    tool['callgraph']['removed_functions']['percent'])
+                
                 tool_ascii_data.append("{:.2f}".format(tool["recall"]))
+
         tool_recall_data = tool_recall_data[:-3]
+        tool_percent_data = tool_percent_data[:-3]
+
         gray = ""
         if counter%2 != 0: gray = "\\rowcolor{gray!20}" 
         counter += 1
+        f.write("    {} & & & {}\\\\\n".format(gray, tool_recall_data))
         f.write("    {} {} & {} & {} & {}\\\\\n".format(
-            gray,
-            lib["pretty_name"], lib_total, lib_dyn,
-            tool_recall_data
-        ))
+            gray, 
+            multirow(-2, lib["pretty_name"]), 
+            multirow(-2, lib_total), 
+            multirow(-2, lib_dyn),
+            tool_percent_data))
         table_rows.append([lib["pretty_name"], lib_total, lib_dyn] + tool_ascii_data)
     
     f.write("    \\bottomrule\n")
     f.write("\end{tabular}\n")
-    f.write("\caption{Comparison of dynamically reachable functions $\\text{F}_\\text{DYN}$ of each library\\\\with the statically reachable functions $\\text{F}_\\text{STAT}$ and recall of each tool.}\n")
+    f.write("\caption{Comparison of the reachable functions reported by each tool.\\\\The number of missing functions (\Fm = \Fd-\Fs) and removed functions (\Fr = \Ft-\Fs) are also reported.}\n")
     f.write("\label{recall}\n")
     f.write("\end{table*}\n")
 
@@ -86,9 +117,11 @@ def coverage_latex_table(f, data):
 
     f.write("\\begin{table}[h]\n")
     f.write("\centering\n")
-    f.write("\\begin{tabular}{cccc}\n")
+    f.write("\caption{Overview of the real-world programs in our dataset.}\n")
+    f.write("\label{tab:real-world-programs}\n")
+    f.write("\\begin{tabular}{llrr}\n")
     f.write("    \\toprule\n")
-    f.write("    \\textbf{Library} & \\textbf{Test Name} & \\thead{\\textbf{\%Reachable}\\\\textbf{Exports}} & \\thead{\\textbf{\%Reachable}\\\\textbf{Funcs}}\\\\\n")
+    f.write("    \\textbf{Library} & \\textbf{Test Name} & \\thead{\\textbf{\%Reachable}\\\\\\textbf{Exports}} & \\thead{\\textbf{\%Reachable}\\\\\\textbf{Funcs}}\\\\\n")
     f.write("    \midrule\n")
 
     lib_counter = 0
@@ -120,46 +153,83 @@ def coverage_latex_table(f, data):
 
 def micro_eval_latex_table(f, data):
     f.write("\\begin{table*}[t]\n")
+    f.write("\caption{Evaluation of the tools on our microbenchmarks.}\n")
+    f.write("\label{tab:microbenchmarks}\n")
     f.write("\small\n")
     f.write("\centering\n")
     f.write("\captionsetup{justification=centering}\n")
-    f.write("\\begin{tabular}{ccccccc}\n")
+    
+    f.write("\\begin{tabular}{l|l|rr|rrr|rrr|rrr|rrr}\n")
     f.write("    \\toprule\n")
-    f.write("    \\textbf{Name} & \\textbf{Challenge} & \\textbf{Ourtool} & \\textbf{Wassail} & \\textbf{Metadce} & \\textbf{Twiggy} & \\textbf{WAVM}\\\\\n")
+    f.write("    \multirow{2}{*}{\\textbf{Name}} & \multirow{2}{*}{\\textbf{Challenge}} & \n")
+    f.write("    \multicolumn{2}{c|}{\\textbf{Ground Truth}} & \n")
+    f.write("    \multicolumn{3}{c|}{\\textbf{Wassail}} &\n")
+    f.write("    \multicolumn{3}{c|}{\\textbf{Metadce}} & \n")
+    f.write("    \multicolumn{3}{c|}{\\textbf{Twiggy}} &\n")
+    f.write("    \multicolumn{3}{c}{\\textbf{WAVM+LLVM opt}}\\\\\n")
+    f.write("    & & \n")
+    f.write("    \\textbf{\#nodes} & \\textbf{\#edges} &\n")
+    f.write("    \\textbf{\#edges} & \\textbf{S} & \\textbf{P} & \n")
+    f.write("    \\textbf{\#edges} & \\textbf{S} & \\textbf{P} &\n")
+    f.write("    \\textbf{\#edges} & \\textbf{S} & \\textbf{P} & \n")
+    f.write("    \\textbf{\#edges} & \\textbf{S} & \\textbf{P} \\\\ \n")
     f.write("    \midrule\n")
     
     benchmark_counter = 0
     rows_data = []
-    for test in data: 
-        benchmark_name = str(test)+ "-" + data[test]["name"]
+    for microbench in data: 
+        benchmark_name = str(microbench)+ "-" + data[microbench]["name"]
         gray = "" 
         if benchmark_counter%2 != 0: gray = "\\rowcolor{gray!20}"
         
         challenges = ""
-        if data[test]["challenges"]: 
-            for challenge in data[test]["challenges"]: row_data += f"{challenge} "
+        if data[microbench]["challenges"]: 
+            for challenge in data[microbench]["challenges"]: tools_data += f"{challenge} "
         challenges = challenges[:-1]
 
-        row_data = ""
+        tools_data = ""
         pretty_row = []
-        for tool in data[test]["tools"]:
-            if tool["sound"]: 
-                row_data += "\\cmark & "
-                pretty_row.append("✓")
-            else: 
-                row_data += "\\xmark & "
-                pretty_row.append("✗")
-        row_data = row_data[:-3]
+        for tool in data[microbench]["tools"]:
+            
+            if 'ourtool' in tool['name']: 
+                pretty_row.append(tool['soundness']['sound'])
+                continue 
+
+            if tool["callgraph"] == None:
+                tools_data += "\multicolumn{3}{c|}{Did Not Execute} & "
+                pretty_row.append("-")
+            else:
+                graph = tool["callgraph"]["graph"]
+                graph_nodes = len(set([int(x) for x in graph.keys()]+[int(y) for x in graph.values() for y in x ]))
+                graph_edges = 0
+                for key in graph: graph_edges += len(graph[key]) 
+                
+                sound = "\\xmark"
+                precise = "\\xmark"
+                if tool['soundness']['sound']: sound = "\cmark"
+                if tool['precision']['precise']: precise = "\cmark"
+                tools_data += (f"{tool['callgraph']['reachable_edges']['count']} & {sound} & {precise} & ")
+                
+                pretty_row.append(tool['soundness']['sound'])
+                
+
+        tools_data = tools_data[:-3]
         
-        f.write(f"    {gray} {test} & {challenges} & {row_data}\\\\\n")        
+        #print(data[microbench]['precise_callgraph'])
+
+        f.write("    {} {} & {} & {} & {} & {}\\\\\n".format(
+            gray, microbench, 
+            challenges, 
+            data[microbench]["precise_callgraph"]["reachable_functions"]["count"],
+            data[microbench]["precise_callgraph"]["reachable_edges"]["count"],
+            tools_data
+        ))        
         
         benchmark_counter += 1
-        rows_data.append([test] + pretty_row) 
+        rows_data.append([microbench] + pretty_row) 
 
     f.write("    \\bottomrule\n")
     f.write("\end{tabular}\n")
-    f.write("\caption{Evaluation of tools on microbenchmarks}\n")
-    f.write("\label{micro:eval}\n")
     f.write("\end{table*}\n")
 
     return rows_data
@@ -168,7 +238,6 @@ def recall_precision_pretty_table(data):
     table = PrettyTable()
     table.title = "Recall of every tool on each library"
     table.field_names = ["Library", "F_total", "F_dyn", 
-                         "Ourtool Recall", 
                          "Wassail Recall", 
                          "Metadce Recall", 
                          "Twiggy Recall",
@@ -188,7 +257,7 @@ def coverage_pretty_table(data):
 def micro_eval_pretty_table(data): 
     table = PrettyTable()
     table.title = "Evaluation of each tool against the microbenchmarks"
-    table.field_names = ["Name", "Ourtool", "Wassail", "Metadce", "Twiggy", "WAVM"]
+    table.field_names = ["Name", "CBA", "Wassail", "Metadce", "Twiggy", "WAVM"]
     table.add_rows(data)
     print(table)
 
@@ -217,10 +286,8 @@ def main():
     with open(LATEX_COVERAGE_TABLE, "w") as f_tab:
         row_data = coverage_latex_table(f_tab, real_data)
         coverage_pretty_table(row_data)
-
+    
     print("The LaTeX tables can be found in the paper repo.")
     
-
-
 if __name__ == "__main__":
     main()

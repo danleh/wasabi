@@ -21,7 +21,8 @@ OURTOOL_BINARY_PATH = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/targ
     
 DOT_FILE_EDGE_RE = "^(?:\"f(\d+)\"|\"(.+)\"|node(\d+)) ?-> ?(?:\"f(\d+)\"|\"(.+)\"|node(\d+));$"
 
-METADCE_ROOT_RE = "root: (?:func\$(\d+)\$\d+|(.+))$"
+METADCE_ROOT_FUNC_RE = "root: func\$(\d+)\$\d+$"
+METADCE_ROOT_EXPORT_RE = "root: (.+)$"
 METADCE_NODE_FUNC_RE = "node: func\$(\d+)\$\d+$"
 METADCE_NODE_EXPORT_RE = "node: (.+)$"
 METADCE_REACHES_IMPORT_RE = "reaches: importId\$fimport\$(\d+)\$\d+$"
@@ -42,6 +43,7 @@ REAL_BIN, MICRO_BIN = False, False
 def extract_lib(path): 
 	path = path[:path.rfind("/")]
 	return path[path.rfind("/")+1:]
+
 
 def execute_command(command, program, output_file, write_stdout=True): 
     MAX_PROGRAM_LEN = 24
@@ -170,6 +172,7 @@ def run_wavm(wasm_file, lib):
         status, _, _ = execute_command('opt-12 {} --dot-callgraph'.format(wavm_bc_path), "opt", tool_shell_output)
     return (status, exec_time) 
 
+# replace names in a list
 def replace_names_with_internal_ids(funcs, export_names, import_names ):
     funcs_replaced  = set()
     export_names = {item['name']: {"type":item["type"], "internal_id": item['internal_id']} for item in export_names}
@@ -184,40 +187,58 @@ def replace_names_with_internal_ids(funcs, export_names, import_names ):
         elif str(f).isdigit(): funcs_replaced.add(int(f))
     return list(funcs_replaced) 
 
-def get_reachable_funcs_from_dot(cg_path, lib_obj):
-
-    def replace_graph_nodes_with_id(old_graph):
+# replace names through a graph 
+def replace_graph_nodes_with_id(old_graph, lib_obj):
     
-        export_names = {item['name']: {"type":item["type"], "internal_id": item['internal_id']} for item in lib_obj["static_info"]["exports"]["names"]}
-        import_names = {item["module_name"]+"."+item["export_name_within_module"]: {"type":item["type"], "internal_id": item['internal_id']} for item in lib_obj["static_info"]["imports"]["names"]}
+    export_names = {item['name']: {"type":item["type"], "internal_id": item['internal_id']} for item in lib_obj["static_info"]["exports"]["names"]}
+    import_names = {item["module_name"]+"."+item["export_name_within_module"]: {"type":item["type"], "internal_id": item['internal_id']} for item in lib_obj["static_info"]["imports"]["names"]}
 
-        def replace_name_with_id(name):
-            if name in export_names.keys(): 
-                if export_names[name]["type"] == "function": 
-                    return export_names[name]["internal_id"]
-            elif name in import_names.keys(): 
-                if import_names[name]["type"] == "function": return import_names[name]["internal_id"]
-            else: sys.exit("Unknown identifier for function found {}".format(name))
-        
-        new_graph = {}
-        for from_node in old_graph:
-            from_node_id = -1
-            if not str(from_node).isdigit(): 
-                #it is an exported or imported function index and has to be replaced with its internal id 
-                from_node_id = replace_name_with_id(from_node)
-                if from_node_id != None: 
-                    from_node_id = int(from_node_id)
-                    new_graph[from_node_id] = []
-            else: 
-                from_node_id = int(from_node)
-                new_graph[int(from_node)] = []
+    def replace_name_with_id(name):
+        if name in export_names.keys(): 
+            if export_names[name]["type"] == "function": 
+                return export_names[name]["internal_id"]
+        elif name in import_names.keys(): 
+            if import_names[name]["type"] == "function": return import_names[name]["internal_id"]
+        else: sys.exit("Unknown identifier for function found {}".format(name))
+    
+    new_graph = {}
+    for from_node in old_graph:
+        from_node_id = -1
+        if not str(from_node).isdigit(): 
+            #it is an exported or imported function index and has to be replaced with its internal id 
+            from_node_id = replace_name_with_id(from_node)
+            if from_node_id != None: 
+                from_node_id = int(from_node_id)
+                new_graph[from_node_id] = []
+        else: 
+            from_node_id = int(from_node)
+            new_graph[int(from_node)] = []
 
-            for to_node in old_graph[from_node]:
-                if from_node_id != None:
-                    if not str(to_node).isdigit(): 
-                        to_node = replace_name_with_id(to_node) 
+        for to_node in old_graph[from_node]:
+            if from_node_id != None:
+                if not str(to_node).isdigit(): 
+                    to_node = replace_name_with_id(to_node)
+                if to_node != None:
                     new_graph[from_node_id].append(int(to_node))
-        return new_graph
+    return new_graph
+
+def get_reachable_funcs_and_edges(graph, initially_reachable_funcs):
+    reachable_funcs = initially_reachable_funcs 
+    edges = set()
+    worklist = set(reachable_funcs)
+    processed_list = set()
+    while len(worklist) != 0:
+        node = worklist.pop()
+        reachable_funcs.add(node)
+        if node not in processed_list and node in graph.keys(): #it is not a leaf
+            processed_list.add(node)
+            for target in list(graph[node]):
+                if target not in processed_list: 
+                    edges.add((node, target))
+                    worklist.add(target)
+    return set(reachable_funcs), edges
+
+def get_reachable_funcs_from_dot(cg_path, lib_obj):
 
     def get_graph(path):    
         graph = {}
@@ -234,28 +255,40 @@ def get_reachable_funcs_from_dot(cg_path, lib_obj):
                     else: 
                         graph[from_node] = set()
                         graph[from_node].add(to_node)
-        #print(graph)        
-        #print("created graph")
-        return replace_graph_nodes_with_id(graph)
+        return replace_graph_nodes_with_id(graph, lib_obj)
 
     graph = get_graph(cg_path)
     reachable_funcs = set([int(e["internal_id"]) for e in lib_obj["static_info"]["exports"]["names"] if e["type"] == "function"])
-    worklist = set(reachable_funcs)
-    processed_list = set()
-    while len(worklist) != 0:
-        node = worklist.pop()
-        reachable_funcs.add(node)
-        if node not in processed_list and node in graph.keys(): #it is not a leaf
-            processed_list.add(node)
-            for target in list(graph[node]):
-                if target not in processed_list: 
-                    worklist.add(target)
     
-    return (graph, reachable_funcs)
+    reachable_funcs, reachable_edges = get_reachable_funcs_and_edges(graph, reachable_funcs)
+    
+    #worklist = set(reachable_funcs)
+    #processed_list = set()
+    #while len(worklist) != 0:
+    #    node = worklist.pop()
+    #    reachable_funcs.add(node)
+    #    if node not in processed_list and node in graph.keys(): #it is not a leaf
+    #        processed_list.add(node)
+    #        for target in list(graph[node]):
+    #            if target not in processed_list: 
+    #                worklist.add(target)
+    
+    return (graph, reachable_funcs, reachable_edges)
 
 def process_metadce(new_graph_path, lib):
     import_funcs_num = int(lib['static_info']['imports']['count_imported_funcs'])
     
+    export_names = {item['name']: {"type":item["type"], "internal_id": item['internal_id']} for item in lib["static_info"]["exports"]["names"]}
+    import_names = {item["module_name"]+"."+item["export_name_within_module"]: {"type":item["type"], "internal_id": item['internal_id']} for item in lib["static_info"]["imports"]["names"]}
+    
+    def replace_name_with_id(name):
+        if name in export_names.keys(): 
+            if export_names[name]["type"] == "function": 
+                return export_names[name]["internal_id"]
+        elif name in import_names.keys(): 
+            if import_names[name]["type"] == "function": return import_names[name]["internal_id"]
+        else: sys.exit("Unknown identifier for function found {}".format(name))
+
     def parse_graph_into_nodes(graph_path):
         graph_lines, graph_lines_ind = [], -1
         with open(graph_path) as graph:
@@ -277,22 +310,27 @@ def process_metadce(new_graph_path, lib):
         garbage = [] 
         for lines in graph_lines: 
             if len(lines) == 1: 
-                root = re.search(METADCE_ROOT_RE, lines[0])
-                if root:
-                    root = "".join([node for node in root.groups() if node != None][0])
-                    roots.add(root)
+                func_root = re.search(METADCE_ROOT_FUNC_RE, lines[0])
+                if func_root:
+                    func_root = int([node for node in func_root.groups() if node != None][0]) + import_funcs_num
+                    roots.add(func_root)
                 else: 
-                    unused = re.search(METADCE_UNUSED_RE, lines[0])                
-                    # TODO: don't report everything to be garbage. Make sure it's a function
-                    if unused: 
-                        unused = unused.groups()[0]
-                        garbage.append(unused)
-                    else: sys.exit("unknown line(s) in metadce new graph: {}".format(lines))
+                    export_root = re.search(METADCE_ROOT_EXPORT_RE, lines[0])
+                    if export_root:
+                        export_root = "".join([node for node in export_root.groups() if node != None][0])
+                        roots.add(export_root)
+                    else: 
+                        unused = re.search(METADCE_UNUSED_RE, lines[0])                
+                        # TODO: don't report everything to be garbage. Make sure it's a function
+                        if unused: 
+                            unused = unused.groups()[0]
+                            garbage.append(unused)
+                        else: sys.exit("unknown line(s) in metadce new graph: {}".format(lines))
             else:   
                 node = re.search(METADCE_NODE_FUNC_RE, lines[0])
                 if node: 
                     node = [n for n in node.groups() if n != None][0]
-                    node = str(int(node) + import_funcs_num)
+                    node = int(node) + import_funcs_num
                 else: 
                     node_ = re.search(METADCE_NODE_EXPORT_RE, lines[0])
                     node = [node for node in node_.groups() if node != None][0]
@@ -302,77 +340,135 @@ def process_metadce(new_graph_path, lib):
                 for t in lines[2:]:
                     target = re.search(METADCE_REACHES_IMPORT_RE, t)
                     if target: 
-                        target = [node for node in target.groups() if node != None][0]
+                        target = int([node for node in target.groups() if node != None][0])
                         targets.append(target)
                     else: 
                         target = re.search(METADCE_REACHES_FUNC_RE, t)
                         if target: 
                             target = int([node for node in target.groups() if node != None][0]) + import_funcs_num
-                            targets.append(str(target))        
+                            targets.append(target)        
                 graph[node] = targets
         return (graph, roots, garbage)
         
     graph, reachable_funcs, garbage = get_graph(new_graph_path)
-    worklist = list(reachable_funcs)
-    reachable_funcs = set(reachable_funcs)
-    processed_list = []
-    while len(worklist) != 0:
-        node = worklist.pop()
-        if node in graph.keys(): #it is not a leaf
-            processed_list.append(node)
-            for target in graph[node]:
-                if target not in processed_list: worklist.append(target)
-                reachable_funcs.add(target)
+    reachable_funcs, reachable_edges = get_reachable_funcs_and_edges(graph, reachable_funcs)
     
-    graph = {from_node: graph[from_node] for from_node in graph if from_node.isdigit()}
+    reachable_edges_normalized = set()
+    for node, child in reachable_edges: 
+        node_is_export = False
+        if not str(node).isdigit(): 
+            node_is_export = node in export_names
+            node = replace_name_with_id(node)
+        if not str(child).isdigit(): child = replace_name_with_id(child)
+        # node == child is when their export nodes point to their internal function id nodes 
+        # What about recursive nodes! node_is_export makes sure that recursive edges are not removed
+        if not node_is_export:
+            reachable_edges_normalized.add((node, child))  
+    
+    graph = {from_node: graph[from_node] for from_node in graph if str(from_node).isdigit()}
+
     return (graph, 
             replace_names_with_internal_ids(
                 reachable_funcs, 
                 lib['static_info']['exports']['names'],
                 lib['static_info']['imports']['names']), 
+            reachable_edges_normalized, 
             list(garbage))
     
 def process_twiggy(internal_ir_path, garbage_path, lib):
-    IR = {}
-    with open(internal_ir_path) as ir_f: 
-        for line in ir_f: 
-            id_num1, id_num2, name, reaches = re.search(TWIGGY_IR_LINE_RE, line).groups()
-            targets = []
-            if reaches != "None": 
-                # When you want matches of a pattern that is recursive (uses *, +), 
-                # don't use re.search because it won't return all matches in * or +. 
-                # Instead, match on the individual recursive component 
-                # and split on it to get all elements.  
-                targets_ = re.split(TWIGGY_IR_REACHES_RE,reaches[6:-2])
-                targets_ = [x for x in targets_ if len(x) != 0 and x != ", "]
-                if len(targets_)%2 != 0: sys.exit("ID should have two numbers associated with it: {}".format(reaches))
-                for ind in range(0, len(targets_), 2): 
-                    targets.append((int(targets_[ind]), int(targets_[ind+1])))
-            IR[(int(id_num1), int(id_num2))] = {
-                'name': name, 
-                'targets': targets
-            }
     
-    # Not set because you get an 'int' object is not iterable error when you try to update it with func:int  
-    # TODO: make set and figure out why the error shows up?
-    graph = {}
-    reachable_funcs = [] 
+    def get_IR_graph(path):
+        IR = {}
+        with open(internal_ir_path) as ir_f: 
+            for line in ir_f: 
+                id_num1, id_num2, name, reaches = re.search(TWIGGY_IR_LINE_RE, line).groups()
+                targets = []
+                if reaches != "None": 
+                    # When you want matches of a pattern that is recursive (uses *, +), 
+                    # don't use re.search because it won't return all matches in * or +. 
+                    # Instead, match on the individual recursive component 
+                    # and split on it to get all elements.  
+                    targets_ = re.split(TWIGGY_IR_REACHES_RE,reaches[6:-2])
+                    targets_ = [x for x in targets_ if len(x) != 0 and x != ", "]
+                    if len(targets_)%2 != 0: sys.exit("ID should have two numbers associated with it: {}".format(reaches))
+                    for ind in range(0, len(targets_), 2): 
+                        targets.append((int(targets_[ind]), int(targets_[ind+1])))
+                IR[(int(id_num1), int(id_num2))] = {
+                    'name': name, 
+                    'targets': targets
+                }
+            return IR
+
+    def get_graph(IR):
+        import_funcs_num = int(lib['static_info']['imports']['count_imported_funcs'])
+
+        graph = {}
+        for node in IR:
+            
+            name, targets = IR[node].values()
+            graph_from_node = False
+
+            if "code[" in name: 
+                graph_from_node = node[1] + import_funcs_num
+                
+            if graph_from_node != False and graph_from_node not in graph.keys(): 
+                graph[graph_from_node] = []
+        
+            if graph_from_node:
+                for target in targets:
+
+                    target_name = IR[target]['name']
+                    if "code[" in target_name: 
+                        f_id = int(re.search(r'\d+', target_name).group()) + import_funcs_num
+                        graph[graph_from_node].append(f_id)
+                    
+                    if "import" in target_name and "section" not in target_name: 
+                        import_name = ".".join(target_name.split(" ")[1].split("::"))
+                        import_id = [x['internal_id'] for x in lib['static_info']['imports']['names'] if x["module_name"]+"."+x["export_name_within_module"] == import_name][0]
+                        graph[graph_from_node].append(int(import_id))
+
+        return graph
+
+    IR = get_IR_graph(internal_ir_path)
+    import_funcs_num = int(lib['static_info']['imports']['count_imported_funcs'])
+    reachable_funcs = set() 
+    reachable_edges = set()
     worklist = [(TWIGGY_META_ROOT_ID, TWIGGY_META_ROOT_ID)]
-    processed_nodes = [] # we don't want any cycles, or repeated computations  
+    processed_nodes = set() # we don't want any cycles, or repeated computations  
     while len(worklist) != 0: 
         node = worklist.pop()
         name, targets = IR[node].values()
-        processed_nodes.append(node)
-        if node[0] not in graph.keys(): graph[str(node[0])] = []
-        for target in targets: 
-            if target not in processed_nodes: worklist.append(target)
-            func = re.search(TWIGGY_FUNC_RE, name)
-            if func: 
-                func = int(func.groups()[0])
-                reachable_funcs.append(func)
-                graph[str(node[0])].append(func)            
-    reachable_funcs = set(reachable_funcs)            
+        
+        graph_from_node = False
 
+        if "code[" in name: 
+            graph_from_node = node[1] + import_funcs_num
+            reachable_funcs.add(graph_from_node)
+        
+        if "import" in name and "section" not in name:
+            graph_from_node = ".".join(name.split(" ")[1].split("::"))
+            reachable_funcs.add(graph_from_node)
+
+        if node not in processed_nodes:
+            processed_nodes.add(node)
+            for target in targets: 
+                
+                if target not in processed_nodes: 
+                    worklist.append(target)
+
+                    if graph_from_node != False:
+
+                        target_name = IR[target]['name']
+                        if "code[" in target_name: 
+                            f_id = int(re.search(r'\d+', target_name).group()) + import_funcs_num
+                            reachable_edges.add((graph_from_node, f_id))
+                        
+                        if "import" in target_name and "section" not in target_name: 
+                            import_name = ".".join(target_name.split(" ")[1].split("::"))
+                            import_id = [x['internal_id'] for x in lib['static_info']['imports']['names'] if x["module_name"]+"."+x["export_name_within_module"] == import_name][0]
+                            reachable_edges.add((graph_from_node, int(import_id)))
+
+    
     garbage_funcs = []
     with open(garbage_path) as garbage_f: 
         garbage_lines = garbage_f.readlines()[2:]
@@ -384,11 +480,15 @@ def process_twiggy(internal_ir_path, garbage_path, lib):
                 garbage_funcs.append(func)
     garbage_funcs = set(garbage_funcs)
 
+    graph = replace_graph_nodes_with_id(get_graph(IR), lib)
+    #graph = replace_graph_nodes_with_id({f : graph[f] for f in graph.keys() if len(graph[f]) != 0}, lib)
+    
     return (graph, 
             replace_names_with_internal_ids(
                 reachable_funcs, 
                 lib['static_info']['exports']['names'],
                 lib['static_info']['imports']['names']),
+            reachable_edges,
             list(garbage_funcs))
 
 def process_wavm_dot(dot_path, lib):
@@ -433,20 +533,10 @@ def process_wavm_dot(dot_path, lib):
     
     graph = get_graph(dot_path)
     reachable_funcs = set([int(e["internal_id"]) for e in lib["static_info"]["exports"]["names"] if e["type"] == "function"])
-    worklist = set(reachable_funcs)
-    processed_list = set()
-    while len(worklist) != 0:
-        node = worklist.pop()
-        reachable_funcs.add(node)
-        if node not in processed_list and node in graph.keys(): #it is not a leaf
-            processed_list.add(node)
-            for target in list(graph[node]):
-                if target not in processed_list: 
-                    worklist.add(target)
-    return (graph, reachable_funcs)
+    reachable_funcs, reachable_edges = get_reachable_funcs_and_edges(graph, reachable_funcs)
     
-    #return (graph, [int(f) for f in reachable_funcs])
-
+    return (graph, reachable_funcs, reachable_edges)
+    
 def pretty_print_reachable_funcs(counts):
     tools = ["ourtool", "wassail", "metadce", "twiggy", "wavm"]
     count_no_None = [count for count in counts if count!= None and type(count)==int]
@@ -467,7 +557,6 @@ def main():
         print("The set of reachable functions is extracted from the reachability graph for each tool.")
         print("--real-update-json\tUpdate data.json with the set of reachable functions for each tool information.")
         print("--micro-update-json\tUpdate data.json with the set of reachable functions for each tool information.")
-
 
     args = sys.argv[1:]
     if args[0] == "-h" or args[0] == "--help": 
@@ -523,7 +612,7 @@ def main():
     #wassail_status = False
     #metadce_status = False
     #twiggy_status = False
-    #awsm_status = False
+    #awsm_status = False 
     #wavm_status = False
     
     reachable_funcs_count = [None]*5
@@ -531,18 +620,38 @@ def main():
     print("Processing ourtool...")
     if ourtool_status: 
         cg_path = "{}/{}/CG_tools_data/our_tool/callgraph.dot".format(DATA_PATH, lib_name)
-        graph, reachable_funcs = get_reachable_funcs_from_dot(cg_path, lib_obj)
-        lib_obj["tools"].append({
-            "name": "ourtool",
-            "callgraph_construction": True, 
-            "dce" : False,
-            "execution_time": ourtool_time, 
-            "graph": graph,
-            "reachable_functions": {
-                "names": list(reachable_funcs), 
-                "count": len(reachable_funcs)
-            }
-        })
+        graph, reachable_funcs, reachable_edges = get_reachable_funcs_from_dot(cg_path, lib_obj)
+        if real_update_json:
+            lib_obj["tools"].append({
+                "name": "ourtool",
+                "callgraph_construction": True, 
+                "dce" : False,
+                "execution_time": ourtool_time, 
+                "callgraph": {
+                    "reachable_functions": {
+                        "names": list(reachable_funcs), 
+                        "count": len(reachable_funcs)
+                    }
+                }
+            })
+        elif micro_update_json:
+            lib_obj["tools"].append({
+                "name": "ourtool",
+                "callgraph_construction": True, 
+                "dce" : False,
+                "execution_time": ourtool_time, 
+                "callgraph": {
+                    "graph": graph,
+                    "reachable_functions": {
+                        "names": list(reachable_funcs), 
+                        "count": len(reachable_funcs)
+                    }, 
+                    "reachable_edges": {
+                        "names": list(reachable_edges), 
+                        "count": len(reachable_edges)
+                    }
+                }
+            })
         reachable_funcs_count[0] = len(reachable_funcs)
     else:
         lib_obj["tools"].append({
@@ -550,55 +659,97 @@ def main():
             "callgraph_construction": True, 
             "dce" : False,
             "execution_time": None, 
-            "graph": None,
-            "reachable_functions": None
+            "callgraph": None
         })
 
     print("Processing wassail...")                        
     if wassail_status: 
         cg_path = "{}/{}/CG_tools_data/wassail/callgraph.dot".format(DATA_PATH, lib_name)
-        graph, reachable_funcs = get_reachable_funcs_from_dot(cg_path, lib_obj)
-        lib_obj["tools"].append({
-            "name": "wassail",
-            "callgraph_construction": True, 
-            "dce" : False,
-            "execution_time": wassail_time, 
-            "graph": graph, 
-            "reachable_functions": {
-                "names": list(reachable_funcs), 
-                "count": len(reachable_funcs)
-            }
-        })
+        graph, reachable_funcs, reachable_edges  = get_reachable_funcs_from_dot(cg_path, lib_obj)
+        if real_update_json:
+            lib_obj["tools"].append({
+                "name": "wassail",
+                "callgraph_construction": True, 
+                "dce" : False,
+                "execution_time": wassail_time, 
+                "callgraph": {
+                    "reachable_functions": {
+                        "names": list(reachable_funcs), 
+                        "count": len(reachable_funcs)
+                    }
+                }
+            })
+        elif micro_update_json:
+            lib_obj["tools"].append({
+                "name": "wassail",
+                "callgraph_construction": True, 
+                "dce" : False,
+                "execution_time": wassail_time, 
+                "callgraph": {
+                    "graph": graph,
+                    "reachable_functions": {
+                        "names": list(reachable_funcs), 
+                        "count": len(reachable_funcs)
+                    }, 
+                    "reachable_edges": {
+                        "names": list(reachable_edges), 
+                        "count": len(reachable_edges)
+                    }
+                }
+            })
         reachable_funcs_count[1] = len(reachable_funcs)
     else:
         lib_obj["tools"].append({
             "name": "wassail",
             "callgraph_construction": True, 
             "dce" : False,
-            "graph": None, 
+            "callgraph": None, 
             "execution_time": None, 
-            "reachable_functions": None
         })        
 
-    print("Processing wassail...")                        
+    print("Processing metadce...")                        
     if metadce_status:
         new_graph_path = '{}/{}/CG_tools_data/metadce/new-graph.txt'.format(DATA_PATH, lib_name)
-        graph, reachable_funcs, garbage_funcs = process_metadce(new_graph_path, lib_obj)
-        lib_obj["tools"].append({
-            "name": "metadce",
-            "callgraph_construction": False,
-            "dce" : True,
-            "execution_time": metadce_time,  
-            "graph": graph, 
-            "reachable_functions": {
-                "names": list(reachable_funcs), 
-                "count": len(reachable_funcs)
-            },
-            "garbage_functions": {
-                "names": list(garbage_funcs), 
-                "count": len(garbage_funcs)
-            }
-        })
+        graph, reachable_funcs, reachable_edges, garbage_funcs = process_metadce(new_graph_path, lib_obj)
+        if real_update_json:
+            lib_obj["tools"].append({
+                "name": "metadce",
+                "callgraph_construction": False,
+                "dce" : True,
+                "execution_time": metadce_time,  
+                "callgraph": {
+                    "reachable_functions": {
+                        "names": list(reachable_funcs), 
+                        "count": len(reachable_funcs)
+                    }
+                },
+                "garbage_functions": {
+                    "names": list(garbage_funcs), 
+                    "count": len(garbage_funcs)
+                }
+            })
+        elif micro_update_json:
+            lib_obj["tools"].append({
+                "name": "metadce",
+                "callgraph_construction": False,
+                "dce" : True,
+                "execution_time": metadce_time,  
+                "callgraph": {
+                    "graph": graph,
+                    "reachable_functions": {
+                        "names": list(reachable_funcs), 
+                        "count": len(reachable_funcs)
+                    }, 
+                    "reachable_edges": {
+                        "names": list(reachable_edges), 
+                        "count": len(reachable_edges)
+                    }
+                },
+                "garbage_functions": {
+                    "names": list(garbage_funcs), 
+                    "count": len(garbage_funcs)
+                }
+            })
         reachable_funcs_count[2] = len(reachable_funcs)
     else:
         lib_obj["tools"].append({
@@ -606,31 +757,53 @@ def main():
             "callgraph_construction": False,
             "dce" : True,
             "execution_time": None, 
-            "graph": None,
-            "reachable_functions": None,
-            "garbage_functions": None
+            "callgraph": None,
         })
-
+ 
     print("Processing twiggy...")                        
     if twiggy_status: 
         internal_ir_path = '{}/{}/CG_tools_data/twiggy/internal_ir.txt'.format(DATA_PATH, lib_name)
         garbage_path = '{}/{}/CG_tools_data/twiggy/garbage.txt'.format(DATA_PATH, lib_name)
-        graph, reachable_funcs, garbage_funcs = process_twiggy(internal_ir_path, garbage_path, lib_obj)
-        lib_obj["tools"].append({
-            "name": "twiggy",
-            "callgraph_construction": False,
-            "dce" : True,
-            "execution_time": twiggy_time,  
-            "graph": graph, 
-            "reachable_functions": {
-                "names": list(reachable_funcs), 
-                "count": len(reachable_funcs)
-            },
-            "garbage_functions": {
-                "names": list(garbage_funcs), 
-                "count": len(garbage_funcs)
-            }
-        })
+        graph, reachable_funcs, reachable_edges, garbage_funcs = process_twiggy(internal_ir_path, garbage_path, lib_obj)
+        if real_update_json:
+            lib_obj["tools"].append({
+                "name": "twiggy",
+                "callgraph_construction": False,
+                "dce" : True,
+                "execution_time": twiggy_time,  
+                "callgraph": {
+                    "reachable_functions": {
+                        "names": list(reachable_funcs), 
+                        "count": len(reachable_funcs)
+                    }
+                },
+                "garbage_functions": {
+                    "names": list(garbage_funcs), 
+                    "count": len(garbage_funcs)
+                }
+            })
+        elif micro_update_json:
+            lib_obj["tools"].append({
+                "name": "twiggy",
+                "callgraph_construction": False,
+                "dce" : True,
+                "execution_time": twiggy_time,  
+                "callgraph": {
+                    "graph": graph,
+                    "reachable_functions": {
+                        "names": list(reachable_funcs), 
+                        "count": len(reachable_funcs)
+                    }, 
+                    "reachable_edges": {
+                        "names": list(reachable_edges), 
+                        "count": len(reachable_edges)
+                    }
+                },
+                "garbage_functions": {
+                    "names": list(garbage_funcs), 
+                    "count": len(garbage_funcs)
+                }
+            })
         reachable_funcs_count[3] = len(reachable_funcs)
     else:
         lib_obj["tools"].append({
@@ -638,7 +811,7 @@ def main():
             "callgraph_construction": False,
             "dce" : True,
             "execution_time": None,  
-            "graph": None,
+            "callgraph": None,
             "reachable_functions": None,
             "garbage_functions": None
         })
@@ -646,25 +819,45 @@ def main():
     print("Processing wavm...")                        
     if wavm_status:
         wavm_dot_path = '{}/{}/CG_tools_data/WAVM/wavm.bc.callgraph.dot'.format(DATA_PATH, lib_name)
-        graph, reachable_funcs = process_wavm_dot(wavm_dot_path, lib_obj)
-        lib_obj["tools"].append({
-            "name": "wavm",
-            "callgraph_construction": True,
-            "dce" : False,
-            "execution_time": wavm_time,  
-            "graph": graph,
-            "reachable_functions": {
-                "names": list(reachable_funcs), 
-                "count": len(reachable_funcs)
-            }
-        })
+        graph, reachable_funcs, reachable_edges = process_wavm_dot(wavm_dot_path, lib_obj)
+        if real_update_json:
+            lib_obj["tools"].append({
+                "name": "wavm",
+                "callgraph_construction": True,
+                "dce" : False,
+                "execution_time": wavm_time,  
+                "callgraph": {
+                    "reachable_functions": {
+                        "names": list(reachable_funcs), 
+                        "count": len(reachable_funcs)
+                    }
+                }
+            })
+        elif micro_update_json:
+            lib_obj["tools"].append({
+                "name": "wavm",
+                "callgraph_construction": True,
+                "dce" : False,
+                "execution_time": wavm_time,  
+                "callgraph": {
+                    "graph": graph,
+                    "reachable_functions": {
+                        "names": list(reachable_funcs), 
+                        "count": len(reachable_funcs)
+                    }, 
+                    "reachable_edges": {
+                        "names": list(reachable_edges), 
+                        "count": len(reachable_edges)
+                    }
+                }
+            })
         reachable_funcs_count[4] = len(reachable_funcs)
     else:
         lib_obj["tools"].append({
             "name": "wavm",
             "callgraph_construction": True,
             "dce" : False,
-            "graph": None,
+            "callgraph": None,
             "execution_time": None,  
             "reachable_functions": None
         })

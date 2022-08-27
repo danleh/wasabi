@@ -256,7 +256,7 @@ for tab in r_data[lib]['tables']:
 # Element Section 
 for elem in r_data[lib]['elems']:
 	elem_funcs = re.search("func (\d+ )*\d+", elem)[0]
-	elem_funcs = elem_funcs[5:].split(" ")
+	elem_funcs = set(elem_funcs[5:].split(" "))
 	elem_ind = re.search(get_ind_re, elem)[0][2:-2]
 	
 	elem_start_type = ''
@@ -278,7 +278,7 @@ for elem in r_data[lib]['elems']:
 			'type': elem_start_type, # variable or constant  
 			'value': elem_start,
 		},
-		'entries': elem_funcs, 
+		'entries': list(elem_funcs), 
 		'count': len(elem_funcs)
 	}
 
@@ -333,6 +333,7 @@ elif update_micro_json:
 else:
 	MAX_LEFT_LEN = 25
 	print("#types:{}{}".format(" "*(MAX_LEFT_LEN-7),p_data[lib]['types'],)) 
+	print("table {}".format(p_data[lib]['tables']))
 	print("#functions:{}{}".format(" "*(MAX_LEFT_LEN-11),p_data[lib]['funcs'],)) 
 	print("#imports:{}{}".format(" "*(MAX_LEFT_LEN-9),p_data[lib]['imports']['count_total']))
 	print("#imported functions:{}{}".format(" "*(MAX_LEFT_LEN-20),p_data[lib]['imports']['count_imported_funcs']))

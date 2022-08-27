@@ -2,7 +2,7 @@
     "00" : {
         "name": "simple-direct-call",
         "challenges": null,
-        "precise-callgraph" : {
+        "precise_callgraph" : {
             "1" : [2],
             "2" : [0]
         }
@@ -10,7 +10,7 @@
     "01" : {
         "name": "exported-funcs",
         "challenges": ["no-host-code"], 
-        "precise-callgraph" : {
+        "precise_callgraph" : {
             "1" : [3],
             "2" : [4],
             "3" : [0],
@@ -20,7 +20,7 @@
     "02" : {
         "name": "host-code-imported-funcs",
         "challenges": ["imported-host-code-behaviour"],
-        "precise-callgraph" : {
+        "precise_callgraph" : {
             "2" : [1],
             "1" : [3,4],
             "3" : [0],
@@ -30,7 +30,7 @@
     "03" : {
         "name": "indirect-call-func-in-table",
         "challenges": ["indirect-call-in-table"],
-        "precise-callgraph" : {
+        "precise_callgraph" : {
             "1" : [2],
             "2" : [0]
         }
@@ -38,7 +38,7 @@
     "04" : {
         "name": "indirect-call-type-based",
         "challenges": ["indirect-call-correct-type"],
-        "precise-callgraph" : {
+        "precise_callgraph" : {
             "1" : [2],
             "2" : [0]
         }
@@ -46,7 +46,7 @@
     "05" : {
         "name": "host-code-table-mutable",
         "challenges": ["table-mutation"],
-        "precise-callgraph" : {
+        "precise_callgraph" : {
             "1" : [3],
             "3" : [0],
             "4" : [0]
@@ -55,7 +55,7 @@
     "06" : {
         "name": "host-code-table-mutable",
         "challenges": ["table-exported"],
-        "precise-callgraph" : {
+        "precise_callgraph" : {
             "2" : [1],
             "3" : [0],
             "4" : [0]
@@ -64,7 +64,7 @@
     "07" : {
         "name": "indirect-call-index-expr-const",
         "challenges": ["indirect-call-const-index-expr"],
-        "precise-callgraph" : {
+        "precise_callgraph" : {
             "1" : [2], 
             "2" : [0]
         }
@@ -72,7 +72,7 @@
     "08" : {
         "name": "indirect-call-index-expr-mask",
         "challenges": ["indirect-call-masked-index-expr"],
-        "precise-callgraph" : {
+        "precise_callgraph" : {
             "1" : [3],
             "3" : [0]
         }
@@ -80,7 +80,7 @@
     "09" : {
         "name": "indirect-call-index-expr-load-const-addr",
         "challenges": ["indirect-call-load-const-index-expr"],
-        "precise-callgraph" : {
+        "precise_callgraph" : {
             "1" : [2], 
             "2" : [3]
         }
@@ -88,7 +88,7 @@
     "10" : {
         "name": "memory-data-init-imported-global",
         "challenges": ["indirect-call-const-index-expr"],
-        "precise-callgraph" : {
+        "precise_callgraph" : {
             "1": [0]
         }
     }
