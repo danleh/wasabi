@@ -1,95 +1,297 @@
 {
-    "00" : {
-        "name": "simple-direct-call",
+    "direct-call-simple" : {
         "challenges": null,
-        "precise_callgraph" : {
-            "1" : [2],
-            "2" : [0]
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1], 
+                "1": [], 
+                "2": []       
+            }
         }
     },
-    "01" : {
-        "name": "exported-funcs",
-        "challenges": ["no-host-code"], 
-        "precise_callgraph" : {
-            "1" : [3],
-            "2" : [4],
-            "3" : [0],
-            "4" : [0]
+    "direct-call-transitive" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1], 
+                "1": [2], 
+                "2": [], 
+                "3": [4], 
+                "4": []
+            }
         }
     }, 
-    "02" : {
-        "name": "host-code-imported-funcs",
-        "challenges": ["imported-host-code-behaviour"],
-        "precise_callgraph" : {
-            "2" : [1],
-            "1" : [3,4],
-            "3" : [0],
-            "4" : [0]
+    "entry-point-start" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [],
+            "precise_callgraph" : {
+                "0": [1]
+            }
         }
     }, 
-    "03" : {
-        "name": "indirect-call-func-in-table",
-        "challenges": ["indirect-call-in-table"],
-        "precise_callgraph" : {
-            "1" : [2],
-            "2" : [0]
-        }
-    },
-    "04" : {
-        "name": "indirect-call-type-based",
-        "challenges": ["indirect-call-correct-type"],
-        "precise_callgraph" : {
-            "1" : [2],
-            "2" : [0]
+    "entry-point-wasi" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [],
+            "precise_callgraph" : {
+                "0": [1], 
+                "1": [],
+                "2": []
+            }
         }
     }, 
-    "05" : {
-        "name": "host-code-table-mutable",
-        "challenges": ["table-mutation"],
-        "precise_callgraph" : {
-            "1" : [3],
-            "3" : [0],
-            "4" : [0]
+    "host-callbacks-exports" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "1": [0], 
+                "2": [4], 
+                "3": [5], 
+                "6": []
+            }
         }
     }, 
-    "06" : {
-        "name": "host-code-table-mutable",
-        "challenges": ["table-exported"],
-        "precise_callgraph" : {
-            "2" : [1],
-            "3" : [0],
-            "4" : [0]
+    "host-code-table-mutable" : {
+        "weird": true,  
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [],
+            "precise_callgraph" : {
+            }
         }
     }, 
-    "07" : {
-        "name": "indirect-call-index-expr-const",
-        "challenges": ["indirect-call-const-index-expr"],
-        "precise_callgraph" : {
-            "1" : [2], 
-            "2" : [0]
+    "host-code-table-export" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": ["2"],
+                "1": 0, 
+                "2": [],
+                "3": ["4"], 
+                "4": []
+            }
         }
     }, 
-    "08" : {
-        "name": "indirect-call-index-expr-mask",
-        "challenges": ["indirect-call-masked-index-expr"],
-        "precise_callgraph" : {
-            "1" : [3],
-            "3" : [0]
+    "host-reachable-table-import" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [2],
+            "precise_callgraph" : {
+                "0": [3],
+                "2": [0], 
+                "3": [], 
+                "4": [5], 
+                "5": []
+            }
         }
-    },
-    "09" : {
-        "name": "indirect-call-index-expr-load-const-addr",
-        "challenges": ["indirect-call-load-const-index-expr"],
-        "precise_callgraph" : {
-            "1" : [2], 
-            "2" : [3]
+    }, 
+    "import-print-function" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [1],
+            "precise_callgraph" : {
+                "1": [0], 
+                "2": []
+            }
         }
-    },
-    "10" : {
-        "name": "memory-data-init-imported-global",
-        "challenges": ["indirect-call-const-index-expr"],
-        "precise_callgraph" : {
-            "1": [0]
+    }, 
+    "indirect-call-func-in-table" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1], 
+                "1": [], 
+                "2": []
+            }
+        }
+    }, 
+    "indirect-call-index-expr-const" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1], 
+                "1": [], 
+                "2": [] 
+            }
+        }
+    }, 
+    "indirect-call-index-expr-double-load" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1],
+                "1": [], 
+                "2": []
+            }
+        }
+    }, 
+    "indirect-call-index-expr-interprocedural-param" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1], 
+                "1": [2], 
+                "2": [], 
+                "3": []
+            }
+        }
+    }, 
+    "indirect-call-index-expr-interprocedural-result" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1, 2], 
+                "1": [], 
+                "2": [], 
+                "3": []
+            }
+        }
+    }, 
+    "indirect-call-index-expr-load-const-addr" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1], 
+                "1": [], 
+                "2": []
+            }
+        }
+    }, 
+    "indirect-call-index-expr-load-interprocedural-param" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1], 
+                "1": [2], 
+                "2": [], 
+                "3": []
+            }
+        }
+    }, 
+    "indirect-call-index-expr-load-interprocedural-result" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1, 2], 
+                "1": [], 
+                "2": [], 
+                "3": []
+            }
+        }
+    }, 
+    "indirect-call-index-expr-local" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [2], 
+                "1": [], 
+                "2": []
+            }
+        }
+    }, 
+    "indirect-call-index-expr-mask" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1, 2], 
+                "1": [], 
+                "2": [], 
+                "3": []
+            }
+        }
+    }, 
+    "indirect-call-index-expr-memory-mutable" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": ["1"], 
+                "1": [], 
+                "2": []
+            }
+        }
+    }, 
+    "indirect-call-type-based" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1], 
+                "1": [], 
+                "2": []
+            }
+        }
+    }, 
+    "memory-init-offset-imported-global" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1], 
+                "1": [],
+                "2": [] 
+            }
+        }
+    }, 
+    "table-init-offset-imported-global" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1], 
+                "1": [], 
+                "2": []
+            }
+        }
+    }, 
+    "cpp-vtable-layout-source-type-info" : {
+        "challenges": "", 
+        "ground_truth": {
+            "entry_points": ["_start", "__errno_location", "stackSave", "stackRestore", "stackAlloc"],
+            "precise_callgraph" : {
+                "wasi_snapshot_preview1.args_sizes_get": [],
+                "wasi_snapshot_preview1.args_get": [],
+                "wasi_snapshot_preview1.proc_exit": [],
+
+                "__wasm_call_ctors": [],
+
+                "module1_bool_": ["A::method__", "B::method__"],
+                "module2_bool_": ["C::method__", "D::method__"],
+
+                "main": ["module1_bool_", "module2_bool_"],
+                "A::method__": [],
+                "B::method__": [],
+                "C::method__": [],
+                "D::method__": [],
+                "_start": ["__wasm_call_ctors", "exit", "__original_main"],
+                "__original_main": ["__main_void"],
+                "__main_void": ["__wasi_args_sizes_get", "main.1", "__wasi_args_get", "__wasi_proc_exit"],
+                "main.1": ["main"],
+                "_Exit": ["__wasi_proc_exit"],
+                "libc_exit_fini": ["_fini"],
+                "exit": ["_fini", "libc_exit_fini", "_Exit"],
+                "_fini": [],
+
+                "stackSave": [],
+                "stackRestore": [],
+                "stackAlloc": [],
+                "__errno_location": []
+            }
         }
     }
 }
