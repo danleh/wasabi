@@ -1,0 +1,65 @@
+{
+    // All exported functions:
+    "entry_points": ["_start", "__errno_location", "stackSave", "stackRestore", "stackAlloc"],
+    
+    "call_graph_edges": {
+        // Imported functions:
+        "wasi_snapshot_preview1.args_sizes_get": [],
+        "wasi_snapshot_preview1.args_get": [],
+        "wasi_snapshot_preview1.proc_exit": [],
+
+        "__wasm_call_ctors": [],
+
+        // Figured out by hand, because of knowledge of the source language:
+        "module1_bool_": ["A::method__", "B::method__"],
+        "module2_bool_": ["C::method__", "D::method__"],
+
+        // Regular functions, contain only direct calls:
+        "main": ["module1_bool_", "module2_bool_"],
+        "A::method__": [],
+        "B::method__": [],
+        "C::method__": [],
+        "D::method__": [],
+        "_start": ["__wasm_call_ctors", "exit", "__original_main"],
+        "__original_main": ["__main_void"],
+        "__main_void": ["__wasi_args_sizes_get", "main.1", "__wasi_args_get", "__wasi_proc_exit"],
+        "main.1": ["main"],
+        "_Exit": ["__wasi_proc_exit"],
+        "libc_exit_fini": ["_fini"],
+        "exit": ["_fini", "libc_exit_fini", "_Exit"],
+        "_fini": [],
+        
+        // Exported functions:
+        "stackSave": [],
+        "stackRestore": [],
+        "stackAlloc": [],
+        "__errno_location": []
+    },
+
+    // Everything in the binary is reachable, confirmed with wasm-interp.
+    "reachable_functions": [
+        "wasi_snapshot_preview1.args_sizes_get",
+        "wasi_snapshot_preview1.args_get",
+        "wasi_snapshot_preview1.proc_exit",
+        "__wasm_call_ctors",
+        "module1_bool_",
+        "module2_bool_",
+        "main",
+        "A::method__",
+        "B::method__",
+        "C::method__",
+        "D::method__",
+        "_start",
+        "__original_main",
+        "__main_void",
+        "main.1",
+        "_Exit",
+        "libc_exit_fini",
+        "exit",
+        "_fini",
+        "stackSave", 
+        "stackRestore",
+        "stackAlloc",
+        "__errno_location"
+    ]
+}
