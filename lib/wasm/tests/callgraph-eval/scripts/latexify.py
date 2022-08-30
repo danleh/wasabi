@@ -153,7 +153,13 @@ def coverage_latex_table(f, data):
 
 def micro_eval_latex_table(f, data):
     f.write("\\begin{table*}[t]\n")
-    f.write("\caption{Evaluation of the tools on our microbenchmarks.}\n")
+    f.write("\captionsetup{justification=centering}\n")
+    f.write("\caption{\n")
+    f.write("    Overview of the microbenchmarks and results of different call graph analyses on them.\\\\\n")
+    f.write("    $|F_\mathrm{all}|$ is the total number of functions in the binary.\n")
+    f.write("    $|F_\mathrm{r}|$ is the number of functions reachable from the given entry point(s).\\\\\n")
+    f.write("    $|E|$ is the number of edges in the call graph.\n")
+    f.write("}\n")
     f.write("\label{tab:microbenchmarks}\n")
     f.write("\small\n")
     f.write("\centering\n")

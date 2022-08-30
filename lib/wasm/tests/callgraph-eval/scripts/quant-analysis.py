@@ -3,6 +3,7 @@ import json
 import re
 from subprocess import PIPE, Popen
 from collections import Counter
+import matplotlib.pyplot as plt
 
 
 WASMBENCH_FILTERED_JSON = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tests/callgraph-eval/WasmBench/dataset-metadata/filtered.pretty.json"
@@ -10,6 +11,8 @@ WASMBENCH_FILTERED_BINARIES = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/w
 WASMBENCH_NUM_BINARIES = 8461
 
 WASMBENCH_ANALYSIS_JSON = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tests/callgraph-eval/data/wasmbench-data.json"
+
+WASMBENCH_CLEAN_ANALYSIS_JSON = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tests/callgraph-eval/data/wasmbench-clean-data.json"
 
 import_re = "\(import (\".+\") (\".+\") (?:\(global \(;\d+;\) (?:i|f)(?:32|64)\)|\(memory \(;\d+;\) \d+ \d+\)|\(func (?:\(;[0-9]+;\)|\$.*) \(type [0-9]+\)?\)|\(table \(;\d+;\) \d+(?: \d+)? (?:funcref|anyref)\))\)$"
 export_re = "\(export \"(.+)\" \((memory|func|table) (?:\d+|\$.+)\)\)"
@@ -74,12 +77,14 @@ def extract_static_info(data):
         
         i += 1
 
-        if i%500 == 0: print(f"{i} binaries processed.") 
+        if i%500 == 0: 
+            print(f"{i} binaries processed.")
+            json.dump(data, open(WASMBENCH_ANALYSIS_JSON, 'w'), indent=2) 
 
         wat_path = wasm_path+".wat"
         wasm2wat_status, stderr = execute_command('wasm2wat --ignore-custom-section-errors {} -o {}'.format(wasm_path, wat_path), print_stdout=False)	
 
-        if not wasm2wat_status: print(f"{wasm_path.split('/')[-1]} cannot be converted to wat file. {stderr}"); continue
+        if not wasm2wat_status: print(f"{i}: {wasm_path.split('/')[-1]} cannot be converted to wat file. {stderr}"); continue
 
         #total = sum(call_indirect_indices.values())
         #print()
@@ -202,7 +207,8 @@ def extract_static_info(data):
         for instr, count in call_indirect_indices.most_common():
             call_indirect_indices[instr] = (count/indirect_call_num)*100
         
-        data[wasm_path] = {
+        wasm_path = wasm_path.split("/")[-1].split(".")[0]
+        data[wasm_path].update({
             "direct_calls" : {
                 "count": direct_call_num,
                 "percent": percent_direct_calls
@@ -223,12 +229,9 @@ def extract_static_info(data):
             "start_in_export_name": start_in_export_name,
             "element_initialization": elem_initialization,
             "data_initialization": data_initialization
-        }
+        })
 
         #print(data[wasm_path])
-
-        json.dump(data, open(WASMBENCH_ANALYSIS_JSON, 'w'), indent=2)
-
 
         #for n in dict(call_indirect_indices):
         #    print(f"{n} -< {call_indirect_indices[n]}")
@@ -325,10 +328,160 @@ def call_ind(wasm_path):
 
 def main():
     
-    #args = 
-    #print(args[0])
-    extract_static_info(json.load(open(WASMBENCH_FILTERED_JSON)))
+    #extract_static_info(json.load(open(WASMBENCH_FILTERED_JSON)))
     
+    #data = json.load(open(WASMBENCH_ANALYSIS_JSON))
+    #data_new = {}
+    #for binary in data: 
+        
+    #    if "/" in binary: 
+    #        binary_name = binary.split("/")[-1].split(".")[0]
+    #        #print(binary_name)
+    #        if binary_name not in data.keys(): print(binary_name)
+    #        data_new[binary_name].update(data[binary])
+    #    else: 
+    #        data_new[binary] = data[binary]
+    
+    #json.dump(data_new, open(WASMBENCH_CLEAN_ANALYSIS_JSON, "w"), indent=2)
+
+    data = json.load(open(WASMBENCH_CLEAN_ANALYSIS_JSON))
+    call_indirect_index_exprs = {}
+    bool_data = {'indirect calls are 10%': 0, 
+              'import table exists': 0, 
+              'import memory exists': 0, 
+              'export table exists': 0, 
+              'export memory exists': 0, 
+              'debug section exists': 0, 
+              'name section exists': 0, 
+              'element sec initialized by variable': 0, 
+              'data sec initialized by variable': 0, 
+              "emcc in import name": 0,
+              "wasi in import name": 0    
+    }
+    '''
+    "direct_calls": {
+      "count": 157,
+      "percent": 91.81286549707602
+    },
+    "indirect_calls": {
+      "count": 14,
+      "percent": 8.187134502923977
+    },
+    "call_indirect_indices": {
+      "i32.load, from addr: local.get (unknown)": 100.0
+    },
+    "import_table_exists": false,
+    "import_memory_exists": false,
+    "export_table_exists": false,
+    "export_memory_exists": true,
+    "memory_section_exists": true,
+    "store_exists": true,
+    "emcc_in_import_name": false,
+    "wasi_in_import_name": true,
+    "start_in_export_name": true,
+    "element_initialization": [
+      [
+        "i32.const",
+        "1"
+      ]
+    ],
+    "data_initialization": [
+      "i32.const 1024",
+      "i32.const 3408"
+    ]
+    '''
+    i = -1
+    for binary in data:
+        
+        #if i > 32: break
+
+        if len([1 for sec in data[binary]["custom_sections"] if ".debug" in sec]) > 0: 
+            bool_data['debug section exists'] += 1
+        if len([1 for sec in data[binary]["custom_sections"] if "name" in sec]) > 0: 
+            bool_data['name section exists'] += 1
+
+        if "call_indirect_indices" in data[binary].keys(): 
+            i += 1 
+            not_processed = list(call_indirect_index_exprs.keys())
+            #print(f"{binary} {data[binary]['call_indirect_indices']}")
+            for ind in data[binary]["call_indirect_indices"]:
+                if ind not in call_indirect_index_exprs.keys(): 
+                    call_indirect_index_exprs[ind] = [0]*i
+                    #print(f"in if  | {ind} -> {call_indirect_index_exprs[ind]}")
+                    not_processed.append(ind)
+                not_processed.remove(ind)
+                call_indirect_index_exprs[ind].append(data[binary]["call_indirect_indices"][ind])
+                #print(f"in for | {ind} -> {call_indirect_index_exprs[ind]}")
+            for key in not_processed: call_indirect_index_exprs[key].append(0)
+
+            #for k in call_indirect_index_exprs:
+            #    print(f"{i+1}: {k} -> {len(call_indirect_index_exprs[k])}")
+
+            if data[binary]["indirect_calls"]["percent"] >= 10 : bool_data['indirect calls are 10%'] += 1
+            if data[binary]["import_table_exists"]: bool_data['import table exists'] += 1
+            if data[binary]["import_memory_exists"]: bool_data['import memory exists'] += 1
+            if data[binary]["export_table_exists"]: bool_data['export table exists'] += 1
+            if data[binary]["export_memory_exists"]: bool_data['export memory exists'] += 1
+            if data[binary]["emcc_in_import_name"]: bool_data["emcc in import name"] += 1
+            if data[binary]["wasi_in_import_name"]: bool_data["wasi in import name"] += 1
+            
+            if len([1 for init in data[binary]["element_initialization"] if ".get" in init[0]])>0: bool_data['element sec initialized by variable'] += 1
+            if len([1 for init in data[binary]["data_initialization"] if ".get" in init])>0: bool_data['data sec initialized by variable'] += 1
+
+        
+
+    #for b in bool_data:
+    #    print(f"{b} -> {bool_data[b]}")
+
+    for k in call_indirect_index_exprs:
+        print(f"{k} -> {len(call_indirect_index_exprs[k])}")
+
+    call_indirect_index_exprs = {k: v for k, v in sorted(call_indirect_index_exprs.items(), key=lambda item: len(item[1])-item[1].count(0), reverse=True)}
+    
+    #call_indirect_index_top_10 = {}
+    #for i, ind in enumerate(call_indirect_index_exprs):
+        #print(f"{ind} -> {len(call_indirect_index_exprs[ind])}")
+    #    if i>9: break
+        #if "," in ind: ind_line_break = " /n ".join(ind.split(", ")) 
+    #    ind_line_break = ind
+    #    call_indirect_index_top_10[ind_line_break] = call_indirect_index_exprs[ind]
+    #print(call_indirect_index_top_10.keys())
+    
+    x, y = [], []
+    for key, value in call_indirect_index_exprs.items(): 
+        x.append(key)
+        y.append(len(value)-value.count(0)) 
+    plt.bar(x[:20], y[:20])
+    plt.xlabel("pattern")
+    plt.ylabel("#binaries")
+    plt.ylim([0, 9000])
+    plt.title("Distribution of call indirect index patterns in WasmBench binaries")
+    plt.xticks(rotation=30, ha='right')
+    plt.savefig('../data/index_barplot_distribution.png', bbox_inches='tight')
+    plt.show()
+    plt.clf()
+    
+    #fig, ax = plt.subplots()
+    #ax.boxplot(call_indirect_index_top_10.values())
+    #ax.set_xticklabels(call_indirect_index_top_10.keys())
+    #plt.xticks(rotation=30, ha='right')
+    #plt.savefig('call_indirect_index_distribution.png', bbox_inches='tight')
+    #plt.show()
+    
+    x = list(bool_data.keys())
+    y = list(bool_data.values())
+    plt.bar(x, y)
+    plt.xlabel("Challenge")
+    plt.ylabel("#binaries")
+    plt.ylim([0, 9000])
+    plt.title("Distribution of challenges in WasmBench binaries")
+    plt.xticks(rotation=30, ha='right')
+    plt.savefig('../data/challenges_distribution.png', bbox_inches='tight')
+    plt.show()
+    
+        
+    #print(binary)
+
     #ind_calls_over_50_percent = 0
     #for wasm_bin in data: 
     #    if data[wasm_bin]["indirect_calls"]["percent"] >= 50: ind_calls_over_50_percent += 1
