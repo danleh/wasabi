@@ -159,26 +159,25 @@ def micro_eval_latex_table(f, data):
     f.write("\centering\n")
     f.write("\captionsetup{justification=centering}\n")
     
-    f.write("\\begin{tabular}{l|l|rr|rrr|rrr|rrr|rrr}\n")
+    f.write("\\begin{tabular}{l|l|rrr|rrrr|rrr|rrr|rrrr}\n")
     f.write("    \\toprule\n")
     f.write("    \multirow{2}{*}{\\textbf{Name}} & \multirow{2}{*}{\\textbf{Challenge}} & \n")
-    f.write("    \multicolumn{2}{c|}{\\textbf{Ground Truth}} & \n")
-    f.write("    \multicolumn{3}{c|}{\\textbf{Wassail}} &\n")
+    f.write("    \multicolumn{3}{c|}{\\textbf{Ground Truth}} & \n")
+    f.write("    \multicolumn{4}{c|}{\\textbf{Wassail}} &\n")
     f.write("    \multicolumn{3}{c|}{\\textbf{Metadce}} & \n")
     f.write("    \multicolumn{3}{c|}{\\textbf{Twiggy}} &\n")
-    f.write("    \multicolumn{3}{c}{\\textbf{WAVM+LLVM opt}}\\\\\n")
+    f.write("    \multicolumn{4}{c}{\\textbf{WAVM+LLVM opt}}\\\\\n")
     f.write("    & & \n")
-    f.write("    \\textbf{\#nodes} & \\textbf{\#edges} &\n")
-    f.write("    \\textbf{\#edges} & \\textbf{S} & \\textbf{P} & \n")
-    f.write("    \\textbf{\#edges} & \\textbf{S} & \\textbf{P} &\n")
-    f.write("    \\textbf{\#edges} & \\textbf{S} & \\textbf{P} & \n")
-    f.write("    \\textbf{\#edges} & \\textbf{S} & \\textbf{P} \\\\ \n")
+    f.write("    \\textbf{$|F_{all}|$} & \\textbf{$|F_{r}|$} & \\textbf{$|E|$} &\n")
+    f.write("    \\textbf{$|F_{r}|$} & \\textbf{$|E|$} & \\textbf{S} & \\textbf{P} & \n")
+    f.write("    \\textbf{$|F_{r}|$} & \\textbf{S} & \\textbf{P} &\n")
+    f.write("    \\textbf{$|F_{r}|$} & \\textbf{S} & \\textbf{P} & \n")
+    f.write("    \\textbf{$|F_{r}|$} & \\textbf{$|E|$} & \\textbf{S} & \\textbf{P} \\\\ \n")
     f.write("    \midrule\n")
     
     benchmark_counter = 0
     rows_data = []
     for microbench in data: 
-        benchmark_name = str(microbench)+ "-" + data[microbench]["name"]
         gray = "" 
         if benchmark_counter%2 != 0: gray = "\\rowcolor{gray!20}"
         
@@ -196,20 +195,20 @@ def micro_eval_latex_table(f, data):
                 continue 
 
             if tool["callgraph"] == None:
-                tools_data += "\multicolumn{3}{c|}{Did Not Execute} & "
+                if "wassail" in tool['name'] or "wavm" in tool['name']: tools_data += "\multicolumn{4}{c|}{Did Not Execute} & "
+                else: tools_data += "\multicolumn{3}{c|}{Did Not Execute} & "
                 pretty_row.append("-")
+
             else:
-                graph = tool["callgraph"]["graph"]
-                graph_nodes = len(set([int(x) for x in graph.keys()]+[int(y) for x in graph.values() for y in x ]))
-                graph_edges = 0
-                for key in graph: graph_edges += len(graph[key]) 
-                
                 sound = "\\xmark"
                 precise = "\\xmark"
                 if tool['soundness']['sound']: sound = "\cmark"
                 if tool['precision']['precise']: precise = "\cmark"
-                tools_data += (f"{tool['callgraph']['reachable_edges']['count']} & {sound} & {precise} & ")
                 
+                if "wassail" in tool['name'] or "wavm" in tool['name']: 
+                    tools_data += (f"{tool['callgraph']['reachable_functions']['count']} & {tool['callgraph']['count_edges']} & {sound} & {precise} & ")
+                else: tools_data += (f"{tool['callgraph']['reachable_functions']['count']} & {sound} & {precise} & ")
+
                 pretty_row.append(tool['soundness']['sound'])
                 
 
@@ -217,11 +216,12 @@ def micro_eval_latex_table(f, data):
         
         #print(data[microbench]['precise_callgraph'])
 
-        f.write("    {} {} & {} & {} & {} & {}\\\\\n".format(
-            gray, microbench, 
+        f.write("    {} {} & {} & {} & {} & {} & {}\\\\\n".format(
+            gray, microbench[:10], 
             challenges, 
-            data[microbench]["precise_callgraph"]["reachable_functions"]["count"],
-            data[microbench]["precise_callgraph"]["reachable_edges"]["count"],
+            data[microbench]["ground_truth"]["count_funcs"],
+            data[microbench]["ground_truth"]["reachable_functions"]["count"],
+            data[microbench]["ground_truth"]["count_edges"],
             tools_data
         ))        
         

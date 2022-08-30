@@ -44,7 +44,6 @@ def extract_lib(path):
 	path = path[:path.rfind("/")]
 	return path[path.rfind("/")+1:]
 
-
 def execute_command(command, program, output_file, write_stdout=True): 
     MAX_PROGRAM_LEN = 24
     output_file_pretty = output_file.split("/")
@@ -112,25 +111,37 @@ def run_wassail(wasm_file, lib):
     status, _, exec_time = execute_command(wassail_command, "wassail", tool_shell_output)
     return (status, exec_time) 
 
-def run_metadce(bin_type, wasm_file, lib, lib_obj): 
+def run_metadce(bin_type, wasm_file, lib_name, lib_obj): 
     # Generate reachablity graph.
     # All exports (memory, variables, functions, tables) are made reachable. 
     reachability_graph_path = ""
-    if bin_type == "real": reachability_graph_path = '{}/{}/reachability-graph.json'.format(TEST_SUITE_PATH, lib)
-    if bin_type == "micro": reachability_graph_path = '{}/{}/reachability-graph.json'.format(MICROBENCH_PATH, lib)
-    reachability_graph = []
-    for export in lib_obj['static_info']['exports']['names']: 
-        reachability_graph.append({
-            'name': export['name'],
-            'root': True,
-            'export': export['name']  
-        })
-    json.dump(reachability_graph, open(reachability_graph_path, 'w'), indent=2)
+    if bin_type == "real": 
+        reachability_graph_path = '{}/{}/reachability-graph.json'.format(TEST_SUITE_PATH, lib_name)
+        reachability_graph = []
+        for export in lib_obj['static_info']['exports']['names']: 
+            reachability_graph.append({
+                'name': export['name'],
+                'root': True,
+                'export': export['name']  
+            })
+        json.dump(reachability_graph, open(reachability_graph_path, 'w'), indent=2)
+    if bin_type == "micro": 
+        reachability_graph_path = '{}/{}/reachability-graph.json'.format(MICROBENCH_PATH, lib_name)
+        export_names = {item['internal_id'] : item['name'] for item in lib_obj["static_info"]["exports"]["names"]}    
+        reachability_graph = []
+        print(export_names)
+        for export in json.load(open(MICROBENCH_DATA_JSON_PATH))[lib_name]['ground_truth']['entry_points']:
+            reachability_graph.append({
+                'name': export_names[int(export)],
+                'root': True,
+                'export': export_names[int(export)]  
+            })
+        json.dump(reachability_graph, open(reachability_graph_path, 'w'), indent=2)        
     
     # Metadce
-    dce_path = '{}/{}/CG_tools_data/metadce/dce.wasm'.format(DATA_PATH, lib)
-    new_graph_path = '{}/{}/CG_tools_data/metadce/new-graph.txt'.format(DATA_PATH, lib)
-    tool_shell_output = '{}/{}/CG_tools_data/metadce/output.txt'.format(DATA_PATH, lib)
+    dce_path = '{}/{}/CG_tools_data/metadce/dce.wasm'.format(DATA_PATH, lib_name)
+    new_graph_path = '{}/{}/CG_tools_data/metadce/new-graph.txt'.format(DATA_PATH, lib_name)
+    tool_shell_output = '{}/{}/CG_tools_data/metadce/output.txt'.format(DATA_PATH, lib_name)
     metadce_command = 'wasm-metadce --dump -f {} {} -o {}'.format(reachability_graph_path, wasm_file, dce_path)
     #print(metadce_command)
     status, output, exec_time = execute_command(metadce_command, "wasm-metadce", tool_shell_output, False)
@@ -145,8 +156,9 @@ def run_twiggy(wasm_file, lib):
     tool_shell_output = '{}/{}/CG_tools_data/twiggy/output.txt'.format(DATA_PATH, lib)
     # dump internal IR 
     status_ir, dominators_output, exec_time = execute_command('twiggy dominators {}'.format(wasm_file), "twiggy IR", tool_shell_output, False)
-    internal_ir = dominators_output[:dominators_output.index(" Retained Bytes")]
-    with open(internal_ir_path, "w") as ir_f: ir_f.write(internal_ir)
+    if status_ir:
+        internal_ir = dominators_output[:dominators_output.index(" Retained Bytes")]
+        with open(internal_ir_path, "w") as ir_f: ir_f.write(internal_ir)
     # dump garbage.csv 
     status_garbage, garbage_output, _ = execute_command('twiggy garbage {}'.format(wasm_file), "twiggy garbage", tool_shell_output, False)
     with open(garbage_path, "w") as garbage_f: garbage_f.write(garbage_output) 
@@ -173,7 +185,7 @@ def run_wavm(wasm_file, lib):
     return (status, exec_time) 
 
 # replace names in a list
-def replace_names_with_internal_ids(funcs, export_names, import_names ):
+def replace_names_with_internal_ids(funcs, export_names, import_names, debug_names):
     funcs_replaced  = set()
     export_names = {item['name']: {"type":item["type"], "internal_id": item['internal_id']} for item in export_names}
     import_names = {item["module_name"]+"."+item["export_name_within_module"]: {"type":item["type"], "internal_id": item['internal_id']} for item in import_names}
@@ -183,6 +195,8 @@ def replace_names_with_internal_ids(funcs, export_names, import_names ):
                 if export_names[f]["type"] == "function": funcs_replaced.add(int(export_names[f]["internal_id"]))
             elif f in import_names.keys(): 
                 if import_names[f]["type"] == "function": funcs_replaced.add(int(import_names[f]["internal_id"]))
+            elif f in debug_names.keys():
+                return funcs_replaced.add(int(debug_names[f]))
             else: sys.exit("Unknown identifier for function found {}".format(f))
         elif str(f).isdigit(): funcs_replaced.add(int(f))
     return list(funcs_replaced) 
@@ -192,6 +206,7 @@ def replace_graph_nodes_with_id(old_graph, lib_obj):
     
     export_names = {item['name']: {"type":item["type"], "internal_id": item['internal_id']} for item in lib_obj["static_info"]["exports"]["names"]}
     import_names = {item["module_name"]+"."+item["export_name_within_module"]: {"type":item["type"], "internal_id": item['internal_id']} for item in lib_obj["static_info"]["imports"]["names"]}
+    debug_names = lib_obj["static_info"]["debug_names"]
 
     def replace_name_with_id(name):
         if name in export_names.keys(): 
@@ -199,6 +214,8 @@ def replace_graph_nodes_with_id(old_graph, lib_obj):
                 return export_names[name]["internal_id"]
         elif name in import_names.keys(): 
             if import_names[name]["type"] == "function": return import_names[name]["internal_id"]
+        elif name in debug_names.keys():
+            return debug_names[name]
         else: sys.exit("Unknown identifier for function found {}".format(name))
     
     new_graph = {}
@@ -262,17 +279,6 @@ def get_reachable_funcs_from_dot(cg_path, lib_obj):
     
     reachable_funcs, reachable_edges = get_reachable_funcs_and_edges(graph, reachable_funcs)
     
-    #worklist = set(reachable_funcs)
-    #processed_list = set()
-    #while len(worklist) != 0:
-    #    node = worklist.pop()
-    #    reachable_funcs.add(node)
-    #    if node not in processed_list and node in graph.keys(): #it is not a leaf
-    #        processed_list.add(node)
-    #        for target in list(graph[node]):
-    #            if target not in processed_list: 
-    #                worklist.add(target)
-    
     return (graph, reachable_funcs, reachable_edges)
 
 def process_metadce(new_graph_path, lib):
@@ -280,13 +286,16 @@ def process_metadce(new_graph_path, lib):
     
     export_names = {item['name']: {"type":item["type"], "internal_id": item['internal_id']} for item in lib["static_info"]["exports"]["names"]}
     import_names = {item["module_name"]+"."+item["export_name_within_module"]: {"type":item["type"], "internal_id": item['internal_id']} for item in lib["static_info"]["imports"]["names"]}
-    
+    debug_names = lib["static_info"]["debug_names"]
+
     def replace_name_with_id(name):
         if name in export_names.keys(): 
             if export_names[name]["type"] == "function": 
                 return export_names[name]["internal_id"]
         elif name in import_names.keys(): 
             if import_names[name]["type"] == "function": return import_names[name]["internal_id"]
+        elif name in debug_names.keys():
+            return int(debug_names[name])
         else: sys.exit("Unknown identifier for function found {}".format(name))
 
     def parse_graph_into_nodes(graph_path):
@@ -359,19 +368,21 @@ def process_metadce(new_graph_path, lib):
         if not str(node).isdigit(): 
             node_is_export = node in export_names
             node = replace_name_with_id(node)
-        if not str(child).isdigit(): child = replace_name_with_id(child)
+        if not str(child).isdigit(): 
+            child = replace_name_with_id(child)
         # node == child is when their export nodes point to their internal function id nodes 
         # What about recursive nodes! node_is_export makes sure that recursive edges are not removed
         if not node_is_export:
             reachable_edges_normalized.add((node, child))  
     
     graph = {from_node: graph[from_node] for from_node in graph if str(from_node).isdigit()}
-
+    
     return (graph, 
             replace_names_with_internal_ids(
                 reachable_funcs, 
                 lib['static_info']['exports']['names'],
-                lib['static_info']['imports']['names']), 
+                lib['static_info']['imports']['names'], 
+                lib['static_info']['debug_names']), 
             reachable_edges_normalized, 
             list(garbage))
     
@@ -487,7 +498,8 @@ def process_twiggy(internal_ir_path, garbage_path, lib):
             replace_names_with_internal_ids(
                 reachable_funcs, 
                 lib['static_info']['exports']['names'],
-                lib['static_info']['imports']['names']),
+                lib['static_info']['imports']['names'], 
+                lib['static_info']['debug_names']),
             reachable_edges,
             list(garbage_funcs))
 
@@ -596,8 +608,7 @@ def main():
     elif micro_update_json:
         data = json.load(open(MICROBENCH_DATA_JSON_PATH))
         lib_name = extract_lib(wasm_file)
-        test_name_key = lib_name.split("-")[0]
-        lib_obj = data[test_name_key]
+        lib_obj = data[lib_name]
     
     lib_obj["tools"] = []
 

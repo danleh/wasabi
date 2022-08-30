@@ -12,7 +12,7 @@ MICROBENCH_DATA_JSON_PATH = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/was
 #TODO: Modularize  
 #TODO: make groups and extract output via groups! 
 type_re = "\(type \(;[0-9]+;\) \(func( \(param ((i|f)(32|64) ?)+\))?( \(result ((i|f)(32|64) ?)+\))?\)\)"
-func_re = "\(func \(;[0-9]+;\) \(type [0-9]+\)( \(param ((i|f)(32|64) ?)+\))?( \(result ((i|f)(32|64) ?)+\))?$"
+func_re = "\(func (\(;[0-9]+;\)|\$.*) \(type (?:[0-9]+|\$.+)\)(?: \(param (?:(?:i|f)(?:32|64) ?)+\))?(?: \(result (?:(?:i|f)(?:32|64) ?)+\))?$"
 import_re = "\(import \".+\" (\(global \(;\d+;\) (i|f)(32|64)\)|\(memory \(;\d+;\) \d+ \d+\)|\(func \(;[0-9]+;\) \(type [0-9]+\)?\)|\(table \(;\d+;\) \d+( \d+)? (funcref|anyref)\))\)$"
 export_re = "\(export \".+\" \((memory|func|table) \d+\)\)"
 elem_re = "\(elem \(;[0-9]+;\) (\(global\.get \d+\)|\(i(32|64)\.const \d+\)) func (\d+ )*\d+\)$"
@@ -60,7 +60,7 @@ elif len(args) == 2:
 r_data = {} # raw data 
 p_data = {} # processed data 
 
-os.system('wasm2wat {} -o {}.wat'.format(wasm_file, wasm_file))	
+os.system('wasm2wat --no-debug-names {} -o {}.wat'.format(wasm_file, wasm_file))	
 
 lib = extract_lib(wasm_file)
 
@@ -147,7 +147,7 @@ flag_imp_mem, flag_imp_tab = False, False
 count_imp_funcs = 0
 for imp in r_data[lib]['imports']: 
 
-	tab_re_search = re.search("\(table \(;\d+;\) \d+( \d+)? (funcref|anyref)\)", imp)
+	tab_re_search = re.search("\(table \(;\d+;\) (\d+)(?: \d+)? (funcref|anyref)\)", imp)
 	if tab_re_search: 
 		flag_imp_tab = True
 		imp_type = 'table'
@@ -200,7 +200,14 @@ p_data[lib]['types'] = len(r_data[lib]['types'])
 
 
 # Functions: Right now, we only want to report on the number of functions 
+f_debug_name_map = {}
+for idx, func in enumerate(r_data[lib]['funcs']):
+	f = re.search(func_re, func)
+	f_name = f.groups()[0]
+	if "(;" not in f_name:
+		f_debug_name_map[f_name.strip()[1:]] = idx + count_imp_funcs
 p_data[lib]['funcs'] = len(r_data[lib]['funcs'])
+p_data[lib]['debug_names'] = f_debug_name_map
 
 
 # Exports: for each line extract the name, number of exports, 
@@ -305,7 +312,8 @@ if update_real_json:
 		'count_functions': p_data[lib]['funcs'],		
 		'tables': p_data[lib]['tables'], 
 		'imports': p_data[lib]['imports'], 
-		'exports': p_data[lib]['exports'], 
+		'exports': p_data[lib]['exports'],
+		'debug_names': p_data[lib]['debug_names'],
 		'calls': {
 			'names': p_data[lib]['calls'], 
 			'count_total_calls': len(p_data[lib]['calls']),
@@ -321,12 +329,12 @@ if update_real_json:
 elif update_micro_json: 
 	print("Updating microbench-data.json...")
 	data = json.load(open(MICROBENCH_DATA_JSON_PATH))
-	test_name_key = lib.split("-")[0]
-	test = data[test_name_key]
+	test = data[lib]
 	test['static_info'] = {
 		'tables': p_data[lib]['tables'], 
 		'imports': p_data[lib]['imports'], 
 		'exports': p_data[lib]['exports'], 
+		'debug_names': p_data[lib]['debug_names'],
 	}	
 	json.dump(data, open(MICROBENCH_DATA_JSON_PATH, 'w'), indent=2)
 

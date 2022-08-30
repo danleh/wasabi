@@ -7,7 +7,6 @@ MICRO_DATA_JSON_PATH = "/home/michelle/Documents/sa-for-wasm/wasabi/lib/wasm/tes
 
 def graph_names_normalize(graph, export_names, import_names):
     new_graph = {}
-
     def sort_targets(g):
         for f in g: g[f].sort()
         return g
@@ -32,7 +31,7 @@ def graph_names_normalize(graph, export_names, import_names):
         else: 
             from_node_id = int(from_node)
             new_graph[int(from_node)] = []
-
+        
         for to_node in graph[from_node]:
             if from_node_id != None:
                 if not str(to_node).isdigit(): 
@@ -79,36 +78,42 @@ def main():
     if flag_micro: 
         data = json.load(open(MICRO_DATA_JSON_PATH))
 
-        for test in data: 
-            test = data[test]
+        for microbench in data: 
             
-            export_names = {item['name']: {"type":item["type"], "internal_id": item['internal_id']} for item in test["static_info"]["exports"]["names"]}
-            import_names = {item["module_name"]+"."+item["export_name_within_module"]: {"type":item["type"], "internal_id": item['internal_id']} for item in test["static_info"]["imports"]["names"]}
+            microbench = data[microbench]
+            
+            export_names = {item['name']: {"type":item["type"], "internal_id": item['internal_id']} for item in microbench["static_info"]["exports"]["names"]}
+            import_names = {item["module_name"]+"."+item["export_name_within_module"]: {"type":item["type"], "internal_id": item['internal_id']} for item in microbench["static_info"]["imports"]["names"]}
 
-            precise_callgraph = test["precise_callgraph"]
-            reachable_funcs = set([int(e["internal_id"]) for e in test["static_info"]["exports"]["names"] if e["type"] == "function"])
+            precise_callgraph = microbench["ground_truth"]["precise_callgraph"]
+            reachable_funcs = set([int(e["internal_id"]) for e in microbench["static_info"]["exports"]["names"] if e["type"] == "function"])
             precise_callgraph = graph_names_normalize(precise_callgraph, export_names, import_names)
             precise_reachable_funcs, precise_edges = get_reachable_funcs_and_edges(precise_callgraph, reachable_funcs) 
             
-            test["precise_callgraph"] = {
-                "graph": precise_callgraph, 
-                "reachable_functions": {
-                    "names": list(precise_reachable_funcs), 
-                    "count": len(precise_reachable_funcs)
-                }, 
-                "reachable_edges": {
-                    "names": list(precise_edges), 
-                    "count": len(precise_edges)
-                }
-            }
+            E_all = 0
+            F_all = set()
+            for node in precise_callgraph:
+                F_all.add(node)
+                F_all.update(precise_callgraph[node])
+                E_all += len(precise_callgraph[node])
 
-            for tool in test["tools"]:
+            microbench["ground_truth"]["count_edges"] = E_all
+            microbench["ground_truth"]["count_funcs"] = len(F_all)
+
+            microbench["ground_truth"]["reachable_functions"] = {
+                "names": list(precise_reachable_funcs), 
+                "count": len(precise_reachable_funcs)
+            }
+            microbench["ground_truth"]["reachable_edges"] = {
+                "names": list(precise_edges), 
+                "count": len(precise_edges)
+            }
+            
+            for tool in microbench["tools"]:
                 #print(tool['name'])
                 if tool["callgraph"] == None: 
                     tool["sound"] = None
                 else: 
-                    #_tool_graph = graph_names_normalize(tool["callgraph"]["graph"], export_names, import_names)
-
                     tool_reachable_functions = set(tool["callgraph"]["reachable_functions"]["names"])
                     tool_reachable_edges = set()
                     for node, child in tool["callgraph"]["reachable_edges"]["names"]:
@@ -117,6 +122,13 @@ def main():
                     edges_missing = precise_edges.difference(tool_reachable_edges)
                     superflous_edges = tool_reachable_edges.difference(precise_edges)
                     
+                    if "wassail" in tool['name'] or "wavm" in tool['name']:   
+                        tool_graph = tool["callgraph"]["graph"]
+                        E_all = 0
+                        for node in tool_graph:
+                            E_all += len(tool_graph[node])
+                        tool["callgraph"]["count_edges"] = E_all
+
                     tool["soundness"] = {
                         # the precise reachable functions should be a subset of the tool reachable functions for the analysis to be sound 
                         "sound": tool_reachable_functions.intersection(precise_reachable_funcs) == precise_reachable_funcs, 
@@ -176,12 +188,12 @@ def main():
 
             M_stat_exports = lib["static_info"]["exports"]["count_exported_funcs"]
             M_stat_funcs = lib["static_info"]["count_functions"]
-            for test in lib["tests"]:
-                M_dyn_exports = test["dyn_reachable_exports"]["count"]
-                M_dyn_funcs =  test["dyn_reachable_functions"]["count"]
+            for microbench in lib["tests"]:
+                M_dyn_exports = microbench["dyn_reachable_exports"]["count"]
+                M_dyn_funcs =  microbench["dyn_reachable_functions"]["count"]
                 percent_exports = (M_dyn_exports/M_stat_exports)*100
                 percent_funcs = (M_dyn_funcs/M_stat_funcs)*100
-                test["coverage"] = {
+                microbench["coverage"] = {
                     "exports_covered": percent_exports,
                     "funcs_covered": percent_funcs
                 } #TODO instructions covered 
