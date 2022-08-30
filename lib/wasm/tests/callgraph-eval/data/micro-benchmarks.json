@@ -46,7 +46,7 @@
     "host-callbacks-exports" : {
         "challenges": "", 
         "ground_truth": {
-            "entry_points": [0],
+            "entry_points": [1],
             "precise_callgraph" : {
                 "1": [0], 
                 "2": [4], 
@@ -64,15 +64,15 @@
             }
         }
     }, 
-    "host-code-table-export" : {
+    "host-reachable-table-export" : {
         "challenges": "", 
         "ground_truth": {
             "entry_points": [0],
             "precise_callgraph" : {
-                "0": ["2"],
-                "1": 0, 
+                "0": [2],
+                "1": [0], 
                 "2": [],
-                "3": ["4"], 
+                "3": [4], 
                 "4": []
             }
         }
@@ -80,13 +80,13 @@
     "host-reachable-table-import" : {
         "challenges": "", 
         "ground_truth": {
-            "entry_points": [2],
+            "entry_points": [1],
             "precise_callgraph" : {
-                "0": [3],
-                "2": [0], 
-                "3": [], 
-                "4": [5], 
-                "5": []
+                "0": [2],
+                "1": [0], 
+                "2": [], 
+                "3": [4], 
+                "4": []
             }
         }
     }, 
@@ -262,35 +262,35 @@
     "cpp-vtable-layout-source-type-info" : {
         "challenges": "", 
         "ground_truth": {
-            "entry_points": ["_start", "__errno_location", "stackSave", "stackRestore", "stackAlloc"],
+            "entry_points": ["11", "22", "19", "20", "21"],
             "precise_callgraph" : {
-                "wasi_snapshot_preview1.args_sizes_get": [],
-                "wasi_snapshot_preview1.args_get": [],
-                "wasi_snapshot_preview1.proc_exit": [],
+                "0": [],
+                "1": [],
+                "2": [],
 
-                "__wasm_call_ctors": [],
+                "3": [],
 
-                "module1_bool_": ["A::method__", "B::method__"],
-                "module2_bool_": ["C::method__", "D::method__"],
+                "4": ["7", "8"],
+                "5": ["9", "10"],
 
-                "main": ["module1_bool_", "module2_bool_"],
-                "A::method__": [],
-                "B::method__": [],
-                "C::method__": [],
-                "D::method__": [],
-                "_start": ["__wasm_call_ctors", "exit", "__original_main"],
-                "__original_main": ["__main_void"],
-                "__main_void": ["__wasi_args_sizes_get", "main.1", "__wasi_args_get", "__wasi_proc_exit"],
-                "main.1": ["main"],
-                "_Exit": ["__wasi_proc_exit"],
-                "libc_exit_fini": ["_fini"],
-                "exit": ["_fini", "libc_exit_fini", "_Exit"],
-                "_fini": [],
+                "6": ["4", "5"],
+                "7": [],
+                "8": [],
+                "9": [],
+                "10": [],
+                "11": ["3", "17", "12"],
+                "12": ["13"],
+                "13": ["0", "14", "1", "2"],
+                "14": ["6"],
+                "15": ["2"],
+                "16": ["18"],
+                "17": ["18", "16", "15"],
+                "18": [],
 
-                "stackSave": [],
-                "stackRestore": [],
-                "stackAlloc": [],
-                "__errno_location": []
+                "19": [],
+                "20": [],
+                "21": [],
+                "22": []
             }
         }
     }
