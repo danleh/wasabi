@@ -824,6 +824,8 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
     // TODO parallelize
     let functions = module.functions().map(|(function_idx, function)| -> Result<Function, String> {
         let name = FunctionId::from_idx(function_idx, module);
+        // DEBUG
+        // println!("name: {} -> {name}", function_idx.to_u32());
         let name_clash = !function_ids.insert(name.clone());
         if name_clash {
             return Err(format!("duplication function.name '{}'!", name));
@@ -845,7 +847,7 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
             for func in &elem.functions {  
                 functions.push(FunctionId::from_idx(*func, module)); 
             }
-            elements.push(Element { offset, functions})
+            elements.push(Element { offset, functions })
         }
         Some(Table{
             type_: TableType::wimplify(table.type_.clone()), //TODO: make it .wimplify()

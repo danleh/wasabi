@@ -3,6 +3,7 @@ use std::{
     io::{self, ErrorKind},
     path::Path, sync::atomic::{AtomicUsize, self, AtomicIsize}, collections::HashMap, cmp::Ordering, hash::{Hash, Hasher},
 };
+use std::cell::RefCell;
 
 use arc_interner::ArcIntern;
 
@@ -123,27 +124,89 @@ pub enum FunctionId {
 }
 
 impl FunctionId {
-    
-    pub fn from_idx(idx: Idx<highlevel::Function>, module: &highlevel::Module) -> Self {
+    /// Map every function in the module to a name (if possible).
+    /// If there are two functions with the same name, fall back for all of them to the index.
+    /// (This way, the order of functions does not change the name assignment.)
+    pub fn from_module(module: &highlevel::Module) -> Vec<FunctionId> {
+        let mut name_map = Vec::with_capacity(module.functions.len());
+        
+        // The keys of this map are all unique names.
+        // The values go through three states: 
+        // 1. Key not present in map: name is not assigned yet.
+        // 2. Key present in map, value is Some(idx): the function with this idx has been assigned a unique name.
+        // 3. Key present in map, value is None: the name was used previously, but it turned out
+        // it was not unique, hence the first function with got its name removed again.
+        let mut unique_names: HashMap<String, Option<Idx<_>>> = HashMap::new();
+
+        for (idx, func) in module.functions() {
+            assert_eq!(name_map.len(), idx.to_usize(), "consistent function indexing between module and name_map");
+            
+            match Self::function_to_name(func) {
+                Some(name) => match unique_names.get(&name) {
+                    None => {
+                        // Name was not used previously -> use it for this function.
+                        name_map.push(Self::from_name(name.clone()));
+                        unique_names.insert(name, Some(idx));
+                    }
+                    Some(Some(clash_idx)) => {
+                        // Name was already used previously and the other function this one clashes
+                        // with was not yet fixed.
+                        // -> Use an index for this function and remove the name assigned to the 
+                        // other function.
+                        name_map.push(Self::Idx(idx.to_u32()));
+                        name_map[clash_idx.to_usize()] = Self::Idx(clash_idx.to_u32());
+                        unique_names.insert(name, None);
+                    }
+                    Some(None) => {
+                        // Name was already used previously, but the clashing function has already
+                        // been fixed to use an index instead.
+                        name_map.push(Self::Idx(idx.to_u32()))
+                    }
+                }
+                // No name for function, so there cannot be a clash.
+                None => name_map.push(Self::Idx(idx.to_u32()))
+            }
+        }
+        
+        name_map
+    }
+
+    fn function_to_name(function: &highlevel::Function) -> Option<String> {
         // Try different ways of getting a name for a WebAssembly function.
         // First try if the debug name is present, because it's the most "original" or "close to the source".
-        let function = module.function(idx);
         let debug_name = function.name.clone();
+        // Then try export and import names.
         let first_export_name = function.export.first().cloned();
         let import_field_name = match &function.code {
             highlevel::ImportOrPresent::Import(module_name, field_name) => Some(format!("{}.{}", module_name, field_name)),
             highlevel::ImportOrPresent::Present(_) => None,
         };
-        let name = debug_name.or(first_export_name).or(import_field_name);
-        match name {
-            Some(name) => FunctionId::Name(ArcIntern::from(name)),
-            None => FunctionId::Idx(idx.to_u32()),
-        }
+        debug_name.or(first_export_name).or(import_field_name)
+    }
+
+    pub fn from_idx(idx: Idx<highlevel::Function>, module: &highlevel::Module) -> Self {
+        // To make sure that every `FunctionId` is unique, we produce one for every function in
+        // the module. However since that would be very expensive to do repeatedly, we cache the
+        // translation.
+        // TODO The proper solution is not not have this function at all and only allow creating
+        // `FunctionId`s from a whole module. TODO Refactor all callers of this function.
+        MODULE_FUNCTION_IDS_CACHE.with(|cache| {
+            let mut function_id_map = cache.borrow_mut();
+            let function_id_map = function_id_map
+                .entry(module)
+                .or_insert_with(|| FunctionId::from_module(module));
+            assert_eq!(function_id_map.len(), module.functions.len(), "possible cache inconsistency!?");
+            function_id_map[idx.to_usize()].clone()
+        })
     }
 
     pub fn from_name(name: String) -> Self {
         FunctionId::Name(ArcIntern::from(name))
     }
+}
+
+thread_local!{
+    static MODULE_FUNCTION_IDS_CACHE: RefCell<HashMap<*const highlevel::Module, Vec<FunctionId>>> = RefCell::new(HashMap::new());
 }
 
 /// A sequence of instructions, typically as the body of a function or block.
