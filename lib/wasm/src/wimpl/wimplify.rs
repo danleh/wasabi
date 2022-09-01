@@ -754,9 +754,10 @@ fn wimplify_function_body(
         // Initialize the local variables.
         for (local_idx, loc) in function.locals() {
             let (loc_name, loc_type) = (&loc.name, loc.type_);
-            if let Some(_loc_name) = loc_name {
-                todo!("you haven't yet implemented locals having names");
-            } else {
+            // FIXME Was crashing, which is too harsh just because names are missing.
+            // if let Some(_loc_name) = loc_name {
+            //     todo!("you haven't yet implemented locals having names");
+            // } else {
                 let local_var_initalization_stmt = Stmt::new(StmtKind::Assign {
                     lhs: Var::Local(local_idx.to_u32() - function.type_.inputs().len() as u32),
                     rhs: ExprKind::Const(Val::get_default_value(loc_type)).into(),
@@ -769,7 +770,7 @@ fn wimplify_function_body(
                 id_stmt_map.insert(local_var_initalization_stmt.id, local_var_initalization_stmt.clone()); 
 
                 stmts_result.push(local_var_initalization_stmt);
-            }
+            // }
         }
 
         // Translate the instructions in the function:
