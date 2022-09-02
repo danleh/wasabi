@@ -1,0 +1,743 @@
+
+
+FAILURE
+2fd9bd68779dae14b7e25840bbf49c70d080a74fa44785f7273e2dad7cd665c0
+Killed
+
+
+
+
+FAILURE
+6b3b7014c16d1650575e5011c4a3fc390aa6ed98c00025c01a04401db10d6a45
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x24 (36): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+541b572704e0b084fc2f33c5358a8c1d5be9a44b01baabda43b529dd85e1b8ba
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x3af (943): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+dc2e37697e98517e4beca6a99ea16bad7ed7866465d67d4bc79dd5596ef6d680
+Killed
+
+
+FAILURE
+bca839fec670f55f1811b6f2284335d14c57a03ba05d40e5fefbf9d2eee74b65
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x429 (1065): unexpected tag byte 0x05 for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+f73e0ea865c46ab84578a21eb111346eed4b382060ab6ea8a7dd7f9a41d67e7c
+Killed
+
+
+FAILURE
+2c7e980392ca5816f124ff41d1fbb4fbe0ccb9f20691b7dc45a41910af5d3809
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x331 (817): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+f10de879b1c5546af2fd59bed8198aefc3f9d1e35b66e0e384a1756efdda5328
+Killed
+
+
+
+
+FAILURE
+15316eb4de3af4938d83f7297fc72fe978f61532c63d8b9edce52463f54ae430
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x2a (42): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+caa739612053d50ef65dfc236e44dff918ea0189d067feaf8ad19287e3a0aff8
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x3e (62): unexpected tag byte 0x12 for wasm::ast::lowlevel::Instr"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+9af2c3304d528f4d586006c30ca9c897223a1eca75db0bad51c4770568ff7f4a
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x4d0 (1232): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+6459835d08db074c6c05eec6c55a3abc4ca0d1f2df34f21e73779ddeac5b7803
+thread 'main' panicked at 'u32 to i32: TryFromIntError(())', src/wimpl/wimplify.rs:227:80
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+
+
+FAILURE
+d53a2049d52e5b4d87f051918fde9303ba46fb2174e50c43136d745be125e2fc
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x4d0 (1232): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+
+FAILURE
+248d77ce13b0be02a51807a089dfa03205e673a71acabd81d9beb5ae4c8b56a1
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x7f27 (32551): unexpected tag byte 0x0c for wasm::ast::lowlevel::Section"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+687a84b3ecf3e74c46a6e3ec9ae8e83502b68b60fdc23a3cb0b38b28458b6379
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0xd (13): unexpected tag byte 0x7b for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+
+FAILURE
+b23589b88e6c0ab62e68cd3587ce944cf888226c40207299d68d881922bd3200
+Killed
+
+
+FAILURE
+31fa012442fd637fca221db4fda94262e99759ab9667147cbedde083aabcc065
+Killed
+
+
+
+
+
+FAILURE
+0814b45fe3d4868ea7cf45e49377df80def937b9eb44c69a955f355308eb5aa1
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x1e (30): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+1a0438e99fdf1a6b0635bf704fce8590840f1642e53d0eb79252fad3be4493c2
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x1eed (7917): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+60131855fe01b3b6dc705e51549121b7431e718d2c81f6a97788a3b880e52d05
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x3d (61): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+415cc7849cf11802e1cfa0be231b0fe0a48bafca295858aaa5f741e1681de147
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x6a (106): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+167545712158b2825a144500036f644d7150a0e9a690c35cf3bad2ba718ad2d6
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x350 (848): unexpected tag byte 0xfc for wasm::ast::lowlevel::Instr"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+6602716a792b4f92ae20deb08375e59970dc7cd28b7211b92d1698c09342fbae
+Killed
+
+
+FAILURE
+6ffc394fa8a77e74d4696113cacb6eaeab350666aa80cd96cdfd1bff76b29f03
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x565 (1381): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+0c4504e5076eb1c83bedc0aef0874f15ccad706e61735de793ee8d7ea7a2757d
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0xc7e4 (51172): unexpected tag byte 0xfd for wasm::ast::lowlevel::Instr"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+7ec196c9d9c8b2543f673a5567a7df71b5efc10c3c61af513c913b2a79a26bd0
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x207 (519): unexpected tag byte 0x0c for wasm::ast::lowlevel::Section"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+520664ebf41bd9606fc8453099a056fa7172e8dd1243d202bbc418d415d2d7af
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x2e (46): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+fe9935eeb1ddbe1e8703bbe810d5abb5eaaa8f2a2246bb6711da070e9ad40f6e
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x14c (332): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+674845c852c525175753c569e16d154f19562bd5dd71c09d38b47677d9d84c61
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x1c4 (452): unexpected tag byte 0xc2 for wasm::ast::lowlevel::Instr"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+bdc5a0ba5ecf80641f90dbcafee8b8ed7d4d4dd1a58f53a77e92a578c7c8ad47
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x154 (340): unexpected tag byte 0x03 for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+
+
+FAILURE
+d96b5af52704a4f48a6c3f9b11ed425f5453107bd923386d4b931f549f761d8a
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0xd0 (208): unexpected tag byte 0x0c for wasm::ast::lowlevel::Section"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+
+FAILURE
+30bf0a7cf7bc265d23eea85d6b4e4b64f8a637cd3583058b0bbe202e3912bdbd
+Killed
+
+
+FAILURE
+703b8c185a83892c5a2357a0528a4f78f05237af150e5b14da78c924c857ef87
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x8f (143): unexpected tag byte 0x04 for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+adac99684bc3f069f3f78d4fe20493689da9a80b2cdc9757a71d0ee885093016
+thread 'main' panicked at 'end expects if/block/loop result value on the stack', src/wimpl/wimplify.rs:353:59
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+38592fa3db5ca6f8a841a8dfdeb84b834992b8e230d2dbdec06a6429195eec74
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0xac5 (2757): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+a50d67cbaf770807cc1d1723ebc56333188b681538bf3f7679659b184d2f8020
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x6a (106): unexpected tag byte 0x00 for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+054c2f432ab5f1bce17133a93ba0700c28b17e3eaee3656bd32143237dc51e83
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x644 (1604): unexpected tag byte 0x06 for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+
+FAILURE
+52b13b2b4d6744026796d82dd99d496f9245cdeea9d650494c1c4b0e08dce388
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x132b (4907): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+9b3a05f8927a35b011f23eae30c9f11f8dcae299f3f400d7960a8aa20cec7a27
+Killed
+
+
+
+
+
+FAILURE
+2e9506ab3ecb920f934797699f9b6c118376854ba2e801111665751706fc23d8
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x142 (322): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+
+
+
+FAILURE
+9e1e9fae98975dc6026537e3ce534061ae977c7a82d25c5b98ee946f5b843b88
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x1b1 (433): unexpected tag byte 0xc1 for wasm::ast::lowlevel::Instr"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+d9a07d4c5b70ca729b08d33b67e535c533846016615c07f0aa225809ec9c9f8c
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x565 (1381): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+5f41494cd96e101758b1812196e53c78cf08f7402ab9dd88f1b7ccad8bcca451
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x1bb (443): unexpected tag byte 0x0c for wasm::ast::lowlevel::Section"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+996c5f5c8cc8c1ebf441e9763dece98bca8aa264dda6bd56b8db9ffb09cc897b
+thread 'main' panicked at 'not implemented: only WebAssembly MVP is supported, not multi-value extension', src/wimpl/wimplify.rs:797:18
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+ed908cc661aae548878a9388846ee2666ab518c453698f123989cd926e1c5005
+Killed
+
+
+
+FAILURE
+a2112c82010dfe228e2c4c347135bf8d82f8994a0ba993c8fefa294f271c49f6
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0xda (218): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+6bfe138f24fe3a3ee4ace5d9a070951ed9673c329b92819277c399db3e809e87
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x10c (268): unexpected tag byte 0x0c for wasm::ast::lowlevel::Section"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+5da873c7eff9ddd4769471706dbfb11bc10cb1d1378c728ea57ed6228fb3a292
+Killed
+
+
+
+
+
+FAILURE
+51749d49977e9b7a573443d4b79f9d6c513835c7b90ba12c2ce1ce139e59ed7f
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x3b6 (950): unexpected tag byte 0x0c for wasm::ast::lowlevel::Section"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+2cca41b1032717038ae12ac34cb5c379189e85403b48698a2ca919426bf4ab71
+thread 'main' panicked at 'u32 to i32: TryFromIntError(())', src/wimpl/wimplify.rs:227:80
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+cb2829e8586c8bddf411850201fc4a422f2fbd5b66a6a700a604f2a3ef8e07d0
+Killed
+
+
+
+FAILURE
+07768cf9f8aba06bf0b82b5bc85c11eff202e2326232a9670ff81d09b172157f
+Killed
+
+
+
+FAILURE
+74966ac4470beed4cbb5c6860dcc4fa5b532f4644f22a9484315df9af9228f5f
+thread 'main' panicked at 'should not contain superfluous expressions', src/wimpl/wimplify.rs:365:17
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+552c16a69e3563fec4f5acd52256d71c493762795773b7f646f3555e7dbb1d1a
+thread 'main' has overflowed its stack
+fatal runtime error: stack overflow
+Aborted (core dumped)
+
+
+
+FAILURE
+5c8b3eea45224e5929738e4c5c3d1d1a43ec263a60dd102a96161de6d7012ef0
+Killed
+
+
+
+FAILURE
+a658ca600c43789c8daff47578ea5758e7a1a2a5fee1b249e7bb5ce691d126cd
+Warning: Wasm binary at offset 0x19b1c (105244): could not parse name section, ignoring whole section...
+Caused by: Wasm binary at offset 0x19b26 (105254): unexpected tag byte 0xa7 for wasm::ast::lowlevel::NameSubSection
+
+
+FAILURE
+eeafc1fa20e8a88f5e024ff34e72c7ce7726dda3b9cf429174c6db4d469a2867
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x9aa (2474): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+
+FAILURE
+07b539666a8f1cfd40a52f52ac9e5aeb14f253c147595e4e4804b9b9e3ebf59b
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x37 (55): unexpected tag byte 0x00 for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+8673de7499a9b1a0d331d8526129b6078c8a2fa3bdf387b21f72b896e19b1e18
+Killed
+
+
+FAILURE
+cf3e7f1c2ca3e74b9ac4fec1f4b6ccb75e58e832f2730141c6545ad0b1c84f1d
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x84 (132): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+9959bfa6070eb42d75f037e946e3cc2e93d672b05d25be2f375b5375e9e091be
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0xe (14): unexpected tag byte 0x7b for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+1a4276c005c82d6e00f0f70c5cb96985be784f5f344c661ffa26effa0f2ac335
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x6a (106): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+12eafeea47bfa900e74a61ada2103f3535f69685e4b11e49a59c3035883a0459
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x1275 (4725): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+40161b8d9e5d1b4e4f1873d4b57c75b8138950aed6a45eb009f2952fc285c2d0
+thread 'main' panicked at 'should not contain superfluous expressions', src/wimpl/wimplify.rs:365:17
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+8c1b41d2e61457caecd0e364b85ee81dd5ca99b9810ec7c70d93f9f11e51e323
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x37 (55): unexpected tag byte 0x00 for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+1975f00a6a5701274f3365cac679cc3f0d095babc2600b8ef19a5ed93041a009
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x33 (51): unexpected tag byte 0x01 for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+6f688eecc5197f61a99ad766a162496bfdea6abc84742d1c417ba72b43a63534
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x2d (45): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+d15de5b4a5dd746f6fff74a9fe442bf1a722439413fdf6fb638a71225c277240
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x565 (1381): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+456585be358ac98ce925cc8090285a3f5cbb796d11c3fef17897334acebb44b9
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x6a (106): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+0a49d5b4ff9b29b9e148d42a64cea3c64d02a548e9f0812f3285d657b0618f19
+Killed
+
+
+FAILURE
+221c5a162a8ea53620b8d36dba5836879424741fff4618161db549cc9d11d334
+thread 'main' panicked at 'br to this label expects a value', src/wimpl/wimplify.rs:398:70
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+61f77a4cf2bb4212f8eeacafe01916f8f431640430283984bca791a1d38ff949
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x7b (123): unexpected tag byte 0x05 for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+a1970cb2c9a8eb6cf472e3b8bebada55496ceff67b70ba3fc5318b0acccaa90d
+thread 'main' panicked at 'br to this label expects a value', src/wimpl/wimplify.rs:398:70
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+5c93fec36d1416b32b51f3f5561e8f4e64dece0c465e0dfcdc73446872e0d9fe
+thread 'main' panicked at 'should not contain superfluous expressions', src/wimpl/wimplify.rs:365:17
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+dce1e4e4287356b0d69ccf2e6a0098d8dc776c56af88801ed13da8a70c33a416
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x1470 (5232): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+ea1df0e1460e3fcf36470e4225e504f3356d4ee23ffdb317d2c704592c75e7e4
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0xf6e (3950): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+b20d92ae6882698d552bcf66abe73919970c9c3b33d303b097d4319a75c90d9a
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x230 (560): unexpected tag byte 0x0c for wasm::ast::lowlevel::Section"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+
+FAILURE
+b731c0ff5564f695bb23f6d108bb3c1d2408375aff6e45aa6de03f10a7997c37
+Killed
+
+
+FAILURE
+97dc0873d95f5e8ecf09daca72345a774f98379ea1a60646e5ff018a2ec9955b
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x834 (2100): unexpected tag byte 0x00 for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+
+
+FAILURE
+5136375092cd29aaa550bb644c9bc9ef4cc5c032e271c582c3504faa0fad46b0
+thread 'main' panicked at 'should not contain superfluous expressions', src/wimpl/wimplify.rs:343:17
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+1521278facc09eb667df70aedc2defda58b43a02e169f0a4042d38dc1554b423
+Warning: Wasm binary at offset 0x1d3f79d (30668701): could not parse name section, ignoring whole section...
+Caused by: Wasm binary at offset 0x1d3f7a7 (30668711): unexpected tag byte 0xa5 for wasm::ast::lowlevel::NameSubSection
+
+
+
+FAILURE
+7a14bd210fab3e1427e7cadba3ba87d7426718b9e967ea8b0a87a902e745d4ef
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x4d0 (1232): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+3908a165b8d024ae90976ecb4957dc7bfc6a912ff71354a677d568d623f4effb
+Killed
+
+
+FAILURE
+b19174c2d02c576fe1f9818baf4d68e19976eefb05134cd78ee997a20952b7cd
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x331 (817): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+5ba06629da4df7b78ab6b4cab8f11114925826d92e935ed36fb89e26e9ac97ab
+Killed
+
+
+
+FAILURE
+310e582869203573dbbb7a06d8d5e8f9b457261f3b488bf2a37de85d227450ab
+Killed
+
+
+
+FAILURE
+ddaa84c984bcb6da672267f3c8efebf9fd449013e53a0166ede086f4aafed1d0
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x85d (2141): unexpected tag byte 0x0b for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+29b5fc1b69176d9690bdb5ba2a66f24e72f63d733c2de454a28bd56d12727b5c
+thread 'main' panicked at 'invalid branch label, not in label stack', src/wimpl/wimplify.rs:205:115
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+a444830d47ef47ab2128efaa1e80169f72cfd31ea5de17960ff7ec5a23af6ee2
+thread 'main' panicked at 'block should be terminated by end, not else', src/wimpl/wimplify.rs:265:17
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+3d280bec43cd04ca9213a3f1605bc65379ff40abec5aff24d864aee582fdfd93
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x3e (62): unexpected tag byte 0x12 for wasm::ast::lowlevel::Instr"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+b55e3135cad438d0726a16a641ef8103387b72d1d000eec5d2549ab1c0faa86d
+thread 'main' panicked at 'not implemented: only WebAssembly MVP is supported, not multi-value extension', src/wimpl/wimplify.rs:797:18
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+83fd139ac6555d825a7445acb28763233681a34be200b84c9beef3d263faa81d
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x11 (17): unexpected tag byte 0x6f for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+7999769d16d9665e67d53395f5b1a4be15a1840cb872f8f66197720e356ecc77
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x2e (46): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+710cc0fc2f67a6747c029cba184e55bdd3bd3fca203e2c8355dd999c304d5ea1
+thread 'main' panicked at 'else expects if result value on the stack', src/wimpl/wimplify.rs:331:59
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+e513177664ab47959ad74bade1a61bc5f7cfbf2fbbb9885d8ee8b059b0ba229c
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x2fa (762): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+93d3f5b7cf27da4190beeba254156efd86c574c87d924780a4e6a69bb87a5c0c
+Warning: Wasm binary at offset 0x163cc3 (1457347): could not parse name section, ignoring whole section...
+Caused by: Wasm binary at offset 0x163ccd (1457357): unexpected tag byte 0xf2 for wasm::ast::lowlevel::NameSubSection
+
+
+
+FAILURE
+20516ddc4617fd18f65315bf8c506d5b8b092203e70043945c80bf806c3122bd
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x953 (2387): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+4ac7f1010b3d75a767afe256afbe6613e1319af6c24214530294a8fed331baa7
+thread 'main' has overflowed its stack
+fatal runtime error: stack overflow
+Aborted (core dumped)
+
+
+
+FAILURE
+5782ccb7bce726642c505c5c51d2ed9123d115de25f874d14337d6d194a37938
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x5f36 (24374): unexpected tag byte 0xfc for wasm::ast::lowlevel::Instr"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+24c016ac68f08d66ff8512b953ec861c84f55596da23f0d25ae43849eb277b72
+Warning: Wasm binary at offset 0x19acb (105163): could not parse name section, ignoring whole section...
+Caused by: Wasm binary at offset 0x19ad5 (105173): unexpected tag byte 0xa6 for wasm::ast::lowlevel::NameSubSection
+
+
+
+FAILURE
+1400e6c992ecb02515fbbb500a18f8999b3c951cac11ce331264944e790246e6
+thread 'main' panicked at 'should not contain superfluous expressions', src/wimpl/wimplify.rs:343:17
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+6cc2f3fa1611d32ad7563f7092aa1bf58741124302630cef7d21561ecd7b7284
+Killed
+
+
+FAILURE
+3e1ca721580ee8f3686609cb677a0de4713bea9a3c650a2673afda4e7a3cb6fd
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x1673 (5747): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+9bc278e16dec2e05c4fed5b7a8a63056bca17967ebab3ba8cfdb6d65922f098d
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0xdc (220): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+c8e9bb34ca6537166ad83545c7d080c7826b54a1f7005111d851c77c96aacd3c
+Killed
+
+
+FAILURE
+55dfb1502e80569319a7b4160de344f3c24ce3f8b63140f934b980fda556522f
+Killed
+
+
+
+FAILURE
+f57eb37634bc7e60a50dc34cea4d4e6a1d63a431957955177ae1a88b31d0ce62
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x24 (36): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+ebc3750f0ad6de600087fbb771099d1ad98a729e2ba73ef8d56c138a80ae783b
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x7ca (1994): unexpected tag byte 0x16 for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+4b1082f1c2d634aaebbe9b70331ac6639ab3fe7b0a52459ea4f6baa4f82a82ad
+thread 'main' panicked at 'index out of bounds: the len is 2 but the index is 2', src/ast/highlevel.rs:1555:18
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+4ad90609b906ad4a844b05d626933f628b260280312c80e7ba9c0dd706f99b4a
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x91 (145): unexpected tag byte 0x7b for wasm::ast::common::ValType"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+c50eb4db2c0186aa8d8ee223b382f6bb4b96006c3fdd289f442674ddc2453eab
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x17ab (6059): unexpected tag byte 0x03 for wasm::ast::common::Limits"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+FAILURE
+49ed02b8f4b79c9900933a164b7b3acd05e2c79114d47db85545420b409c6c0d
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0xe5 (229): unexpected tag byte 0xfc for wasm::ast::lowlevel::Instr"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+FAILURE
+c465f9d707b38908297552f3a18f1c33fc8f0774dae0a0454ed18f22464b46ca
+thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: "Wasm binary at offset 0x8f2 (2290): unexpected tag byte 0xc0 for wasm::ast::lowlevel::Instr"', src/bin/analyze.rs:11:51
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+total failures = 113
