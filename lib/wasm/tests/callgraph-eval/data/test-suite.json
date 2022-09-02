@@ -16,10 +16,12 @@
 			"tests":[
 				{
 					"test_name": "load-db",
+					"id": 0,
 					"description": ""	
 				},
 				{
 					"test_name": "load-saved-db",
+					"id": 1,
 					"description": ""	
 				}
 			]
@@ -33,25 +35,29 @@
 				"wasm_version": 1,
 				"wasm_extensions": null,
 				"custom_sections": null,
-				"source_language": "JS?",
+				"source_language": "C++",
 				"compiler": "emscripten", 
 				"compiler_version": null
 			},
 			"tests":[
 				{
 					"test_name": "sample",
+					"id": 0,
 					"description": ""	
 				},
 				{
 					"test_name": "canvas",
+					"id": 1,
 					"description": ""	
 				},
 				{
 					"test_name": "dilation",
+					"id": 2,
 					"description": ""	
 				},
 				{
 					"test_name": "template-matching",
+					"id": 3,
 					"description": ""	
 				}
 			]
@@ -72,6 +78,7 @@
 			"tests":[
 				{
 					"test_name": "sample",
+					"id": 0,
 					"description": ""	
 				}
 			]
@@ -92,10 +99,12 @@
 			"tests":[
 				{
 					"test_name": "sample",
+					"id": 0,
 					"description": ""	
 				},
 				{
 					"test_name": "concrete",
+					"id": 1,
 					"description": ""	
 				}
 			]
@@ -109,17 +118,19 @@
 				"wasm_version": 1,
 				"wasm_extensions": null,
 				"custom_sections": null,
-				"source_language": "Cpp",
+				"source_language": "C++",
 				"compiler": "emscripten", 
 				"compiler_version": null
 			},
 			"tests":[
 				{
 					"test_name": "sample",
+					"id": 0,
 					"description": ""	
 				},
 				{
 					"test_name": "test",
+					"id": 1,
 					"description": ""	
 				}
 			]
@@ -133,17 +144,19 @@
 				"wasm_version": 1,
 				"wasm_extensions": null,
 				"custom_sections": null,
-				"source_language": "Cpp",
+				"source_language": "C++",
 				"compiler": "emscripten", 
 				"compiler_version": "3.1.15"
 			},
 			"tests":[
 				{
 					"test_name": "sample",
+					"id": 0,
 					"description": ""	
 				},
 				{
 					"test_name": "test",
+					"id": 1,
 					"description": ""	
 				}
 			]

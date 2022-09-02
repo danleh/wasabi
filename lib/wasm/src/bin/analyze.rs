@@ -6,18 +6,18 @@ use wasm::{wimpl::{FunctionId, Module, analyze::{collect_call_indirect_idx_expr,
 // echo 1 | sudo tee /proc/sys/kernel/perf_event_paranoid
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
-    println!("{:?}", args);
-
+    //println!("{:?}", args);
     let wasm_path = &args[1];
     let wimpl = Module::from_wasm_file(wasm_path).unwrap();
-
+     
     for func in &wimpl.functions {
         param_exprs(func);
     }
 
     println!("most frequent call_indirect expressions:");
     print_map_count(&collect_call_indirect_idx_expr(&wimpl));
-
+    
+    /*
     let (addr_exprs, value_exprs) = collect_i32_load_store_arg_expr(&wimpl);
     println!("most frequent i32 load/store addr expressions:");
     print_map_count(&addr_exprs);
@@ -57,4 +57,5 @@ fn main() {
     if let Some(out_pdf_path) = args.get(2) {
         callgraph.to_pdf(out_pdf_path).unwrap();
     }
+    */
 }

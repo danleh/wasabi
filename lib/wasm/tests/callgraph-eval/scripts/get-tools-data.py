@@ -129,7 +129,6 @@ def run_metadce(bin_type, wasm_file, lib_name, lib_obj):
         reachability_graph_path = '{}/{}/reachability-graph.json'.format(MICROBENCH_PATH, lib_name)
         export_names = {item['internal_id'] : item['name'] for item in lib_obj["static_info"]["exports"]["names"]}    
         reachability_graph = []
-        print(export_names)
         for export in json.load(open(MICROBENCH_DATA_JSON_PATH))[lib_name]['ground_truth']['entry_points']:
             reachability_graph.append({
                 'name': export_names[int(export)],
@@ -408,24 +407,31 @@ def process_twiggy(internal_ir_path, garbage_path, lib):
                     'name': name, 
                     'targets': targets
                 }
-            return IR
+            return IR            
 
     def get_graph(IR):
         import_funcs_num = int(lib['static_info']['imports']['count_imported_funcs'])
 
         graph = {}
         for node in IR:
-            
+            #print(node)
             name, targets = IR[node].values()
-            graph_from_node = False
+            graph_from_node = -1
 
             if "code[" in name: 
+                #print("code")
                 graph_from_node = node[1] + import_funcs_num
-                
-            if graph_from_node != False and graph_from_node not in graph.keys(): 
+            
+            #print(graph_from_node)
+            
+
+            if graph_from_node != -1 and graph_from_node not in graph.keys(): 
+                #print("putting in graph")
                 graph[graph_from_node] = []
+                #print(graph)
         
-            if graph_from_node:
+            if graph_from_node != -1:
+                
                 for target in targets:
 
                     target_name = IR[target]['name']
@@ -437,7 +443,7 @@ def process_twiggy(internal_ir_path, garbage_path, lib):
                         import_name = ".".join(target_name.split(" ")[1].split("::"))
                         import_id = [x['internal_id'] for x in lib['static_info']['imports']['names'] if x["module_name"]+"."+x["export_name_within_module"] == import_name][0]
                         graph[graph_from_node].append(int(import_id))
-
+        #print(graph)
         return graph
 
     IR = get_IR_graph(internal_ir_path)
@@ -450,7 +456,7 @@ def process_twiggy(internal_ir_path, garbage_path, lib):
         node = worklist.pop()
         name, targets = IR[node].values()
         
-        graph_from_node = False
+        graph_from_node = -1
 
         if "code[" in name: 
             graph_from_node = node[1] + import_funcs_num
@@ -467,7 +473,7 @@ def process_twiggy(internal_ir_path, garbage_path, lib):
                 if target not in processed_nodes: 
                     worklist.append(target)
 
-                    if graph_from_node != False:
+                    if graph_from_node != -1:
 
                         target_name = IR[target]['name']
                         if "code[" in target_name: 
@@ -478,7 +484,7 @@ def process_twiggy(internal_ir_path, garbage_path, lib):
                             import_name = ".".join(target_name.split(" ")[1].split("::"))
                             import_id = [x['internal_id'] for x in lib['static_info']['imports']['names'] if x["module_name"]+"."+x["export_name_within_module"] == import_name][0]
                             reachable_edges.add((graph_from_node, int(import_id)))
-
+    #print(reachable_edges)
     
     garbage_funcs = []
     with open(garbage_path) as garbage_f: 
@@ -491,6 +497,8 @@ def process_twiggy(internal_ir_path, garbage_path, lib):
                 garbage_funcs.append(func)
     garbage_funcs = set(garbage_funcs)
 
+    #for node in IR: 
+    #    print(f"{node} -> {IR[node]}")
     graph = replace_graph_nodes_with_id(get_graph(IR), lib)
     #graph = replace_graph_nodes_with_id({f : graph[f] for f in graph.keys() if len(graph[f]) != 0}, lib)
     
@@ -550,7 +558,7 @@ def process_wavm_dot(dot_path, lib):
     return (graph, reachable_funcs, reachable_edges)
     
 def pretty_print_reachable_funcs(counts):
-    tools = ["ourtool", "wassail", "metadce", "twiggy", "wavm"]
+    tools = ["ourtool", "wassail", "wavm", "metadce", "twiggy"]
     count_no_None = [count for count in counts if count!= None and type(count)==int]
     if len(count_no_None) == 0: return
     MAX_COUNT_LEN = len(str(max(count_no_None)))
@@ -615,16 +623,16 @@ def main():
     ourtool_status, ourtool_time   = run_ourtool(bin_type, wasm_file, lib_name, lib_obj)
     wassail_status, wassail_time   = run_wassail(wasm_file, lib_name)
     metadce_status, metadce_time   = run_metadce(bin_type, wasm_file, lib_name, lib_obj)
-    twiggy_status,  twiggy_time    = run_twiggy (wasm_file, lib_name)
-    awsm_status,    awsm_time      = run_awsm   (wasm_file, lib_name)
-    wavm_status,    wavm_time      = run_wavm   (wasm_file, lib_name) 
+    twiggy_status , twiggy_time    = run_twiggy (wasm_file, lib_name)
+    awsm_status   , awsm_time      = run_awsm   (wasm_file, lib_name)
+    wavm_status   , wavm_time      = run_wavm   (wasm_file, lib_name) 
     
-    #ourtool_status = False
-    #wassail_status = False
-    #metadce_status = False
-    #twiggy_status = False
-    #awsm_status = False 
-    #wavm_status = False
+    #ourtool_status, ourtool_time = False, 0
+    #wassail_status, wassail_time = False, 0
+    #metadce_status, metadce_time = False, 0
+    #twiggy_status , twiggy_time  = True , 0
+    #awsm_status   , awsm_time    = False, 0 
+    #wavm_status   , wavm_time    = False, 0
     
     reachable_funcs_count = [None]*5
 
@@ -717,7 +725,53 @@ def main():
             "callgraph": None, 
             "execution_time": None, 
         })        
-
+    
+    print("Processing wavm...")                        
+    if wavm_status:
+        wavm_dot_path = '{}/{}/CG_tools_data/WAVM/wavm.bc.callgraph.dot'.format(DATA_PATH, lib_name)
+        graph, reachable_funcs, reachable_edges = process_wavm_dot(wavm_dot_path, lib_obj)
+        if real_update_json:
+            lib_obj["tools"].append({
+                "name": "wavm",
+                "callgraph_construction": True,
+                "dce" : False,
+                "execution_time": wavm_time,  
+                "callgraph": {
+                    "reachable_functions": {
+                        "names": list(reachable_funcs), 
+                        "count": len(reachable_funcs)
+                    }
+                }
+            })
+        elif micro_update_json:
+            lib_obj["tools"].append({
+                "name": "wavm",
+                "callgraph_construction": True,
+                "dce" : False,
+                "execution_time": wavm_time,  
+                "callgraph": {
+                    "graph": graph,
+                    "reachable_functions": {
+                        "names": list(reachable_funcs), 
+                        "count": len(reachable_funcs)
+                    }, 
+                    "reachable_edges": {
+                        "names": list(reachable_edges), 
+                        "count": len(reachable_edges)
+                    }
+                }
+            })
+        reachable_funcs_count[4] = len(reachable_funcs)
+    else:
+        lib_obj["tools"].append({
+            "name": "wavm",
+            "callgraph_construction": True,
+            "dce" : False,
+            "callgraph": None,
+            "execution_time": None,  
+            "reachable_functions": None
+        })
+    
     print("Processing metadce...")                        
     if metadce_status:
         new_graph_path = '{}/{}/CG_tools_data/metadce/new-graph.txt'.format(DATA_PATH, lib_name)
@@ -827,51 +881,6 @@ def main():
             "garbage_functions": None
         })
 
-    print("Processing wavm...")                        
-    if wavm_status:
-        wavm_dot_path = '{}/{}/CG_tools_data/WAVM/wavm.bc.callgraph.dot'.format(DATA_PATH, lib_name)
-        graph, reachable_funcs, reachable_edges = process_wavm_dot(wavm_dot_path, lib_obj)
-        if real_update_json:
-            lib_obj["tools"].append({
-                "name": "wavm",
-                "callgraph_construction": True,
-                "dce" : False,
-                "execution_time": wavm_time,  
-                "callgraph": {
-                    "reachable_functions": {
-                        "names": list(reachable_funcs), 
-                        "count": len(reachable_funcs)
-                    }
-                }
-            })
-        elif micro_update_json:
-            lib_obj["tools"].append({
-                "name": "wavm",
-                "callgraph_construction": True,
-                "dce" : False,
-                "execution_time": wavm_time,  
-                "callgraph": {
-                    "graph": graph,
-                    "reachable_functions": {
-                        "names": list(reachable_funcs), 
-                        "count": len(reachable_funcs)
-                    }, 
-                    "reachable_edges": {
-                        "names": list(reachable_edges), 
-                        "count": len(reachable_edges)
-                    }
-                }
-            })
-        reachable_funcs_count[4] = len(reachable_funcs)
-    else:
-        lib_obj["tools"].append({
-            "name": "wavm",
-            "callgraph_construction": True,
-            "dce" : False,
-            "callgraph": None,
-            "execution_time": None,  
-            "reachable_functions": None
-        })
     
     pretty_print_reachable_funcs(reachable_funcs_count)
     

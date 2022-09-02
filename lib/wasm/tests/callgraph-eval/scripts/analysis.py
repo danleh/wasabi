@@ -118,7 +118,7 @@ def main():
                     tool_reachable_edges = set()
                     for node, child in tool["callgraph"]["reachable_edges"]["names"]:
                         tool_reachable_edges.add((node, child))
-
+                    print()
                     edges_missing = precise_edges.difference(tool_reachable_edges)
                     superflous_edges = tool_reachable_edges.difference(precise_edges)
                     
@@ -128,6 +128,21 @@ def main():
                         for node in tool_graph:
                             E_all += len(tool_graph[node])
                         tool["callgraph"]["count_edges"] = E_all
+                        tool["precision"] = {
+                            "precise": tool_reachable_edges == precise_edges,
+                            "superflous_edges": {
+                                "names": list(superflous_edges), 
+                                "count": len(superflous_edges), 
+                            }
+                        }
+                    else: 
+                        tool["precision"] = {
+                            "precise": len(tool_reachable_functions) == len(precise_reachable_funcs),
+                            "superflous_edges": {
+                                "names": list(superflous_edges), 
+                                "count": len(superflous_edges), 
+                            }
+                        }
 
                     tool["soundness"] = {
                         # the precise reachable functions should be a subset of the tool reachable functions for the analysis to be sound 
@@ -137,13 +152,7 @@ def main():
                             "count": len(edges_missing), 
                         }
                     }
-                    tool["precision"] = {
-                        "precise": tool_reachable_edges == precise_edges,
-                        "superflous_edges": {
-                            "names": list(superflous_edges), 
-                            "count": len(superflous_edges), 
-                        }
-                    }
+                    
         
         json.dump(data, open(MICRO_DATA_JSON_PATH, 'w'), indent=2)
 

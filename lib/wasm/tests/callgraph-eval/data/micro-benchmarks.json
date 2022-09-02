@@ -1,5 +1,7 @@
 {
     "direct-call-simple" : {
+        "id": 1,
+        "description": "Simple direct call",
         "challenges": null,
         "ground_truth": {
             "entry_points": [0],
@@ -11,7 +13,9 @@
         }
     },
     "direct-call-transitive" : {
-        "challenges": "", 
+        "id": 2,
+        "description": "Transitive direct call",
+        "challenges": null, 
         "ground_truth": {
             "entry_points": [0],
             "precise_callgraph" : {
@@ -23,8 +27,22 @@
             }
         }
     }, 
+    "direct-call-imported-func": {
+        "id": 3,
+        "description": "Direct call to imported function",
+        "challenges": null, 
+        "ground_truth": {
+            "entry_points": [1],
+            "precise_callgraph" : {
+                "1": [0], 
+                "2": []
+            }
+        }
+    },
     "entry-point-start" : {
-        "challenges": "", 
+        "id": 4,
+        "description": "Implicit entry point: WebAssembly start function",
+        "challenges": ["EntryPoints"], 
         "ground_truth": {
             "entry_points": [],
             "precise_callgraph" : {
@@ -33,7 +51,9 @@
         }
     }, 
     "entry-point-wasi" : {
-        "challenges": "", 
+        "id": 5,
+        "description": "Implicit entry point: WASI start function",
+        "challenges": ["EntryPoints"], 
         "ground_truth": {
             "entry_points": [],
             "precise_callgraph" : {
@@ -44,7 +64,9 @@
         }
     }, 
     "host-callbacks-exports" : {
-        "challenges": "", 
+        "id": 6,
+        "description": "Imported host code calls exported function",
+        "challenges": ["HostCallbacks"], 
         "ground_truth": {
             "entry_points": [1],
             "precise_callgraph" : {
@@ -55,17 +77,10 @@
             }
         }
     }, 
-    "host-code-table-mutable" : {
-        "weird": true,  
-        "challenges": "", 
-        "ground_truth": {
-            "entry_points": [],
-            "precise_callgraph" : {
-            }
-        }
-    }, 
     "host-reachable-table-export" : {
-        "challenges": "", 
+        "id": 7,
+        "description": "Functions in an exported table can be reachable",
+        "challenges": ["HostCallbacks"], 
         "ground_truth": {
             "entry_points": [0],
             "precise_callgraph" : {
@@ -78,7 +93,9 @@
         }
     }, 
     "host-reachable-table-import" : {
-        "challenges": "", 
+        "id": 8,
+        "description": "Functions in an imported table can be reachable",
+        "challenges": ["HostCallbacks"], 
         "ground_truth": {
             "entry_points": [1],
             "precise_callgraph" : {
@@ -89,19 +106,51 @@
                 "4": []
             }
         }
-    }, 
-    "import-print-function" : {
-        "challenges": "", 
+    },
+    "host-code-table-mutable" : {
+        "id": 9,
+        "description": "Table is mutated by host",
+        "challenges": ["TableMutation"], 
         "ground_truth": {
-            "entry_points": [1],
+            "entry_points": [0],
             "precise_callgraph" : {
-                "1": [0], 
-                "2": []
+                "0": [2],
+                "1": [], 
+                "2": [], 
+                "3": []
             }
         }
     }, 
+    "table-init-offset-imported-global" : {
+        "id": 10,
+        "description": "Table init. offset is imported from host",
+        "challenges": ["TableInitOffset"], 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1], 
+                "1": [], 
+                "2": []
+            }
+        }
+    },
+    "memory-init-offset-imported-global" : {
+        "id": 11,
+        "description": "Memory init. offset is imported from host",
+        "challenges": ["MemoryInitOffset"], 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1], 
+                "1": [],
+                "2": [] 
+            }
+        }
+    },
     "indirect-call-func-in-table" : {
-        "challenges": "", 
+        "id": 12,
+        "description": "Functions must be in table for indirect call",
+        "challenges": null, 
         "ground_truth": {
             "entry_points": [0],
             "precise_callgraph" : {
@@ -111,8 +160,23 @@
             }
         }
     }, 
+    "indirect-call-type-based" : {
+        "id": 13,
+        "description": "Types can constrain indirect call targets",
+        "challenges": ["LowLevelTypes"], 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1], 
+                "1": [], 
+                "2": []
+            }
+        }
+    },
     "indirect-call-index-expr-const" : {
-        "challenges": "", 
+        "id": 14,
+        "description": "Constant table index value",
+        "challenges": ["TableIndexValue"], 
         "ground_truth": {
             "entry_points": [0],
             "precise_callgraph" : {
@@ -122,19 +186,37 @@
             }
         }
     }, 
-    "indirect-call-index-expr-double-load" : {
-        "challenges": "", 
+    "indirect-call-index-expr-local" : {
+        "id": 15,
+        "description": "Index value data-flow through local variable",
+        "challenges": ["TableIndexValue"], 
         "ground_truth": {
             "entry_points": [0],
             "precise_callgraph" : {
-                "0": [1],
+                "0": [2], 
                 "1": [], 
                 "2": []
             }
         }
     }, 
+    "indirect-call-index-expr-mask" : {
+        "id": 16,
+        "description": "Masked index value",
+        "challenges": ["TableIndexValue"], 
+        "ground_truth": {
+            "entry_points": [0],
+            "precise_callgraph" : {
+                "0": [1, 2], 
+                "1": [], 
+                "2": [], 
+                "3": []
+            }
+        }
+    }, 
     "indirect-call-index-expr-interprocedural-param" : {
-        "challenges": "", 
+        "id": 17,
+        "description": "Inter-procedural index value, parameter",
+        "challenges": ["TableIndexValue"], 
         "ground_truth": {
             "entry_points": [0],
             "precise_callgraph" : {
@@ -146,7 +228,9 @@
         }
     }, 
     "indirect-call-index-expr-interprocedural-result" : {
-        "challenges": "", 
+        "id": 18,
+        "description": "Inter-procedural index value, function result",
+        "challenges": ["TableIndexValue"], 
         "ground_truth": {
             "entry_points": [0],
             "precise_callgraph" : {
@@ -158,7 +242,9 @@
         }
     }, 
     "indirect-call-index-expr-load-const-addr" : {
-        "challenges": "", 
+        "id": 19,
+        "description": "Index from memory, constant address",
+        "challenges": ["TableIndexValue"], 
         "ground_truth": {
             "entry_points": [0],
             "precise_callgraph" : {
@@ -169,7 +255,9 @@
         }
     }, 
     "indirect-call-index-expr-load-interprocedural-param" : {
-        "challenges": "", 
+        "id": 20,
+        "description": "Index from memory, address inter-procedural, parameter",
+        "challenges": ["TableIndexValue"], 
         "ground_truth": {
             "entry_points": [0],
             "precise_callgraph" : {
@@ -181,7 +269,9 @@
         }
     }, 
     "indirect-call-index-expr-load-interprocedural-result" : {
-        "challenges": "", 
+        "id": 21,
+        "description": "Index from memory, address inter-procedural, result",
+        "challenges": ["TableIndexValue"], 
         "ground_truth": {
             "entry_points": [0],
             "precise_callgraph" : {
@@ -192,31 +282,23 @@
             }
         }
     }, 
-    "indirect-call-index-expr-local" : {
-        "challenges": "", 
+    "indirect-call-index-expr-double-load" : {
+        "id": 22,
+        "description": "Index from memory, double indirect load",
+        "challenges": ["TableIndexValue"], 
         "ground_truth": {
             "entry_points": [0],
             "precise_callgraph" : {
-                "0": [2], 
+                "0": [1],
                 "1": [], 
                 "2": []
             }
         }
-    }, 
-    "indirect-call-index-expr-mask" : {
-        "challenges": "", 
-        "ground_truth": {
-            "entry_points": [0],
-            "precise_callgraph" : {
-                "0": [1, 2], 
-                "1": [], 
-                "2": [], 
-                "3": []
-            }
-        }
-    }, 
+    },
     "indirect-call-index-expr-memory-mutable" : {
-        "challenges": "", 
+        "id": 23,
+        "description": "Index from memory, memory is mutable",
+        "challenges": ["MemoryMutable"], 
         "ground_truth": {
             "entry_points": [0],
             "precise_callgraph" : {
@@ -226,41 +308,10 @@
             }
         }
     }, 
-    "indirect-call-type-based" : {
-        "challenges": "", 
-        "ground_truth": {
-            "entry_points": [0],
-            "precise_callgraph" : {
-                "0": [1], 
-                "1": [], 
-                "2": []
-            }
-        }
-    }, 
-    "memory-init-offset-imported-global" : {
-        "challenges": "", 
-        "ground_truth": {
-            "entry_points": [0],
-            "precise_callgraph" : {
-                "0": [1], 
-                "1": [],
-                "2": [] 
-            }
-        }
-    }, 
-    "table-init-offset-imported-global" : {
-        "challenges": "", 
-        "ground_truth": {
-            "entry_points": [0],
-            "precise_callgraph" : {
-                "0": [1], 
-                "1": [], 
-                "2": []
-            }
-        }
-    }, 
     "cpp-vtable-layout-source-type-info" : {
-        "challenges": "", 
+        "id": 24,
+        "description": "C++ virtual calls from unrelated classes",
+        "challenges": ["MultiPL", "MemoryMutable"], 
         "ground_truth": {
             "entry_points": ["11", "22", "19", "20", "21"],
             "precise_callgraph" : {
