@@ -1,15 +1,17 @@
-;; Is the table mutated by the host code?
-;; Call graph depends on this assumption.
+;; Is the table mutated by the host code? Call graph depends on this assumption.
 ;; If the table is not mutated:
 ;;   $main -> $imported (JavaScript) -> $export1
 ;; With the table mutation in main.js:
 ;;   $main -> $imported (JavaScript) -> $export2
 ;; In this particular program, the most precise call graph should include knowledge about the host code, so it is:
 ;;   $main -> $imported (JavaScript) -> $export2
-;; The only functions that can be added into the table by the host, are the ones that are reachable from the host.
-;; Entry point: $main, $export1, $export2
-;; Reachable functions:
-;;   $main, $export1, $export2
+;; The only functions that can be added into the table by the host, are the ones that are reachable from the host. So $not-reachable can never be reachable.
+;; So the ground truth is:
+;; Entry point: $main
+;; Precise call graph:
+;;   $main -> $imported (JavaScript) -> $export2
+;; Reachable (actually executed) functions:
+;;   $main, $export2
 (module
     ;; (import "host" "print" (func $print (param i32)))
     (func $main (export "main")
