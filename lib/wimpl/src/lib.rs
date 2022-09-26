@@ -18,7 +18,7 @@ use wasm::{
 // pub mod analyze;
 // pub mod callgraph;
 pub mod wimplify;
-// pub mod traverse;
+pub mod traverse;
 
 mod pretty_print;
 mod parse;

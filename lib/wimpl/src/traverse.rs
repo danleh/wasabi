@@ -2,7 +2,7 @@
 
 use std::ops::Add;
 
-use super::{Body, Stmt, Expr};
+use crate::{Body, Stmt, Expr};
 
 impl Body {
     // A "facade", such that one doesn't have to borrow the closure arguments manually.
@@ -209,7 +209,7 @@ impl Expr {
 fn example_how_to_share_state_across_visitors() {
     use std::fmt::Write;
 
-    let module = crate::wimpl::Module::from_wasm_file("tests/wimpl/wimplify_expected/block/block_nested.wasm").unwrap();
+    let module = crate::Module::from_wasm_file("tests/wimplify_expected/block/block_nested.wasm").unwrap();
 
     // Must use RefCell because one cannot create two mutable references, one for each closure.
     // So instead borrow check at runtime by wrapping `output` in a `RefCell`.
@@ -231,7 +231,7 @@ fn example_how_to_share_state_across_visitors() {
 
 #[test]
 fn example_collect_constants() {
-    let module = crate::wimpl::Module::from_wasm_file("tests/wimpl/wimplify_expected/block/block_nested.wasm").unwrap();
+    let module = crate::Module::from_wasm_file("tests/wimplify_expected/block/block_nested.wasm").unwrap();
 
     println!("{}", module);
 
