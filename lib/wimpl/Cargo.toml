@@ -34,5 +34,8 @@ regex = "1.6.0"
 # For easier error handling of executables.
 anyhow = "1.0.65"
 
+# For evaluation results collection.
+csv = "1.1.6"
+
 [dev-dependencies]
 walkdir = "2.3.2"
