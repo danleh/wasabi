@@ -2,16 +2,16 @@ use std::convert::TryInto;
 
 /*
  TODO WHEN CONTINUING
- - rename ParseErrorInner to ParseIssue because its used for warnings and errors
- - make encoding of CodeSection parallel
+ - fix missing sections when encoding with wasmparser, cf. with old code
  - add SectionId type that is used on both OLD and NEW parser and in the AST to order custom sections
  - then serialize sections according to this in both OLD and NEW parser
- - merge (NOT rebase) wasmparser and wimpl branches
  - update wasmparser and wasm-encoder dependencies
+ - merge (NOT rebase) wasmparser and wimpl branches
+ - make encoding of CodeSection parallel
+ - rename ParseErrorInner to ParseIssue because its used for warnings and errors
  - make AST blocks nested, remove end/else opcodes
  - remove blocktype, replace with function type (this should make our AST multi-value capable)
  - rename wasm crate to wasabi-wasm
- - pull wimpl out into own wimpl crate (also in libs)
 */
 
 mod error {

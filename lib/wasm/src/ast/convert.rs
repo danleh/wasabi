@@ -608,6 +608,7 @@ impl From<&hl::Module> for ll::Module {
                 .unwrap_or(sections.len() - after_position);
 
             let position = after_position + custom_skipped;
+            // FIXME
             sections.insert(position, section);
         }
 
