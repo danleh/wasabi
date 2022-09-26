@@ -4,12 +4,10 @@ use std::{
 };
 
 use rustc_hash::FxHashMap;
-use wasm::{
-    wimpl::{self, analyze::{param_exprs, collect_call_indirect_args, collect_call_indirect_idx_expr, print_map_count}, ExprKind, Function, Module, StmtKind, Var, FunctionId, Expr, traverse::VisitOptionBodyExt},
-    ValType, highlevel::{FunctionType, MemoryOp},
-};
 
+use wasm::{ValType, highlevel::{FunctionType, MemoryOp}};
 use wasm::highlevel::{BinaryOp, UnaryOp, LoadOp, StoreOp};
+use wimpl::{self, analyze::{param_exprs, collect_call_indirect_args, collect_call_indirect_idx_expr, print_map_count}, ExprKind, Function, Module, StmtKind, Var, FunctionId, Expr, traverse::VisitOptionBodyExt};
 
 use TypeConstraint::*;
 use ValType::*;
