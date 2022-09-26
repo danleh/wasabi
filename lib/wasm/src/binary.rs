@@ -46,7 +46,7 @@ impl DecodeState {
     pub fn into_offsets(self, module: &Module) -> Offsets {
         assert_eq!(self.section_offsets.len(), module.sections.len());
         let sections = module.sections.iter()
-            .map(std::mem::discriminant)
+            .map(crate::SectionId::from_section)
             .zip(self.section_offsets.into_iter())
             .collect();
 
@@ -409,10 +409,9 @@ impl WasmBinary for Module {
                     // To insert custom sections at the correct place when serializing again, we
                     // need to remember after which other non-custom section they originally came.
                     if let Section::Custom(CustomSection::Raw(r)) = &mut section {
-                        r.after = last_section_type;
-                    } else {
-                        last_section_type = Some(std::mem::discriminant(&section));
+                        r.after = last_section_type.clone();
                     }
+                    last_section_type = Some(crate::SectionId::from_section(&section));
 
                     sections.push(section);
                 }

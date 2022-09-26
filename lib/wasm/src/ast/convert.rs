@@ -585,13 +585,13 @@ impl From<&hl::Module> for ll::Module {
         // sections is the same in this array as when they were parsed originally, so no need
         // to handle that specifically.
         for section in &module.custom_sections {
-            let after = section.after;
+            let after = section.after.clone();
             let section = ll::Section::Custom(ll::CustomSection::Raw(section.clone()));
 
             // Find the reference section after which this custom section came in the original binary.
             let after_position = if let Some(after) = after {
                 sections.iter()
-                    .position(|sec| std::mem::discriminant(sec) == after)
+                    .position(|sec| crate::SectionId::from_section(sec) == after)
                     .expect("cannot find the reference section for inserting custom section anymore")
                     + 1
             } else {

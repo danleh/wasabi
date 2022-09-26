@@ -289,9 +289,49 @@ impl Memarg {
 pub struct RawCustomSection {
     pub name: String,
     pub content: Vec<u8>,
-    /// Used again during serialization to place the custom section at the right order/position.
-    /// The last non-custom section _before_ this custom section. If there are multiple custom
-    /// sections after each other, this will not include it, but their relative order will
-    /// be respected in the high-level custom section list.
-    pub after: Option<std::mem::Discriminant<super::lowlevel::Section>>,
+    /// The last non-custom section _before_ this custom section. 
+    /// Used during serialization to place the custom section at the right order/position.
+    /// If there are multiple custom sections after each other, this will be `None`, 
+    /// but the custom sections' relative order will be correct, and the first one
+    /// will have this set.
+    pub after: Option<SectionId>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub enum SectionId {
+    Type,
+    Import,
+    Function,
+    Table,
+    Memory,
+    Global,
+    Export,
+    Start,
+    Element,
+    Code,
+    Data,
+    Custom(String),
+}
+
+// TODO Remove once the old low-level parser code is gone.
+impl SectionId {
+    pub fn from_section(section: &crate::lowlevel::Section) -> Self {
+        use crate::lowlevel::Section::*;
+        use crate::lowlevel::CustomSection;
+        match section {
+            Type(_) => SectionId::Type,
+            Import(_) => SectionId::Import,
+            Function(_) => SectionId::Function,
+            Table(_) => SectionId::Table,
+            Memory(_) => SectionId::Memory,
+            Global(_) => SectionId::Global,
+            Export(_) => SectionId::Export,
+            Start(_) => SectionId::Start,
+            Element(_) => SectionId::Element,
+            Code(_) => SectionId::Code,
+            Data(_) => SectionId::Data,
+            Custom(CustomSection::Name(_)) => SectionId::Custom("name".to_string()),
+            Custom(CustomSection::Raw(RawCustomSection { name, .. })) => SectionId::Custom(name.clone()),
+        }
+    }
 }

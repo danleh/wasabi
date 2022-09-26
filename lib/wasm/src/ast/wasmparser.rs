@@ -3,6 +3,9 @@ use std::convert::TryInto;
 /*
  TODO WHEN CONTINUING
  - fix missing sections when encoding with wasmparser, cf. with old code
+    // Index the section offsets not by the section's discriminant, but by
+    // a new enum `SectionId`, which is just the section name for "normal" sections,
+    // and CustomSection(name: String) for custom sections (whose name should be unique).
  - add SectionId type that is used on both OLD and NEW parser and in the AST to order custom sections
  - then serialize sections according to this in both OLD and NEW parser
  - update wasmparser and wasm-encoder dependencies
@@ -132,7 +135,7 @@ pub mod parser {
     use crate::lowlevel::{CustomSection, NameSection, Offsets, Section, SectionOffset, WithSize};
     use crate::{
         BlockType, ElemType, FunctionType, GlobalType, Label, Limits, Memarg, MemoryType,
-        Mutability, RawCustomSection, TableType, Val, ValType,
+        Mutability, RawCustomSection, TableType, Val, ValType, SectionId,
     };
 
     use crate::extensions::WasmExtension;
@@ -168,14 +171,10 @@ pub mod parser {
                     // The version number is checked by wasmparser to always be 1.
                 }
                 Payload::TypeSection(mut reader) => {
-                    // TODO Index the section offsets not by the section's discriminant, but by
-                    // a new enum `SectionId`, which is just the section name for "normal" sections,
-                    // and CustomSection(name: String) for custom sections (whose name should be unique).
-                    let discriminant = std::mem::discriminant(&Section::Type(Default::default()));
                     // This is the offset AFTER the section tag and size in bytes,
                     // but BEFORE the number of elements in the section.
                     let offset = reader.range().start;
-                    section_offsets.push((discriminant, offset));
+                    section_offsets.push((SectionId::Type, offset));
 
                     types.new_type_section(reader.get_count(), offset)?;
 
@@ -196,9 +195,7 @@ pub mod parser {
                     }
                 }
                 Payload::ImportSection(mut reader) => {
-                    // FIXME section order without discriminant
-                    let discriminant = std::mem::discriminant(&Section::Import(Default::default()));
-                    section_offsets.push((discriminant, reader.range().start));
+                    section_offsets.push((SectionId::Import, reader.range().start));
 
                     let mut import_offset = reader.original_position();
                     for _ in 0..reader.get_count() {
@@ -255,9 +252,7 @@ pub mod parser {
                 Payload::AliasSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ModuleLinking))?,
                 Payload::InstanceSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ModuleLinking))?,
                 Payload::FunctionSection(mut reader) => {
-                    // FIXME section order without discriminant
-                    let discriminant = std::mem::discriminant(&Section::Function(Default::default()));
-                    section_offsets.push((discriminant, reader.range().start));
+                    section_offsets.push((SectionId::Function, reader.range().start));
 
                     let count = reader.get_count();
                     module.functions.reserve(u32_to_usize(count));
@@ -273,9 +268,7 @@ pub mod parser {
                     }
                 }
                 Payload::TableSection(mut reader) => {
-                    // FIXME section order without discriminant
-                    let discriminant = std::mem::discriminant(&Section::Table(Default::default()));
-                    section_offsets.push((discriminant, reader.range().start));
+                    section_offsets.push((SectionId::Table, reader.range().start));
 
                     let count = reader.get_count();
                     module.tables.reserve(u32_to_usize(count));
@@ -291,9 +284,7 @@ pub mod parser {
                     }
                 }
                 Payload::MemorySection(mut reader) => {
-                    // FIXME section order without discriminant
-                    let discriminant = std::mem::discriminant(&Section::Memory(Default::default()));
-                    section_offsets.push((discriminant, reader.range().start));
+                    section_offsets.push((SectionId::Memory, reader.range().start));
 
                     let count = reader.get_count();
                     module.memories.reserve(u32_to_usize(count));
@@ -310,9 +301,7 @@ pub mod parser {
                 }
                 Payload::TagSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ExceptionHandling))?,
                 Payload::GlobalSection(mut reader) => {
-                    // FIXME section order without discriminant
-                    let discriminant = std::mem::discriminant(&Section::Global(Default::default()));
-                    section_offsets.push((discriminant, reader.range().start));
+                    section_offsets.push((SectionId::Global, reader.range().start));
 
                     let count = reader.get_count();
                     module.globals.reserve(u32_to_usize(count));
@@ -336,9 +325,7 @@ pub mod parser {
                     }
                 }
                 Payload::ExportSection(mut reader) => {
-                    // FIXME section order without discriminant
-                    let discriminant = std::mem::discriminant(&Section::Export(Default::default()));
-                    section_offsets.push((discriminant, reader.range().start));
+                    section_offsets.push((SectionId::Export, reader.range().start));
 
                     let mut export_offset = reader.original_position();
                     for _ in 0..reader.get_count() {
@@ -398,10 +385,7 @@ pub mod parser {
                     }
                 }
                 Payload::StartSection { func, range } => {
-                    // FIXME section order without discriminant
-                    let discriminant =
-                        std::mem::discriminant(&Section::Start(WithSize(SectionOffset(0u32.into()))));
-                    section_offsets.push((discriminant, range.start));
+                    section_offsets.push((SectionId::Start, range.start));
 
                     let prev_start = std::mem::replace(&mut module.start, Some(func.into()));
                     if prev_start.is_some() {
@@ -409,9 +393,7 @@ pub mod parser {
                     }
                 }
                 Payload::ElementSection(mut reader) => {
-                    // FIXME section order without discriminant
-                    let discriminant = std::mem::discriminant(&Section::Element(Default::default()));
-                    section_offsets.push((discriminant, reader.range().start));
+                    section_offsets.push((SectionId::Element, reader.range().start));
 
                     let mut element_offset = reader.original_position();
                     for _ in 0..reader.get_count() {
@@ -476,9 +458,7 @@ pub mod parser {
                     Err(ParseErrorInner::unsupported(range.start, WasmExtension::BulkMemoryOperations))?
                 }
                 Payload::DataSection(mut reader) => {
-                    // FIXME section order without discriminant
-                    let discriminant = std::mem::discriminant(&Section::Data(Default::default()));
-                    section_offsets.push((discriminant, reader.range().start));
+                    section_offsets.push((SectionId::Data, reader.range().start));
 
                     let mut data_offset = reader.original_position();
                     for _ in 0..reader.get_count() {
@@ -597,8 +577,7 @@ pub mod parser {
                         Ok(())
                     };
 
-                    // FIXME section order without discriminant
-                    let discriminant = if let Err(name_parsing_aborted) = name_parsing() {
+                    if let Err(name_parsing_aborted) = name_parsing() {
                         // Add the warning that stopped parsing the name section as the final warning.
                         warnings.push(name_parsing_aborted);
 
@@ -611,18 +590,11 @@ pub mod parser {
                                 .map(|(section, _offset)| section)
                                 .cloned(),
                         };
-                        let discriminant = std::mem::discriminant(&Section::Custom(CustomSection::Raw(RawCustomSection { name: "".to_string(), content: vec![], after: None})));
                         module.custom_sections.push(raw_custom_section);
-                        discriminant
-                    } else {
-                        std::mem::discriminant(&Section::Custom(CustomSection::Name(NameSection {
-                            subsections: Vec::new(),
-                        })))
-                    };
-
-                    // FIXME section order without discriminant
-                    section_offsets.push((discriminant, range.start));
+                    }
+                    section_offsets.push((SectionId::Custom("name".to_string()), range.start));
                 }
+                // Other (non-name) custom sections.
                 Payload::CustomSection {
                     name,
                     data_offset: _,
@@ -638,15 +610,7 @@ pub mod parser {
                             .cloned(),
                     };
 
-                    // FIXME section order without discriminant
-                    let discriminant = std::mem::discriminant(&Section::Custom(CustomSection::Raw(
-                        RawCustomSection {
-                            name: "".into(),
-                            content: Vec::new(),
-                            after: None,
-                        },
-                    )));
-                    section_offsets.push((discriminant, range.start));
+                    section_offsets.push((SectionId::Custom(name.to_string()), range.start));
 
                     module.custom_sections.push(raw_custom_section);
                 }
@@ -655,9 +619,7 @@ pub mod parser {
                     range,
                     size: _,
                 } => {
-                    // FIXME section order without discriminant
-                    let discriminant = std::mem::discriminant(&Section::Code(Default::default()));
-                    section_offsets.push((discriminant, range.start));
+                    section_offsets.push((SectionId::Code, range.start));
 
                     function_offsets = Vec::with_capacity(u32_to_usize(count));
 
