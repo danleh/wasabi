@@ -307,11 +307,11 @@ pub fn reachable_callgraph(
                     },
                     None => {
                         // this is an imported function 
-                        (None, *module.metadata.func_name_map.get(&func).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>"))
+                        (None, *module.metadata.func_id_to_orig_idx_map.get(&func).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>"))
                     },
                 }; 
                 
-                let wasm_target = *module.metadata.func_name_map.get(&target).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>"); 
+                let wasm_target = *module.metadata.func_id_to_orig_idx_map.get(&target).expect("Each Wimpl FunctionId should be mapped to it's Wasm Idx<Function>"); 
                 // FIXME cleanup this, I think we don't use callsite information anyway?
                 let wasm_target_info = match call {
                     Target::Direct(_function_id) => None,

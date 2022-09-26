@@ -57,8 +57,8 @@ pub struct Module {
 pub struct Metadata {
     id_stmt_map: HashMap<InstrId, Stmt>,
     id_expr_map: HashMap<InstrId, Expr>, 
-    instr_location_map : HashMap<InstrId, WasmSrcLocation>,
-    func_name_map : HashMap<FunctionId, ::wasm::Idx<highlevel::Function>>, 
+    instr_location_map: HashMap<InstrId, WasmSrcLocation>,
+    func_id_to_orig_idx_map: HashMap<FunctionId, ::wasm::Idx<highlevel::Function>>, 
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
@@ -148,7 +148,7 @@ impl FunctionId {
                 Some(name) => match unique_names.get(&name) {
                     None => {
                         // Name was not used previously -> use it for this function.
-                        name_map.push(Self::from_name(name.clone()));
+                        name_map.push(FunctionId::Name(ArcIntern::from(name.clone())));
                         unique_names.insert(name, Some(idx));
                     }
                     Some(Some(clash_idx)) => {
@@ -186,36 +186,6 @@ impl FunctionId {
         };
         debug_name.or(first_export_name).or(import_field_name)
     }
-
-    pub fn from_idx(idx: Idx<highlevel::Function>, module: &highlevel::Module) -> Self {
-        // To make sure that every `FunctionId` is unique, we produce one for every function in
-        // the module. However since that would be very expensive to do repeatedly, we cache the
-        // translation.
-        // FIXME The proper solution is not not have this function at all and only allow creating
-        // `FunctionId`s from a whole module. TODO Refactor all callers of this function.
-        MODULE_FUNCTION_IDS_CACHE.with(|cache| {
-            let mut function_id_map = cache.borrow_mut();
-            // FIXME SUPER UGLY HACK: might get the same hash for different modules and then give incorrect results!
-            let module_hash = {
-                let mut h = std::collections::hash_map::DefaultHasher::new();
-                module.hash(&mut h);
-                h.finish()
-            };
-            let function_id_map = function_id_map
-                .entry(module_hash)
-                .or_insert_with(|| FunctionId::from_module(module));
-            assert_eq!(function_id_map.len(), module.functions.len(), "possible cache inconsistency!? {:?}\n{:?}", function_id_map, module.functions.iter().map(|f| f.name.clone()).collect::<Vec<_>>());
-            function_id_map[idx.to_usize()].clone()
-        })
-    }
-
-    pub fn from_name(name: String) -> Self {
-        FunctionId::Name(ArcIntern::from(name))
-    }
-}
-
-thread_local!{
-    static MODULE_FUNCTION_IDS_CACHE: RefCell<HashMap<u64, Vec<FunctionId>>> = RefCell::new(HashMap::new());
 }
 
 /// A sequence of instructions, typically as the body of a function or block.

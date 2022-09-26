@@ -1,6 +1,5 @@
 //! Conversion from standard WebAssembly to Wimpl.
 
-use std::collections::HashSet;
 use std::convert::TryInto;
 
 use wasm::highlevel;
@@ -29,6 +28,7 @@ pub struct Context<'module> {
     module: &'module highlevel::Module,
     func_ty: &'module FunctionType,
     func_idx: Idx<highlevel::Function>,
+    func_idx_to_id_map: &'module [FunctionId],
 }
 
 fn wimplify_instrs<'module>(
@@ -488,7 +488,7 @@ fn wimplify_instrs<'module>(
             wasm::Call(func_index) => {
                 let n_args = context.module.function(*func_index).type_.inputs().len();
                 let call_expr = Call {
-                    func: FunctionId::from_idx(*func_index, context.module),
+                    func: context.func_idx_to_id_map[func_index.to_usize()].clone(),
                     args: expr_stack.split_off(expr_stack.len() - n_args).into_iter().map(|(expr, _ty)| expr).collect(),
                 };
 
@@ -741,10 +741,10 @@ fn wimplify_instrs<'module>(
 
 fn wimplify_function_body(
     function: &highlevel::Function,
-    function_idx: Idx<highlevel::Function>,
+    func_idx: Idx<highlevel::Function>,
     module: &highlevel::Module, 
-    module_metadata: &mut Metadata, 
-    //module_metadata: &mut HashMap<InstrId, WasmSrcLocation>, 
+    module_metadata: &mut Metadata,
+    func_orig_idx_to_id_map: &[FunctionId],
 ) -> Result<Option<Body>, String> {
     if let Some(code) = function.code() {
         // The body will be at least the number of locals and often a nop or return instruction.
@@ -778,7 +778,8 @@ fn wimplify_function_body(
         let context = Context {
             module,
             func_ty: &function.type_, 
-            func_idx: function_idx, 
+            func_idx,
+            func_idx_to_id_map: func_orig_idx_to_id_map,
         };
 
         let mut state = State {
@@ -813,41 +814,37 @@ fn wimplify_function_body(
 }
 
 pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
-    // Make sure that the produced `FunctionId`s are unique (i.e., that no function names clash).
-    let mut function_ids = HashSet::new();
+    // Generate unique function ids for each function in the module.
+    let func_orig_idx_to_id_map = FunctionId::from_module(module);
 
     let mut metadata = Metadata {
         instr_location_map: HashMap::new(),
-        func_name_map: HashMap::new(),
         id_stmt_map: HashMap::new(),
         id_expr_map: HashMap::new(), 
-    }; 
+        func_id_to_orig_idx_map: HashMap::new(),
+    };
     
     // TODO parallelize
-    let functions = module.functions().map(|(function_idx, function)| -> Result<Function, String> {
-        let name = FunctionId::from_idx(function_idx, module);
-        // DEBUG
-        // println!("name: {} -> {name}", function_idx.to_u32());
-        let name_clash = !function_ids.insert(name.clone());
-        if name_clash {
-            return Err(format!("duplication function.name '{}'!", name));
-        }
-        metadata.func_name_map.insert(name.clone(),function_idx); 
+    let functions = module.functions().map(|(func_idx, function)| -> Result<Function, String> {
+        let name = func_orig_idx_to_id_map[func_idx.to_usize()].clone();
+        metadata.func_id_to_orig_idx_map.insert(name.clone(), func_idx);
+
         Ok(Function {
             type_: function.type_,
-            body: wimplify_function_body(function, function_idx, module, &mut metadata)?,
+            body: wimplify_function_body(function, func_idx, module, &mut metadata, &func_orig_idx_to_id_map)?,
             name,
             export: function.export.clone(), 
         })
     }).collect::<Result<Vec<_>, _>>()?;
 
     let wimpl_table = if let Some(table) = module.tables.first().clone() {
+        // Translate function indices to function IDs in table/elem section.
         let mut elements = Vec::new(); 
         for elem in &table.elements {
-            let offset = (*elem.offset).to_vec(); 
+            let offset = (*elem.offset).to_vec();
             let mut functions = Vec::new(); 
-            for func in &elem.functions {  
-                functions.push(FunctionId::from_idx(*func, module)); 
+            for func_idx in &elem.functions {  
+                functions.push(func_orig_idx_to_id_map[func_idx.to_usize()].clone()); 
             }
             elements.push(Element { offset, functions })
         }
@@ -871,6 +868,6 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
         
         // TODO add (a single) memory.
         
-        metadata,
+        metadata: metadata,
     })
 }
