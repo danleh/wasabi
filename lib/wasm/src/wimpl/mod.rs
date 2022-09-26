@@ -188,14 +188,20 @@ impl FunctionId {
         // To make sure that every `FunctionId` is unique, we produce one for every function in
         // the module. However since that would be very expensive to do repeatedly, we cache the
         // translation.
-        // TODO The proper solution is not not have this function at all and only allow creating
+        // FIXME The proper solution is not not have this function at all and only allow creating
         // `FunctionId`s from a whole module. TODO Refactor all callers of this function.
         MODULE_FUNCTION_IDS_CACHE.with(|cache| {
             let mut function_id_map = cache.borrow_mut();
+            // FIXME SUPER UGLY HACK: might get the same hash for different modules and then give incorrect results!
+            let module_hash = {
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                module.hash(&mut h);
+                h.finish()
+            };
             let function_id_map = function_id_map
-                .entry(module)
+                .entry(module_hash)
                 .or_insert_with(|| FunctionId::from_module(module));
-            assert_eq!(function_id_map.len(), module.functions.len(), "possible cache inconsistency!?");
+            assert_eq!(function_id_map.len(), module.functions.len(), "possible cache inconsistency!? {:?}\n{:?}", function_id_map, module.functions.iter().map(|f| f.name.clone()).collect::<Vec<_>>());
             function_id_map[idx.to_usize()].clone()
         })
     }
@@ -206,7 +212,7 @@ impl FunctionId {
 }
 
 thread_local!{
-    static MODULE_FUNCTION_IDS_CACHE: RefCell<HashMap<*const highlevel::Module, Vec<FunctionId>>> = RefCell::new(HashMap::new());
+    static MODULE_FUNCTION_IDS_CACHE: RefCell<HashMap<u64, Vec<FunctionId>>> = RefCell::new(HashMap::new());
 }
 
 /// A sequence of instructions, typically as the body of a function or block.
