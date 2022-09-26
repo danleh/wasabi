@@ -1,48 +1,104 @@
 use std::error::Error;
 use std::fs::File;
 use std::io::{self, Read};
+use std::sync::Arc;
+use std::time::Duration;
 
 use bencher::{Bencher, benchmark_group, benchmark_main};
+use rayon::prelude::*;
 use test_utilities::*;
+
+use indicatif::ParallelProgressIterator;
+use indicatif::ProgressIterator;
 
 use crate::{highlevel, lowlevel, Idx};
 use crate::binary::DecodeState;
 use crate::WasmBinary;
 
+const WASMBENCH_DIR: &str = "tests/WasmBench/valid-no-extensions";
 const WASM_TEST_INPUTS_DIR: &str = "../../tests/inputs";
 const WASM_TEST_INPUT_LARGE: &str = "../../tests/inputs/real-world/bananabread/bb.wasm";
 const WASM_TEST_INPUT_NAMES_SECTION: &str = "../../tests/inputs/name-section/wabt-tests/names.wasm";
 const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &str = "../../tests/inputs/name-section/extended-name-section/vuln.wasm";
 
 #[test]
-fn wasmparser_equal_old_parser() {
-    for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
-        println!("{}", path.display());
-        
-        let (module_old, offsets_old) = highlevel::Module::from_file_with_offsets(&path)
-            .expect(&format!("could not decode valid wasm file '{}'", path.display()));
-        std::fs::write("ast-old.txt", format!("{:#?}", module_old)).unwrap();
-        
-        let (module_new, offsets_new) = highlevel::Module::from_file_with_offsets_wasmparser(&path)
-            .expect(&format!("could not decode valid wasm file '{}'", path.display()));
-        std::fs::write("ast-new.txt", format!("{:#?}", module_new)).unwrap();
+fn test_main() {
+    let candidates = ["tests/WasmBench/filtered-binaries-metadata\\filtered\\31fa012442fd637fca221db4fda94262e99759ab9667147cbedde083aabcc065.wasm"];
+    for path in candidates {
+        let decode_result = highlevel::Module::from_file_with_offsets_wasmparser(path);
+        println!("DONE {}", path);
+    }
+}
 
-        assert_eq!(module_new, module_old);
-        assert_eq!(offsets_new, offsets_old);
+#[test]
+fn wasmparser_equal_old_parser() {
+    // for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
+    let mut wasm_files = wasm_files(WASMBENCH_DIR).unwrap();
+    // const START: usize = 1500;
+    // let mut wasm_files = wasm_files[START..START+500].iter().cloned().collect::<Vec<_>>();
+    
+    // remove one file that creates very large allocations because it has >500k locals in >1k functions
+    wasm_files.retain(|path| !path.to_string_lossy().contains("31fa012442fd637fca221db4fda94262e99759ab9667147cbedde083aabcc065"));
+    
+    let remaining_files = Arc::new(std::sync::Mutex::new(wasm_files.clone()));
+
+    let r = remaining_files.clone();
+    let scheduler = std::thread::spawn(move || {
+        let wait_time = Duration::from_millis(2000);
+        loop {
+            let remaining_files = r.lock().unwrap();
+            println!("Remaining files: {}", remaining_files.len());
+            if remaining_files.len() <= 10 {
+                println!("{:?}", remaining_files);
+            }
+
+            std::thread::sleep(wait_time);
+        }
+    });
+
+    // rayon::ThreadPoolBuilder::new().num_threads(32).build_global().unwrap();
+
+    wasm_files.par_iter().for_each(|path| {
+        // eprintln!("{}", path.display());
+        
+        let decode_result = highlevel::Module::from_file_with_offsets(&path);
+        if let Err(err) = decode_result {
+            // eprintln!("Could not parse with old '{}'\n{}", path.display(), err);
+            return;
+        }
+        let (module_old, offsets_old) = decode_result.unwrap();
+        // std::fs::write("ast-old.txt", format!("{:#?}", module_old)).unwrap();
+
+        let path = (*path).clone();
+        let decode_result = highlevel::Module::from_file_with_offsets_wasmparser(&path);
+    
+        if let Err(err) = decode_result {
+            // eprintln!("Could not parse with new '{}'\n{}", path.display(), err);
+            return;
+        }
+        let (module_new, offsets_new) = decode_result.unwrap();
+        // std::fs::write("ast-new.txt", format!("{:#?}", module_new)).unwrap();
+
+        assert!(module_new == module_old, "ASTs differ for file '{}'", path.display());
+        assert!(offsets_new == offsets_old, "Offsets differ for file '{}'", path.display());
 
         let mut binary_old = Vec::new();
         let binary_size_old = module_new.to_bytes(&mut binary_old)
             .expect(&format!("could not encode valid wasm file '{}'", path.display()));
-        std::fs::write("bin-old.wasm", &binary_old).unwrap();
+        // std::fs::write("bin-old.wasm", &binary_old).unwrap();
 
         let mut binary_new = Vec::new();
         let binary_size_new = module_new.to_bytes_wasmparser(&mut binary_new)
             .expect(&format!("could not encode valid wasm file '{}'", path.display()));
-        std::fs::write("bin-new.wasm", &binary_new).unwrap();
+        // std::fs::write("bin-new.wasm", &binary_new).unwrap();
 
-        assert_eq!(binary_size_new, binary_size_old, "difference in encoded binary length, left = wasmparser, right = old");
-        assert_eq!(binary_new, binary_old, "difference in encoded binary bytes, left = wasmparser, right = old");
-    }
+        assert_eq!(binary_size_new, binary_size_old, "Binaries differ in size, for file '{}', left = wasmparser, right = old", path.display());
+        assert!(binary_new == binary_old, "Binaries differ in bytes, for file '{}', left = wasmparser, right = old", path.display());
+        
+        remaining_files.lock().unwrap().retain(|x| x != &path);
+    });
+
+    scheduler.join().unwrap();
 }
 
 #[test]
