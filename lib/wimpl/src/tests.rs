@@ -574,7 +574,7 @@ fn parse_pretty_print_roundtrips() {
 
 #[test]
 fn parse_wimpl_text_file() {
-    let instrs = Stmt::from_text_file("tests/wimpl/syntax.wimpl");
+    let instrs = Stmt::from_text_file("tests/syntax.wimpl");
     assert!(instrs.is_ok(), "{:?}", instrs);
 }
 
@@ -601,7 +601,7 @@ fn macros_should_compile_and_not_fail_at_runtime() {
 
 #[test]
 fn wimplify_with_expected_output() {
-    const WIMPL_TEST_INPUTS_DIR: &str = "tests/wimpl/wimplify_expected/";
+    const WIMPL_TEST_INPUTS_DIR: &str = "tests/wimplify_expected/";
     
     // Sort for deterministic order.
     let mut files: Vec<PathBuf> = WalkDir::new(&WIMPL_TEST_INPUTS_DIR).into_iter().map(|entry| entry.unwrap().path().to_owned()).collect();
@@ -630,7 +630,8 @@ fn wimplify_with_expected_output() {
 
 #[test]
 fn wimplify_should_not_crash_on_realistic_files() {
-    const WASM_TEST_INPUTS_DIR: &str = "tests/wasm/";
+    // FIXME Create own wasm inputs directory, from wasm spec test suite and WasmBench.
+    const WASM_TEST_INPUTS_DIR: &str = "../wasm/tests/wasm/";
     for entry in WalkDir::new(&WASM_TEST_INPUTS_DIR) {
         let path = entry.unwrap().path().to_owned();
 
