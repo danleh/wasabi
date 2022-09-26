@@ -1,7 +1,0 @@
-memory,memory,0
-__indirect_function_table,table,0
-_start,function,11
-__errno_location,function,22
-stackSave,function,19
-stackRestore,function,20
-stackAlloc,function,21

@@ -1,3 +1,0 @@
- Bytes │ Size % │ Garbage Item
-───────┼────────┼──────────────────
-     0 ┊  0.00% ┊ Σ [0 Total Rows]

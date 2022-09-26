@@ -1,2 +1,0 @@
-f0:1 -> f1 (direct call)
-f1:7 -> f2 (indirect call) [Type, InTable, TableIndexExpr(Const)]
