@@ -2,7 +2,7 @@
 
 use std::{fmt, convert::TryInto};
 
-use crate::wimpl::*;
+use crate::*;
 
 const PRETTY_PRINT_INDENT: &str = "  ";
 const PRETTY_PRINT_NEWLINE_INDENT: &str = "\n  ";

@@ -4,23 +4,19 @@ use std::str::FromStr;
 use lazy_static::lazy_static;
 use walkdir::WalkDir;
 
-use crate::highlevel::LoadOp::*;
-use crate::highlevel::StoreOp::*;
-use crate::highlevel::UnaryOp::*;
-use crate::highlevel::BinaryOp::*;
-use crate::highlevel::FunctionType;
-use crate::Memarg;
-use crate::Val::*;
-use crate::ValType;
+use wasm::highlevel::LoadOp::*;
+use wasm::highlevel::StoreOp::*;
+use wasm::highlevel::UnaryOp::*;
+use wasm::highlevel::BinaryOp::*;
+use wasm::highlevel::FunctionType;
+use wasm::Memarg;
+use wasm::Val::*;
+use wasm::ValType;
 
-use crate::wimpl::*;
-use crate::wimpl::StmtKind::*;
-use crate::wimpl::ExprKind::*;
-use crate::wimpl::Var::*;
-
-// Macros for writing Wimpl statements in Rust.
-use crate::wimpl;
-use crate::wimpls;
+use crate::*;
+use crate::StmtKind::*;
+use crate::ExprKind::*;
+use crate::Var::*;
 
 lazy_static! {
     static ref WIMPL_MODULE_SYNTAX_TESTCASES: Vec<(Module, &'static str, &'static str)> = vec![
@@ -526,10 +522,10 @@ fn parse_func_id() {
 
 #[test]
 fn parse_expr() {
-    assert_eq!(Ok(wimpl::Expr::new(MemorySize)), "memory.size".parse());
-    assert_eq!(Ok(wimpl::Expr::new(MemoryGrow { pages: VarRef(Local(0)).into() })), "memory.grow (l0)".parse());
-    assert_eq!(Ok(wimpl::Expr::new(VarRef(Global(1)))), "g1".parse());
-    assert_eq!(Ok(wimpl::Expr::new(Binary(I32Add, VarRef(Stack(0)).into(), VarRef(Local(1)).into()))), "i32.add(s0, l1)".parse());
+    assert_eq!(Ok(crate::Expr::new(MemorySize)), "memory.size".parse());
+    assert_eq!(Ok(crate::Expr::new(MemoryGrow { pages: VarRef(Local(0)).into() })), "memory.grow (l0)".parse());
+    assert_eq!(Ok(crate::Expr::new(VarRef(Global(1)))), "g1".parse());
+    assert_eq!(Ok(crate::Expr::new(Binary(I32Add, VarRef(Stack(0)).into(), VarRef(Local(1)).into()))), "i32.add(s0, l1)".parse());
     // More complex expressions are tested in the statements.
 }
 

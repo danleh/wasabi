@@ -15,7 +15,7 @@ mod error;
 pub use crate::error::{Error, ErrorKind};
 
 pub mod types;
-pub mod wimpl;
+// pub mod wimpl;
 
 #[cfg(test)]
 mod tests;

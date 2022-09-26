@@ -3,8 +3,9 @@
 use std::collections::HashSet;
 use std::convert::TryInto;
 
-use crate::highlevel;
-use crate::wimpl::*; 
+use wasm::highlevel;
+
+use crate::*; 
 
 /// The mutable state during conversion.
 pub struct State<'module> {
@@ -201,7 +202,7 @@ fn wimplify_instrs<'module>(
             label
         };
 
-        fn wasm_label_to_wimpl_label_and_block_var(state: &State, wasm_label: crate::Label) -> (Label, Option<Var>) {
+        fn wasm_label_to_wimpl_label_and_block_var(state: &State, wasm_label: ::wasm::Label) -> (Label, Option<Var>) {
             let (wimpl_label, is_loop, block_result) = *state.label_stack.iter().rev().nth(wasm_label.to_usize()).expect("invalid branch label, not in label stack");
             
             match (is_loop, block_result) {
@@ -457,7 +458,7 @@ fn wimplify_instrs<'module>(
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
                 // Similar to br_if above, except that we do this for every target instead of just once.
-                let make_case_body = move |label: crate::Label, state: &mut State, expr_stack: &Vec<(Expr, ValType)>| -> Vec<Stmt> {
+                let make_case_body = move |label: ::wasm::Label, state: &mut State, expr_stack: &Vec<(Expr, ValType)>| -> Vec<Stmt> {
                     let (wimpl_label, block_var) = wasm_label_to_wimpl_label_and_block_var(state, label);
                     
                     let mut case_body = Vec::with_capacity(1 + block_var.iter().len());

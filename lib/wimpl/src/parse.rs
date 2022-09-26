@@ -12,7 +12,7 @@ use nom::{
     AsChar, Finish, IResult,
 };
 
-use crate::wimpl::*;
+use crate::*;
 
 /// User-facing error for parsing the Wimpl text format.
 #[derive(Debug, Eq, PartialEq, Clone)]

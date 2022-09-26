@@ -7,18 +7,18 @@ use std::cell::RefCell;
 
 use arc_interner::ArcIntern;
 
-use crate::{highlevel::{MemoryOp, Global}, types::{InferredInstructionType, TypeChecker}, Val, ValType, Idx, BlockType};
-use crate::{
+use wasm::{highlevel::{MemoryOp, Global}, types::{InferredInstructionType, TypeChecker}, Val, ValType, Idx, BlockType};
+use wasm::{
     highlevel::{self, LoadOp, UnaryOp, BinaryOp, StoreOp, FunctionType},
     Memarg,
 };
 
 // TODO(Michelle): fix compile errors in wimpl_opt, add tests, only then include in module hierarchy.
 // pub mod optimize;
-pub mod analyze;
-pub mod callgraph;
+// pub mod analyze;
+// pub mod callgraph;
 pub mod wimplify;
-pub mod traverse;
+// pub mod traverse;
 
 mod pretty_print;
 mod parse;
@@ -55,7 +55,7 @@ pub struct Metadata {
     id_stmt_map: HashMap<InstrId, Stmt>,
     id_expr_map: HashMap<InstrId, Expr>, 
     instr_location_map : HashMap<InstrId, WasmSrcLocation>,
-    func_name_map : HashMap<FunctionId, crate::Idx<highlevel::Function>>, 
+    func_name_map : HashMap<FunctionId, ::wasm::Idx<highlevel::Function>>, 
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
@@ -539,7 +539,7 @@ pub struct TableType(pub ElemType, pub Limits);
 
 // TODO: move to highlevel rs and make operation on self
 impl TableType {
-    pub fn wimplify (wasm_ty: crate::TableType) -> TableType {
+    pub fn wimplify (wasm_ty: ::wasm::TableType) -> TableType {
         TableType(ElemType::wimplify(wasm_ty.0), Limits::wimplify(wasm_ty.1)) 
     }
 }
@@ -560,7 +560,7 @@ pub enum ElemType {
 }
 
 impl ElemType {
-    pub fn wimplify (_wasm_ty: crate::ElemType) -> ElemType {
+    pub fn wimplify (_wasm_ty: ::wasm::ElemType) -> ElemType {
         ElemType::Anyfunc
     }
 }
@@ -572,7 +572,7 @@ pub struct Limits {
 }
 
 impl Limits {
-    pub fn wimplify (wasm_ty: crate::Limits) -> Limits {
+    pub fn wimplify (wasm_ty: ::wasm::Limits) -> Limits {
         Limits { initial_size: wasm_ty.initial_size, max_size: wasm_ty.max_size }
     } 
 }

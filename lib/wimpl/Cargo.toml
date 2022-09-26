@@ -1,0 +1,29 @@
+[package]
+name = "wimpl"
+version = "0.1.0"
+edition = "2021"
+
+# Necessary to avoid stack overflow for very deeply nested tests.
+[profile.test]
+opt-level = 2
+lto = "thin"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+overflow-checks = true
+# For profiling with debug info.
+debug = 1
+
+[dependencies]
+wasm = { path = "../wasm" }
+lazy_static = "1.4.0"
+
+# For interning function types and some strings.
+arc-interner = "0.7.0"
+
+# For parsing Wimpl text format
+nom = "7.1.0"
+
+[dev-dependencies]
+walkdir = "2.3.2"
