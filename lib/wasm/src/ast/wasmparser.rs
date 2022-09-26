@@ -1478,7 +1478,7 @@ pub mod encode {
         }
     }
 
-    use crate::highlevel as hl;
+    use crate::{highlevel as hl, SectionId};
     use crate::{FunctionType, Idx};
 
     use super::error::EncodeError;
@@ -1496,6 +1496,9 @@ pub mod encode {
         table_idx: HashMap<Idx<hl::Table>, Idx<marker::ll::Table>>,
         memory_idx: HashMap<Idx<hl::Memory>, Idx<marker::ll::Memory>>,
         global_idx: HashMap<Idx<hl::Global>, Idx<marker::ll::Global>>,
+
+        last_encoded_section: Option<SectionId>,
+        custom_sections_encoded: usize,
     }
 
     macro_rules! encode_state_idx_fns {
@@ -1530,7 +1533,7 @@ pub mod encode {
     }
     
     pub fn encode_module(module: &hl::Module) -> Result<Vec<u8>, EncodeError> {
-        let mut lowlevel = wasm_encoder::Module::new();
+        let mut encoder = wasm_encoder::Module::new();
         let mut state = EncodeState::default();
 
         // Note that the order in which the high-level AST is traversed is not equal to the order
@@ -1568,52 +1571,77 @@ pub mod encode {
 
         // Then, write all sections in the correct order into the binary.
         // For the section order, see https://webassembly.github.io/spec/core/binary/modules.html#binary-module
+        // Intersperse the correct custom sections in between as well.
+        encode_and_insert_custom(&mut encoder, &mut state, module);
         if !type_section.is_empty() {
-            lowlevel.section(&type_section);
+            encoder.section(&type_section);
         }
+        state.last_encoded_section = Some(SectionId::Type);
+        encode_and_insert_custom(&mut encoder, &mut state, module);
         if !import_section.is_empty() {
-            lowlevel.section(&import_section);
+            encoder.section(&import_section);
         }
+        state.last_encoded_section = Some(SectionId::Import);
+        encode_and_insert_custom(&mut encoder, &mut state, module);
         if !function_section.is_empty() {
-            lowlevel.section(&function_section);
+            encoder.section(&function_section);
         }
+        state.last_encoded_section = Some(SectionId::Function);
+        encode_and_insert_custom(&mut encoder, &mut state, module);
         if !table_section.is_empty() {
-            lowlevel.section(&table_section);
+            encoder.section(&table_section);
         }
+        state.last_encoded_section = Some(SectionId::Table);
+        encode_and_insert_custom(&mut encoder, &mut state, module);
         if !memory_section.is_empty() {
-            lowlevel.section(&memory_section);
+            encoder.section(&memory_section);
         }
+        state.last_encoded_section = Some(SectionId::Memory);
+        encode_and_insert_custom(&mut encoder, &mut state, module);
         if !global_section.is_empty() {
-            lowlevel.section(&global_section);
+            encoder.section(&global_section);
         }
+        state.last_encoded_section = Some(SectionId::Global);
+        encode_and_insert_custom(&mut encoder, &mut state, module);
         let export_section = encode_exports(module, &mut state)?;
         if !export_section.is_empty() {
-            lowlevel.section(&export_section);
+            encoder.section(&export_section);
         }
+        state.last_encoded_section = Some(SectionId::Export);
+        encode_and_insert_custom(&mut encoder, &mut state, module);
         if let Some(function_idx) = module.start {
-            lowlevel.section(&ll::StartSection {
+            let start_section = ll::StartSection {
                 function_index: state.map_function_idx(function_idx)?.to_u32()
-            });
+            };
+            encoder.section(&start_section);
         }
+        state.last_encoded_section = Some(SectionId::Start);
+        encode_and_insert_custom(&mut encoder, &mut state, module);
         if !element_section.is_empty() {
-            lowlevel.section(&element_section);
+            encoder.section(&element_section);
         }
+        state.last_encoded_section = Some(SectionId::Element);
+        encode_and_insert_custom(&mut encoder, &mut state, module);
         if !code_section.is_empty() {
-            lowlevel.section(&code_section);
+            encoder.section(&code_section);
         }
+        state.last_encoded_section = Some(SectionId::Code);
+        encode_and_insert_custom(&mut encoder, &mut state, module);
         if !data_section.is_empty() {
-            lowlevel.section(&data_section);
+            encoder.section(&data_section);
         }
+        state.last_encoded_section = Some(SectionId::Data);
+        encode_and_insert_custom(&mut encoder, &mut state, module);
         // Custom name section is only valid after data section, see
         // https://webassembly.github.io/spec/core/appendix/custom.html#name-section
         let name_section = encode_names(module, &state)?;
         if let Some(name_section) = name_section {
-            lowlevel.section(&name_section);
+            encoder.section(&name_section);
+            state.last_encoded_section = Some(SectionId::Custom("name".to_string()));
         }
+        encode_and_insert_custom(&mut encoder, &mut state, module);
 
-        // TODO custom sections in between all the others
-        
-        Ok(lowlevel.finish())
+        Ok(encoder.finish())
     }
 
     fn encode_imports(module: &hl::Module, state: &mut EncodeState) -> ll::ImportSection {
@@ -1787,6 +1815,24 @@ pub mod encode {
         }
 
         Ok(code_section)
+    }
+
+    // TODO generify to include all sections, not just custom sections
+    // fn insert_section<T>(encoder: &mut wasm_encoder::Module, state: &mut EncodeState, section: T, module: &hl::Module, previous_section: Option<crate::SectionId>)
+    //     where T: wasm_encoder::Section {
+    fn encode_and_insert_custom(encoder: &mut wasm_encoder::Module, state: &mut EncodeState, module: &hl::Module) {
+        for custom in module.custom_sections.iter().skip(state.custom_sections_encoded) {
+            // FIXME what if the reference .after section is no longer present?
+            // Right now, this would drop the custom section.
+            if state.last_encoded_section == custom.after {
+                encoder.section(&wasm_encoder::CustomSection {
+                    name: &custom.name,
+                    data: &custom.content[..],
+                });
+                state.custom_sections_encoded += 1;
+                state.last_encoded_section = Some(crate::SectionId::Custom(custom.name.clone()));
+            }
+        }
     }
 
     fn encode_single_instruction_with_end(instrs: &[hl::Instr], state: &mut EncodeState) -> Result<ll::Instruction<'static>, EncodeError> {

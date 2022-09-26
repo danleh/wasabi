@@ -296,8 +296,10 @@ pub struct RawCustomSection {
     /// will have this set.
     pub after: Option<SectionId>,
 }
-
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+// Order is important! Follows the ordering of sections in the binary format
+// (except for custom sections, which can appear anywhere).
+// https://webassembly.github.io/spec/core/binary/modules.html#binary-module
+#[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum SectionId {
     Type,
     Import,
