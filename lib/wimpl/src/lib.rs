@@ -49,7 +49,7 @@ pub struct Module {
     // TODO add more information, e.g., the original names of variables or debug information.
     // TODO in that case, introduce a `Metadata` struct with `wasm_src_location` as a field.
     // TODO Make `wasm_src_location` an `Option` because not everything originates from WebAssembly?
-    pub metadata: Metadata//HashMap<InstrId, WasmSrcLocation>,
+    pub metadata: Metadata,
 }
 
 
@@ -512,6 +512,7 @@ pub enum ExprKind {
 }
 
 impl ExprKind {
+    // FIXME I (Daniel) think this looks very hacky, don't use stringly-typed stuff in Rust. Remove?
     fn get_expr_kind (&self) -> String {
         match self {
             ExprKind::VarRef(_) => "VarRef".to_owned(),
@@ -540,9 +541,8 @@ pub struct Table {
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct TableType(pub ElemType, pub Limits);
 
-// TODO: move to highlevel rs and make operation on self
 impl TableType {
-    pub fn wimplify (wasm_ty: ::wasm::TableType) -> TableType {
+    pub fn wimplify(wasm_ty: ::wasm::TableType) -> TableType {
         TableType(ElemType::wimplify(wasm_ty.0), Limits::wimplify(wasm_ty.1)) 
     }
 }
@@ -552,7 +552,6 @@ pub struct Element {
     pub offset: Vec<highlevel::Instr>,
     pub functions: Vec<FunctionId>,
 }
-
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ElemType {
@@ -579,8 +578,6 @@ impl Limits {
         Limits { initial_size: wasm_ty.initial_size, max_size: wasm_ty.max_size }
     } 
 }
-
-
 
 /// Convenience macro to write Wimpl statements in Rust.
 #[macro_export]
