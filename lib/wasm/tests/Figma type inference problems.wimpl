@@ -1,0 +1,83 @@
+func f440 (p0: i32) -> () @label0: {
+  l0: i32 = i32.const 0
+  l1: i32 = i32.const 0
+  l2: i32 = i32.const 0
+  l3: i64 = i64.const 0
+  @label1: block {
+    if (i32.eqz(p0)) { br @label1 }
+    @label2: block {
+      if (i32.and(i32.load8_u(i32.const 7680), i32.const 1)) { br @label2 }
+      if (i32.eqz(i32.xor(i32.ne(i32.load8_u(i32.const 7680), i32.const 0), i32.const 1))) { br @label2 }
+      i32.store (i32.const 7676) (call f1193 (i32.const 16))
+      i32.store (i32.const 7680) (i32.const 0)
+      i32.store (i32.const 7680) (i32.or(i32.load(i32.const 7680), i32.const 1))
+    }
+    if (i32.eq(i32.load(i32.const 7676), p0)) { br @label1 }
+    l0: i32 = call f2226 (p0)
+    s0: i64 = i64.load(i32.const 7656)
+    l3: i64 = i64.extend_i32_u(l0)
+    i64.store (i32.const 7656) (i64.sub(s0, l3))
+    i64.store (i32.const 7664) (i64.sub(i64.load(i32.const 7664), l3))
+    l1: i32 = i32.add(p0, l0)
+    s1: i32 = l1
+    l2: i32 = i32.load(i32.const 7648)
+    s2: i32 = l2
+    if (i32.lt_u(l2, l1)) { s3: i32 = s1 } else { s3: i32 = s2 }
+    i32.store (i32.const 7648) (s3)
+    @label3: block {
+      @label4: block {
+        if (i32.eqz(l0)) {
+          i64.store (i32.const 7360) (i64.add(i64.load(i32.const 7360), i64.const -1))
+          i64.store (i32.const 7376) (i64.add(i64.load(i32.const 7376), i64.const -1))
+          br @label3
+        }
+      }
+      i64.store (i32.const 7376) (i64.add(i64.load(i32.const 7376), i64.const -1))
+      i64.store (i32.const 7384) (i64.sub(i64.load(i32.const 7384), l3))
+    }
+    call kh (p0)
+  }
+}
+
+func f2226 (p0: i32) -> (r0: i32) @label0: {
+  l0: i32 = i32.const 0
+  l1: i32 = i32.const 0
+  @label1: block {
+    if (i32.eqz(p0)) { br @label1 }
+    // local variable coalescing :( -> would not be a problem with pure stack-based representation!
+    // as soon as you have an assignment to a parameter -> stop collecting type constraints!
+    p0: i32 = i32.load(i32.add(p0, i32.const -4))
+    l1: i32 = i32.and(p0, i32.const 3)
+    if (i32.eq(l1, i32.const 1)) { br @label1 }
+    s0: i32 = i32.and(p0, i32.const -8)
+    if (l1) { s1: i32 = i32.const 4 } else { s1: i32 = i32.const 8 }
+    l0: i32 = i32.sub(s0, s1)
+  }
+  r0: i32 = l0
+}
+
+// I wrote this by hand, as a more desirable output of Wimpl:
+// - Has less local variables (l0 is eliminated)
+// - Has less blocks (@label1 is eliminated)
+// - Has less assignments (initializations of locals)
+func f2226_decoalesced_dead_store_eliminated (p0: i32) -> (r0: i32) @label0: {
+  if (i32.eqz(p0)) {
+    // Maybe branches with values would have been better...
+    br @label0 (i32.const 0)
+  }
+  p0_1: i32 = i32.load(i32.add(p0, i32.const -4))
+  l1: i32 = i32.and(p0_1, i32.const 3)
+  if (i32.eq(l1, i32.const 1)) {
+    br @label0 (i32.const 0)
+  }
+  // If as an expression would be maybe better in fact...
+  // r0: i32 = i32.sub(i32.and(p0_1, i32.const -8), if (l1) { i32.const 4 } else { i32.const 8 })
+  // or alternatively as a branch
+  br @label0 (i32.sub(i32.and(p0_1, i32.const -8), if (l1) { i32.const 4 } else { i32.const 8 }))
+}
+
+// block results:
+let b0: i32 = @label block () -> (i32) {
+  ...
+  br @label0 (result_expr...)
+}
