@@ -1,8 +1,9 @@
 use std::{io::{self, BufRead, Write}, fs::{File, self}, collections::HashMap};
 
-use rustc_hash::{FxHashMap};
-use wasm::{wimpl::{self, FunctionId, analyze::{print_map_count, collect_call_indirect_idx_expr}, callgraph::{Options, reachable_callgraph}, traverse::VisitOptionBodyExt}, highlevel::{self, Instr}, Val, Idx};
+use rustc_hash::FxHashMap;
 
+use wasm::{highlevel::{self, Instr}, Val, Idx};
+use wimpl::{self, FunctionId, analyze::{print_map_count, collect_call_indirect_idx_expr}, callgraph::{Options, reachable_callgraph}, traverse::VisitOptionBodyExt};
 
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
@@ -27,26 +28,30 @@ fn main() {
             total_num_exports += 1;
         }
     }
+
+    let wasm_idx_to_wimpl_func_id = FunctionId::from_module(&wasm);
     
-    let mut reachable_funcs = Vec::new();
     let mut reachable_idx = Vec::new();
+    let mut reachable_funcs = Vec::new();
     let mut rdr = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_path(exports_path).unwrap();
     for result in rdr.records() {
         let record = result.unwrap();
         if record[1].to_string() == "function" {
-            let idx = record[2].to_string().parse::<u32>().unwrap();
+            let idx = record[2].to_string().parse::<usize>().unwrap();
             // TODO: We cannot do the following: reachable_funcs.push(FunctionId::from_u32(idx, &wasm).expect(""));
             // Because there is a mismatch between function names and function indicies for wimpl/wasm
             // There is some code that does not recognize that an exported function can be referenced by 
             // name as well as by idx. Hence, this code errors saying that constraint not computed for <idx>. 
             // Right now I just ensure that first export names of a function are made initially reachable. 
-            // but this should be fixed properly later. 
+            // but this should be fixed properly later.
+            // FIXME I (Daniel) tried to fix this code, after fixing the non-uniqueness of function names, but I am not
+            // sure I got it right. @Michelle, probably better to have a good look whether that still makes sense to you.
             if !reachable_idx.contains(&idx) {
                 reachable_idx.push(idx);
-                reachable_funcs.push(FunctionId::from_name(record[0].to_string()));
-            }              
+                reachable_funcs.push(wasm_idx_to_wimpl_func_id[idx].clone());
+            }
         }
         else if record[1].to_string() == "table" {
             for elem in wimpl.table.clone().expect("A table that is exported has to exist in the binary").elements {                
@@ -116,16 +121,12 @@ fn main() {
 
         let reachable_funcs = callgraph.functions();
 
-        let wasm_idx_to_wimpl_func_id = wasm.functions()
-            .map(|(idx, _)| (idx, FunctionId::from_idx(idx, &wasm)))
-            .collect::<HashMap<_, _>>();
-
         let mut num_removed_funcs = 0;
         let mut removed_funcs = Vec::new(); 
 
-        for (idx, func) in wasm.functions_mut() {
-            let func_id = wasm_idx_to_wimpl_func_id.get(&idx).expect("we just converted all wasm Idx to wimpl FunctionId successfully!?");
-            let reachable = reachable_funcs.contains(func_id);
+        for (idx, func) in wasm.functions.iter_mut().enumerate() {
+            let func_id = wasm_idx_to_wimpl_func_id[idx].clone();
+            let reachable = reachable_funcs.contains(&func_id);
             if !reachable {
                 num_removed_funcs += 1; 
                 removed_funcs.push(func_id); 
