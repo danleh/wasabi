@@ -1,15 +1,12 @@
 use core::fmt;
 use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::{File, self}, sync::Mutex, iter::FromIterator, cmp::Reverse, default, collections::{HashSet, HashMap}};
-
-use crate::{wimpl::{Module, FunctionId, self, ExprKind::{Call, self}, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count, approx_i32_eval, I32Range}, Expr, Stmt}, highlevel::{FunctionType, self}, Val, ValType};
-
-use crate::wimpl::wimplify::*;
-
 use rustc_hash::{FxHashSet, FxHashMap};
-use test_utilities::*;
 
-use super::{InstrId, StmtKind};
+use wasm::{highlevel, highlevel::FunctionType, Val, ValType};
 
+use crate::{Module, FunctionId, ExprKind::{Call, self}, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count, approx_i32_eval, I32Range}, Expr, Stmt};
+use crate::{InstrId, StmtKind};
+use crate::wimplify::*;
 
 #[derive(Default, Clone, Eq, PartialEq)]
 pub struct WimplCallGraph {
@@ -23,15 +20,15 @@ pub struct CallGraph(FxHashMap<FunctionId, FxHashSet<FunctionId>>);
 // Get each edge in the call graph 
 #[derive(Default, Clone, Eq, PartialEq)]
 pub struct CallSites(std::collections::BTreeMap<
-    (crate::Idx<highlevel::Function>, Option<crate::Idx<highlevel::Instr>>), 
-    (crate::Idx<highlevel::Function>, Option<Vec<Constraint>>)
+    (wasm::Idx<highlevel::Function>, Option<wasm::Idx<highlevel::Instr>>), 
+    (wasm::Idx<highlevel::Function>, Option<Vec<Constraint>>)
 >);
 
 impl CallSites {
     pub fn add_edge(&mut self, 
-        wasm_loc: Option<crate::Idx<highlevel::Instr>>, 
-        src: crate::Idx<highlevel::Function>, 
-        target: crate::Idx<highlevel::Function>,
+        wasm_loc: Option<wasm::Idx<highlevel::Instr>>, 
+        src: wasm::Idx<highlevel::Function>, 
+        target: wasm::Idx<highlevel::Function>,
         target_info: Option<Vec<Constraint>>, 
     ){
         self.0.insert(
@@ -184,7 +181,7 @@ pub enum Constraint {
     InTable,
     // This can go to any exported function:
     Exported, 
-    TableIndexExpr(wimpl::Expr),
+    TableIndexExpr(crate::Expr),
 }
 
 #[derive(Clone, Copy, Default)]
@@ -197,7 +194,7 @@ pub struct Options {
 }
 
 pub fn reachable_callgraph(
-    module: &wimpl::Module,
+    module: &crate::Module,
     mut reachable_funcs: FxHashSet<FunctionId>,
     options: Options,
 ) -> anyhow::Result<WimplCallGraph> {
@@ -219,7 +216,7 @@ pub fn reachable_callgraph(
     println!("{:?}", reachable_funcs);
     // Collect "declarative constraints" once per function.
     // TODO make lazy: compute constraints only for requested functions on-demand, use memoization.
-    let call_target_constraints: FxHashMap<FunctionId, FxHashSet<(Option<wimpl::InstrId>, Target)>> = module.functions.iter()
+    let call_target_constraints: FxHashMap<FunctionId, FxHashSet<(Option<crate::InstrId>, Target)>> = module.functions.iter()
         .map(|func| {
             (func.name(), collect_target_constraints(func, module, options))
         })
@@ -244,7 +241,7 @@ pub fn reachable_callgraph(
     if let Some(table) = &module.table {
         for element in &table.elements {
             let element_offset = &element.offset;
-            use crate::highlevel::Instr as wasm;
+            use wasm::highlevel::Instr as wasm;
             let element_offset = match element_offset.as_slice() {
                 [wasm::Const(Val::I32(offset)), wasm::End] => *offset as u32,
                 // TODO overapproximate: if its an expression we cannot compute statically (like an imported global)
@@ -355,9 +352,9 @@ pub fn reachable_callgraph(
 
 pub fn collect_target_constraints(
     src: &Function,
-    module: &wimpl::Module,
+    module: &crate::Module,
     options: Options
-) -> FxHashSet<(Option<wimpl::InstrId>, Target)> {
+) -> FxHashSet<(Option<crate::InstrId>, Target)> {
     
     // TODO: Discuss
     // How to handle imported functions? Can they each every exported function?
@@ -395,7 +392,7 @@ pub fn collect_target_constraints(
     // Step 2:
     // Collect one set of constraints (conjuncts) per call/call_indirect.
     let mut targets = FxHashSet::default();
-    use wimpl::ExprKind::*;
+    use crate::ExprKind::*;
     
     body.visit_expr_pre_order(|expr| {
         match &expr.kind {
@@ -452,7 +449,7 @@ lazy_static::lazy_static! {
 
 /// _All_ constraints must be satisfied, i.e., conjunction over all constraints.
 pub fn solve_constraints<'a>(
-    module: &'a wimpl::Module,
+    module: &'a crate::Module,
     funcs_by_type: &'a FxHashMap<FunctionType, Vec<&'a Function>>,
     funcs_in_table: &'a FxHashSet<FunctionId>,
     // funcs_in_table_approx: &'a Bloom<Func>,
@@ -476,7 +473,7 @@ pub fn solve_constraints<'a>(
                     .unwrap_or_else(|| Box::new(module.functions.iter()) as Box<dyn Iterator<Item=&Function>>);
             
             for constraint in constraints {
-                use wimpl::ExprKind::*;
+                use crate::ExprKind::*;
                 // Build up filtering iterator at runtime, adding all constraints from before.
                 filtered_iter = match constraint {
                     Constraint::Type(ty) => Box::new(filtered_iter.filter(move |f| &f.type_ == ty)),
@@ -539,7 +536,7 @@ pub fn solve_constraints<'a>(
 
 #[test]
 fn main() {
-    let wimpl_module = wimpl::Module::from_wasm_file("tests/callgraph/callgraph.wasm").expect(""); 
+    let wimpl_module = crate::Module::from_wasm_file("tests/callgraph/callgraph.wasm").expect(""); 
     println!("{}", wimpl_module);     
 
     let options = Options {
@@ -558,7 +555,7 @@ fn main() {
 // #[test]
 // fn create_graph() {
 //     // TODO 2-3 function wasm file, 1 direct call, 2 call_indirect, 5 functions in total
-//     let wimpl_module = wimpl::wimplify("tests/wimpl-wasm-handwritten/calc-dce/add-dce.wasm").expect(""); 
+//     let wimpl_module = crate::wimplify("tests/wimpl-wasm-handwritten/calc-dce/add-dce.wasm").expect(""); 
 //     println!("{}", wimpl_module); 
 //     let callgraph = callgraph(&wimpl_module); 
 //     println!("{}", callgraph.to_dot());
@@ -567,7 +564,7 @@ fn main() {
 
 // #[test]
 // fn calc_virtual() {
-//     let wimpl_module = wimpl::wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect(""); 
+//     let wimpl_module = crate::wimplify("tests/wimpl-wasm-handwritten/calc-virtual/add.wasm").expect(""); 
 //     println!("{}", wimpl_module);     
 //     let callgraph = callgraph(&wimpl_module); 
 //     println!("{}", callgraph.to_dot());
@@ -580,13 +577,19 @@ fn data_gathering() {
     let mut file = File::create("data.csv").unwrap();
     writeln!(file, "path, num_functions, num_functions_exported, num_calls, num_ind_calls, unq functions in elem, num_funcs_with_call_ind, num_funcs_with_memory_access, reachable_ratio_trivial, reachable_ratio_ty_only, reachable_ratio_in_table_only, reachable_ratio_ty_and_in_table_and_idx_expr").unwrap(); 
     
-    const WASM_TEST_INPUTS_DIR: &str = "tests/";
+    const WASM_TEST_INPUTS_DIR: &str = "../wasm/tests/wasm/";
 
     let mut all_idx_exprs: FxHashMap<String, usize> = FxHashMap::default();
     let mut all_i32_load_store_addr_exprs: FxHashMap<String, usize> = FxHashMap::default();
     let mut all_i32_store_value_exprs: FxHashMap<String, usize> = FxHashMap::default();
 
-    for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
+    for entry in walkdir::WalkDir::new(&WASM_TEST_INPUTS_DIR) {
+        let path = entry.unwrap().path().to_owned();
+        // Select only .wasm files, not directories or files with other extensions.
+        if path.is_dir() || path.extension().and_then(|s| s.to_str()) != Some("wasm") {
+            continue;
+        }
+
         println!("{}", path.display());
         let wimpl_module = Module::from_wasm_file(&path).unwrap_or_else(|_| panic!("could not decode valid wasm file '{}'", path.display()));
 

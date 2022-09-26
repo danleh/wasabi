@@ -1,3 +1,5 @@
+//! Top-level module, contains the data definitions of the Wimpl AST/language.
+
 use std::{
     fmt::{self, Write},
     io::{self, ErrorKind},
@@ -13,18 +15,19 @@ use wasm::{
     Memarg,
 };
 
-// TODO(Michelle): fix compile errors in wimpl_opt, add tests, only then include in module hierarchy.
-// pub mod optimize;
-// pub mod analyze;
-// pub mod callgraph;
 pub mod wimplify;
 pub mod traverse;
+pub mod analyze;
+pub mod callgraph;
 
 mod pretty_print;
 mod parse;
 
 #[cfg(test)]
 mod tests;
+
+// TODO(Michelle): fix compile errors in wimpl_opt, add tests, only then include in module hierarchy.
+// pub mod optimize;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Module {

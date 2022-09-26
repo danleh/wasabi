@@ -23,7 +23,16 @@ lazy_static = "1.4.0"
 arc-interner = "0.7.0"
 
 # For parsing Wimpl text format
-nom = "7.1.0"
+nom = "7.1.1"
+
+# For faster HashSet and HashMap in callgraph analysis.
+rustc-hash = "1.1.0"
+
+# For hacky analysis of text formats
+regex = "1.6.0"
+
+# For easier error handling of executables.
+anyhow = "1.0.65"
 
 [dev-dependencies]
 walkdir = "2.3.2"

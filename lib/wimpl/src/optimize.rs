@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::wimpl::*;
-use crate::wimpl::wimplify::*;
+use crate::*;
+use crate::wimplify::*;
 
 // TODO optimization to unwrap blocks/loops whose label is never the target of any branch.
 // Just needs two forward passes: 1. collect all branch targets in a HashSet, 2. unwrap block if not contained.
@@ -374,7 +374,7 @@ pub fn wimpl_optimize (path: impl AsRef<Path>) -> Result<Module, String> {
 
 #[test]
 fn opt_test() {
-    let module = wimpl_optimize("tests/wimpl/wimplify_expected/updated_local/local.wasm");
-    //let module = wimpl_optimize("tests/wimpl/wimplify_expected/global/global.wasm");
+    let module = wimpl_optimize("tests/wimplify_expected/updated_local/local.wasm");
+    //let module = wimpl_optimize("tests/wimplify_expected/global/global.wasm");
     println!("{}", module.unwrap()); 
 }

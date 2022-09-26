@@ -3,10 +3,10 @@ use std::{cmp::Reverse, fmt::{self, Display}, iter::FromIterator, cell::RefCell,
 use regex::Regex;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::highlevel::{StoreOp, LoadOp, FunctionType};
-use crate::wimpl::{Body, Expr, Module, Stmt, Var, FunctionId, Function, StmtKind, ExprKind};
+use wasm::highlevel::{StoreOp, LoadOp, FunctionType};
 
-use super::traverse::VisitOptionBodyExt;
+use crate::{Body, Expr, Module, Stmt, Var, FunctionId, Function, StmtKind, ExprKind};
+use crate::traverse::VisitOptionBodyExt;
 
 // TODO Analysis for identification of heap allocation function ("malloc")
 // Often required for "allocation site abstraction" in pointer analysis
@@ -200,8 +200,8 @@ pub fn collect_i32_load_store_arg_expr(module: &Module) -> (
     let addrs: RefCell<FxHashMap<String, usize>> = RefCell::new(FxHashMap::default());
     let mut values: FxHashMap<String, usize> = FxHashMap::default();
     for func in &module.functions {
-        use crate::wimpl::ExprKind::*;
-        use crate::wimpl::StmtKind::*;
+        use crate::ExprKind::*;
+        use crate::StmtKind::*;
         // TODO / FIXME Can we make the assumption that call_indirect idx are always loaded/stored
         // via full i32s?
         func.body.visit_pre_order(|expr| {
@@ -226,7 +226,7 @@ pub fn collect_memory_functions(module: &Module) -> Vec<(FunctionId, bool, bool)
     for func in &module.functions {
         let mut has_memory_size = false;
         let mut has_memory_grow = false;
-        use crate::wimpl::ExprKind::*;
+        use crate::ExprKind::*;
         func.body.visit_expr_pre_order(|expr| {
             match &expr.kind {
                 MemorySize => has_memory_size = true,
@@ -246,7 +246,7 @@ pub fn collect_memory_functions(module: &Module) -> Vec<(FunctionId, bool, bool)
 pub fn collect_function_direct_call_count(module: &Module) -> FxHashMap<FunctionId, usize> {
     let mut result: FxHashMap<FunctionId, usize> = FxHashMap::default();
     for func in &module.functions {
-        use crate::wimpl::ExprKind::*;
+        use crate::ExprKind::*;
         func.body.visit_expr_pre_order(|expr| {
             if let Call { func, args: _ } = &expr.kind { 
                 *result.entry(func.clone()).or_default() += 1 
