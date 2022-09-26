@@ -3,8 +3,7 @@ use std::convert::TryInto;
 /*
  TODO WHEN CONTINUING
  - rename ParseErrorInner to ParseIssue because its used for warnings and errors
- - fix clippy lints, especially _or_else problems
- - make make encoding of CodeSection parallel
+ - make encoding of CodeSection parallel
  - add SectionId type that is used on both OLD and NEW parser and in the AST to order custom sections
  - then serialize sections according to this in both OLD and NEW parser
  - merge (NOT rebase) wasmparser and wimpl branches
@@ -163,7 +162,7 @@ pub mod parser {
         let mut function_bodies = Vec::new();
         let mut code_entries_count = 0;
 
-        for payload in Parser::new(0).parse_all(&bytes) {
+        for payload in Parser::new(0).parse_all(bytes) {
             match payload? {
                 Payload::Version { .. } => {
                     // The version number is checked by wasmparser to always be 1.
@@ -209,7 +208,7 @@ pub mod parser {
                         let import_name = import
                             .field
                             // The second import string was made optional in this extension, but we don't support it.
-                            .ok_or(ParseErrorInner::unsupported(import_offset, WasmExtension::ModuleLinking))?
+                            .ok_or_else(|| ParseErrorInner::unsupported(import_offset, WasmExtension::ModuleLinking))?
                             .to_string();
 
                         match import.ty {
@@ -357,28 +356,28 @@ pub mod parser {
                                 // The `export_offset` is not actually the offset of the function index,
                                 // but wasmparser doesn't offer a way to get the latter.
                                 // This slightly misattributes potential errors, namely to the beginning of the export.
-                                .ok_or(ParseErrorInner::index(export_offset, index_u32, "function"))?
+                                .ok_or_else(|| ParseErrorInner::index(export_offset, index_u32, "function"))?
                                 .export
                                 .push(name),
                             ExternalKind::Table => module
                                 .tables
                                 .get_mut(index)
                                 // Same issue regarding `export_offset`.
-                                .ok_or(ParseErrorInner::index(export_offset, index_u32, "table"))?
+                                .ok_or_else(|| ParseErrorInner::index(export_offset, index_u32, "table"))?
                                 .export
                                 .push(name),
                             ExternalKind::Memory => module
                                 .memories
                                 .get_mut(index)
                                 // Same issue regarding `export_offset`.
-                                .ok_or(ParseErrorInner::index(export_offset, index_u32, "memory"))?
+                                .ok_or_else(|| ParseErrorInner::index(export_offset, index_u32, "memory"))?
                                 .export
                                 .push(name),
                             ExternalKind::Global => module
                                 .globals
                                 .get_mut(index)
                                 // Same issue regarding `export_offset`.
-                                .ok_or(ParseErrorInner::index(export_offset, index_u32, "global"))?
+                                .ok_or_else(|| ParseErrorInner::index(export_offset, index_u32, "global"))?
                                 .export
                                 .push(name),
                             ExternalKind::Tag => {
@@ -405,7 +404,7 @@ pub mod parser {
                     section_offsets.push((discriminant, range.start));
 
                     let prev_start = std::mem::replace(&mut module.start, Some(func.into()));
-                    if let Some(_) = prev_start {
+                    if prev_start.is_some() {
                         Err(ParseErrorInner::message(range.start, "duplicate start section"))?
                     }
                 }
@@ -444,7 +443,7 @@ pub mod parser {
                                 let table = module
                                     .tables
                                     .get_mut(u32_to_usize(table_index))
-                                    .ok_or(ParseErrorInner::index(element_offset, table_index, "table"))?;
+                                    .ok_or_else(|| ParseErrorInner::index(element_offset, table_index, "table"))?;
 
                                 if table.type_.0 != element_ty {
                                     Err(ParseErrorInner::message(element_offset, "table and element type do not match"))?
@@ -494,7 +493,7 @@ pub mod parser {
                                 let memory = module
                                     .memories
                                     .get_mut(u32_to_usize(memory_index))
-                                    .ok_or(ParseErrorInner::index(data_offset, memory_index, "memory"))?;
+                                    .ok_or_else(|| ParseErrorInner::index(data_offset, memory_index, "memory"))?;
 
                                 // Most offset expressions are just a constant and the end instruction.
                                 let mut offset_expr = Vec::with_capacity(2);
@@ -534,7 +533,7 @@ pub mod parser {
                             match name_subsection {
                                 Name::Module(name) => {
                                     let prev = module.name.replace(name.get_name()?.to_string());
-                                    if let Some(_) = prev {
+                                    if prev.is_some() {
                                         warnings.push(ParseErrorInner::message(offset, "duplicate module name"))
                                     }
                                 }
@@ -547,7 +546,7 @@ pub mod parser {
                                         module
                                             .functions
                                             .get_mut(u32_to_usize(function_index))
-                                            .ok_or(ParseErrorInner::index(offset, function_index, "function"))?
+                                            .ok_or_else(|| ParseErrorInner::index(offset, function_index, "function"))?
                                             .name = Some(name.to_string());
                                     }
                                 }
@@ -561,7 +560,7 @@ pub mod parser {
                                         let function = module
                                             .functions
                                             .get_mut(u32_to_usize(function_index))
-                                            .ok_or(ParseErrorInner::index(offset, function_index, "function"))?;
+                                            .ok_or_else(|| ParseErrorInner::index(offset, function_index, "function"))?;
         
                                         let mut name_map = indirect_naming.get_map()?;
                                         for _ in 0..name_map.get_count() {
@@ -701,7 +700,7 @@ pub mod parser {
                             let function = module
                                 .functions
                                 .get_mut(u32_to_usize(func_index))
-                                .ok_or(ParseErrorInner::index(offset, func_index, "function"))?;
+                                .ok_or_else(|| ParseErrorInner::index(offset, func_index, "function"))?;
                             function.code = ImportOrPresent::Present(code?);
                         }
                     }
@@ -755,7 +754,7 @@ pub mod parser {
 
         for op_offset in body.get_operators_reader()?.into_iter_with_offsets() {
             let (op, offset) = op_offset?;
-            instrs.push(parse_instr(op, &types, offset)?);
+            instrs.push(parse_instr(op, types, offset)?);
         }
 
         Ok(Code {
@@ -1492,7 +1491,7 @@ pub mod parser {
                 .unwrap_or(&[])
                 .get(u32_to_usize(index))
                 .cloned()
-                .ok_or(ParseErrorInner::index(index_offset, index, "type"))?)
+                .ok_or_else(|| ParseErrorInner::index(index_offset, index, "type"))?)
         }
     }
 
