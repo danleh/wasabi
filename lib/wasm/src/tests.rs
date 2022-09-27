@@ -45,11 +45,9 @@ fn test_main() {
 fn wasmparser_equal_old_parser() {
     // for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
     let mut wasm_files = wasm_files(WASMBENCH_DIR).unwrap();
+    wasm_files.sort_by_cached_key(|f| std::fs::metadata(f).unwrap().len());
     // let mut wasm_files = [
-    //     "tests/WasmBench/valid-no-extensions\\binaries\\6d302db8553d9dba0e5d32d1ca71aca6c295d0d498ef370e8641b321fe99ce78.wasm",
-    //     "tests/WasmBench/valid-no-extensions\\binaries\\6d3726e04a576eb8c0c92d601abb5e5fbb8db43f29d875c3b47715898ca1195d.wasm",
-    //     "tests/WasmBench/valid-no-extensions\\binaries\\6d37bfe3e84acbbd1a9032e7b3c8e23105877c5b0e9cffa0aeaa49589c07c021.wasm",
-    //     "tests/WasmBench/valid-no-extensions\\binaries\\ebe8578b48adb8170e37570fabef2d0eb213c030cafb0f9f80a6a64f4e8f91d0.wasm",
+    //     "tests/WasmBench/valid-no-extensions\\binaries\\61ca24d2fbe9d1a3e4fe2d4ad343bfbf654c89e72602c09dcb3e163db7595d9b.wasm",
     // ].iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
     
     for hash in WASMBENCH_EXCLUDED_FILES {
@@ -71,9 +69,7 @@ fn wasmparser_equal_old_parser() {
         }
     });
 
-    rayon::ThreadPoolBuilder::new().num_threads(16).build_global().unwrap();
-
-    wasm_files.par_iter().for_each(|path| {
+    wasm_files.iter().for_each(|path| {
         // eprintln!("{}", path.display());
         
         let decode_result = highlevel::Module::from_file_with_offsets(&path);
@@ -95,19 +91,21 @@ fn wasmparser_equal_old_parser() {
         assert!(module_new == module_old, "ASTs differ for file '{}'", path.display());
         assert!(offsets_new == offsets_old, "Offsets differ for file '{}'", path.display());
 
+        // println!("{:#?}", module_new);
+        // println!("{:#?}", offsets_new.sections);
+
         let mut binary_old = Vec::new();
         let binary_size_old = module_new.to_bytes(&mut binary_old)
             .expect(&format!("could not encode valid wasm file '{}'", path.display()));
-        // std::fs::write("bin-old.wasm", &binary_old).unwrap();
+        std::fs::write("bin-old.wasm", &binary_old).unwrap();
 
         let mut binary_new = Vec::new();
         let binary_size_new = module_new.to_bytes_wasmparser(&mut binary_new)
             .expect(&format!("could not encode valid wasm file '{}'", path.display()));
-        // std::fs::write("bin-new.wasm", &binary_new).unwrap();
+        std::fs::write("bin-new.wasm", &binary_new).unwrap();
 
         assert_eq!(binary_size_new, binary_size_old, "Binaries differ in size, for file '{}', left = wasmparser, right = old", path.display());
-        // FIXME the order is still broken!
-        // assert!(binary_new == binary_old, "Binaries differ in bytes, for file '{}', left = wasmparser, right = old", path.display());
+        assert!(binary_new == binary_old, "Binaries differ in bytes, for file '{}', left = wasmparser, right = old", path.display());
         
         remaining_files.lock().unwrap().retain(|x| x != path);
     });
@@ -115,6 +113,35 @@ fn wasmparser_equal_old_parser() {
     println!("{:#?}", remaining_files.lock().unwrap());
     scheduler.join().unwrap();
 
+}
+
+#[test]
+fn roundtrip_produces_same_module_ast() {
+    let mut wasm_files = wasm_files(WASMBENCH_DIR).unwrap();
+
+    for hash in WASMBENCH_EXCLUDED_FILES {
+        wasm_files.retain(|path| !path.to_string_lossy().contains(hash));
+    }
+
+    wasm_files.iter().progress().for_each(|path| {
+        let (module_old, offsets_old) = highlevel::Module::from_file_with_offsets(&path).unwrap();
+        let (module_new, offsets_new) = highlevel::Module::from_file_with_offsets_wasmparser(&path).unwrap();
+
+        let mut binary_old = Vec::new();
+        let _binary_size_old = module_new.to_bytes(&mut binary_old)
+            .expect(&format!("could not encode valid wasm file '{}'", path.display()));
+        std::fs::write("bin-old.wasm", &binary_old).unwrap();
+
+        let mut binary_new = Vec::new();
+        let _binary_size_new = module_new.to_bytes_wasmparser(&mut binary_new)
+            .expect(&format!("could not encode valid wasm file '{}'", path.display()));
+        std::fs::write("bin-new.wasm", &binary_new).unwrap();
+
+        let module_old_roundtrip = highlevel::Module::from_file("bin-old.wasm").unwrap();
+        let (module_new_roundtrip, _) = highlevel::Module::from_file_with_offsets_wasmparser("bin-new.wasm").unwrap();
+        assert_eq!(module_old, module_old_roundtrip, "Old roundtrip failed for file '{}'", path.display());
+        assert_eq!(module_new, module_new_roundtrip, "New roundtrip failed for file '{}'", path.display());
+    });
 }
 
 #[test]

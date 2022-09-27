@@ -1,2 +1,4 @@
 /target/
 /Cargo.lock
+/bin-new.wasm
+/bin-old.wasm
