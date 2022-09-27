@@ -27,6 +27,7 @@ use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use std::path::Path;
 
+// TODO remove
 impl lowlevel::Module {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
         Ok(Self::from_file_with_offsets(path)?.0)
@@ -63,6 +64,8 @@ impl highlevel::Module {
         }
         Ok((module, offsets))
     }
+
+    // TODO add from_bytes_with_offsets(R) from R: io::Read
 
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> io::Result<usize> {
         let module: lowlevel::Module = self.into();
