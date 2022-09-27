@@ -26,5 +26,12 @@ name = "parser"
 harness = false
 
 [profile.release]
+opt-level = 3
+lto = "fat"
 overflow-checks = true
-lto = true
+# For profiling with debug info.
+debug = 1
+
+[profile.test]
+opt-level = 2
+lto = "thin"
