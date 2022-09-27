@@ -16,35 +16,28 @@ use crate::binary::DecodeState;
 use crate::WasmBinary;
 
 const WASMBENCH_DIR: &str = "tests/WasmBench/valid-no-extensions";
+const WASMBENCH_EXCLUDED_FILES: [&str; 3] = [
+    // Valid, but creates very large allocations because it has >500k locals in >1k functions.
+    "31fa012442fd637fca221db4fda94262e99759ab9667147cbedde083aabcc065",
+    // Is actually invalid according to wasm-validate, not sure why it wasn't filtered out before.
+    "4b1082f1c2d634aaebbe9b70331ac6639ab3fe7b0a52459ea4f6baa4f82a82ad",
+    // Panics in the old parser, but works in the new one -> strictly better, so ignore.
+    "a50d67cbaf770807cc1d1723ebc56333188b681538bf3f7679659b184d2f8020"
+];
+
 const WASM_TEST_INPUTS_DIR: &str = "../../tests/inputs";
 const WASM_TEST_INPUT_LARGE: &str = "../../tests/inputs/real-world/bananabread/bb.wasm";
 const WASM_TEST_INPUT_NAMES_SECTION: &str = "../../tests/inputs/name-section/wabt-tests/names.wasm";
 const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &str = "../../tests/inputs/name-section/extended-name-section/vuln.wasm";
 
-// FIXME For those three files, we panic on parsing, even though they are valid Wasm MVP!
-// Investigate why and fix.
-// ["tests/WasmBench/valid-no-extensions\\binaries\\4b1082f1c2d634aaebbe9b70331ac6639ab3fe7b0a52459ea4f6baa4f82a82ad.wasm", 
-// "tests/WasmBench/valid-no-extensions\\binaries\\4b15c6d93e4f47b7bfac676d395e9fbe6588f54b036b24752bf03aea7e853bea.wasm", 
-// "tests/WasmBench/valid-no-extensions\\binaries\\a50d67cbaf770807cc1d1723ebc56333188b681538bf3f7679659b184d2f8020.wasm"]
-
-// FIXME For those files, we might have different parsing results or paniced
-// [
-//     "tests/WasmBench/valid-no-extensions\\binaries\\4b1082f1c2d634aaebbe9b70331ac6639ab3fe7b0a52459ea4f6baa4f82a82ad.wasm",
-//     "tests/WasmBench/valid-no-extensions\\binaries\\4b15c6d93e4f47b7bfac676d395e9fbe6588f54b036b24752bf03aea7e853bea.wasm",
-//     "tests/WasmBench/valid-no-extensions\\binaries\\6d302db8553d9dba0e5d32d1ca71aca6c295d0d498ef370e8641b321fe99ce78.wasm",
-//     "tests/WasmBench/valid-no-extensions\\binaries\\6d3726e04a576eb8c0c92d601abb5e5fbb8db43f29d875c3b47715898ca1195d.wasm",
-//     "tests/WasmBench/valid-no-extensions\\binaries\\6d37bfe3e84acbbd1a9032e7b3c8e23105877c5b0e9cffa0aeaa49589c07c021.wasm",
-//     "tests/WasmBench/valid-no-extensions\\binaries\\a50d67cbaf770807cc1d1723ebc56333188b681538bf3f7679659b184d2f8020.wasm",
-//     "tests/WasmBench/valid-no-extensions\\binaries\\ebe8578b48adb8170e37570fabef2d0eb213c030cafb0f9f80a6a64f4e8f91d0.wasm",
-// ]
-
-
 #[test]
 fn test_main() {
-    let candidates = ["tests/WasmBench/filtered-binaries-metadata\\filtered\\4b1082f1c2d634aaebbe9b70331ac6639ab3fe7b0a52459ea4f6baa4f82a82ad.wasm"];
+    let candidates = ["tests/WasmBench/filtered-binaries-metadata\\filtered\\6d302db8553d9dba0e5d32d1ca71aca6c295d0d498ef370e8641b321fe99ce78.wasm"];
     for path in candidates {
-        let decode_result = highlevel::Module::from_file_with_offsets_wasmparser(path);
-        println!("DONE {}", path);
+        let decode_result_old = highlevel::Module::from_file_with_offsets(path).unwrap();
+        let decode_result_new = highlevel::Module::from_file_with_offsets_wasmparser(path).unwrap();
+        // println!("{:?}", decode_result_new);
+        assert_eq!(decode_result_old, decode_result_new, "{}", path);
     }
 }
 
@@ -52,9 +45,16 @@ fn test_main() {
 fn wasmparser_equal_old_parser() {
     // for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
     let mut wasm_files = wasm_files(WASMBENCH_DIR).unwrap();
+    // let mut wasm_files = [
+    //     "tests/WasmBench/valid-no-extensions\\binaries\\6d302db8553d9dba0e5d32d1ca71aca6c295d0d498ef370e8641b321fe99ce78.wasm",
+    //     "tests/WasmBench/valid-no-extensions\\binaries\\6d3726e04a576eb8c0c92d601abb5e5fbb8db43f29d875c3b47715898ca1195d.wasm",
+    //     "tests/WasmBench/valid-no-extensions\\binaries\\6d37bfe3e84acbbd1a9032e7b3c8e23105877c5b0e9cffa0aeaa49589c07c021.wasm",
+    //     "tests/WasmBench/valid-no-extensions\\binaries\\ebe8578b48adb8170e37570fabef2d0eb213c030cafb0f9f80a6a64f4e8f91d0.wasm",
+    // ].iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
     
-    // remove one file that creates very large allocations because it has >500k locals in >1k functions
-    wasm_files.retain(|path| !path.to_string_lossy().contains("31fa012442fd637fca221db4fda94262e99759ab9667147cbedde083aabcc065"));
+    for hash in WASMBENCH_EXCLUDED_FILES {
+        wasm_files.retain(|path| !path.to_string_lossy().contains(hash));
+    }
     
     let remaining_files = Arc::new(std::sync::Mutex::new(wasm_files.clone()));
 
