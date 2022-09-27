@@ -2,15 +2,10 @@ use std::convert::TryInto;
 
 /*
  TODO WHEN CONTINUING
- - fix missing sections when encoding with wasmparser, cf. with old code
-    // Index the section offsets not by the section's discriminant, but by
-    // a new enum `SectionId`, which is just the section name for "normal" sections,
-    // and CustomSection(name: String) for custom sections (whose name should be unique).
- - add SectionId type that is used on both OLD and NEW parser and in the AST to order custom sections
- - then serialize sections according to this in both OLD and NEW parser
  - update wasmparser and wasm-encoder dependencies
  - merge (NOT rebase) wasmparser and wimpl branches
  - make encoding of CodeSection parallel
+ - support multi-value, multi-table, multi-memory because they are anyway pretty much supported (and make for less special cases)
  - rename ParseErrorInner to ParseIssue because its used for warnings and errors
  - make AST blocks nested, remove end/else opcodes
  - remove blocktype, replace with function type (this should make our AST multi-value capable)
