@@ -21,9 +21,15 @@ const WASM_TEST_INPUT_LARGE: &str = "../../tests/inputs/real-world/bananabread/b
 const WASM_TEST_INPUT_NAMES_SECTION: &str = "../../tests/inputs/name-section/wabt-tests/names.wasm";
 const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &str = "../../tests/inputs/name-section/extended-name-section/vuln.wasm";
 
+// FIXME For those three files, we panic on parsing, even though they are valid Wasm MVP!
+// Investigate why and fix.
+// ["tests/WasmBench/valid-no-extensions\\binaries\\4b1082f1c2d634aaebbe9b70331ac6639ab3fe7b0a52459ea4f6baa4f82a82ad.wasm", "tests/WasmBench/valid-no-extensions\\binaries\\4b15c6d93e4f47b7bfac676d395e9fbe6588f54b036b24752bf03aea7e853bea.wasm", "tests/WasmBench/valid-no-extensions\\binaries\\a50d67cbaf770807cc1d1723ebc56333188b681538bf3f7679659b184d2f8020.wasm"]
+
+// FIXME For anything with custom sections, we seem to break the section order on serializations
+
 #[test]
 fn test_main() {
-    let candidates = ["tests/WasmBench/filtered-binaries-metadata\\filtered\\31fa012442fd637fca221db4fda94262e99759ab9667147cbedde083aabcc065.wasm"];
+    let candidates = ["tests/WasmBench/filtered-binaries-metadata\\filtered\\4b1082f1c2d634aaebbe9b70331ac6639ab3fe7b0a52459ea4f6baa4f82a82ad.wasm"];
     for path in candidates {
         let decode_result = highlevel::Module::from_file_with_offsets_wasmparser(path);
         println!("DONE {}", path);
@@ -34,8 +40,6 @@ fn test_main() {
 fn wasmparser_equal_old_parser() {
     // for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
     let mut wasm_files = wasm_files(WASMBENCH_DIR).unwrap();
-    // const START: usize = 1500;
-    // let mut wasm_files = wasm_files[START..START+500].iter().cloned().collect::<Vec<_>>();
     
     // remove one file that creates very large allocations because it has >500k locals in >1k functions
     wasm_files.retain(|path| !path.to_string_lossy().contains("31fa012442fd637fca221db4fda94262e99759ab9667147cbedde083aabcc065"));
@@ -44,19 +48,15 @@ fn wasmparser_equal_old_parser() {
 
     let r = remaining_files.clone();
     let scheduler = std::thread::spawn(move || {
-        let wait_time = Duration::from_millis(2000);
+        let wait_time = Duration::from_millis(10000);
         loop {
             std::thread::sleep(wait_time);
-
             let remaining_files = r.lock().unwrap();
             println!("Remaining files: {}", remaining_files.len());
-            if remaining_files.len() <= 10 {
-                println!("{:?}", remaining_files);
-            }
         }
     });
 
-    // rayon::ThreadPoolBuilder::new().num_threads(32).build_global().unwrap();
+    rayon::ThreadPoolBuilder::new().num_threads(16).build_global().unwrap();
 
     wasm_files.par_iter().for_each(|path| {
         // eprintln!("{}", path.display());
@@ -80,23 +80,26 @@ fn wasmparser_equal_old_parser() {
         assert!(module_new == module_old, "ASTs differ for file '{}'", path.display());
         assert!(offsets_new == offsets_old, "Offsets differ for file '{}'", path.display());
 
-        // let mut binary_old = Vec::new();
-        // let binary_size_old = module_new.to_bytes(&mut binary_old)
-        //     .expect(&format!("could not encode valid wasm file '{}'", path.display()));
-        // // std::fs::write("bin-old.wasm", &binary_old).unwrap();
+        let mut binary_old = Vec::new();
+        let binary_size_old = module_new.to_bytes(&mut binary_old)
+            .expect(&format!("could not encode valid wasm file '{}'", path.display()));
+        // std::fs::write("bin-old.wasm", &binary_old).unwrap();
 
-        // let mut binary_new = Vec::new();
-        // let binary_size_new = module_new.to_bytes_wasmparser(&mut binary_new)
-        //     .expect(&format!("could not encode valid wasm file '{}'", path.display()));
-        // // std::fs::write("bin-new.wasm", &binary_new).unwrap();
+        let mut binary_new = Vec::new();
+        let binary_size_new = module_new.to_bytes_wasmparser(&mut binary_new)
+            .expect(&format!("could not encode valid wasm file '{}'", path.display()));
+        // std::fs::write("bin-new.wasm", &binary_new).unwrap();
 
-        // assert_eq!(binary_size_new, binary_size_old, "Binaries differ in size, for file '{}', left = wasmparser, right = old", path.display());
+        assert_eq!(binary_size_new, binary_size_old, "Binaries differ in size, for file '{}', left = wasmparser, right = old", path.display());
+        // FIXME the order is still broken!
         // assert!(binary_new == binary_old, "Binaries differ in bytes, for file '{}', left = wasmparser, right = old", path.display());
         
         remaining_files.lock().unwrap().retain(|x| x != path);
     });
 
     scheduler.join().unwrap();
+    println!("{:?}", remaining_files.lock().unwrap());
+
 }
 
 #[test]
