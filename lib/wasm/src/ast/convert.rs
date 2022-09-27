@@ -581,17 +581,17 @@ impl From<&hl::Module> for ll::Module {
         }
 
         // Other custom sections, that we do not have inlined into the high-level AST.
-        // They are inserted after the correct non-custom section. They relative order of custom
-        // sections is the same in this array as when they were parsed originally, so no need
-        // to handle that specifically.
+        // They are inserted after the correct previous section. They relative order of custom
+        // sections with the same `SectionId` is the same in this array as when they were parsed
+        // originally, so no need to ensure that specifically.
         for section in &module.custom_sections {
-            let after = section.after.clone();
+            let previous_section = section.after.clone();
             let section = ll::Section::Custom(ll::CustomSection::Raw(section.clone()));
 
             // Find the reference section after which this custom section came in the original binary.
-            let after_position = if let Some(after) = after {
+            let insert_position = if let Some(after) = previous_section.clone() {
                 sections.iter()
-                    .position(|sec| crate::SectionId::from_section(sec) == after)
+                    .rposition(|sec| crate::SectionId::from_section(sec) == after)
                     .expect("cannot find the reference section for inserting custom section anymore")
                     + 1
             } else {
@@ -599,17 +599,7 @@ impl From<&hl::Module> for ll::Module {
                 0
             };
 
-            // Additionally skip all custom sections, as to not change the relative order between custom sections.
-            let custom_section_discriminant = std::mem::discriminant(&section);
-            let custom_skipped = sections.iter()
-                .skip(after_position)
-                .position(|sec| std::mem::discriminant(sec) != custom_section_discriminant)
-                // If all remaining sections are custom, skip all of them.
-                .unwrap_or(sections.len() - after_position);
-
-            let position = after_position + custom_skipped;
-            // FIXME
-            sections.insert(position, section);
+            sections.insert(insert_position, section);
         }
 
         ll::Module { sections }
