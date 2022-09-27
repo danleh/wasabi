@@ -31,17 +31,6 @@ const WASM_TEST_INPUT_NAMES_SECTION: &str = "../../tests/inputs/name-section/wab
 const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &str = "../../tests/inputs/name-section/extended-name-section/vuln.wasm";
 
 #[test]
-fn test_main() {
-    let candidates = ["tests/WasmBench/filtered-binaries-metadata\\filtered\\6d302db8553d9dba0e5d32d1ca71aca6c295d0d498ef370e8641b321fe99ce78.wasm"];
-    for path in candidates {
-        let decode_result_old = highlevel::Module::from_file_with_offsets(path).unwrap();
-        let decode_result_new = highlevel::Module::from_file_with_offsets_wasmparser(path).unwrap();
-        // println!("{:?}", decode_result_new);
-        assert_eq!(decode_result_old, decode_result_new, "{}", path);
-    }
-}
-
-#[test]
 fn wasmparser_equal_old_parser() {
     // for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
     let mut wasm_files = wasm_files(WASMBENCH_DIR).unwrap();
