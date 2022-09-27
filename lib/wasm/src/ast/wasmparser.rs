@@ -120,7 +120,7 @@ pub mod parser {
     use rayon::prelude::*;
     
     use wasmparser::{
-        ImportSectionEntryType, NameSectionReader, Naming, Parser, Payload, SectionReader, TypeDef,
+        NameSectionReader, Naming, Parser, Payload, SectionReader, Type, TypeRef
     };
 
     use crate::highlevel::{
@@ -175,17 +175,9 @@ pub mod parser {
 
                     let mut type_offset = reader.original_position();
                     for _ in 0..reader.get_count() {
-                        let type_ = reader.read()?;
-                        match type_ {
-                            TypeDef::Func(ty) => {
-                                let ty = parse_func_ty(ty, type_offset)?;
-                                types.add(ty)
-                            },
-                            TypeDef::Instance(_) | TypeDef::Module(_) => {
-                                Err(ParseErrorInner::unsupported(type_offset, WasmExtension::ModuleLinking))?
-                            }
-                        }
-
+                        let Type::Func(type_) = reader.read()?;
+                        let type_ = parse_func_ty(type_, type_offset)?;
+                        types.add(type_);
                         type_offset = reader.original_position();
                     }
                 }
@@ -197,14 +189,10 @@ pub mod parser {
                         let import = reader.read()?;
 
                         let import_module = import.module.to_string();
-                        let import_name = import
-                            .field
-                            // The second import string was made optional in this extension, but we don't support it.
-                            .ok_or_else(|| ParseErrorInner::unsupported(import_offset, WasmExtension::ModuleLinking))?
-                            .to_string();
+                        let import_name = import.name.to_string();
 
                         match import.ty {
-                            ImportSectionEntryType::Function(ty_index) => {
+                            TypeRef::Func(ty_index) => {
                                 imported_function_count += 1;
                                 module.functions.push(Function::new_imported(
                                     // The `import_offset` is not actually the offset of the type index,
@@ -215,15 +203,15 @@ pub mod parser {
                                     import_name,
                                 ))
                             }
-                            ImportSectionEntryType::Global(ty) => module.globals.push(
+                            TypeRef::Global(ty) => module.globals.push(
                                 // Same issue regarding `import_offset`.
                                 Global::new_imported(parse_global_ty(ty, import_offset)?, import_module, import_name),
                             ),
-                            ImportSectionEntryType::Table(ty) => module.tables.push(
+                            TypeRef::Table(ty) => module.tables.push(
                                 // Same issue regarding `import_offset`.
                                 Table::new_imported(parse_table_ty(ty, import_offset)?, import_module, import_name),
                             ),
-                            ImportSectionEntryType::Memory(ty) => {
+                            TypeRef::Memory(ty) => {
                                 // Same issue regarding `import_offset`.
                                 module.memories.push(Memory::new_imported(
                                     parse_memory_ty(ty, import_offset)?,
@@ -231,20 +219,15 @@ pub mod parser {
                                     import_name,
                                 ))
                             }
-                            ImportSectionEntryType::Tag(_) => {
+                            TypeRef::Tag(_) => {
                                 // Same issue regarding `import_offset`.
                                 Err(ParseErrorInner::unsupported(import_offset, WasmExtension::ExceptionHandling))?
-                            }
-                            ImportSectionEntryType::Module(_) | ImportSectionEntryType::Instance(_) => {
-                                // Same issue regarding `import_offset`.
-                                Err(ParseErrorInner::unsupported(import_offset, WasmExtension::ModuleLinking))?
                             }
                         }
 
                         import_offset = reader.original_position();
                     }
                 }
-                Payload::AliasSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ModuleLinking))?,
                 Payload::InstanceSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ModuleLinking))?,
                 Payload::FunctionSection(mut reader) => {
                     section_offsets.push((SectionId::Function, reader.range().start));
@@ -326,13 +309,13 @@ pub mod parser {
                     for _ in 0..reader.get_count() {
                         let export = reader.read()?;
 
-                        let name = export.field.to_string();
+                        let name = export.name.to_string();
                         let index_u32 = export.index;
                         let index = u32_to_usize(export.index);
                         
                         use wasmparser::ExternalKind;
                         match export.kind {
-                            ExternalKind::Function => module
+                            ExternalKind::Func => module
                                 .functions
                                 .get_mut(index)
                                 // The `export_offset` is not actually the offset of the function index,
@@ -365,14 +348,6 @@ pub mod parser {
                             ExternalKind::Tag => {
                                 // Same issue regarding `export_offset`.
                                 Err(ParseErrorInner::unsupported(export_offset, WasmExtension::ExceptionHandling))?
-                            }
-                            ExternalKind::Type => {
-                                // Same issue regarding `export_offset`.
-                                Err(ParseErrorInner::unsupported(export_offset, WasmExtension::TypeImports))?
-                            },
-                            ExternalKind::Module | ExternalKind::Instance => {
-                                // Same issue regarding `export_offset`.
-                                Err(ParseErrorInner::unsupported(export_offset, WasmExtension::ModuleLinking))?
                             }
                         };
 
@@ -415,7 +390,7 @@ pub mod parser {
                         match element.kind {
                             ElementKind::Active {
                                 table_index,
-                                init_expr,
+                                offset_expr,
                             } => {
                                 let table = module
                                     .tables
@@ -427,14 +402,14 @@ pub mod parser {
                                 }
 
                                 // Most offset expressions are just a constant and the end instruction.
-                                let mut offset_expr = Vec::with_capacity(2);
-                                for op_offset in init_expr.get_operators_reader().into_iter_with_offsets() {
+                                let mut offset_instrs = Vec::with_capacity(2);
+                                for op_offset in offset_expr.get_operators_reader().into_iter_with_offsets() {
                                     let (op, offset) = op_offset?;
-                                    offset_expr.push(parse_instr(op, &types, offset)?)
+                                    offset_instrs.push(parse_instr(op, &types, offset)?)
                                 }
 
                                 table.elements.push(Element {
-                                    offset: offset_expr,
+                                    offset: offset_instrs,
                                     functions: items,
                                 })
                             }
@@ -463,7 +438,7 @@ pub mod parser {
                         match data.kind {
                             DataKind::Active {
                                 memory_index,
-                                init_expr,
+                                offset_expr,
                             } => {
                                 let memory = module
                                     .memories
@@ -471,14 +446,14 @@ pub mod parser {
                                     .ok_or_else(|| ParseErrorInner::index(data_offset, memory_index, "memory"))?;
 
                                 // Most offset expressions are just a constant and the end instruction.
-                                let mut offset_expr = Vec::with_capacity(2);
-                                for op_offset in init_expr.get_operators_reader().into_iter_with_offsets() {
+                                let mut offset_instrs = Vec::with_capacity(2);
+                                for op_offset in offset_expr.get_operators_reader().into_iter_with_offsets() {
                                     let (op, offset) = op_offset?;
-                                    offset_expr.push(parse_instr(op, &types, offset)?)
+                                    offset_instrs.push(parse_instr(op, &types, offset)?)
                                 }
 
                                 memory.data.push(Data {
-                                    offset: offset_expr,
+                                    offset: offset_instrs,
                                     bytes: data.data.to_vec(),
                                 })
                             }
@@ -662,21 +637,12 @@ pub mod parser {
                         }
                     }
                 }
-                Payload::ModuleSectionStart {
-                    count: _,
-                    range,
-                    size: _,
-                } => Err(ParseErrorInner::unsupported(range.start, WasmExtension::ModuleLinking))?,
-                Payload::ModuleSectionEntry {
-                    parser: _,
-                    range,
-                } => Err(ParseErrorInner::unsupported(range.start, WasmExtension::ModuleLinking))?,
                 Payload::UnknownSection {
                     id: _,
                     contents: _,
                     range,
                 } => Err(ParseErrorInner::message(range.start, "unknown section"))?,
-                Payload::End => {
+                Payload::End(_offset_bytes) => {
                     // I don't understand what this end marker is for?
                     // If the module ended (i.e., the input buffer is exhausted),
                     // there is just no more payload following, isn't there?
@@ -738,9 +704,9 @@ pub mod parser {
             wp::End => End,
 
             wp::Try { ty: _ }
-            | wp::Catch { index: _ }
+            | wp::Catch { tag_index: _ }
             | wp::CatchAll
-            | wp::Throw { index: _ }
+            | wp::Throw { tag_index: _ }
             | wp::Rethrow { relative_depth: _ }
             | wp::Delegate { relative_depth: _ } => {
                 Err(ParseErrorInner::unsupported(offset, WasmExtension::ExceptionHandling))?
@@ -762,16 +728,17 @@ pub mod parser {
 
             wp::Return => Return,
             wp::Call { function_index } => Call(function_index.into()),
-            wp::CallIndirect { index, table_index } => {
+            wp::CallIndirect { type_index, table_index, table_byte } => {
                 if table_index != 0 {
                     Err(ParseErrorInner::unsupported(offset, WasmExtension::ReferenceTypes))?
                 }
-                CallIndirect(types.get(index, offset+1)?, 0usize.into())
+                assert!(table_byte == 0, "not sure which extension this is");
+                CallIndirect(types.get(type_index, offset+1)?, 0usize.into())
             }
 
             wp::ReturnCall { function_index: _ }
             | wp::ReturnCallIndirect {
-                index: _,
+                type_index: _,
                 table_index: _,
             } => Err(ParseErrorInner::unsupported(offset, WasmExtension::TailCalls))?,
 
@@ -1307,7 +1274,7 @@ pub mod parser {
         })
     }
 
-    fn parse_memarg(memarg: wasmparser::MemoryImmediate, parser_offset: usize) -> Result<Memarg, ParseError> {
+    fn parse_memarg(memarg: wasmparser::MemArg, parser_offset: usize) -> Result<Memarg, ParseError> {
         if memarg.memory != 0 {
             Err(ParseErrorInner::unsupported(parser_offset, WasmExtension::MultiMemory))?
         }
@@ -1346,8 +1313,8 @@ pub mod parser {
         ))
     }
 
-    fn parse_elem_ty(ty: wasmparser::Type, offset: usize) -> Result<ElemType, ParseError> {
-        use wasmparser::Type::*;
+    fn parse_elem_ty(ty: wasmparser::ValType, offset: usize) -> Result<ElemType, ParseError> {
+        use wasmparser::ValType::*;
         match ty {
             I32 | I64 | F32 | F64 => Err(ParseErrorInner::message(offset, "only reftypes, not value types are allowed as table elements"))?,
             V128 => Err(ParseErrorInner::message(offset, "only reftypes, not value types are allowed as table elements"))?,
@@ -1359,17 +1326,17 @@ pub mod parser {
         }
     }
 
-    fn parse_block_ty(ty: wasmparser::TypeOrFuncType, offset: usize) -> Result<BlockType, ParseError> {
-        use wasmparser::TypeOrFuncType::*;
+    fn parse_block_ty(ty: wasmparser::BlockType, offset: usize) -> Result<BlockType, ParseError> {
+        use wasmparser::BlockType::*;
         match ty {
-            Type(wasmparser::Type::EmptyBlockType) => Ok(BlockType(None)),
+            Empty => Ok(BlockType(None)),
             Type(ty) => Ok(BlockType(Some(parse_val_ty(ty, offset)?))),
             FuncType(_) => Err(ParseErrorInner::unsupported(offset, WasmExtension::MultiValue))?,
         }
     }
 
     fn parse_func_ty(ty: wasmparser::FuncType, offset: usize) -> Result<FunctionType, ParseError> {
-        let convert_tys = |tys: &[wasmparser::Type]| -> Result<Box<[ValType]>, ParseError> {
+        let convert_tys = |tys: &[wasmparser::ValType]| -> Result<Box<[ValType]>, ParseError> {
             let vec: Vec<ValType> = tys
                 .iter()
                 .cloned()
@@ -1381,8 +1348,8 @@ pub mod parser {
         };
 
         Ok(FunctionType {
-            params: convert_tys(&ty.params)?,
-            results: convert_tys(&ty.returns)?,
+            params: convert_tys(ty.params())?,
+            results: convert_tys(ty.results())?,
         })
     }
 
@@ -1397,19 +1364,15 @@ pub mod parser {
         ))
     }
 
-    fn parse_val_ty(ty: wasmparser::Type, offset: usize) -> Result<ValType, ParseError> {
-        use wasmparser::Type;
+    fn parse_val_ty(ty: wasmparser::ValType, offset: usize) -> Result<ValType, ParseError> {
         match ty {
-            Type::I32 => Ok(ValType::I32),
-            Type::I64 => Ok(ValType::I64),
-            Type::F32 => Ok(ValType::F32),
-            Type::F64 => Ok(ValType::F64),
-            Type::V128 => Err(ParseErrorInner::unsupported(offset, WasmExtension::Simd))?,
-            Type::FuncRef => Err(ParseErrorInner::unsupported(offset, WasmExtension::ReferenceTypes))?,
-            Type::ExternRef => Err(ParseErrorInner::unsupported(offset, WasmExtension::ReferenceTypes))?,
-            Type::ExnRef => Err(ParseErrorInner::unsupported(offset, WasmExtension::ExceptionHandling))?,
-            Type::Func => Err(ParseErrorInner::message(offset, "function types are not a valid value type"))?,
-            Type::EmptyBlockType => Err(ParseErrorInner::message(offset, "block types are not a valid value type"))?,
+            wasmparser::ValType::I32 => Ok(ValType::I32),
+            wasmparser::ValType::I64 => Ok(ValType::I64),
+            wasmparser::ValType::F32 => Ok(ValType::F32),
+            wasmparser::ValType::F64 => Ok(ValType::F64),
+            wasmparser::ValType::V128 => Err(ParseErrorInner::unsupported(offset, WasmExtension::Simd))?,
+            wasmparser::ValType::FuncRef => Err(ParseErrorInner::unsupported(offset, WasmExtension::ReferenceTypes))?,
+            wasmparser::ValType::ExternRef => Err(ParseErrorInner::unsupported(offset, WasmExtension::ReferenceTypes))?,
         }
     }
 
@@ -1458,13 +1421,13 @@ pub mod encode {
     use std::convert::TryInto;
     use std::collections::HashMap;
 
-    use wasm_encoder as ll;
+    use wasm_encoder as we;
 
     /// Add marker types for type-safe `Idx<T>` for the low-level binary format.
-    /// Since I cannot extend wasm_encoder and there cannot be another, clashing `ll` module, wrap
+    /// Since I cannot extend wasm_encoder and there cannot be another, clashing `we` module, wrap
     /// this in an intermediate `marker` module.
     mod marker {
-        pub mod ll {
+        pub mod we {
             pub struct FunctionType;
             pub struct Function;
             pub struct Global;
@@ -1480,17 +1443,17 @@ pub mod encode {
 
     #[derive(Default)]
     struct EncodeState {
-        types_idx: HashMap<FunctionType, Idx<marker::ll::FunctionType>>,
+        types_idx: HashMap<FunctionType, Idx<marker::we::FunctionType>>,
 
         // Mapping of indices from the high-level AST to the low-level binary format.
         // This is necessary, because in the WebAssembly binary format all imported elements
         // (functions, globals, etc.) come before (i.e., have a lower index) than all
         // "locally-defined" (i.e., non-imported) elements.
         // We thus have to re-index functions, globals, etc. and use this here to do so.
-        function_idx: HashMap<Idx<hl::Function>, Idx<marker::ll::Function>>,
-        table_idx: HashMap<Idx<hl::Table>, Idx<marker::ll::Table>>,
-        memory_idx: HashMap<Idx<hl::Memory>, Idx<marker::ll::Memory>>,
-        global_idx: HashMap<Idx<hl::Global>, Idx<marker::ll::Global>>,
+        function_idx: HashMap<Idx<hl::Function>, Idx<marker::we::Function>>,
+        table_idx: HashMap<Idx<hl::Table>, Idx<marker::we::Table>>,
+        memory_idx: HashMap<Idx<hl::Memory>, Idx<marker::we::Memory>>,
+        global_idx: HashMap<Idx<hl::Global>, Idx<marker::we::Global>>,
 
         last_encoded_section: Option<SectionId>,
         custom_sections_encoded: usize,
@@ -1502,21 +1465,21 @@ pub mod encode {
             /// 
             /// Unlike for types, the high-level index must be new, otherwise the function panics.
             /// If you want to map an existing index, use `map_*_idx` instead.
-            fn $insert_fn(&mut self, highlevel_idx: Idx<hl::$ty>) -> Idx<marker::ll::$ty> {
+            fn $insert_fn(&mut self, highlevel_idx: Idx<hl::$ty>) -> Idx<marker::we::$ty> {
                 let new_lowlevel_idx = Idx::from(self.$field.len());
                 let was_new = self.$field.insert(highlevel_idx, new_lowlevel_idx).is_none();
                 assert!(was_new, "high-level index {:?} was inserted twice", highlevel_idx);
                 new_lowlevel_idx
             }
 
-            fn $map_fn(&self, highlevel_idx: Idx<hl::$ty>) -> Result<Idx<marker::ll::$ty>, EncodeError> {
+            fn $map_fn(&self, highlevel_idx: Idx<hl::$ty>) -> Result<Idx<marker::we::$ty>, EncodeError> {
                 self.$field.get(&highlevel_idx).copied().ok_or_else(|| EncodeError::index(highlevel_idx, $index_space_str))
             }
         };
     }
         
     impl EncodeState {
-        fn get_or_insert_type(&mut self, type_: FunctionType) -> Idx<marker::ll::FunctionType> {
+        fn get_or_insert_type(&mut self, type_: FunctionType) -> Idx<marker::we::FunctionType> {
             let new_idx = Idx::from(self.types_idx.len());
             *self.types_idx.entry(type_).or_insert(new_idx)
         }
@@ -1605,7 +1568,7 @@ pub mod encode {
         state.last_encoded_section = Some(SectionId::Export);
         encode_and_insert_custom(&mut encoder, &mut state, module);
         if let Some(function_idx) = module.start {
-            let start_section = ll::StartSection {
+            let start_section = we::StartSection {
                 function_index: state.map_function_idx(function_idx)?.to_u32()
             };
             encoder.section(&start_section);
@@ -1639,8 +1602,8 @@ pub mod encode {
         Ok(encoder.finish())
     }
 
-    fn encode_imports(module: &hl::Module, state: &mut EncodeState) -> ll::ImportSection {
-        let mut import_section = ll::ImportSection::new();
+    fn encode_imports(module: &hl::Module, state: &mut EncodeState) -> we::ImportSection {
+        let mut import_section = we::ImportSection::new();
 
         macro_rules! add_imports {
             ($elem_iter: ident, $state_insert_fn: ident, $ll_import_type: ident, $hl_to_ll_closure: expr) => {
@@ -1649,8 +1612,8 @@ pub mod encode {
                         state.$state_insert_fn(hl_idx);
                         import_section.import(
                             module_name, 
-                            Some(name),
-                            ll::EntityType::$ll_import_type($hl_to_ll_closure(elem))
+                            name,
+                            we::EntityType::$ll_import_type($hl_to_ll_closure(elem))
                         );
                     }
                 }
@@ -1658,30 +1621,31 @@ pub mod encode {
         }
 
         add_imports!(functions, insert_function_idx, Function, |f: &hl::Function| state.get_or_insert_type(f.type_.clone()).to_u32());
-        add_imports!(tables, insert_table_idx, Table, |t: &hl::Table| ll::TableType::from(t.type_));
-        add_imports!(memories, insert_memory_idx, Memory, |m: &hl::Memory| ll::MemoryType::from(m.type_));
-        add_imports!(globals, insert_global_idx, Global, |g: &hl::Global| ll::GlobalType::from(g.type_));
+        add_imports!(tables, insert_table_idx, Table, |t: &hl::Table| we::TableType::from(t.type_));
+        add_imports!(memories, insert_memory_idx, Memory, |m: &hl::Memory| we::MemoryType::from(m.type_));
+        add_imports!(globals, insert_global_idx, Global, |g: &hl::Global| we::GlobalType::from(g.type_));
 
         import_section
     }
 
-    fn encode_exports(module: &hl::Module, state: &mut EncodeState) -> Result<ll::ExportSection, EncodeError> {
-        let mut export_section = ll::ExportSection::new();
+    fn encode_exports(module: &hl::Module, state: &mut EncodeState) -> Result<we::ExportSection, EncodeError> {
+        let mut export_section = we::ExportSection::new();
 
         macro_rules! add_exports {
-            ($elem_iter: ident, $ll_export_type: ident, $map_idx_fn: ident) => {
+            ($elem_iter: ident, $export_kind: ident, $map_idx_fn: ident) => {
                 for (hl_idx, elem) in module.$elem_iter() {
                     for name in &elem.export {
                         export_section.export(
                             name,
-                            ll::Export::$ll_export_type(state.$map_idx_fn(hl_idx)?.to_u32())
+                            we::ExportKind::$export_kind,
+                            state.$map_idx_fn(hl_idx)?.to_u32()
                         );
                     }
                 }
             }
         }
 
-        add_exports!(functions, Function, map_function_idx);
+        add_exports!(functions, Func, map_function_idx);
         add_exports!(tables, Table, map_table_idx);
         add_exports!(memories, Memory, map_memory_idx);
         add_exports!(globals, Global, map_global_idx);
@@ -1690,10 +1654,10 @@ pub mod encode {
     }
 
     /// Encode the types in the order in that we gave indices to them.
-    fn encode_types(state: &EncodeState) -> ll::TypeSection {
-        let mut type_section = ll::TypeSection::new();
+    fn encode_types(state: &EncodeState) -> we::TypeSection {
+        let mut type_section = we::TypeSection::new();
         
-        let mut types_ordered: Vec<(&FunctionType, Idx<marker::ll::FunctionType>)> = state.types_idx.iter().map(|(t, i)| (t, *i)).collect();
+        let mut types_ordered: Vec<(&FunctionType, Idx<marker::we::FunctionType>)> = state.types_idx.iter().map(|(t, i)| (t, *i)).collect();
         types_ordered.sort_unstable_by_key(|&(_, idx)| idx);
         assert_eq!(
             state.types_idx.len(),
@@ -1703,16 +1667,16 @@ pub mod encode {
         );
         for (type_, _) in types_ordered {
             type_section.function(
-                type_.params.iter().copied().map(ll::ValType::from),
-                type_.results.iter().copied().map(ll::ValType::from)
+                type_.params.iter().copied().map(we::ValType::from),
+                type_.results.iter().copied().map(we::ValType::from)
             );
         }
 
         type_section
     }
 
-    fn encode_functions(module: &hl::Module, state: &mut EncodeState) -> ll::FunctionSection {
-        let mut function_section = ll::FunctionSection::new();
+    fn encode_functions(module: &hl::Module, state: &mut EncodeState) -> we::FunctionSection {
+        let mut function_section = we::FunctionSection::new();
 
         for (function_idx, function) in module.functions() {
             if let Some(_code) = function.code() {
@@ -1726,13 +1690,13 @@ pub mod encode {
         function_section
     }
 
-    fn encode_tables(module: &hl::Module, state: &mut EncodeState) -> Result<(ll::TableSection, ll::ElementSection), EncodeError> {
-        let mut table_section = ll::TableSection::new();
-        let mut element_section = ll::ElementSection::new();
+    fn encode_tables(module: &hl::Module, state: &mut EncodeState) -> Result<(we::TableSection, we::ElementSection), EncodeError> {
+        let mut table_section = we::TableSection::new();
+        let mut element_section = we::ElementSection::new();
 
         for (hl_table_idx, table) in module.tables() {
             let ll_table_idx = if table.import.is_none() {
-                table_section.table(ll::TableType::from(table.type_));
+                table_section.table(we::TableType::from(table.type_));
                 state.insert_table_idx(hl_table_idx)
             } else {
                 state.map_table_idx(hl_table_idx)?
@@ -1750,21 +1714,21 @@ pub mod encode {
                 let ll_elements = hl_element.functions.iter()
                     .map(|function_idx| state.map_function_idx(*function_idx).map(Idx::to_u32))
                     .collect::<Result<Vec<u32>, _>>()?;
-                let ll_elements = ll::Elements::Functions(ll_elements.as_slice());
-                element_section.active(ll_table_idx, &ll_offset, ll::ValType::FuncRef, ll_elements);
+                let ll_elements = we::Elements::Functions(ll_elements.as_slice());
+                element_section.active(ll_table_idx, &ll_offset, we::ValType::FuncRef, ll_elements);
             }
         }
 
         Ok((table_section, element_section))
     }
 
-    fn encode_memories(module: &hl::Module, state: &mut EncodeState) -> Result<(ll::MemorySection, ll::DataSection), EncodeError> {
-        let mut memory_section = ll::MemorySection::new();
-        let mut data_section = ll::DataSection::new();
+    fn encode_memories(module: &hl::Module, state: &mut EncodeState) -> Result<(we::MemorySection, we::DataSection), EncodeError> {
+        let mut memory_section = we::MemorySection::new();
+        let mut data_section = we::DataSection::new();
 
         for (hl_memory_idx, memory) in module.memories() {
             let ll_memory_idx = if memory.import.is_none() {
-                memory_section.memory(ll::MemoryType::from(memory.type_));
+                memory_section.memory(we::MemoryType::from(memory.type_));
                 state.insert_memory_idx(hl_memory_idx)
             } else {
                 state.map_memory_idx(hl_memory_idx)?
@@ -1780,28 +1744,28 @@ pub mod encode {
         Ok((memory_section, data_section))
     }
 
-    fn encode_globals(module: &hl::Module, state: &mut EncodeState) -> Result<ll::GlobalSection, EncodeError> {
-        let mut global_section = ll::GlobalSection::new();
+    fn encode_globals(module: &hl::Module, state: &mut EncodeState) -> Result<we::GlobalSection, EncodeError> {
+        let mut global_section = we::GlobalSection::new();
 
         for (global_idx, global) in module.globals() {
             if let Some(init) = global.init() {
                 state.insert_global_idx(global_idx);
                 let ll_init = encode_single_instruction_with_end(init, state)?;
-                global_section.global(ll::GlobalType::from(global.type_), &ll_init);
+                global_section.global(we::GlobalType::from(global.type_), &ll_init);
             }
         }
 
         Ok(global_section)
     }
 
-    fn encode_code(module: &hl::Module, state: &mut EncodeState) -> Result<ll::CodeSection, EncodeError> {
-        let mut code_section = ll::CodeSection::new();
+    fn encode_code(module: &hl::Module, state: &mut EncodeState) -> Result<we::CodeSection, EncodeError> {
+        let mut code_section = we::CodeSection::new();
 
         // TODO encode ll_function in parallel (which would require synchronization or a concurrent hashmap for state)
         for function in &module.functions {
             if let Some(code) = function.code() {
-                let ll_locals_iter = code.locals.iter().map(|local| ll::ValType::from(local.type_));
-                let mut ll_function = ll::Function::new_with_locals_types(ll_locals_iter);
+                let ll_locals_iter = code.locals.iter().map(|local| we::ValType::from(local.type_));
+                let mut ll_function = we::Function::new_with_locals_types(ll_locals_iter);
                 for instr in &code.body {
                     ll_function.instruction(&encode_instruction(instr, state)?);
                 }
@@ -1830,212 +1794,212 @@ pub mod encode {
         }
     }
 
-    fn encode_single_instruction_with_end(instrs: &[hl::Instr], state: &mut EncodeState) -> Result<ll::Instruction<'static>, EncodeError> {
+    fn encode_single_instruction_with_end(instrs: &[hl::Instr], state: &mut EncodeState) -> Result<we::Instruction<'static>, EncodeError> {
         match instrs {
             [single_instr, hl::Instr::End] => encode_instruction(single_instr, state),
             _ => Err(EncodeError::message(format!("expected exactly one instruction, followed by an end, but got {:?}. If there is more than one instruction, this is not supported by wasm-encoder for an unknown reason.", instrs))),
         }
     }
 
-    fn encode_instruction(hl_instr: &hl::Instr, state: &mut EncodeState) -> Result<ll::Instruction<'static>, EncodeError> {
+    fn encode_instruction(hl_instr: &hl::Instr, state: &mut EncodeState) -> Result<we::Instruction<'static>, EncodeError> {
         Ok(match *hl_instr {
-            hl::Instr::Unreachable => ll::Instruction::Unreachable,
-            hl::Instr::Nop => ll::Instruction::Nop,
+            hl::Instr::Unreachable => we::Instruction::Unreachable,
+            hl::Instr::Nop => we::Instruction::Nop,
 
-            hl::Instr::Block(block_type) => ll::Instruction::Block(block_type.into()),
-            hl::Instr::Loop(block_type) => ll::Instruction::Loop(block_type.into()),
-            hl::Instr::If(block_type) => ll::Instruction::If(block_type.into()),
-            hl::Instr::Else => ll::Instruction::Else,
-            hl::Instr::End => ll::Instruction::End,
+            hl::Instr::Block(block_type) => we::Instruction::Block(block_type.into()),
+            hl::Instr::Loop(block_type) => we::Instruction::Loop(block_type.into()),
+            hl::Instr::If(block_type) => we::Instruction::If(block_type.into()),
+            hl::Instr::Else => we::Instruction::Else,
+            hl::Instr::End => we::Instruction::End,
             
-            hl::Instr::Br(label) => ll::Instruction::Br(label.to_u32()),
-            hl::Instr::BrIf(label) => ll::Instruction::BrIf(label.to_u32()),
-            hl::Instr::BrTable { ref table, default } => ll::Instruction::BrTable(
+            hl::Instr::Br(label) => we::Instruction::Br(label.to_u32()),
+            hl::Instr::BrIf(label) => we::Instruction::BrIf(label.to_u32()),
+            hl::Instr::BrTable { ref table, default } => we::Instruction::BrTable(
                 table.iter().map(|label| label.to_u32()).collect(),
                 default.to_u32()
             ),
             
-            hl::Instr::Return => ll::Instruction::Return,
-            hl::Instr::Call(function_idx) => ll::Instruction::Call(state.map_function_idx(function_idx)?.to_u32()),
-            hl::Instr::CallIndirect(ref function_type, table_idx) => ll::Instruction::CallIndirect {
+            hl::Instr::Return => we::Instruction::Return,
+            hl::Instr::Call(function_idx) => we::Instruction::Call(state.map_function_idx(function_idx)?.to_u32()),
+            hl::Instr::CallIndirect(ref function_type, table_idx) => we::Instruction::CallIndirect {
                 ty: state.get_or_insert_type(function_type.clone()).to_u32(),
                 table: state.map_table_idx(table_idx)?.to_u32(),
             },
             
-            hl::Instr::Drop => ll::Instruction::Drop,
-            hl::Instr::Select => ll::Instruction::Select,
+            hl::Instr::Drop => we::Instruction::Drop,
+            hl::Instr::Select => we::Instruction::Select,
             
-            hl::Instr::Local(hl::LocalOp::Get, local_idx) => ll::Instruction::LocalGet(local_idx.to_u32()),
-            hl::Instr::Local(hl::LocalOp::Set, local_idx) => ll::Instruction::LocalSet(local_idx.to_u32()),
-            hl::Instr::Local(hl::LocalOp::Tee, local_idx) => ll::Instruction::LocalTee(local_idx.to_u32()),
-            hl::Instr::Global(hl::GlobalOp::Get, global_idx) => ll::Instruction::GlobalGet(state.map_global_idx(global_idx)?.to_u32()),
-            hl::Instr::Global(hl::GlobalOp::Set, global_idx) => ll::Instruction::GlobalSet(state.map_global_idx(global_idx)?.to_u32()),
+            hl::Instr::Local(hl::LocalOp::Get, local_idx) => we::Instruction::LocalGet(local_idx.to_u32()),
+            hl::Instr::Local(hl::LocalOp::Set, local_idx) => we::Instruction::LocalSet(local_idx.to_u32()),
+            hl::Instr::Local(hl::LocalOp::Tee, local_idx) => we::Instruction::LocalTee(local_idx.to_u32()),
+            hl::Instr::Global(hl::GlobalOp::Get, global_idx) => we::Instruction::GlobalGet(state.map_global_idx(global_idx)?.to_u32()),
+            hl::Instr::Global(hl::GlobalOp::Set, global_idx) => we::Instruction::GlobalSet(state.map_global_idx(global_idx)?.to_u32()),
 
-            hl::Instr::Load(hl::LoadOp::I32Load, memarg) => ll::Instruction::I32Load(memarg.into()),
-            hl::Instr::Load(hl::LoadOp::I64Load, memarg) => ll::Instruction::I64Load(memarg.into()),
-            hl::Instr::Load(hl::LoadOp::F32Load, memarg) => ll::Instruction::F32Load(memarg.into()),
-            hl::Instr::Load(hl::LoadOp::F64Load, memarg) => ll::Instruction::F64Load(memarg.into()),
-            hl::Instr::Load(hl::LoadOp::I32Load8S, memarg) => ll::Instruction::I32Load8_S(memarg.into()),
-            hl::Instr::Load(hl::LoadOp::I32Load8U, memarg) => ll::Instruction::I32Load8_U(memarg.into()),
-            hl::Instr::Load(hl::LoadOp::I32Load16S, memarg) => ll::Instruction::I32Load16_S(memarg.into()),
-            hl::Instr::Load(hl::LoadOp::I32Load16U, memarg) => ll::Instruction::I32Load16_U(memarg.into()),
-            hl::Instr::Load(hl::LoadOp::I64Load8S, memarg) => ll::Instruction::I64Load8_S(memarg.into()),
-            hl::Instr::Load(hl::LoadOp::I64Load8U, memarg) => ll::Instruction::I64Load8_U(memarg.into()),
-            hl::Instr::Load(hl::LoadOp::I64Load16S, memarg) => ll::Instruction::I64Load16_S(memarg.into()),
-            hl::Instr::Load(hl::LoadOp::I64Load16U, memarg) => ll::Instruction::I64Load16_U(memarg.into()),
-            hl::Instr::Load(hl::LoadOp::I64Load32S, memarg) => ll::Instruction::I64Load32_S(memarg.into()),
-            hl::Instr::Load(hl::LoadOp::I64Load32U, memarg) => ll::Instruction::I64Load32_U(memarg.into()),
+            hl::Instr::Load(hl::LoadOp::I32Load, memarg) => we::Instruction::I32Load(memarg.into()),
+            hl::Instr::Load(hl::LoadOp::I64Load, memarg) => we::Instruction::I64Load(memarg.into()),
+            hl::Instr::Load(hl::LoadOp::F32Load, memarg) => we::Instruction::F32Load(memarg.into()),
+            hl::Instr::Load(hl::LoadOp::F64Load, memarg) => we::Instruction::F64Load(memarg.into()),
+            hl::Instr::Load(hl::LoadOp::I32Load8S, memarg) => we::Instruction::I32Load8_S(memarg.into()),
+            hl::Instr::Load(hl::LoadOp::I32Load8U, memarg) => we::Instruction::I32Load8_U(memarg.into()),
+            hl::Instr::Load(hl::LoadOp::I32Load16S, memarg) => we::Instruction::I32Load16_S(memarg.into()),
+            hl::Instr::Load(hl::LoadOp::I32Load16U, memarg) => we::Instruction::I32Load16_U(memarg.into()),
+            hl::Instr::Load(hl::LoadOp::I64Load8S, memarg) => we::Instruction::I64Load8_S(memarg.into()),
+            hl::Instr::Load(hl::LoadOp::I64Load8U, memarg) => we::Instruction::I64Load8_U(memarg.into()),
+            hl::Instr::Load(hl::LoadOp::I64Load16S, memarg) => we::Instruction::I64Load16_S(memarg.into()),
+            hl::Instr::Load(hl::LoadOp::I64Load16U, memarg) => we::Instruction::I64Load16_U(memarg.into()),
+            hl::Instr::Load(hl::LoadOp::I64Load32S, memarg) => we::Instruction::I64Load32_S(memarg.into()),
+            hl::Instr::Load(hl::LoadOp::I64Load32U, memarg) => we::Instruction::I64Load32_U(memarg.into()),
             
-            hl::Instr::Store(hl::StoreOp::I32Store, memarg) => ll::Instruction::I32Store(memarg.into()),
-            hl::Instr::Store(hl::StoreOp::I64Store, memarg) => ll::Instruction::I64Store(memarg.into()),
-            hl::Instr::Store(hl::StoreOp::F32Store, memarg) => ll::Instruction::F32Store(memarg.into()),
-            hl::Instr::Store(hl::StoreOp::F64Store, memarg) => ll::Instruction::F64Store(memarg.into()),
-            hl::Instr::Store(hl::StoreOp::I32Store8, memarg) => ll::Instruction::I32Store8(memarg.into()),
-            hl::Instr::Store(hl::StoreOp::I32Store16, memarg) => ll::Instruction::I32Store16(memarg.into()),
-            hl::Instr::Store(hl::StoreOp::I64Store8, memarg) => ll::Instruction::I64Store8(memarg.into()),
-            hl::Instr::Store(hl::StoreOp::I64Store16, memarg) => ll::Instruction::I64Store16(memarg.into()),
-            hl::Instr::Store(hl::StoreOp::I64Store32, memarg) => ll::Instruction::I64Store32(memarg.into()),
+            hl::Instr::Store(hl::StoreOp::I32Store, memarg) => we::Instruction::I32Store(memarg.into()),
+            hl::Instr::Store(hl::StoreOp::I64Store, memarg) => we::Instruction::I64Store(memarg.into()),
+            hl::Instr::Store(hl::StoreOp::F32Store, memarg) => we::Instruction::F32Store(memarg.into()),
+            hl::Instr::Store(hl::StoreOp::F64Store, memarg) => we::Instruction::F64Store(memarg.into()),
+            hl::Instr::Store(hl::StoreOp::I32Store8, memarg) => we::Instruction::I32Store8(memarg.into()),
+            hl::Instr::Store(hl::StoreOp::I32Store16, memarg) => we::Instruction::I32Store16(memarg.into()),
+            hl::Instr::Store(hl::StoreOp::I64Store8, memarg) => we::Instruction::I64Store8(memarg.into()),
+            hl::Instr::Store(hl::StoreOp::I64Store16, memarg) => we::Instruction::I64Store16(memarg.into()),
+            hl::Instr::Store(hl::StoreOp::I64Store32, memarg) => we::Instruction::I64Store32(memarg.into()),
     
-            hl::Instr::MemorySize(memory_idx) => ll::Instruction::MemorySize(state.map_memory_idx(memory_idx)?.to_u32()),
-            hl::Instr::MemoryGrow(memory_idx) => ll::Instruction::MemoryGrow(state.map_memory_idx(memory_idx)?.to_u32()),
+            hl::Instr::MemorySize(memory_idx) => we::Instruction::MemorySize(state.map_memory_idx(memory_idx)?.to_u32()),
+            hl::Instr::MemoryGrow(memory_idx) => we::Instruction::MemoryGrow(state.map_memory_idx(memory_idx)?.to_u32()),
     
-            hl::Instr::Const(crate::Val::I32(value)) => ll::Instruction::I32Const(value),
-            hl::Instr::Const(crate::Val::I64(value)) => ll::Instruction::I64Const(value),
-            hl::Instr::Const(crate::Val::F32(value)) => ll::Instruction::F32Const(value.into_inner()),
-            hl::Instr::Const(crate::Val::F64(value)) => ll::Instruction::F64Const(value.into_inner()),
+            hl::Instr::Const(crate::Val::I32(value)) => we::Instruction::I32Const(value),
+            hl::Instr::Const(crate::Val::I64(value)) => we::Instruction::I64Const(value),
+            hl::Instr::Const(crate::Val::F32(value)) => we::Instruction::F32Const(value.into_inner()),
+            hl::Instr::Const(crate::Val::F64(value)) => we::Instruction::F64Const(value.into_inner()),
     
-            hl::Instr::Numeric(hl::NumericOp::I32Eqz) => ll::Instruction::I32Eqz,
-            hl::Instr::Numeric(hl::NumericOp::I32Eq) => ll::Instruction::I32Eq,
-            hl::Instr::Numeric(hl::NumericOp::I32Ne) => ll::Instruction::I32Ne,
-            hl::Instr::Numeric(hl::NumericOp::I32LtS) => ll::Instruction::I32LtS,
-            hl::Instr::Numeric(hl::NumericOp::I32LtU) => ll::Instruction::I32LtU,
-            hl::Instr::Numeric(hl::NumericOp::I32GtS) => ll::Instruction::I32GtS,
-            hl::Instr::Numeric(hl::NumericOp::I32GtU) => ll::Instruction::I32GtU,
-            hl::Instr::Numeric(hl::NumericOp::I32LeS) => ll::Instruction::I32LeS,
-            hl::Instr::Numeric(hl::NumericOp::I32LeU) => ll::Instruction::I32LeU,
-            hl::Instr::Numeric(hl::NumericOp::I32GeS) => ll::Instruction::I32GeS,
-            hl::Instr::Numeric(hl::NumericOp::I32GeU) => ll::Instruction::I32GeU,
-            hl::Instr::Numeric(hl::NumericOp::I64Eqz) => ll::Instruction::I64Eqz,
-            hl::Instr::Numeric(hl::NumericOp::I64Eq) => ll::Instruction::I64Eq,
-            hl::Instr::Numeric(hl::NumericOp::I64Ne) => ll::Instruction::I64Ne,
-            hl::Instr::Numeric(hl::NumericOp::I64LtS) => ll::Instruction::I64LtS,
-            hl::Instr::Numeric(hl::NumericOp::I64LtU) => ll::Instruction::I64LtU,
-            hl::Instr::Numeric(hl::NumericOp::I64GtS) => ll::Instruction::I64GtS,
-            hl::Instr::Numeric(hl::NumericOp::I64GtU) => ll::Instruction::I64GtU,
-            hl::Instr::Numeric(hl::NumericOp::I64LeS) => ll::Instruction::I64LeS,
-            hl::Instr::Numeric(hl::NumericOp::I64LeU) => ll::Instruction::I64LeU,
-            hl::Instr::Numeric(hl::NumericOp::I64GeS) => ll::Instruction::I64GeS,
-            hl::Instr::Numeric(hl::NumericOp::I64GeU) => ll::Instruction::I64GeU,
-            hl::Instr::Numeric(hl::NumericOp::F32Eq) => ll::Instruction::F32Eq,
-            hl::Instr::Numeric(hl::NumericOp::F32Ne) => ll::Instruction::F32Ne,
-            hl::Instr::Numeric(hl::NumericOp::F32Lt) => ll::Instruction::F32Lt,
-            hl::Instr::Numeric(hl::NumericOp::F32Gt) => ll::Instruction::F32Gt,
-            hl::Instr::Numeric(hl::NumericOp::F32Le) => ll::Instruction::F32Le,
-            hl::Instr::Numeric(hl::NumericOp::F32Ge) => ll::Instruction::F32Ge,
-            hl::Instr::Numeric(hl::NumericOp::F64Eq) => ll::Instruction::F64Eq,
-            hl::Instr::Numeric(hl::NumericOp::F64Ne) => ll::Instruction::F64Ne,
-            hl::Instr::Numeric(hl::NumericOp::F64Lt) => ll::Instruction::F64Lt,
-            hl::Instr::Numeric(hl::NumericOp::F64Gt) => ll::Instruction::F64Gt,
-            hl::Instr::Numeric(hl::NumericOp::F64Le) => ll::Instruction::F64Le,
-            hl::Instr::Numeric(hl::NumericOp::F64Ge) => ll::Instruction::F64Ge,
-            hl::Instr::Numeric(hl::NumericOp::I32Clz) => ll::Instruction::I32Clz,
-            hl::Instr::Numeric(hl::NumericOp::I32Ctz) => ll::Instruction::I32Ctz,
-            hl::Instr::Numeric(hl::NumericOp::I32Popcnt) => ll::Instruction::I32Popcnt,
-            hl::Instr::Numeric(hl::NumericOp::I32Add) => ll::Instruction::I32Add,
-            hl::Instr::Numeric(hl::NumericOp::I32Sub) => ll::Instruction::I32Sub,
-            hl::Instr::Numeric(hl::NumericOp::I32Mul) => ll::Instruction::I32Mul,
-            hl::Instr::Numeric(hl::NumericOp::I32DivS) => ll::Instruction::I32DivS,
-            hl::Instr::Numeric(hl::NumericOp::I32DivU) => ll::Instruction::I32DivU,
-            hl::Instr::Numeric(hl::NumericOp::I32RemS) => ll::Instruction::I32RemS,
-            hl::Instr::Numeric(hl::NumericOp::I32RemU) => ll::Instruction::I32RemU,
-            hl::Instr::Numeric(hl::NumericOp::I32And) => ll::Instruction::I32And,
-            hl::Instr::Numeric(hl::NumericOp::I32Or) => ll::Instruction::I32Or,
-            hl::Instr::Numeric(hl::NumericOp::I32Xor) => ll::Instruction::I32Xor,
-            hl::Instr::Numeric(hl::NumericOp::I32Shl) => ll::Instruction::I32Shl,
-            hl::Instr::Numeric(hl::NumericOp::I32ShrS) => ll::Instruction::I32ShrS,
-            hl::Instr::Numeric(hl::NumericOp::I32ShrU) => ll::Instruction::I32ShrU,
-            hl::Instr::Numeric(hl::NumericOp::I32Rotl) => ll::Instruction::I32Rotl,
-            hl::Instr::Numeric(hl::NumericOp::I32Rotr) => ll::Instruction::I32Rotr,
-            hl::Instr::Numeric(hl::NumericOp::I64Clz) => ll::Instruction::I64Clz,
-            hl::Instr::Numeric(hl::NumericOp::I64Ctz) => ll::Instruction::I64Ctz,
-            hl::Instr::Numeric(hl::NumericOp::I64Popcnt) => ll::Instruction::I64Popcnt,
-            hl::Instr::Numeric(hl::NumericOp::I64Add) => ll::Instruction::I64Add,
-            hl::Instr::Numeric(hl::NumericOp::I64Sub) => ll::Instruction::I64Sub,
-            hl::Instr::Numeric(hl::NumericOp::I64Mul) => ll::Instruction::I64Mul,
-            hl::Instr::Numeric(hl::NumericOp::I64DivS) => ll::Instruction::I64DivS,
-            hl::Instr::Numeric(hl::NumericOp::I64DivU) => ll::Instruction::I64DivU,
-            hl::Instr::Numeric(hl::NumericOp::I64RemS) => ll::Instruction::I64RemS,
-            hl::Instr::Numeric(hl::NumericOp::I64RemU) => ll::Instruction::I64RemU,
-            hl::Instr::Numeric(hl::NumericOp::I64And) => ll::Instruction::I64And,
-            hl::Instr::Numeric(hl::NumericOp::I64Or) => ll::Instruction::I64Or,
-            hl::Instr::Numeric(hl::NumericOp::I64Xor) => ll::Instruction::I64Xor,
-            hl::Instr::Numeric(hl::NumericOp::I64Shl) => ll::Instruction::I64Shl,
-            hl::Instr::Numeric(hl::NumericOp::I64ShrS) => ll::Instruction::I64ShrS,
-            hl::Instr::Numeric(hl::NumericOp::I64ShrU) => ll::Instruction::I64ShrU,
-            hl::Instr::Numeric(hl::NumericOp::I64Rotl) => ll::Instruction::I64Rotl,
-            hl::Instr::Numeric(hl::NumericOp::I64Rotr) => ll::Instruction::I64Rotr,
-            hl::Instr::Numeric(hl::NumericOp::F32Abs) => ll::Instruction::F32Abs,
-            hl::Instr::Numeric(hl::NumericOp::F32Neg) => ll::Instruction::F32Neg,
-            hl::Instr::Numeric(hl::NumericOp::F32Ceil) => ll::Instruction::F32Ceil,
-            hl::Instr::Numeric(hl::NumericOp::F32Floor) => ll::Instruction::F32Floor,
-            hl::Instr::Numeric(hl::NumericOp::F32Trunc) => ll::Instruction::F32Trunc,
-            hl::Instr::Numeric(hl::NumericOp::F32Nearest) => ll::Instruction::F32Nearest,
-            hl::Instr::Numeric(hl::NumericOp::F32Sqrt) => ll::Instruction::F32Sqrt,
-            hl::Instr::Numeric(hl::NumericOp::F32Add) => ll::Instruction::F32Add,
-            hl::Instr::Numeric(hl::NumericOp::F32Sub) => ll::Instruction::F32Sub,
-            hl::Instr::Numeric(hl::NumericOp::F32Mul) => ll::Instruction::F32Mul,
-            hl::Instr::Numeric(hl::NumericOp::F32Div) => ll::Instruction::F32Div,
-            hl::Instr::Numeric(hl::NumericOp::F32Min) => ll::Instruction::F32Min,
-            hl::Instr::Numeric(hl::NumericOp::F32Max) => ll::Instruction::F32Max,
-            hl::Instr::Numeric(hl::NumericOp::F32Copysign) => ll::Instruction::F32Copysign,
-            hl::Instr::Numeric(hl::NumericOp::F64Abs) => ll::Instruction::F64Abs,
-            hl::Instr::Numeric(hl::NumericOp::F64Neg) => ll::Instruction::F64Neg,
-            hl::Instr::Numeric(hl::NumericOp::F64Ceil) => ll::Instruction::F64Ceil,
-            hl::Instr::Numeric(hl::NumericOp::F64Floor) => ll::Instruction::F64Floor,
-            hl::Instr::Numeric(hl::NumericOp::F64Trunc) => ll::Instruction::F64Trunc,
-            hl::Instr::Numeric(hl::NumericOp::F64Nearest) => ll::Instruction::F64Nearest,
-            hl::Instr::Numeric(hl::NumericOp::F64Sqrt) => ll::Instruction::F64Sqrt,
-            hl::Instr::Numeric(hl::NumericOp::F64Add) => ll::Instruction::F64Add,
-            hl::Instr::Numeric(hl::NumericOp::F64Sub) => ll::Instruction::F64Sub,
-            hl::Instr::Numeric(hl::NumericOp::F64Mul) => ll::Instruction::F64Mul,
-            hl::Instr::Numeric(hl::NumericOp::F64Div) => ll::Instruction::F64Div,
-            hl::Instr::Numeric(hl::NumericOp::F64Min) => ll::Instruction::F64Min,
-            hl::Instr::Numeric(hl::NumericOp::F64Max) => ll::Instruction::F64Max,
-            hl::Instr::Numeric(hl::NumericOp::F64Copysign) => ll::Instruction::F64Copysign,
-            hl::Instr::Numeric(hl::NumericOp::I32WrapI64) => ll::Instruction::I32WrapI64,
-            hl::Instr::Numeric(hl::NumericOp::I32TruncF32S) => ll::Instruction::I32TruncF32S,
-            hl::Instr::Numeric(hl::NumericOp::I32TruncF32U) => ll::Instruction::I32TruncF32U,
-            hl::Instr::Numeric(hl::NumericOp::I32TruncF64S) => ll::Instruction::I32TruncF64S,
-            hl::Instr::Numeric(hl::NumericOp::I32TruncF64U) => ll::Instruction::I32TruncF64U,
-            hl::Instr::Numeric(hl::NumericOp::I64ExtendI32S) => ll::Instruction::I64ExtendI32S,
-            hl::Instr::Numeric(hl::NumericOp::I64ExtendI32U) => ll::Instruction::I64ExtendI32U,
-            hl::Instr::Numeric(hl::NumericOp::I64TruncF32S) => ll::Instruction::I64TruncF32S,
-            hl::Instr::Numeric(hl::NumericOp::I64TruncF32U) => ll::Instruction::I64TruncF32U,
-            hl::Instr::Numeric(hl::NumericOp::I64TruncF64S) => ll::Instruction::I64TruncF64S,
-            hl::Instr::Numeric(hl::NumericOp::I64TruncF64U) => ll::Instruction::I64TruncF64U,
-            hl::Instr::Numeric(hl::NumericOp::F32ConvertI32S) => ll::Instruction::F32ConvertI32S,
-            hl::Instr::Numeric(hl::NumericOp::F32ConvertI32U) => ll::Instruction::F32ConvertI32U,
-            hl::Instr::Numeric(hl::NumericOp::F32ConvertI64S) => ll::Instruction::F32ConvertI64S,
-            hl::Instr::Numeric(hl::NumericOp::F32ConvertI64U) => ll::Instruction::F32ConvertI64U,
-            hl::Instr::Numeric(hl::NumericOp::F32DemoteF64) => ll::Instruction::F32DemoteF64,
-            hl::Instr::Numeric(hl::NumericOp::F64ConvertI32S) => ll::Instruction::F64ConvertI32S,
-            hl::Instr::Numeric(hl::NumericOp::F64ConvertI32U) => ll::Instruction::F64ConvertI32U,
-            hl::Instr::Numeric(hl::NumericOp::F64ConvertI64S) => ll::Instruction::F64ConvertI64S,
-            hl::Instr::Numeric(hl::NumericOp::F64ConvertI64U) => ll::Instruction::F64ConvertI64U,
-            hl::Instr::Numeric(hl::NumericOp::F64PromoteF32) => ll::Instruction::F64PromoteF32,
-            hl::Instr::Numeric(hl::NumericOp::I32ReinterpretF32) => ll::Instruction::I32ReinterpretF32,
-            hl::Instr::Numeric(hl::NumericOp::I64ReinterpretF64) => ll::Instruction::I64ReinterpretF64,
-            hl::Instr::Numeric(hl::NumericOp::F32ReinterpretI32) => ll::Instruction::F32ReinterpretI32,
-            hl::Instr::Numeric(hl::NumericOp::F64ReinterpretI64) => ll::Instruction::F64ReinterpretI64,
+            hl::Instr::Numeric(hl::NumericOp::I32Eqz) => we::Instruction::I32Eqz,
+            hl::Instr::Numeric(hl::NumericOp::I32Eq) => we::Instruction::I32Eq,
+            hl::Instr::Numeric(hl::NumericOp::I32Ne) => we::Instruction::I32Ne,
+            hl::Instr::Numeric(hl::NumericOp::I32LtS) => we::Instruction::I32LtS,
+            hl::Instr::Numeric(hl::NumericOp::I32LtU) => we::Instruction::I32LtU,
+            hl::Instr::Numeric(hl::NumericOp::I32GtS) => we::Instruction::I32GtS,
+            hl::Instr::Numeric(hl::NumericOp::I32GtU) => we::Instruction::I32GtU,
+            hl::Instr::Numeric(hl::NumericOp::I32LeS) => we::Instruction::I32LeS,
+            hl::Instr::Numeric(hl::NumericOp::I32LeU) => we::Instruction::I32LeU,
+            hl::Instr::Numeric(hl::NumericOp::I32GeS) => we::Instruction::I32GeS,
+            hl::Instr::Numeric(hl::NumericOp::I32GeU) => we::Instruction::I32GeU,
+            hl::Instr::Numeric(hl::NumericOp::I64Eqz) => we::Instruction::I64Eqz,
+            hl::Instr::Numeric(hl::NumericOp::I64Eq) => we::Instruction::I64Eq,
+            hl::Instr::Numeric(hl::NumericOp::I64Ne) => we::Instruction::I64Ne,
+            hl::Instr::Numeric(hl::NumericOp::I64LtS) => we::Instruction::I64LtS,
+            hl::Instr::Numeric(hl::NumericOp::I64LtU) => we::Instruction::I64LtU,
+            hl::Instr::Numeric(hl::NumericOp::I64GtS) => we::Instruction::I64GtS,
+            hl::Instr::Numeric(hl::NumericOp::I64GtU) => we::Instruction::I64GtU,
+            hl::Instr::Numeric(hl::NumericOp::I64LeS) => we::Instruction::I64LeS,
+            hl::Instr::Numeric(hl::NumericOp::I64LeU) => we::Instruction::I64LeU,
+            hl::Instr::Numeric(hl::NumericOp::I64GeS) => we::Instruction::I64GeS,
+            hl::Instr::Numeric(hl::NumericOp::I64GeU) => we::Instruction::I64GeU,
+            hl::Instr::Numeric(hl::NumericOp::F32Eq) => we::Instruction::F32Eq,
+            hl::Instr::Numeric(hl::NumericOp::F32Ne) => we::Instruction::F32Ne,
+            hl::Instr::Numeric(hl::NumericOp::F32Lt) => we::Instruction::F32Lt,
+            hl::Instr::Numeric(hl::NumericOp::F32Gt) => we::Instruction::F32Gt,
+            hl::Instr::Numeric(hl::NumericOp::F32Le) => we::Instruction::F32Le,
+            hl::Instr::Numeric(hl::NumericOp::F32Ge) => we::Instruction::F32Ge,
+            hl::Instr::Numeric(hl::NumericOp::F64Eq) => we::Instruction::F64Eq,
+            hl::Instr::Numeric(hl::NumericOp::F64Ne) => we::Instruction::F64Ne,
+            hl::Instr::Numeric(hl::NumericOp::F64Lt) => we::Instruction::F64Lt,
+            hl::Instr::Numeric(hl::NumericOp::F64Gt) => we::Instruction::F64Gt,
+            hl::Instr::Numeric(hl::NumericOp::F64Le) => we::Instruction::F64Le,
+            hl::Instr::Numeric(hl::NumericOp::F64Ge) => we::Instruction::F64Ge,
+            hl::Instr::Numeric(hl::NumericOp::I32Clz) => we::Instruction::I32Clz,
+            hl::Instr::Numeric(hl::NumericOp::I32Ctz) => we::Instruction::I32Ctz,
+            hl::Instr::Numeric(hl::NumericOp::I32Popcnt) => we::Instruction::I32Popcnt,
+            hl::Instr::Numeric(hl::NumericOp::I32Add) => we::Instruction::I32Add,
+            hl::Instr::Numeric(hl::NumericOp::I32Sub) => we::Instruction::I32Sub,
+            hl::Instr::Numeric(hl::NumericOp::I32Mul) => we::Instruction::I32Mul,
+            hl::Instr::Numeric(hl::NumericOp::I32DivS) => we::Instruction::I32DivS,
+            hl::Instr::Numeric(hl::NumericOp::I32DivU) => we::Instruction::I32DivU,
+            hl::Instr::Numeric(hl::NumericOp::I32RemS) => we::Instruction::I32RemS,
+            hl::Instr::Numeric(hl::NumericOp::I32RemU) => we::Instruction::I32RemU,
+            hl::Instr::Numeric(hl::NumericOp::I32And) => we::Instruction::I32And,
+            hl::Instr::Numeric(hl::NumericOp::I32Or) => we::Instruction::I32Or,
+            hl::Instr::Numeric(hl::NumericOp::I32Xor) => we::Instruction::I32Xor,
+            hl::Instr::Numeric(hl::NumericOp::I32Shl) => we::Instruction::I32Shl,
+            hl::Instr::Numeric(hl::NumericOp::I32ShrS) => we::Instruction::I32ShrS,
+            hl::Instr::Numeric(hl::NumericOp::I32ShrU) => we::Instruction::I32ShrU,
+            hl::Instr::Numeric(hl::NumericOp::I32Rotl) => we::Instruction::I32Rotl,
+            hl::Instr::Numeric(hl::NumericOp::I32Rotr) => we::Instruction::I32Rotr,
+            hl::Instr::Numeric(hl::NumericOp::I64Clz) => we::Instruction::I64Clz,
+            hl::Instr::Numeric(hl::NumericOp::I64Ctz) => we::Instruction::I64Ctz,
+            hl::Instr::Numeric(hl::NumericOp::I64Popcnt) => we::Instruction::I64Popcnt,
+            hl::Instr::Numeric(hl::NumericOp::I64Add) => we::Instruction::I64Add,
+            hl::Instr::Numeric(hl::NumericOp::I64Sub) => we::Instruction::I64Sub,
+            hl::Instr::Numeric(hl::NumericOp::I64Mul) => we::Instruction::I64Mul,
+            hl::Instr::Numeric(hl::NumericOp::I64DivS) => we::Instruction::I64DivS,
+            hl::Instr::Numeric(hl::NumericOp::I64DivU) => we::Instruction::I64DivU,
+            hl::Instr::Numeric(hl::NumericOp::I64RemS) => we::Instruction::I64RemS,
+            hl::Instr::Numeric(hl::NumericOp::I64RemU) => we::Instruction::I64RemU,
+            hl::Instr::Numeric(hl::NumericOp::I64And) => we::Instruction::I64And,
+            hl::Instr::Numeric(hl::NumericOp::I64Or) => we::Instruction::I64Or,
+            hl::Instr::Numeric(hl::NumericOp::I64Xor) => we::Instruction::I64Xor,
+            hl::Instr::Numeric(hl::NumericOp::I64Shl) => we::Instruction::I64Shl,
+            hl::Instr::Numeric(hl::NumericOp::I64ShrS) => we::Instruction::I64ShrS,
+            hl::Instr::Numeric(hl::NumericOp::I64ShrU) => we::Instruction::I64ShrU,
+            hl::Instr::Numeric(hl::NumericOp::I64Rotl) => we::Instruction::I64Rotl,
+            hl::Instr::Numeric(hl::NumericOp::I64Rotr) => we::Instruction::I64Rotr,
+            hl::Instr::Numeric(hl::NumericOp::F32Abs) => we::Instruction::F32Abs,
+            hl::Instr::Numeric(hl::NumericOp::F32Neg) => we::Instruction::F32Neg,
+            hl::Instr::Numeric(hl::NumericOp::F32Ceil) => we::Instruction::F32Ceil,
+            hl::Instr::Numeric(hl::NumericOp::F32Floor) => we::Instruction::F32Floor,
+            hl::Instr::Numeric(hl::NumericOp::F32Trunc) => we::Instruction::F32Trunc,
+            hl::Instr::Numeric(hl::NumericOp::F32Nearest) => we::Instruction::F32Nearest,
+            hl::Instr::Numeric(hl::NumericOp::F32Sqrt) => we::Instruction::F32Sqrt,
+            hl::Instr::Numeric(hl::NumericOp::F32Add) => we::Instruction::F32Add,
+            hl::Instr::Numeric(hl::NumericOp::F32Sub) => we::Instruction::F32Sub,
+            hl::Instr::Numeric(hl::NumericOp::F32Mul) => we::Instruction::F32Mul,
+            hl::Instr::Numeric(hl::NumericOp::F32Div) => we::Instruction::F32Div,
+            hl::Instr::Numeric(hl::NumericOp::F32Min) => we::Instruction::F32Min,
+            hl::Instr::Numeric(hl::NumericOp::F32Max) => we::Instruction::F32Max,
+            hl::Instr::Numeric(hl::NumericOp::F32Copysign) => we::Instruction::F32Copysign,
+            hl::Instr::Numeric(hl::NumericOp::F64Abs) => we::Instruction::F64Abs,
+            hl::Instr::Numeric(hl::NumericOp::F64Neg) => we::Instruction::F64Neg,
+            hl::Instr::Numeric(hl::NumericOp::F64Ceil) => we::Instruction::F64Ceil,
+            hl::Instr::Numeric(hl::NumericOp::F64Floor) => we::Instruction::F64Floor,
+            hl::Instr::Numeric(hl::NumericOp::F64Trunc) => we::Instruction::F64Trunc,
+            hl::Instr::Numeric(hl::NumericOp::F64Nearest) => we::Instruction::F64Nearest,
+            hl::Instr::Numeric(hl::NumericOp::F64Sqrt) => we::Instruction::F64Sqrt,
+            hl::Instr::Numeric(hl::NumericOp::F64Add) => we::Instruction::F64Add,
+            hl::Instr::Numeric(hl::NumericOp::F64Sub) => we::Instruction::F64Sub,
+            hl::Instr::Numeric(hl::NumericOp::F64Mul) => we::Instruction::F64Mul,
+            hl::Instr::Numeric(hl::NumericOp::F64Div) => we::Instruction::F64Div,
+            hl::Instr::Numeric(hl::NumericOp::F64Min) => we::Instruction::F64Min,
+            hl::Instr::Numeric(hl::NumericOp::F64Max) => we::Instruction::F64Max,
+            hl::Instr::Numeric(hl::NumericOp::F64Copysign) => we::Instruction::F64Copysign,
+            hl::Instr::Numeric(hl::NumericOp::I32WrapI64) => we::Instruction::I32WrapI64,
+            hl::Instr::Numeric(hl::NumericOp::I32TruncF32S) => we::Instruction::I32TruncF32S,
+            hl::Instr::Numeric(hl::NumericOp::I32TruncF32U) => we::Instruction::I32TruncF32U,
+            hl::Instr::Numeric(hl::NumericOp::I32TruncF64S) => we::Instruction::I32TruncF64S,
+            hl::Instr::Numeric(hl::NumericOp::I32TruncF64U) => we::Instruction::I32TruncF64U,
+            hl::Instr::Numeric(hl::NumericOp::I64ExtendI32S) => we::Instruction::I64ExtendI32S,
+            hl::Instr::Numeric(hl::NumericOp::I64ExtendI32U) => we::Instruction::I64ExtendI32U,
+            hl::Instr::Numeric(hl::NumericOp::I64TruncF32S) => we::Instruction::I64TruncF32S,
+            hl::Instr::Numeric(hl::NumericOp::I64TruncF32U) => we::Instruction::I64TruncF32U,
+            hl::Instr::Numeric(hl::NumericOp::I64TruncF64S) => we::Instruction::I64TruncF64S,
+            hl::Instr::Numeric(hl::NumericOp::I64TruncF64U) => we::Instruction::I64TruncF64U,
+            hl::Instr::Numeric(hl::NumericOp::F32ConvertI32S) => we::Instruction::F32ConvertI32S,
+            hl::Instr::Numeric(hl::NumericOp::F32ConvertI32U) => we::Instruction::F32ConvertI32U,
+            hl::Instr::Numeric(hl::NumericOp::F32ConvertI64S) => we::Instruction::F32ConvertI64S,
+            hl::Instr::Numeric(hl::NumericOp::F32ConvertI64U) => we::Instruction::F32ConvertI64U,
+            hl::Instr::Numeric(hl::NumericOp::F32DemoteF64) => we::Instruction::F32DemoteF64,
+            hl::Instr::Numeric(hl::NumericOp::F64ConvertI32S) => we::Instruction::F64ConvertI32S,
+            hl::Instr::Numeric(hl::NumericOp::F64ConvertI32U) => we::Instruction::F64ConvertI32U,
+            hl::Instr::Numeric(hl::NumericOp::F64ConvertI64S) => we::Instruction::F64ConvertI64S,
+            hl::Instr::Numeric(hl::NumericOp::F64ConvertI64U) => we::Instruction::F64ConvertI64U,
+            hl::Instr::Numeric(hl::NumericOp::F64PromoteF32) => we::Instruction::F64PromoteF32,
+            hl::Instr::Numeric(hl::NumericOp::I32ReinterpretF32) => we::Instruction::I32ReinterpretF32,
+            hl::Instr::Numeric(hl::NumericOp::I64ReinterpretF64) => we::Instruction::I64ReinterpretF64,
+            hl::Instr::Numeric(hl::NumericOp::F32ReinterpretI32) => we::Instruction::F32ReinterpretI32,
+            hl::Instr::Numeric(hl::NumericOp::F64ReinterpretI64) => we::Instruction::F64ReinterpretI64,
         })
     }
 
-    fn encode_names(module: &hl::Module, state: &EncodeState) -> Result<Option<ll::NameSection>, EncodeError> {
+    fn encode_names(module: &hl::Module, state: &EncodeState) -> Result<Option<we::NameSection>, EncodeError> {
         // Because `wasm-encode`s name section and name subsections don't track whether they are
         // empty, and we don't want to write empty sections, wrap them in an `Option` here and
         // lazily initialize on access. Then, write them only if they are not `None`.
-        let mut functions_subsection: Option<ll::NameMap> = None;
-        let mut locals_subsection: Option<ll::IndirectNameMap> = None;
+        let mut functions_subsection: Option<we::NameMap> = None;
+        let mut locals_subsection: Option<we::IndirectNameMap> = None;
         for (hl_function_idx, function) in module.functions() {
             let ll_function_idx = state.map_function_idx(hl_function_idx)?.to_u32();
 
@@ -2043,7 +2007,7 @@ pub mod encode {
                 functions_subsection.get_or_insert_with(Default::default).append(ll_function_idx, name);
             }
 
-            let mut local_names: Option<ll::NameMap> = None;
+            let mut local_names: Option<we::NameMap> = None;
             for (local_idx, local) in function.param_or_locals() {
                 if let Some(name) = local.name() {
                     local_names.get_or_insert_with(Default::default).append(local_idx.to_u32(), name);
@@ -2054,7 +2018,7 @@ pub mod encode {
             }
         }
 
-        let mut name_section: Option<ll::NameSection> = None;
+        let mut name_section: Option<we::NameSection> = None;
         if let Some(module_name) = &module.name {
             name_section.get_or_insert_with(Default::default).module(module_name);
         }
@@ -2068,7 +2032,7 @@ pub mod encode {
         Ok(name_section)
     }
     
-    impl From<crate::GlobalType> for ll::GlobalType {
+    impl From<crate::GlobalType> for we::GlobalType {
         fn from(hl_global_type: crate::GlobalType) -> Self {
             Self {
                 val_type: hl_global_type.0.into(),
@@ -2080,17 +2044,17 @@ pub mod encode {
         }
     }
 
-    impl From<crate::TableType> for ll::TableType {
+    impl From<crate::TableType> for we::TableType {
         fn from(hl_table_type: crate::TableType) -> Self {
             Self {
-                element_type: ll::ValType::FuncRef,
+                element_type: we::ValType::FuncRef,
                 minimum: hl_table_type.1.initial_size,
                 maximum: hl_table_type.1.max_size,
             }
         }
     }
 
-    impl From<crate::MemoryType> for ll::MemoryType {
+    impl From<crate::MemoryType> for we::MemoryType {
         fn from(hl_memory_type: crate::MemoryType) -> Self {
             Self {
                 minimum: hl_memory_type.0.initial_size.try_into().expect("u32 to u64 should always succeed"),
@@ -2100,28 +2064,28 @@ pub mod encode {
         }
     }
 
-    impl From<crate::ValType> for ll::ValType {
+    impl From<crate::ValType> for we::ValType {
         fn from(hl_val_type: crate::ValType) -> Self {
             use crate::ValType::*;
             match hl_val_type {
-                I32 => ll::ValType::I32,
-                I64 => ll::ValType::I64,
-                F32 => ll::ValType::F32,
-                F64 => ll::ValType::F64,
+                I32 => we::ValType::I32,
+                I64 => we::ValType::I64,
+                F32 => we::ValType::F32,
+                F64 => we::ValType::F64,
             }
         }
     }
 
-    impl From<crate::BlockType> for ll::BlockType {
+    impl From<crate::BlockType> for we::BlockType {
         fn from(hl_block_type: crate::BlockType) -> Self {
             match hl_block_type.0 {
-                Some(val_type) => ll::BlockType::Result(val_type.into()),
-                None => ll::BlockType::Empty,
+                Some(val_type) => we::BlockType::Result(val_type.into()),
+                None => we::BlockType::Empty,
             }
         }
     }
 
-    impl From<crate::Memarg> for ll::MemArg {
+    impl From<crate::Memarg> for we::MemArg {
         fn from(hl_memarg: crate::Memarg) -> Self {
             Self {
                 offset: hl_memarg.offset.try_into().expect("u32 to u64 should always succeed"),

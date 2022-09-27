@@ -11,8 +11,8 @@ byteorder = "1"
 rayon = "1.5.1"
 serde = { version = "1", features = ["derive"] }
 ordered-float = "1"
-wasmparser = "0.81"
-wasm-encoder = "0.10.0"
+wasmparser = "0.91.0"
+wasm-encoder = "0.17.0"
 thiserror = "1.0.30"
 
 [dev-dependencies]
