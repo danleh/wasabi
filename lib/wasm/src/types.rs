@@ -983,6 +983,8 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
 
 #[cfg(test)]
 mod tests {
+    use test_utilities::wasm_files;
+
     use crate::{highlevel::{Function, Module, Code, Instr, Instr::*, UnaryOp::*, BinaryOp::*, LocalOp, FunctionType, self}, ValType, Val, ValType::*, BlockType, Idx, Label};
 
     use super::TypeChecker;
@@ -1025,7 +1027,7 @@ mod tests {
 
     #[test]
     pub fn spec_tests_should_typecheck() {
-        for path in test_utilities::wasm_files("../../tests/inputs/spec/").unwrap() {
+        for path in wasm_files("../../tests/inputs/spec/").unwrap() {
             println!("\t{}", path.display());
             assert!(TypeChecker::check_module(&Module::from_file(path).unwrap()).is_ok());
         }

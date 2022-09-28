@@ -1,8 +1,6 @@
 use std::error::Error;
 use std::fs::File;
 use std::io::{self, Read};
-use std::sync::Arc;
-use std::time::Duration;
 
 use bencher::{Bencher, benchmark_group, benchmark_main};
 use rayon::prelude::*;
@@ -35,7 +33,6 @@ const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &str = "../../tests/inputs/name-se
 fn wasmparser_equal_old_parser() {
     // for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
     let mut wasm_files = wasm_files(WASMBENCH_DIR).unwrap();
-    wasm_files.sort_by_cached_key(|f| std::fs::metadata(f).unwrap().len());
     // let mut wasm_files = [
     //     "tests/WasmBench/valid-no-extensions\\binaries\\61ca24d2fbe9d1a3e4fe2d4ad343bfbf654c89e72602c09dcb3e163db7595d9b.wasm",
     // ].iter().map(std::path::PathBuf::from).collect::<Vec<_>>();

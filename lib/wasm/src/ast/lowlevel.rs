@@ -1,10 +1,9 @@
 use core::fmt;
-use std::{mem::Discriminant, str::FromStr};
+use std::str::FromStr;
 
 use binary_derive::WasmBinary;
 use ordered_float::OrderedFloat;
 use serde::Serialize;
-
 
 use crate::{BlockType, GlobalType, Idx, Label, Memarg, MemoryType, RawCustomSection, TableType, ValType, WasmBinary, SectionId};
 

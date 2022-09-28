@@ -3,7 +3,7 @@ name = "wasm"
 # TODO bump
 version = "0.5.0"
 authors = ["Daniel Lehmann <mail@dlehmann.eu>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 # TODO remove those three once wasmparser lands
@@ -17,44 +17,17 @@ wasm-encoder = "0.17.0"
 
 rayon = "1.5.1"
 serde = { version = "1", features = ["derive"] }
-ordered-float = "1"
-
-# TODO remove those two once wimpl is moved out
-lazy_static = "1.4.0"
-csv = "1.1"
-
-# For parsing Wimpl text format
-# TODO remove
-nom = "7.1.0"
+ordered-float = "3.1.0"
 
 thiserror = "1.0.30"
-# TODO remove
-anyhow = "1.0.55"
-
-# TODO remove
-# TODO move to dev-dependencies by moving imports into blocks of #[cfg(test)]
-test_utilities = { path = "../test_utilities" }
-
-# TODO remove
-regex = "1.5.4"
 
 # For interning function types and some strings.
-internment = "0.6.0"
-arc-interner = "0.7.0"
-
-# TODO remove
-# For faster HashSet and HashMap in callgraph analysis.
-rustc-hash = "1.1.0"
-
-# TODO remove
-# For fast checking of function membership in set of indirectly callable functions.
-# bloomfilter = "1.0.9"
-# cuckoofilter = "0.5.0"
+internment = "0.7.0"
 
 [dev-dependencies]
-walkdir = "2.3.2"
+test_utilities = { path = "../test_utilities" }
 bencher = "0.1.5"
-criterion = "0.3"
+criterion = "0.4.0"
 indicatif = { version = "0.17.1", features = ["rayon"] }
 
 [[bench]]
@@ -68,7 +41,7 @@ overflow-checks = true
 # For profiling with debug info.
 debug = 1
 
-# Necessary to avoid stack overflow for very deeply nested tests.
 [profile.test]
+# Necessary to avoid stack overflow for very deeply nested tests.
 opt-level = 2
 lto = "thin"
