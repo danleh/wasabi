@@ -1,9 +1,9 @@
 //! Code for encoding our AST back to the WebAssembly binary format.
 //! Uses `wasm-encoder` for the actual low-level work.
 
-use std::convert::TryInto;
-use std::collections::HashMap;
+use std::{sync::RwLock, convert::TryInto, collections::HashMap};
 
+use rayon::prelude::*;
 use wasm_encoder::{self as we, Encode};
 
 use crate::*;
@@ -23,7 +23,7 @@ mod marker {
 
 #[derive(Default)]
 struct EncodeState {
-    types_idx: HashMap<FunctionType, Idx<marker::we::FunctionType>>,
+    types_idx: RwLock<HashMap<FunctionType, Idx<marker::we::FunctionType>>>,
 
     // Mapping of indices from the high-level AST to the low-level binary format.
     // This is necessary, because in the WebAssembly binary format all imported elements
@@ -59,9 +59,10 @@ macro_rules! encode_state_idx_fns {
 }
     
 impl EncodeState {
-    fn get_or_insert_type(&mut self, type_: FunctionType) -> Idx<marker::we::FunctionType> {
-        let new_idx = Idx::from(self.types_idx.len());
-        *self.types_idx.entry(type_).or_insert(new_idx)
+    fn get_or_insert_type(&self, type_: FunctionType) -> Idx<marker::we::FunctionType> {
+        let mut types_idx = self.types_idx.write().unwrap();
+        let new_idx = Idx::from(types_idx.len());
+        *types_idx.entry(type_).or_insert(new_idx)
     }
 
     encode_state_idx_fns!(insert_function_idx, map_function_idx, function_idx, Function, "function");
@@ -237,13 +238,15 @@ fn encode_exports(module: &Module, state: &mut EncodeState) -> Result<we::Export
 fn encode_types(state: &EncodeState) -> we::TypeSection {
     let mut type_section = we::TypeSection::new();
     
-    let mut types_ordered: Vec<(&FunctionType, Idx<marker::we::FunctionType>)> = state.types_idx.iter().map(|(t, i)| (t, *i)).collect();
+    let types_idx = state.types_idx.read().unwrap();
+
+    let mut types_ordered: Vec<(&FunctionType, Idx<marker::we::FunctionType>)> = types_idx.iter().map(|(t, i)| (t, *i)).collect();
     types_ordered.sort_unstable_by_key(|&(_, idx)| idx);
     assert_eq!(
-        state.types_idx.len(),
+        types_idx.len(),
         types_ordered.last().map(|(_, idx)| idx.to_usize() + 1).unwrap_or(0),
         "type index space should not have any holes, mapping: {:?}",
-        state.types_idx
+        types_idx
     );
     for (type_, _) in types_ordered {
         type_section.function(
@@ -341,16 +344,21 @@ fn encode_globals(module: &Module, state: &mut EncodeState) -> Result<we::Global
 fn encode_code(module: &Module, state: &mut EncodeState) -> Result<we::CodeSection, EncodeError> {
     let mut code_section = we::CodeSection::new();
 
-    // TODO encode ll_function in parallel (which would require synchronization or a concurrent hashmap for state)
-    for function in &module.functions {
-        if let Some(code) = function.code() {
+    // Encode function bodies in parallel.
+    let ll_functions = module.functions
+        .par_iter()
+        .filter_map(Function::code)
+        .map(|code| -> Result<we::Function, EncodeError> {
             let ll_locals_iter = code.locals.iter().map(|local| we::ValType::from(local.type_));
             let mut ll_function = we::Function::new_with_locals_types(ll_locals_iter);
             for instr in &code.body {
                 ll_function.instruction(&encode_instruction(instr, state)?);
             }
-            code_section.function(&ll_function);
-        }
+            Ok(ll_function)
+        })
+        .collect::<Result<Vec<we::Function>, _>>()?;
+    for ll_function in ll_functions {
+        code_section.function(&ll_function);
     }
 
     Ok(code_section)
@@ -385,7 +393,7 @@ fn encode_single_instruction_with_end(instrs: &[Instr], state: &mut EncodeState)
     }
 }
 
-fn encode_instruction(hl_instr: &Instr, state: &mut EncodeState) -> Result<we::Instruction<'static>, EncodeError> {
+fn encode_instruction(hl_instr: &Instr, state: &EncodeState) -> Result<we::Instruction<'static>, EncodeError> {
     Ok(match *hl_instr {
         Instr::Unreachable => we::Instruction::Unreachable,
         Instr::Nop => we::Instruction::Nop,
