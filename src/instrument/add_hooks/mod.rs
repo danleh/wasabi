@@ -4,8 +4,7 @@ use std::fmt::Write;
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use serde_json;
-use wasm::{BlockType, Idx, Mutability, Val, ValType::*, Label};
-use wasm::highlevel::{Function, GlobalOp, Instr, Instr::*, LocalOp::*, Module, MemoryOp, FunctionType};
+use wasm::{BlockType, Idx, Mutability, Val, ValType::*, Label, Function, GlobalOp, Instr, Instr::*, LocalOp::*, Module, MemoryOp, FunctionType};
 
 use crate::options::{Hook, HookSet};
 

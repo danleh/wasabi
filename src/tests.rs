@@ -1,5 +1,5 @@
 use test_utilities::*;
-use wasm::highlevel::Module;
+use wasm::Module;
 
 use crate::instrument::{add_hooks, direct};
 use crate::options::HookSet;
@@ -32,7 +32,7 @@ fn test_instrument(
     println!("Testing {}", instrument_name);
     for path in wasm_files(TEST_INPUTS).unwrap() {
         println!("wasm file {:?}", path);
-        let mut module = Module::from_file(&path).unwrap();
+        let (mut module, _offsets, _warnings) = Module::from_file(&path).unwrap();
         let javascript = instrument(&mut module);
 
         let output_path = output_file(&path, instrument_name).unwrap();

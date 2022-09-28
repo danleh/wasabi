@@ -1,6 +1,5 @@
 use serde::{Serialize, Serializer};
-use wasm::{Idx, Label, ValType};
-use wasm::highlevel::{Function, Instr, Module, FunctionType};
+use wasm::{Idx, Label, ValType, Function, Instr, Module, FunctionType};
 
 use super::block_stack::{BlockStack, BlockStackElement};
 

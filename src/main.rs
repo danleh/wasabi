@@ -2,7 +2,7 @@ use std::{fs, io};
 
 use main_error::MainError;
 use structopt::StructOpt;
-use wasm::highlevel::Module;
+use wasm::Module;
 
 use wasabi::instrument::add_hooks;
 use wasabi::options::{HookSet, Options};
@@ -36,7 +36,7 @@ fn main() -> Result<(), MainError> {
     let output_file_wasabi_js = output_file_wasm.with_extension("wasabi.js");
 
     // instrument Wasm and generate JavaScript
-    let mut module = Module::from_file(opt.input_file)?;
+    let (mut module, _offsets, _warnings) = Module::from_file(opt.input_file)?;
     let js = add_hooks(&mut module, enabled_hooks, opt.node_js).unwrap();
 
     // write output files
