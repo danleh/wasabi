@@ -19,7 +19,8 @@ const WASMBENCH_EXCLUDED_FILES: [&str; 3] = [
 const WASM_TEST_INPUTS_DIR: &str = "../../tests/inputs";
 const WASM_TEST_INPUT_LARGE: &str = "../../tests/inputs/real-world/bananabread/bb.wasm";
 const WASM_TEST_INPUT_NAMES_SECTION: &str = "../../tests/inputs/name-section/wabt-tests/names.wasm";
-const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &str = "../../tests/inputs/name-section/extended-name-section/vuln.wasm";
+// See below...
+// const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &str = "../../tests/inputs/name-section/extended-name-section/vuln.wasm";
 
 #[test]
 #[ignore]
