@@ -2,9 +2,10 @@ This document shall list the largest breaking changes for Wasabi's wasm library.
 
 # v0.6.0 (2022-09-28)
 
-- Major refactoring and several breaking changes to API
-- Replace not well-maintained low-level parser with industry-used wasmparser.rs
-- Successfully parses all standards-compliant WebAssembly 1.0 modules in WasmBench (>8k binaries)
+- Replace not well-maintained low-level parser with industry-used wasmparser.rs.
+- Removed low-level AST data structures, simplified high-level AST data structures in some cases.
+- Major refactoring and several breaking changes to API.
+- Successfully parses all standards-compliant WebAssembly 1.0 modules in WasmBench (>8k binaries).
 
 # v0.5.0 (2020-05-27)
 

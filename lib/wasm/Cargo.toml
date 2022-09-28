@@ -1,7 +1,6 @@
 [package]
 name = "wasm"
-# TODO bump
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Daniel Lehmann <mail@dlehmann.eu>"]
 edition = "2021"
 
