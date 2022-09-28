@@ -4,7 +4,7 @@ use wasm::Module;
 use crate::instrument::{add_hooks, direct};
 use crate::options::HookSet;
 
-const TEST_INPUTS: &'static str = "tests/inputs";
+const TEST_INPUTS: &str = "tests/inputs";
 
 #[test]
 fn add_empty_function_produces_valid_wasm() {
@@ -24,7 +24,7 @@ fn add_hooks_instrumentation_produces_valid_wasm() {
     test_instrument(add_all_hooks, "add-hooks");
 }
 
-/// utility function
+/// Utility function.
 fn test_instrument(
     instrument: impl Fn(&mut Module) -> Option<String>,
     instrument_name: &'static str,
@@ -38,14 +38,11 @@ fn test_instrument(
         let output_path = output_file(&path, instrument_name).unwrap();
         module.to_file(&output_path).unwrap();
 
-        wasm_validate(&output_path).expect(&format!(
-            "could not instrument wasm file '{}' with {}",
-            path.display(),
-            instrument_name
-        ));
+        wasm_validate(&output_path)
+            .unwrap_or_else(|err| panic!("Binary '{}' instrumented with {} is no longer valid\n{err}", path.display(), instrument_name));
 
-        for javascript in javascript {
-            ::std::fs::write(output_path.with_extension("wasabi.js"), javascript).unwrap();
+        if let Some(javascript) = javascript {
+            std::fs::write(output_path.with_extension("wasabi.js"), javascript).unwrap();
         }
     }
 }
