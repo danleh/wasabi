@@ -1,0 +1,2 @@
+// Drop of constants is optimized out
+// i32.const 3

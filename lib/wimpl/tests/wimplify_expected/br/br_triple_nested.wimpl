@@ -1,0 +1,15 @@
+l0: i32 = i32.const 0
+@label1: block {
+  @label2: block {
+    @label3: block {
+      if (i32.eqz(p0)) { br @label3 }
+      if (i32.eq(p0, i32.const 1)) { br @label2 }
+      l0: i32 = i32.const 7
+      br @label1
+    }
+    l0: i32 = i32.const 42
+    br @label1
+  }
+  l0: i32 = i32.const 99
+}
+r0: i32 = l0

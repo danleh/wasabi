@@ -1,3 +1,6 @@
+// FIXME before merging wimpl, remove this
+#![allow(unused_imports)]
+
 // Export AST types directly under crate, without ast prefix.
 mod ast;
 
@@ -11,6 +14,8 @@ pub use crate::binary::DecodeState;
 // Export Error and ErrorKind directly under the crate.
 mod error;
 pub use crate::error::{Error, ErrorKind};
+
+pub mod types;
 
 mod extensions;
 

@@ -1,0 +1,12 @@
+@label1: block {
+  // Optimization: the materialized stack variable s0 can be omitted, instead there is a form of
+  // constant propagation going on by keeping the constant in the expression stack.
+  // s0: i32 = i32.const 42
+  @label2: block {
+    b1: i32 = i32.const 0 
+    br @label1 
+  }
+  // Effect of the above optimization: use constant here directly, instead of s0
+  b1: i32 = i32.const 42 // was s0
+}
+r0: i32 = b1

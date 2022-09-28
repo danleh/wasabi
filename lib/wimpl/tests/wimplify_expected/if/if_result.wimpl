@@ -1,0 +1,8 @@
+@label1: block {
+  if (i32.const 0) {
+    b1: i32 = i32.const 1
+  } else {
+    b1: i32 = i32.const 42
+  }
+}
+i32.add(b1, i32.const 42)

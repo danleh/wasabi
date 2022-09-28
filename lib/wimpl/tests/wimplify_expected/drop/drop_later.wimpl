@@ -1,0 +1,6 @@
+// This is optimized away, because constants are not materialized into variables, so the constant
+// is just pushed to the (implicit during conversion) variable stack.
+// s0: i32 = i32.const 3
+call f1 (i32.const 7)
+// s0 is dropped here, 
+// but because drop of variable references is optimized, no statement is actually produced

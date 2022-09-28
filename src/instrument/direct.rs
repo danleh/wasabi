@@ -1,5 +1,5 @@
-use wasm::{FunctionType, Mutability, Val, ValType::*};
-use wasm::highlevel::{GlobalOp::*, Instr::*, Module, NumericOp::*};
+use wasm::{Mutability, Val, ValType::*};
+use wasm::highlevel::{Module, FunctionType, GlobalOp::*, Instr::*, BinaryOp::*};
 
 /* Direct or "low-level" instrumentations, i.e., where the byte code is manually modified. */
 
@@ -24,7 +24,7 @@ pub fn count_calls(module: &mut Module) -> Option<String> {
         vec![
             Global(Get, counter),
             Const(Val::I32(1)),
-            Numeric(I32Add),
+            Binary(I32Add),
             Global(Set, counter),
             End,
         ],

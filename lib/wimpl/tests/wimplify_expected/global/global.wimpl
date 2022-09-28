@@ -1,0 +1,15 @@
+// Local declarations
+l0: i32 = i32.const 0
+l1: f64 = f64.const 0
+
+s0: f32 = p1
+
+p0: i32 = i32.add(p0, i32.const 0)
+
+s1: i32 = g0
+
+g0: i32 = i32.const 42
+
+// drop g1
+// drop s1
+// drop s0

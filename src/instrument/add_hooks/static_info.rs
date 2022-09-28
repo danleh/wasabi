@@ -1,6 +1,6 @@
 use serde::{Serialize, Serializer};
-use wasm::{FunctionType, Idx, Label, ValType};
-use wasm::highlevel::{Function, Instr, Module};
+use wasm::{Idx, Label, ValType};
+use wasm::highlevel::{Function, Instr, Module, FunctionType};
 
 use super::block_stack::{BlockStack, BlockStackElement};
 
@@ -58,7 +58,7 @@ pub struct FunctionInfo {
 impl<'a> From<&'a Function> for FunctionInfo {
     fn from(function: &Function) -> FunctionInfo {
         FunctionInfo {
-            type_: function.type_.clone(),
+            type_: function.type_,
             import: function.import().map(|(module, name)| (module.to_string(), name.to_string())),
             export: function.export.clone(),
             locals: function
@@ -77,11 +77,11 @@ fn serialize_function_type<S>(ty: &FunctionType, s: S) -> Result<S::Ok, S::Error
         S: Serializer,
 {
     let mut type_str = String::new();
-    for ty in ty.params.iter() {
+    for ty in ty.inputs().iter() {
         type_str.push(ty.to_char());
     }
     type_str.push('|');
-    for ty in ty.results.iter() {
+    for ty in ty.results().iter() {
         type_str.push(ty.to_char());
     }
     s.serialize_str(&type_str)

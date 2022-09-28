@@ -1,0 +1,7 @@
+@label1: block {
+  if (i32.const 0) {
+    call f1 (i32.const 1)
+  } else {
+    call f1 (i32.const 0)
+  }
+}

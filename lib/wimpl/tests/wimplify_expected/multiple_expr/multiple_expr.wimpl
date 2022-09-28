@@ -1,0 +1,5 @@
+// Note that the other order would be wrong, because it would change evaluation order and thus
+// behavior if the first expression includes something state-ful (like a function call).
+s0: i32 = i32.add(i32.add(i32.const 0, i32.const 1), i32.const 3)
+f64.abs(f64.const 45.6)
+// drop s0

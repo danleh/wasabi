@@ -23,26 +23,27 @@ pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), String> {
     }
 }
 
-/// Return all *.wasm files recursively under a root directory, that do not have "out/" in their path.
+/// Return all *.wasm files recursively under a root directory, that do not have "out/" in their 
+/// path (because out/ is the default instrumentation output directory of Wasabi).
 pub fn wasm_files(root_dir: impl AsRef<Path>) -> Result<Vec<PathBuf>, String> {
     use walkdir::WalkDir;
 
     let mut wasm_files = Vec::new();
     for entry in WalkDir::new(&root_dir) {
         let path = entry.map_err(|err| err.to_string())?.path().to_owned();
-        // Only files with .wasm extension.
         if let Some("wasm") = path.extension().and_then(|os_str| os_str.to_str()) {
-            // Only when not in "out/" directories, which are files already instrumented by Wasabi.
-            if !path.components().flat_map(|comp| comp.as_os_str().to_str()).any(|dir| dir == "out") {
-                wasm_files.push(path);
+            if std::fs::metadata(&path).map_err(|err| err.to_string())?.is_file() {
+                if !path.components().flat_map(|comp| comp.as_os_str().to_str()).any(|dir| dir == "out") {
+                    wasm_files.push(path);
+                }
             }
         }
     }
     Ok(wasm_files)
 }
 
-/// Very ad-hoc utility function: map input .wasm file to file in output dir with custom subdirectory
-/// e.g., bla.wasm + "transformXYZ" -> "outputs/transformXYZ/bla.wasm"
+/// Very ad-hoc utility function: map input .wasm file to file in output dir with custom 
+/// subdirectory, e.g., bla.wasm + "transformXYZ" -> "outputs/transformXYZ/bla.wasm"
 pub fn output_file(test_input_file: impl AsRef<Path>, output_subdir: &'static str) -> io::Result<PathBuf> {
     use std::fs;
 

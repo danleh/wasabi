@@ -1,0 +1,1 @@
+i32.add(i32.const 3, i32.const 4) 

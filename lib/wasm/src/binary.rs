@@ -30,6 +30,7 @@ pub struct DecodeState {
 }
 
 impl DecodeState {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> DecodeState {
         DecodeState::with_offset(0)
     }
@@ -58,8 +59,7 @@ impl DecodeState {
                     None
                 })
             .flat_map(|imports| imports.iter()
-                .filter(|import|
-                    if let ImportType::Function(_) = import.type_ { true } else { false }))
+                .filter(|import| matches!(import.type_, ImportType::Function(_))))
             .count();
         let functions_code = self.code_offsets.into_iter()
             .enumerate()
@@ -366,7 +366,7 @@ impl WasmBinary for String {
         // re-allocation is necessary.
         let offset_before = state.current_offset;
         let buf: Vec<u8> = Vec::decode(reader, state).set_err_elem::<String>()?;
-        Ok(String::from_utf8(buf).add_err_info::<String>(offset_before)?)
+        String::from_utf8(buf).add_err_info::<String>(offset_before)
     }
 
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
@@ -534,7 +534,7 @@ impl<T> WasmBinary for Idx<T> {
         Ok(Idx::from(idx))
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        self.into_inner().encode(writer)
+        self.to_u32().encode(writer)
     }
 }
 

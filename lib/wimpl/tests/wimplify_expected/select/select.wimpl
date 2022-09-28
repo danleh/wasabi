@@ -1,0 +1,5 @@
+s0: i32 = i32.add(i32.const 0, i32.const 1)
+// Materialization of constants is optimized away
+// s1: i32 = i32.const 42
+if (i32.const 5) { s1: i32 = s0 } else { s1: i32 = i32.const 42 }
+// drop s1 is optimized away

@@ -1,0 +1,35 @@
+// Line comments are supported.
+
+// Variables begin with either s, g, l, or p; nothing else.
+s0: i32 = i32.const 1
+g0: f32 = f32.const 1.1
+l0: i64 = i64.const 42
+p0: f64 = f64.const .1
+// invalid:
+// v1: i32 = i32.const 7 
+// x: i32 = i32.const 7
+
+// Instructions take runtime arguments in parentheses.
+s1: i32 = i32.eqz(s0)
+s2: i32 = i32.add (s0, s1)
+
+// Calls always need the argument parentheses.
+call f1 ()
+
+// Instruction "immediates", i.e., arguments that are statically encoded
+// into the instruction come before the argument.
+call_indirect [i32]->[  i64,i64  ] (s1) ()
+call_indirect [ ] ->[] (s1) ()
+
+// Blocks are explicitly labeled.
+@label0: block {}
+// Such that branches can target them.
+@label1: block { br @label1 }
+
+// Another example...
+@label0: block {
+    s6: i32 = i32.const 2
+    br @label0
+    s7: i32 = i32.const 3
+}
+l1: i32 = g0

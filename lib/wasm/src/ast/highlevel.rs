@@ -1,7 +1,10 @@
 use std::collections::HashSet;
+use std::str::FromStr;
 use std::fmt;
 
-use crate::{BlockType, FunctionType, GlobalType, Idx, Label, Memarg, MemoryType, Mutability, RawCustomSection, TableType, Val, ValType};
+use internment::Intern;
+
+use crate::{BlockType, GlobalType, Idx, Label, Memarg, MemoryType, Mutability, RawCustomSection, TableType, Val, ValType};
 
 /* High-level AST:
     - Types are inlined instead of referenced by type idx (i.e., no manual handling of Type "pool")
@@ -48,12 +51,79 @@ pub struct Function {
     pub export: Vec<String>,
     // From the name section, if present, e.g., compiler-generated debug info.
     pub name: Option<String>,
-    // Invariant: param_names.len() == type_.params.len(), i.e., one optional name per type.
+    // Invariant: param_names.len() == type_.inputs().len(), i.e., one optional name per type.
     // TODO Since you cannot access param_names mutably without checking the invariant before,
     // it is currently impossible to change the number of function parameters without breaking the
     // invariant.
     // However, so far it was never necessary to change the type signature of an existing function.
     param_names: Vec<Option<String>>,
+}
+
+
+/// An immutable, interned version of a function type, such that comparisons for equality are very
+/// cheap, it is trivially copy-able and clone-able, only a single unique instance hold in memory,
+/// and references to types are small (only 32 bits, so not even a single pointer).
+/// 
+/// There are downsides over just using "regular", non-interned types,
+/// but I think they are all justifyable:
+/// - The actual types are stored in a global arena, so they are never deallocated.
+/// But since there are very few types in total, and most of them would be shared across different
+/// modules, this is OK.
+/// - Creating a new one requires locking the global arena, but since _new_ types are created very
+/// seldom, this shouldn't be an issue in practice.
+/// - Requires types to be immutable, but that is fine because (function) type signatures are not
+/// frequently altered.
+#[derive(Default, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct FunctionType(Intern<crate::lowlevel::FunctionType>);
+
+impl FunctionType {
+    pub fn new(inputs: &[ValType], results: &[ValType]) -> Self {
+        // TODO Implement `Borrow` for (&[], &[]) and ll::FunctionType, such that
+        // we don't have to create a low-level function type here.
+        let ty = crate::lowlevel::FunctionType::new(inputs, results);
+        Self::from(ty)
+    }
+
+    // This is not exactly equal to the AsRef trait, because this returns a 'static reference.
+    #[allow(clippy::should_implement_trait)]
+    pub fn as_ref(self) -> &'static crate::lowlevel::FunctionType {
+        self.0.as_ref()
+    }
+
+    pub fn inputs(self) -> &'static [ValType] {
+        self.as_ref().inputs()
+    }
+
+    pub fn results(self) -> &'static [ValType] {
+        self.as_ref().results()
+    }
+}
+
+// TODO remove once wasmparser lands
+impl From<crate::lowlevel::FunctionType> for FunctionType {
+    fn from(ty: crate::lowlevel::FunctionType) -> Self {
+        Self(Intern::new(ty))
+    }
+}
+
+impl fmt::Debug for FunctionType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.as_ref().fmt(f)
+    }
+}
+
+impl fmt::Display for FunctionType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.as_ref().fmt(f)
+    }
+}
+
+impl FromStr for FunctionType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        crate::lowlevel::FunctionType::from_str(s).map(Into::into)
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -104,28 +174,16 @@ pub struct Local {
 // ParamOrLocalRef/ParamOrLocalMut with type and name accessor functions.
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct ParamRef<'a> {
-    // ValType is a Copy-type and smaller than a pointer, so store as value instead of reference.
-    pub type_: ValType,
-    pub name: Option<&'a str>,
-}
-
-#[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct ParamMut<'a> {
-    pub type_: &'a mut ValType,
-    pub name: &'a mut Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ParamOrLocalRef<'a> {
     Param(ParamRef<'a>),
     Local(&'a Local),
 }
 
-#[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum ParamOrLocalMut<'a> {
-    Param(ParamMut<'a>),
-    Local(&'a mut Local),
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct ParamRef<'a> {
+    // ValType is a Copy-type and smaller than a pointer, so store as value instead of reference.
+    pub type_: ValType,
+    pub name: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -144,9 +202,18 @@ pub type Expr = Vec<Instr>;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Instr {
+    // TODO convert such that there are never instructions following an 
+    // unreachable state (i.e., unreachable/br/br_table)
+    // Then, insert explicit drops to make sure the stack aligns.
+    // For that, decoding needs to check whether lowlevel::Instr == Unreachable,
+    // br, or br_table, then set a flag that skips to the next end.
+    // This would be the only "information loss" vs. the input Wasm binary.
     Unreachable,
     Nop,
 
+    // TODO Make highlevel::Instr nesting, i.e., Block(BlockType, Vec<Instr>)
+    // see, e.g., the reference interpreter: https://github.com/WebAssembly/spec/blob/master/interpreter/valid/valid.ml
+    // This would get rid of else and end.
     Block(BlockType),
     Loop(BlockType),
     If(BlockType),
@@ -159,9 +226,12 @@ pub enum Instr {
 
     Return,
     Call(Idx<Function>),
-    // TODO remove table index, because we can only handle Idx=0 anyway.
+    // TODO remove Idx<Table>, always 0 in MVP.
     CallIndirect(FunctionType, Idx<Table>),
 
+    // TODO Include the type explicitly in the instruction to remove 
+    // value-polymorphism.
+    // However, this would require type checking during lowlevel parsing :(
     Drop,
     Select,
 
@@ -171,19 +241,39 @@ pub enum Instr {
     Load(LoadOp, Memarg),
     Store(StoreOp, Memarg),
 
-    // TODO remove memory index, because we can only handle Idx=0 anyway.
+    // TODO remove Idx<Memory>, always 0 in MVP.
     MemorySize(Idx<Memory>),
     MemoryGrow(Idx<Memory>),
 
     Const(Val),
-    Numeric(NumericOp),
+    Unary(UnaryOp),
+    Binary(BinaryOp),
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum LocalOp { Get, Set, Tee }
 
+impl LocalOp {
+    pub fn to_type(self, local_ty: ValType) -> FunctionType {
+        match self {
+            LocalOp::Get => FunctionType::new(&[], &[local_ty]),
+            LocalOp::Set => FunctionType::new(&[local_ty], &[]),
+            LocalOp::Tee => FunctionType::new(&[local_ty], &[local_ty]),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum GlobalOp { Get, Set }
+
+impl GlobalOp {
+    pub fn to_type(self, global_ty: ValType) -> FunctionType {
+        match self {
+            GlobalOp::Get => FunctionType::new(&[], &[global_ty]),
+            GlobalOp::Set => FunctionType::new(&[global_ty], &[]),
+        }
+    }
+}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum LoadOp {
@@ -220,9 +310,195 @@ pub enum StoreOp {
     I64Store32,
 }
 
+/// Common trait for `LoadOp` and `StoreOp`.
+pub trait MemoryOp : Sized + Copy {
+    fn to_name(self) -> &'static str;
+    fn to_type(self) -> FunctionType;
+
+    // See comments on Memarg type for more information on the alignment hint and natural alignment.
+    fn natural_alignment_exp(self) -> u8;
+    fn natural_alignment(self) -> u32 {
+        2u32.pow(self.natural_alignment_exp() as u32)
+    }
+}
+
+impl MemoryOp for LoadOp {
+    fn to_name(self) -> &'static str {
+        use LoadOp::*;
+        match self {
+            I32Load => "i32.load",
+            I64Load => "i64.load",
+            F32Load => "f32.load",
+            F64Load => "f64.load",
+
+            I32Load8S => "i32.load8_s",
+            I32Load8U => "i32.load8_u",
+            I32Load16S => "i32.load16_s",
+            I32Load16U => "i32.load16_u",
+
+            I64Load8S => "i64.load8_s",
+            I64Load8U => "i64.load8_u",
+            I64Load16S => "i64.load16_s",
+            I64Load16U => "i64.load16_u",
+            I64Load32S => "i64.load32_s",
+            I64Load32U => "i64.load32_u",
+        }
+    }
+
+    fn to_type(self) -> FunctionType {
+        use LoadOp::*;
+        use ValType::*;
+        match self {
+            I32Load => FunctionType::new(&[I32], &[I32]),
+            I64Load => FunctionType::new(&[I32], &[I64]),
+            F32Load => FunctionType::new(&[I32], &[F32]),
+            F64Load => FunctionType::new(&[I32], &[F64]),
+
+            I32Load8S => FunctionType::new(&[I32], &[I32]),
+            I32Load8U => FunctionType::new(&[I32], &[I32]),
+            I32Load16S => FunctionType::new(&[I32], &[I32]),
+            I32Load16U => FunctionType::new(&[I32], &[I32]),
+            I64Load8S => FunctionType::new(&[I32], &[I64]),
+            I64Load8U => FunctionType::new(&[I32], &[I64]),
+            I64Load16S => FunctionType::new(&[I32], &[I64]),
+            I64Load16U => FunctionType::new(&[I32], &[I64]),
+            I64Load32S => FunctionType::new(&[I32], &[I64]),
+            I64Load32U => FunctionType::new(&[I32], &[I64]),
+        }
+    }
+
+    fn natural_alignment_exp(self) -> u8 {
+        use LoadOp::*;
+        match self {
+            I32Load => 2,
+            I64Load => 3,
+            F32Load => 2,
+            F64Load => 3,
+
+            I32Load8S => 0,
+            I32Load8U => 0,
+            I32Load16S => 1,
+            I32Load16U => 1,
+            I64Load8S => 0,
+            I64Load8U => 0,
+            I64Load16S => 1,
+            I64Load16U => 1,
+            I64Load32S => 2,
+            I64Load32U => 2,
+        }
+    }
+}
+
+impl MemoryOp for StoreOp {
+    fn to_name(self) -> &'static str {
+        use StoreOp::*;
+        match self {
+            I32Store => "i32.store",
+            I64Store => "i64.store",
+            F32Store => "f32.store",
+            F64Store => "f64.store",
+            
+            I32Store8 => "i32.store8",
+            I32Store16 => "i32.store16",
+            I64Store8 => "i64.store8",
+            I64Store16 => "i64.store16",
+            I64Store32 => "i64.store32",
+        }
+    }
+
+    fn to_type(self) -> FunctionType {
+        use StoreOp::*;
+        use ValType::*;
+        match self {
+            I32Store => FunctionType::new(&[I32, I32], &[]),
+            I64Store => FunctionType::new(&[I32, I64], &[]),
+            F32Store => FunctionType::new(&[I32, F32], &[]),
+            F64Store => FunctionType::new(&[I32, F64], &[]),
+
+            I32Store8 => FunctionType::new(&[I32, I32], &[]),
+            I32Store16 => FunctionType::new(&[I32, I32], &[]),
+            I64Store8 => FunctionType::new(&[I32, I64], &[]),
+            I64Store16 => FunctionType::new(&[I32, I64], &[]),
+            I64Store32 => FunctionType::new(&[I32, I64], &[]),
+        }
+    }
+
+    fn natural_alignment_exp(self) -> u8 {
+        use StoreOp::*;
+        match self {
+            I32Store => 2,
+            I64Store => 3,
+            F32Store => 2,
+            F64Store => 3,
+
+            I32Store8 => 0,
+            I32Store16 => 1,
+            I64Store8 => 0,
+            I64Store16 => 1,
+            I64Store32 => 2,
+        }
+    }
+}
+
+impl fmt::Display for LoadOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.to_name())
+    }
+}
+
+impl fmt::Display for StoreOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.to_name())
+    }
+}
+
+impl FromStr for LoadOp {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use LoadOp::*;
+        Ok(match s {
+            "i32.load" => I32Load,
+            "i64.load" => I64Load,
+            "f32.load" => F32Load,
+            "f64.load" => F64Load,
+            "i32.load8_s" => I32Load8S,
+            "i32.load8_u" => I32Load8U,
+            "i32.load16_s" => I32Load16S,
+            "i32.load16_u" => I32Load16U,
+            "i64.load8_s" => I64Load8S,
+            "i64.load8_u" => I64Load8U,
+            "i64.load16_s" => I64Load16S,
+            "i64.load16_u" => I64Load16U,
+            "i64.load32_s" => I64Load32S,
+            "i64.load32_u" => I64Load32U,            
+            _ => return Err(())
+        })
+    }
+}
+
+impl FromStr for StoreOp {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use StoreOp::*;
+        Ok(match s {
+            "i32.store" => I32Store,
+            "i64.store" => I64Store,
+            "f32.store" => F32Store,
+            "f64.store" => F64Store,
+            "i32.store8" => I32Store8,
+            "i32.store16" => I32Store16,
+            "i64.store8" => I64Store8,
+            "i64.store16" => I64Store16,
+            "i64.store32" => I64Store32,
+            _ => return Err(())
+        })
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum NumericOp {
-    /* Unary */
+pub enum UnaryOp {
     I32Eqz,
     I64Eqz,
 
@@ -279,8 +555,10 @@ pub enum NumericOp {
     I64ReinterpretF64,
     F32ReinterpretI32,
     F64ReinterpretI64,
+}
 
-    /* Binary */
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum BinaryOp {
     I32Eq,
     I32Ne,
     I32LtS,
@@ -366,35 +644,76 @@ pub enum NumericOp {
     F64Copysign,
 }
 
-
-/* Type information for each instruction */
-
-impl LocalOp {
-    pub fn to_type(self, local_ty: ValType) -> FunctionType {
-        match self {
-            LocalOp::Get => FunctionType::new(&[], &[local_ty]),
-            LocalOp::Set => FunctionType::new(&[local_ty], &[]),
-            LocalOp::Tee => FunctionType::new(&[local_ty], &[local_ty]),
-        }
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_name())
     }
 }
 
-impl GlobalOp {
-    pub fn to_type(self, global_ty: ValType) -> FunctionType {
-        match self {
-            GlobalOp::Get => FunctionType::new(&[], &[global_ty]),
-            GlobalOp::Set => FunctionType::new(&[global_ty], &[]),
-        }
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_name())
     }
 }
 
-impl NumericOp {
+impl UnaryOp {
+    pub fn to_name(&self) -> &'static str {
+        use UnaryOp::*;
+        match self {
+            I32Eqz => "i32.eqz",
+            I64Eqz => "i64.eqz",
+            I32Clz => "i32.clz",
+            I32Ctz => "i32.ctz",
+            I32Popcnt => "i32.popcnt",
+            I64Clz => "i64.clz",
+            I64Ctz => "i64.ctz",
+            I64Popcnt => "i64.popcnt",
+            F32Abs => "f32.abs",
+            F32Neg => "f32.neg",
+            F32Ceil => "f32.ceil",
+            F32Floor => "f32.floor",
+            F32Trunc => "f32.trunc",
+            F32Nearest => "f32.nearest",
+            F32Sqrt => "f32.sqrt",
+            F64Abs => "f64.abs",
+            F64Neg => "f64.neg",
+            F64Ceil => "f64.ceil",
+            F64Floor => "f64.floor",
+            F64Trunc => "f64.trunc",
+            F64Nearest => "f64.nearest",
+            F64Sqrt => "f64.sqrt",
+            I32WrapI64 => "i32.wrap_i64",
+            I32TruncF32S => "i32.trunc_f32_s",
+            I32TruncF32U => "i32.trunc_f32_u",
+            I32TruncF64S => "i32.trunc_f64_s",
+            I32TruncF64U => "i32.trunc_f64_u",
+            I64ExtendI32S => "i64.extend_i32_s",
+            I64ExtendI32U => "i64.extend_i32_u",
+            I64TruncF32S => "i64.trunc_f32_s",
+            I64TruncF32U => "i64.trunc_f32_u",
+            I64TruncF64S => "i64.trunc_f64_s",
+            I64TruncF64U => "i64.trunc_f64_u",
+            F32ConvertI32S => "f32.convert_i32_s",
+            F32ConvertI32U => "f32.convert_i32_u",
+            F32ConvertI64S => "f32.convert_i64_s",
+            F32ConvertI64U => "f32.convert_i64_u",
+            F32DemoteF64 => "f32.demote_f64",
+            F64ConvertI32S => "f64.convert_i32_s",
+            F64ConvertI32U => "f64.convert_i32_u",
+            F64ConvertI64S => "f64.convert_i64_s",
+            F64ConvertI64U => "f64.convert_i64_u",
+            F64PromoteF32 => "f64.promote_f32",
+            I32ReinterpretF32 => "i32.reinterpret_f32",
+            I64ReinterpretF64 => "i64.reinterpret_f64",
+            F32ReinterpretI32 => "f32.reinterpret_i32",
+            F64ReinterpretI64 => "f64.reinterpret_i64",
+        }
+    }
+
     pub fn to_type(self) -> FunctionType {
-        use NumericOp::*;
+        use UnaryOp::*;
         use ValType::*;
         match self {
-            /* Unary */
-
             I32Eqz => FunctionType::new(&[I32], &[I32]),
             I64Eqz => FunctionType::new(&[I64], &[I32]),
 
@@ -421,9 +740,155 @@ impl NumericOp {
             I64ReinterpretF64 => FunctionType::new(&[F64], &[I64]),
             F32ReinterpretI32 => FunctionType::new(&[I32], &[F32]),
             F64ReinterpretI64 => FunctionType::new(&[I64], &[F64]),
+        }
+    }
+}
 
-            /* Binary */
+impl FromStr for UnaryOp {
+    type Err = ();
 
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use UnaryOp::*;
+        Ok(match s {
+            "i32.eqz" => I32Eqz,
+            "i64.eqz" => I64Eqz,
+            "i32.clz" => I32Clz,
+            "i32.ctz" => I32Ctz,
+            "i32.popcnt" => I32Popcnt,
+            "i64.clz" => I64Clz,
+            "i64.ctz" => I64Ctz,
+            "i64.popcnt" => I64Popcnt,
+            "f32.abs" => F32Abs,
+            "f32.neg" => F32Neg,
+            "f32.ceil" => F32Ceil,
+            "f32.floor" => F32Floor,
+            "f32.trunc" => F32Trunc,
+            "f32.nearest" => F32Nearest,
+            "f32.sqrt" => F32Sqrt,
+            "f64.abs" => F64Abs,
+            "f64.neg" => F64Neg,
+            "f64.ceil" => F64Ceil,
+            "f64.floor" => F64Floor,
+            "f64.trunc" => F64Trunc,
+            "f64.nearest" => F64Nearest,
+            "f64.sqrt" => F64Sqrt,
+            "i32.wrap_i64" => I32WrapI64,
+            "i32.trunc_f32_s" => I32TruncF32S,
+            "i32.trunc_f32_u" => I32TruncF32U,
+            "i32.trunc_f64_s" => I32TruncF64S,
+            "i32.trunc_f64_u" => I32TruncF64U,
+            "i64.extend_i32_s" => I64ExtendI32S,
+            "i64.extend_i32_u" => I64ExtendI32U,
+            "i64.trunc_f32_s" => I64TruncF32S,
+            "i64.trunc_f32_u" => I64TruncF32U,
+            "i64.trunc_f64_s" => I64TruncF64S,
+            "i64.trunc_f64_u" => I64TruncF64U,
+            "f32.convert_i32_s" => F32ConvertI32S,
+            "f32.convert_i32_u" => F32ConvertI32U,
+            "f32.convert_i64_s" => F32ConvertI64S,
+            "f32.convert_i64_u" => F32ConvertI64U,
+            "f32.demote_f64" => F32DemoteF64,
+            "f64.convert_i32_s" => F64ConvertI32S,
+            "f64.convert_i32_u" => F64ConvertI32U,
+            "f64.convert_i64_s" => F64ConvertI64S,
+            "f64.convert_i64_u" => F64ConvertI64U,
+            "f64.promote_f32" => F64PromoteF32,
+            "i32.reinterpret_f32" => I32ReinterpretF32,
+            "i64.reinterpret_f64" => I64ReinterpretF64,
+            "f32.reinterpret_i32" => F32ReinterpretI32,
+            "f64.reinterpret_i64" => F64ReinterpretI64,
+            _ => return Err(())
+        })
+    }
+}
+
+impl BinaryOp {
+    pub fn to_name(&self) -> &'static str {
+        use BinaryOp::*;
+        match self {
+            I32Eq => "i32.eq",
+            I32Ne => "i32.ne",
+            I32LtS => "i32.lt_s",
+            I32LtU => "i32.lt_u",
+            I32GtS => "i32.gt_s",
+            I32GtU => "i32.gt_u",
+            I32LeS => "i32.le_s",
+            I32LeU => "i32.le_u",
+            I32GeS => "i32.ge_s",
+            I32GeU => "i32.ge_u",
+            I64Eq => "i64.eq",
+            I64Ne => "i64.ne",
+            I64LtS => "i64.lt_s",
+            I64LtU => "i64.lt_u",
+            I64GtS => "i64.gt_s",
+            I64GtU => "i64.gt_u",
+            I64LeS => "i64.le_s",
+            I64LeU => "i64.le_u",
+            I64GeS => "i64.ge_s",
+            I64GeU => "i64.ge_u",
+            F32Eq => "f32.eq",
+            F32Ne => "f32.ne",
+            F32Lt => "f32.lt",
+            F32Gt => "f32.gt",
+            F32Le => "f32.le",
+            F32Ge => "f32.ge",
+            F64Eq => "f64.eq",
+            F64Ne => "f64.ne",
+            F64Lt => "f64.lt",
+            F64Gt => "f64.gt",
+            F64Le => "f64.le",
+            F64Ge => "f64.ge",
+            I32Add => "i32.add",
+            I32Sub => "i32.sub",
+            I32Mul => "i32.mul",
+            I32DivS => "i32.div_s",
+            I32DivU => "i32.div_u",
+            I32RemS => "i32.rem_s",
+            I32RemU => "i32.rem_u",
+            I32And => "i32.and",
+            I32Or => "i32.or",
+            I32Xor => "i32.xor",
+            I32Shl => "i32.shl",
+            I32ShrS => "i32.shr_s",
+            I32ShrU => "i32.shr_u",
+            I32Rotl => "i32.rotl",
+            I32Rotr => "i32.rotr",
+            I64Add => "i64.add",
+            I64Sub => "i64.sub",
+            I64Mul => "i64.mul",
+            I64DivS => "i64.div_s",
+            I64DivU => "i64.div_u",
+            I64RemS => "i64.rem_s",
+            I64RemU => "i64.rem_u",
+            I64And => "i64.and",
+            I64Or => "i64.or",
+            I64Xor => "i64.xor",
+            I64Shl => "i64.shl",
+            I64ShrS => "i64.shr_s",
+            I64ShrU => "i64.shr_u",
+            I64Rotl => "i64.rotl",
+            I64Rotr => "i64.rotr",
+            F32Add => "f32.add",
+            F32Sub => "f32.sub",
+            F32Mul => "f32.mul",
+            F32Div => "f32.div",
+            F32Min => "f32.min",
+            F32Max => "f32.max",
+            F32Copysign => "f32.copysign",
+            F64Add => "f64.add",
+            F64Sub => "f64.sub",
+            F64Mul => "f64.mul",
+            F64Div => "f64.div",
+            F64Min => "f64.min",
+            F64Max => "f64.max",
+            F64Copysign => "f64.copysign",
+        }
+    }
+
+    pub fn to_type(self) -> FunctionType {
+        use BinaryOp::*;
+        use ValType::*;
+        match self {
             I32Eq | I32Ne | I32LtS | I32LtU | I32GtS | I32GtU | I32LeS | I32LeU | I32GeS | I32GeU => FunctionType::new(&[I32, I32], &[I32]),
             I64Eq | I64Ne | I64LtS | I64LtU | I64GtS | I64GtU | I64LeS | I64LeU | I64GeS | I64GeU => FunctionType::new(&[I64, I64], &[I32]),
 
@@ -438,305 +903,260 @@ impl NumericOp {
     }
 }
 
-pub trait MemoryOp : Sized {
-    fn to_type(self) -> FunctionType;
+impl FromStr for BinaryOp {
+    type Err = ();
 
-    // See comments on Memarg type for more information on the alignment hint and natural alignment.
-    fn natural_alignment_exp(self) -> u8;
-    fn natural_alignment(self) -> u32 {
-        2u32.pow(self.natural_alignment_exp() as u32)
-    }
-}
-
-impl MemoryOp for LoadOp {
-    fn to_type(self) -> FunctionType {
-        use LoadOp::*;
-        use ValType::*;
-        match self {
-            I32Load => FunctionType::new(&[I32], &[I32]),
-            I64Load => FunctionType::new(&[I32], &[I64]),
-            F32Load => FunctionType::new(&[I32], &[F32]),
-            F64Load => FunctionType::new(&[I32], &[F64]),
-
-            I32Load8S => FunctionType::new(&[I32], &[I32]),
-            I32Load8U => FunctionType::new(&[I32], &[I32]),
-            I32Load16S => FunctionType::new(&[I32], &[I32]),
-            I32Load16U => FunctionType::new(&[I32], &[I32]),
-            I64Load8S => FunctionType::new(&[I32], &[I64]),
-            I64Load8U => FunctionType::new(&[I32], &[I64]),
-            I64Load16S => FunctionType::new(&[I32], &[I64]),
-            I64Load16U => FunctionType::new(&[I32], &[I64]),
-            I64Load32S => FunctionType::new(&[I32], &[I64]),
-            I64Load32U => FunctionType::new(&[I32], &[I64]),
-        }
-    }
-
-    fn natural_alignment_exp(self) -> u8 {
-        use LoadOp::*;
-        match self {
-            I32Load => 2,
-            I64Load => 3,
-            F32Load => 2,
-            F64Load => 3,
-
-            I32Load8S => 0,
-            I32Load8U => 0,
-            I32Load16S => 1,
-            I32Load16U => 1,
-            I64Load8S => 0,
-            I64Load8U => 0,
-            I64Load16S => 1,
-            I64Load16U => 1,
-            I64Load32S => 2,
-            I64Load32U => 2,
-        }
-    }
-}
-
-impl MemoryOp for StoreOp {
-    fn to_type(self) -> FunctionType {
-        use StoreOp::*;
-        use ValType::*;
-        match self {
-            I32Store => FunctionType::new(&[I32, I32], &[]),
-            I64Store => FunctionType::new(&[I32, I64], &[]),
-            F32Store => FunctionType::new(&[I32, F32], &[]),
-            F64Store => FunctionType::new(&[I32, F64], &[]),
-
-            I32Store8 => FunctionType::new(&[I32, I32], &[]),
-            I32Store16 => FunctionType::new(&[I32, I32], &[]),
-            I64Store8 => FunctionType::new(&[I32, I64], &[]),
-            I64Store16 => FunctionType::new(&[I32, I64], &[]),
-            I64Store32 => FunctionType::new(&[I32, I64], &[]),
-        }
-    }
-
-    fn natural_alignment_exp(self) -> u8 {
-        use StoreOp::*;
-        match self {
-            I32Store => 2,
-            I64Store => 3,
-            F32Store => 2,
-            F64Store => 3,
-
-            I32Store8 => 0,
-            I32Store16 => 1,
-            I64Store8 => 0,
-            I64Store16 => 1,
-            I64Store32 => 2,
-        }
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use BinaryOp::*;
+        Ok(match s {
+            "i32.eq" => I32Eq,
+            "i32.ne" => I32Ne,
+            "i32.lt_s" => I32LtS,
+            "i32.lt_u" => I32LtU,
+            "i32.gt_s" => I32GtS,
+            "i32.gt_u" => I32GtU,
+            "i32.le_s" => I32LeS,
+            "i32.le_u" => I32LeU,
+            "i32.ge_s" => I32GeS,
+            "i32.ge_u" => I32GeU,
+            "i64.eq" => I64Eq,
+            "i64.ne" => I64Ne,
+            "i64.lt_s" => I64LtS,
+            "i64.lt_u" => I64LtU,
+            "i64.gt_s" => I64GtS,
+            "i64.gt_u" => I64GtU,
+            "i64.le_s" => I64LeS,
+            "i64.le_u" => I64LeU,
+            "i64.ge_s" => I64GeS,
+            "i64.ge_u" => I64GeU,
+            "f32.eq" => F32Eq,
+            "f32.ne" => F32Ne,
+            "f32.lt" => F32Lt,
+            "f32.gt" => F32Gt,
+            "f32.le" => F32Le,
+            "f32.ge" => F32Ge,
+            "f64.eq" => F64Eq,
+            "f64.ne" => F64Ne,
+            "f64.lt" => F64Lt,
+            "f64.gt" => F64Gt,
+            "f64.le" => F64Le,
+            "f64.ge" => F64Ge,
+            "i32.add" => I32Add,
+            "i32.sub" => I32Sub,
+            "i32.mul" => I32Mul,
+            "i32.div_s" => I32DivS,
+            "i32.div_u" => I32DivU,
+            "i32.rem_s" => I32RemS,
+            "i32.rem_u" => I32RemU,
+            "i32.and" => I32And,
+            "i32.or" => I32Or,
+            "i32.xor" => I32Xor,
+            "i32.shl" => I32Shl,
+            "i32.shr_s" => I32ShrS,
+            "i32.shr_u" => I32ShrU,
+            "i32.rotl" => I32Rotl,
+            "i32.rotr" => I32Rotr,
+            "i64.add" => I64Add,
+            "i64.sub" => I64Sub,
+            "i64.mul" => I64Mul,
+            "i64.div_s" => I64DivS,
+            "i64.div_u" => I64DivU,
+            "i64.rem_s" => I64RemS,
+            "i64.rem_u" => I64RemU,
+            "i64.and" => I64And,
+            "i64.or" => I64Or,
+            "i64.xor" => I64Xor,
+            "i64.shl" => I64Shl,
+            "i64.shr_s" => I64ShrS,
+            "i64.shr_u" => I64ShrU,
+            "i64.rotl" => I64Rotl,
+            "i64.rotr" => I64Rotr,
+            "f32.add" => F32Add,
+            "f32.sub" => F32Sub,
+            "f32.mul" => F32Mul,
+            "f32.div" => F32Div,
+            "f32.min" => F32Min,
+            "f32.max" => F32Max,
+            "f32.copysign" => F32Copysign,
+            "f64.add" => F64Add,
+            "f64.sub" => F64Sub,
+            "f64.mul" => F64Mul,
+            "f64.div" => F64Div,
+            "f64.min" => F64Min,
+            "f64.max" => F64Max,
+            "f64.copysign" => F64Copysign,
+            _ => return Err(())
+        })
     }
 }
 
 impl Instr {
-    /// for all where the type can be determined by just looking at the instruction, not additional
-    /// information like the function or module etc.
-    pub fn to_type(&self) -> Option<FunctionType> {
-        use Instr::*;
-        use ValType::*;
-        match *self {
-            Unreachable | Nop => Some(FunctionType::new(&[], &[])),
-            Load(ref op, _) => Some(op.to_type()),
-            Store(ref op, _) => Some(op.to_type()),
-            MemorySize(_) => Some(FunctionType::new(&[], &[I32])),
-            MemoryGrow(_) => Some(FunctionType::new(&[I32], &[I32])),
-            Const(ref val) => Some(FunctionType::new(&[], &[val.to_type()])),
-            Numeric(ref op) => Some(op.to_type()),
-            CallIndirect(ref func_ty, _) => Some(FunctionType::new(&[&func_ty.params[..], &[I32]].concat(), &func_ty.results)),
-
-            // nesting...
-            Block(_) | Loop(_) | If(_) | Else | End => None,
-            // depends on branch target?
-            Br(_) | BrIf(_) | BrTable { .. } => None,
-            // need to inspect function type
-            Return | Call(_) => None,
-            // need abstract type stack "evaluation"
-            Drop | Select => None,
-            // need lookup in locals/globals
-            Local(_, _) | Global(_, _) => None,
-        }
-    }
-
-    /// returns instruction name as in Wasm spec
+    /// Returns the instruction name as in the WebAssembly specification and
+    /// text format.
+    /// This is only the mnemonic, without instruction arguments.
     pub fn to_name(&self) -> &'static str {
         use Instr::*;
-        use NumericOp::*;
-        use LoadOp::*;
-        use StoreOp::*;
         match *self {
             Unreachable => "unreachable",
             Nop => "nop",
+            
             Block(_) => "block",
             Loop(_) => "loop",
             If(_) => "if",
             Else => "else",
             End => "end",
+            
             Br(_) => "br",
             BrIf(_) => "br_if",
             BrTable { .. } => "br_table",
+            
             Return => "return",
             Call(_) => "call",
             CallIndirect(_, _) => "call_indirect",
+            
             Drop => "drop",
             Select => "select",
+
             Local(LocalOp::Get, _) => "local.get",
             Local(LocalOp::Set, _) => "local.set",
             Local(LocalOp::Tee, _) => "local.tee",
             Global(GlobalOp::Get, _) => "global.get",
             Global(GlobalOp::Set, _) => "global.set",
+
             MemorySize(_) => "memory.size",
             MemoryGrow(_) => "memory.grow",
+
             Const(Val::I32(_)) => "i32.const",
             Const(Val::I64(_)) => "i64.const",
             Const(Val::F32(_)) => "f32.const",
             Const(Val::F64(_)) => "f64.const",
-            Load(I32Load, _) => "i32.load",
-            Load(I64Load, _) => "i64.load",
-            Load(F32Load, _) => "f32.load",
-            Load(F64Load, _) => "f64.load",
-            Load(I32Load8S, _) => "i32.load8_s",
-            Load(I32Load8U, _) => "i32.load8_u",
-            Load(I32Load16S, _) => "i32.load16_s",
-            Load(I32Load16U, _) => "i32.load16_u",
-            Load(I64Load8S, _) => "i64.load8_s",
-            Load(I64Load8U, _) => "i64.load8_u",
-            Load(I64Load16S, _) => "i64.load16_s",
-            Load(I64Load16U, _) => "i64.load16_u",
-            Load(I64Load32S, _) => "i64.load32_s",
-            Load(I64Load32U, _) => "i64.load32_u",
-            Store(I32Store, _) => "i32.store",
-            Store(I64Store, _) => "i64.store",
-            Store(F32Store, _) => "f32.store",
-            Store(F64Store, _) => "f64.store",
-            Store(I32Store8, _) => "i32.store8",
-            Store(I32Store16, _) => "i32.store16",
-            Store(I64Store8, _) => "i64.store8",
-            Store(I64Store16, _) => "i64.store16",
-            Store(I64Store32, _) => "i64.store32",
-            Numeric(I32Eqz) => "i32.eqz",
-            Numeric(I64Eqz) => "i64.eqz",
-            Numeric(I32Clz) => "i32.clz",
-            Numeric(I32Ctz) => "i32.ctz",
-            Numeric(I32Popcnt) => "i32.popcnt",
-            Numeric(I64Clz) => "i64.clz",
-            Numeric(I64Ctz) => "i64.ctz",
-            Numeric(I64Popcnt) => "i64.popcnt",
-            Numeric(F32Abs) => "f32.abs",
-            Numeric(F32Neg) => "f32.neg",
-            Numeric(F32Ceil) => "f32.ceil",
-            Numeric(F32Floor) => "f32.floor",
-            Numeric(F32Trunc) => "f32.trunc",
-            Numeric(F32Nearest) => "f32.nearest",
-            Numeric(F32Sqrt) => "f32.sqrt",
-            Numeric(F64Abs) => "f64.abs",
-            Numeric(F64Neg) => "f64.neg",
-            Numeric(F64Ceil) => "f64.ceil",
-            Numeric(F64Floor) => "f64.floor",
-            Numeric(F64Trunc) => "f64.trunc",
-            Numeric(F64Nearest) => "f64.nearest",
-            Numeric(F64Sqrt) => "f64.sqrt",
-            Numeric(I32WrapI64) => "i32.wrap_i64",
-            Numeric(I32TruncF32S) => "i32.trunc_f32_s",
-            Numeric(I32TruncF32U) => "i32.trunc_f32_u",
-            Numeric(I32TruncF64S) => "i32.trunc_f64_s",
-            Numeric(I32TruncF64U) => "i32.trunc_f64_u",
-            Numeric(I64ExtendI32S) => "i64.extend_i32_s",
-            Numeric(I64ExtendI32U) => "i64.extend_i32_u",
-            Numeric(I64TruncF32S) => "i64.trunc_f32_s",
-            Numeric(I64TruncF32U) => "i64.trunc_f32_u",
-            Numeric(I64TruncF64S) => "i64.trunc_f64_s",
-            Numeric(I64TruncF64U) => "i64.trunc_f64_u",
-            Numeric(F32ConvertI32S) => "f32.convert_i32_s",
-            Numeric(F32ConvertI32U) => "f32.convert_i32_u",
-            Numeric(F32ConvertI64S) => "f32.convert_i64_s",
-            Numeric(F32ConvertI64U) => "f32.convert_i64_u",
-            Numeric(F32DemoteF64) => "f32.demote_f64",
-            Numeric(F64ConvertI32S) => "f64.convert_i32_s",
-            Numeric(F64ConvertI32U) => "f64.convert_i32_u",
-            Numeric(F64ConvertI64S) => "f64.convert_i64_s",
-            Numeric(F64ConvertI64U) => "f64.convert_i64_u",
-            Numeric(F64PromoteF32) => "f64.promote_f32",
-            Numeric(I32ReinterpretF32) => "i32.reinterpret_f32",
-            Numeric(I64ReinterpretF64) => "i64.reinterpret_f64",
-            Numeric(F32ReinterpretI32) => "f32.reinterpret_i32",
-            Numeric(F64ReinterpretI64) => "f64.reinterpret_i64",
-            Numeric(I32Eq) => "i32.eq",
-            Numeric(I32Ne) => "i32.ne",
-            Numeric(I32LtS) => "i32.lt_s",
-            Numeric(I32LtU) => "i32.lt_u",
-            Numeric(I32GtS) => "i32.gt_s",
-            Numeric(I32GtU) => "i32.gt_u",
-            Numeric(I32LeS) => "i32.le_s",
-            Numeric(I32LeU) => "i32.le_u",
-            Numeric(I32GeS) => "i32.ge_s",
-            Numeric(I32GeU) => "i32.ge_u",
-            Numeric(I64Eq) => "i64.eq",
-            Numeric(I64Ne) => "i64.ne",
-            Numeric(I64LtS) => "i64.lt_s",
-            Numeric(I64LtU) => "i64.lt_u",
-            Numeric(I64GtS) => "i64.gt_s",
-            Numeric(I64GtU) => "i64.gt_u",
-            Numeric(I64LeS) => "i64.le_s",
-            Numeric(I64LeU) => "i64.le_u",
-            Numeric(I64GeS) => "i64.ge_s",
-            Numeric(I64GeU) => "i64.ge_u",
-            Numeric(F32Eq) => "f32.eq",
-            Numeric(F32Ne) => "f32.ne",
-            Numeric(F32Lt) => "f32.lt",
-            Numeric(F32Gt) => "f32.gt",
-            Numeric(F32Le) => "f32.le",
-            Numeric(F32Ge) => "f32.ge",
-            Numeric(F64Eq) => "f64.eq",
-            Numeric(F64Ne) => "f64.ne",
-            Numeric(F64Lt) => "f64.lt",
-            Numeric(F64Gt) => "f64.gt",
-            Numeric(F64Le) => "f64.le",
-            Numeric(F64Ge) => "f64.ge",
-            Numeric(I32Add) => "i32.add",
-            Numeric(I32Sub) => "i32.sub",
-            Numeric(I32Mul) => "i32.mul",
-            Numeric(I32DivS) => "i32.div_s",
-            Numeric(I32DivU) => "i32.div_u",
-            Numeric(I32RemS) => "i32.rem_s",
-            Numeric(I32RemU) => "i32.rem_u",
-            Numeric(I32And) => "i32.and",
-            Numeric(I32Or) => "i32.or",
-            Numeric(I32Xor) => "i32.xor",
-            Numeric(I32Shl) => "i32.shl",
-            Numeric(I32ShrS) => "i32.shr_s",
-            Numeric(I32ShrU) => "i32.shr_u",
-            Numeric(I32Rotl) => "i32.rotl",
-            Numeric(I32Rotr) => "i32.rotr",
-            Numeric(I64Add) => "i64.add",
-            Numeric(I64Sub) => "i64.sub",
-            Numeric(I64Mul) => "i64.mul",
-            Numeric(I64DivS) => "i64.div_s",
-            Numeric(I64DivU) => "i64.div_u",
-            Numeric(I64RemS) => "i64.rem_s",
-            Numeric(I64RemU) => "i64.rem_u",
-            Numeric(I64And) => "i64.and",
-            Numeric(I64Or) => "i64.or",
-            Numeric(I64Xor) => "i64.xor",
-            Numeric(I64Shl) => "i64.shl",
-            Numeric(I64ShrS) => "i64.shr_s",
-            Numeric(I64ShrU) => "i64.shr_u",
-            Numeric(I64Rotl) => "i64.rotl",
-            Numeric(I64Rotr) => "i64.rotr",
-            Numeric(F32Add) => "f32.add",
-            Numeric(F32Sub) => "f32.sub",
-            Numeric(F32Mul) => "f32.mul",
-            Numeric(F32Div) => "f32.div",
-            Numeric(F32Min) => "f32.min",
-            Numeric(F32Max) => "f32.max",
-            Numeric(F32Copysign) => "f32.copysign",
-            Numeric(F64Add) => "f64.add",
-            Numeric(F64Sub) => "f64.sub",
-            Numeric(F64Mul) => "f64.mul",
-            Numeric(F64Div) => "f64.div",
-            Numeric(F64Min) => "f64.min",
-            Numeric(F64Max) => "f64.max",
-            Numeric(F64Copysign) => "f64.copysign",
+
+            Load(op, _) => op.to_name(),
+            Store(op, _) => op.to_name(),
+            Unary(op) => op.to_name(),
+            Binary(op) => op.to_name(),
         }
+    }
+
+    /// Returns a type for those instructions, for which it can be determined
+    /// by just looking at the instruction, and which does neither need to
+    /// additional context information like the function or module, nor type
+    /// inference (for stack-polymorphic and value-polymorphic instructions).
+    pub fn simple_type(&self) -> Option<FunctionType> {
+        use Instr::*;
+        use ValType::*;
+        match *self {
+            Nop => Some(FunctionType::new(&[], &[])),
+            Load(ref op, _) => Some(op.to_type()),
+            Store(ref op, _) => Some(op.to_type()),
+            MemorySize(_) => Some(FunctionType::new(&[], &[I32])),
+            MemoryGrow(_) => Some(FunctionType::new(&[I32], &[I32])),
+            Const(ref val) => Some(FunctionType::new(&[], &[val.to_type()])),
+            Unary(ref op) => Some(op.to_type()),
+            Binary(ref op) => Some(op.to_type()),
+            CallIndirect(ref func_ty, _) => Some(FunctionType::new(&[func_ty.inputs(), &[I32]].concat(), func_ty.results())),
+
+            // Difficult because of nesting and block types.
+            Block(_) | Loop(_) | If(_) | Else | End => None,
+            // Depends on the branch target block.
+            Br(_) | BrIf(_) | BrTable { .. } => None,
+            // Need to inspect the current/called function type.
+            Return | Call(_) => None,
+            // Need lookup in locals/globals
+            Local(_, _) | Global(_, _) => None,
+            // Value-polymorphic, need abstract type stack.
+            Drop | Select => None,
+            // Stack-polymorphic, needs type inference (br* above as weel).
+            Unreachable => None,
+        }
+    }
+}
+
+impl FromStr for Instr {
+    // TODO return more elaborate error type than just `()`.
+    type Err = ();
+
+    fn from_str(str: &str) -> Result<Self, Self::Err> {
+        use Instr::*;
+
+        fn parse_idx<T>(str: &str) -> Result<Idx<T>, ()> {
+            let int: usize = str.parse().map_err(|_| ())?; 
+            Ok(int.into())
+        }
+        fn parse_label(str: &str) -> Result<Label, ()> {
+            let u: usize = str.parse().map_err(|_| ())?;
+            Ok(u.into())
+        }
+
+        let (operator, rest) = str.split_once(char::is_whitespace).ok_or(())?;
+        Ok(match operator {
+            "unreachable" => Unreachable,
+            "nop" => Nop,
+
+            "block" => Block(BlockType::from_str(rest)?),
+            "loop" => Loop(BlockType::from_str(rest)?),
+            "if" => If(BlockType::from_str(rest)?),
+
+            "else" => Else,
+            "end" => End,
+            
+            "br" => Br(parse_label(rest)?),
+            "br_if" => BrIf(parse_label(rest)?),
+            "br_table" => {
+                let mut labels = rest.split_whitespace()
+                    .map(parse_label)
+                    .collect::<Result<Vec<_>, _>>()?;
+                // The last label is the default label (which must be present).
+                let default = labels.pop().ok_or(())?;
+                BrTable { table: labels, default }
+            }
+            
+            "return" => Return,
+            "call" => {
+                let func_idx = parse_idx(rest)?; 
+                Call(func_idx)
+            }
+            "call_indirect" => {
+                let ty = FunctionType::from_str(rest)?;
+                // For the WebAssembly MVP there is only a single table, so the
+                // table index was not printed. Instead assume 0.
+                let table_idx = Idx::from(0u32);
+                CallIndirect(ty, table_idx)
+            },
+            
+            "drop" => Drop,
+            "select" => Select,
+            
+            "local.get" => Local(LocalOp::Get, parse_idx(rest)?),
+            "local.set" => Local(LocalOp::Set, parse_idx(rest)?),
+            "local.tee" => Local(LocalOp::Tee, parse_idx(rest)?),
+            "global.get" => Global(GlobalOp::Get, parse_idx(rest)?),
+            "global.set" => Global(GlobalOp::Set, parse_idx(rest)?),
+            
+            // For the WebAssembly MVP there is only a single memory, so the
+            // memory index was not printed. Instead assume 0.
+            "memory.size" => MemorySize(Idx::from(0u32)),
+            "memory.grow" => MemoryGrow(Idx::from(0u32)),
+
+            "i32.const" => Const(Val::from_str(rest, ValType::I32)?),
+            "i64.const" => Const(Val::from_str(rest, ValType::I64)?),
+            "f32.const" => Const(Val::from_str(rest, ValType::F32)?),
+            "f64.const" => Const(Val::from_str(rest, ValType::F64)?),
+            
+            op if LoadOp::from_str(op).is_ok() => {
+                let op = LoadOp::from_str(op).unwrap();
+                Load(op, Memarg::from_str(rest, op)?)
+            },
+            op if StoreOp::from_str(op).is_ok() => {
+                let op = StoreOp::from_str(op).unwrap();
+                Store(op, Memarg::from_str(rest, op)?)
+            },
+            
+            op if UnaryOp::from_str(op).is_ok() => UnaryOp::from_str(op).map(Unary)?,
+            op if BinaryOp::from_str(op).is_ok() => BinaryOp::from_str(op).map(Binary)?,
+
+            _ => return Err(()),
+        })
     }
 }
 
@@ -750,47 +1170,41 @@ impl fmt::Display for Instr {
         match self {
             // instructions without arguments
             Unreachable | Nop | Drop | Select | Return
-            // TODO not sure if we should print block types if non-empty?
-            | Block(_) | Loop(_) | If(_)
             | Else | End
             | MemorySize(_) | MemoryGrow(_)
-            | Numeric(_) => Ok(()),
+            | Unary(_) | Binary(_) => Ok(()),
 
-            Br(label) => write!(f, " {}", label.0),
-            BrIf(label) => write!(f, " {}", label.0),
+            Block(ty) | Loop(ty) | If(ty) => write!(f, " {}", ty),
+
+            Br(label) => write!(f, " {}", label.to_u32()),
+            BrIf(label) => write!(f, " {}", label.to_u32()),
             BrTable { table, default } => {
                 for label in table {
-                    write!(f, " {}", label.0)?;
+                    write!(f, " {}", label.to_u32())?;
                 }
-                write!(f, " {}", default.0)
+                write!(f, " {}", default.to_u32())
             }
 
-            Call(func_idx) => write!(f, " {}", func_idx.into_inner()),
-            // FIXME Printing the table index is inconsistent, when we don't print the memory index
-            // for memory size and memory grow.
-            // CallIndirect(_, table_idx) => write!(f, " {}", table_idx.into_inner()),
-            // TODO print indirect type
-            CallIndirect(_, _) => Ok(()),
+            Call(func_idx) => write!(f, " {}", func_idx.to_u32()),
+            // We don't print the table index, because we also don't for memory.size and memory.grow,
+            // and because in the MVP the table index is going to be 0 anyway.
+            CallIndirect(func_ty, _table_idx) => write!(f, " {}", func_ty),
 
-            Local(_, local_idx) => write!(f, " {}", local_idx.into_inner()),
-            Global(_, global_idx) => write!(f, " {}", global_idx.into_inner()),
+            Local(_, local_idx) => write!(f, " {}", local_idx.to_u32()),
+            Global(_, global_idx) => write!(f, " {}", global_idx.to_u32()),
 
-            Load(_, memarg) | Store(_, memarg) => {
-                if memarg.offset != 0 {
-                    write!(f, " offset={}", memarg.offset)?;
+            Load(op, memarg) => {
+                if !memarg.is_default(*op) {
+                    f.write_str(" ")?;
                 }
-
-                let natural_alignment_exp = match self {
-                    Load(load_op, _) => load_op.natural_alignment_exp(),
-                    Store(store_op, _) => store_op.natural_alignment_exp(),
-                    _ => unreachable!()
-                };
-                if memarg.alignment_exp != natural_alignment_exp {
-                    write!(f, " align={}", memarg.alignment())?;
+                memarg.fmt(f, *op)
+            },
+            Store(op, memarg) => {
+                if !memarg.is_default(*op) {
+                    f.write_str(" ")?;
                 }
-
-                Ok(())
-            }
+                memarg.fmt(f, *op)
+            },
 
             Const(val) => write!(f, " {}", val)
         }
@@ -830,19 +1244,19 @@ impl Module {
     // TODO Add the same for globals, tables, and memories, if needed.
 
     pub fn function(&self, idx: Idx<Function>) -> &Function {
-        &self.functions[idx.into_inner()]
+        &self.functions[idx.to_usize()]
     }
 
     pub fn function_mut(&mut self, idx: Idx<Function>) -> &mut Function {
-        &mut self.functions[idx.into_inner()]
+        &mut self.functions[idx.to_usize()]
     }
 
     pub fn global(&self, idx: Idx<Global>) -> &Global {
-        &self.globals[idx.into_inner()]
+        &self.globals[idx.to_usize()]
     }
 
     pub fn global_mut(&mut self, idx: Idx<Global>) -> &mut Global {
-        &mut self.globals[idx.into_inner()]
+        &mut self.globals[idx.to_usize()]
     }
 
 
@@ -853,6 +1267,7 @@ impl Module {
                 locals: locals.into_iter().map(Local::new).collect(),
                 body,
             },
+            Vec::new()
         ));
         (self.functions.len() - 1).into()
     }
@@ -861,6 +1276,7 @@ impl Module {
         self.functions.push(Function::new_imported(
             type_,
             module, name,
+            Vec::new()
         ));
         (self.functions.len() - 1).into()
     }
@@ -884,23 +1300,23 @@ impl Module {
 }
 
 impl Function {
-    pub fn new(type_: FunctionType, code: Code) -> Self {
-        let param_names = vec![None; type_.params.len()];
+    pub fn new(type_: FunctionType, code: Code, export: Vec<String>) -> Self {
+        let param_names = vec![None; type_.inputs().len()];
         Function {
             type_,
             code: ImportOrPresent::Present(code),
-            export: Vec::new(),
+            export,
             name: None,
             param_names,
         }
     }
 
-    pub fn new_imported(type_: FunctionType, import_module: String, import_name: String) -> Self {
-        let param_names = vec![None; type_.params.len()];
+    pub fn new_imported(type_: FunctionType, import_module: String, import_name: String, export: Vec<String>) -> Self {
+        let param_names = vec![None; type_.inputs().len()];
         Function {
             type_,
             code: ImportOrPresent::Import(import_module, import_name),
-            export: Vec::new(),
+            export,
             name: None,
             param_names,
         }
@@ -981,12 +1397,12 @@ impl Function {
     // Functions for the number of parameters and non-parameter locals.
 
     fn assert_param_name_len_valid(&self) {
-        assert!(self.param_names.len() == self.type_.params.len());
+        assert!(self.param_names.len() == self.type_.inputs().len());
     }
 
     pub fn param_count(&self) -> usize {
         self.assert_param_name_len_valid();
-        self.type_.params.len()
+        self.type_.inputs().len()
     }
 
     pub fn local_count(&self) -> usize {
@@ -998,17 +1414,18 @@ impl Function {
 
     pub fn param_or_local(&self, idx: Idx<Local>) -> ParamOrLocalRef {
         self.param_or_locals()
-            .nth(idx.into_inner())
+            .nth(idx.to_usize())
             .expect("invalid local index")
             .1
     }
 
-    pub fn param_or_local_mut(&mut self, idx: Idx<Local>) -> ParamOrLocalMut {
-        self.param_or_locals_mut()
-            .nth(idx.into_inner())
-            .expect("invalid local index")
-            .1
-    }
+    // FIXME no longer possible, because function type is immutable!
+    // pub fn param_or_local_mut(&mut self, idx: Idx<Local>) -> ParamOrLocalMut {
+    //     self.param_or_locals_mut()
+    //         .nth(idx.into_inner())
+    //         .expect("invalid local index")
+    //         .1
+    // }
 
     pub fn param_or_locals(&self) -> impl Iterator<Item=(Idx<Local>, ParamOrLocalRef)> {
         let params = self.params().map(|(i, p)| (i, ParamOrLocalRef::Param(p)));
@@ -1016,39 +1433,40 @@ impl Function {
         params.chain(locals)
     }
 
-    pub fn param_or_locals_mut(&mut self) -> impl Iterator<Item=(Idx<Local>, ParamOrLocalMut)> {
-        // Unfortunately, we cannot borrow self mutably twice, so we cannot adapt the code from
-        // param_or_locals() here. (We would have to call self.params_mut() and self.locals_mut()).
-        // Dirty hack: copy code from params_mut()/locals_mut()/code_mut().
-        // TODO If there is a smarter way of re-using params_mut() and locals_mut(), I'd be happy to.
+    // FIXME no longer possible, because function type is immutable!
+    // pub fn param_or_locals_mut(&mut self) -> impl Iterator<Item=(Idx<Local>, ParamOrLocalMut)> {
+    //     // Unfortunately, we cannot borrow self mutably twice, so we cannot adapt the code from
+    //     // param_or_locals() here. (We would have to call self.params_mut() and self.locals_mut()).
+    //     // Dirty hack: copy code from params_mut()/locals_mut()/code_mut().
+    //     // TODO If there is a smarter way of re-using params_mut() and locals_mut(), I'd be happy to.
 
-        self.assert_param_name_len_valid();
+    //     self.assert_param_name_len_valid();
 
-        let params = self.type_.params.iter_mut()
-            .zip(self.param_names.iter_mut())
-            .map(|(type_, name)| ParamMut { type_, name })
-            .map(ParamOrLocalMut::Param);
+    //     let params = self.type_.inputs().iter_mut()
+    //         .zip(self.param_names.iter_mut())
+    //         .map(|(type_, name)| ParamMut { type_, name })
+    //         .map(ParamOrLocalMut::Param);
 
-        let code = if let ImportOrPresent::Present(t) = &mut self.code {
-            Some(t)
-        } else {
-            None
-        };
+    //     let code = if let ImportOrPresent::Present(t) = &mut self.code {
+    //         Some(t)
+    //     } else {
+    //         None
+    //     };
 
-        let locals = code.into_iter()
-            .flat_map(|code| code.locals.iter_mut())
-            .map(ParamOrLocalMut::Local);
+    //     let locals = code.into_iter()
+    //         .flat_map(|code| code.locals.iter_mut())
+    //         .map(ParamOrLocalMut::Local);
 
-        params.chain(locals)
-            .enumerate()
-            .map(|(idx, element)| (idx.into(), element))
-    }
+    //     params.chain(locals)
+    //         .enumerate()
+    //         .map(|(idx, element)| (idx.into(), element))
+    // }
 
     /// Returns the parameters (type and debug name, if any) together with their index.
     pub fn params(&self) -> impl Iterator<Item=(Idx<Local>, ParamRef)> {
         self.assert_param_name_len_valid();
 
-        self.type_.params.iter().cloned()
+        self.type_.inputs().iter().cloned()
             .zip(self.param_names.iter().map(|s| s.as_ref().map(String::as_str)))
             .enumerate()
             .map(|(idx, (type_, name))|
@@ -1056,16 +1474,17 @@ impl Function {
             )
     }
 
-    pub fn params_mut(&mut self) -> impl Iterator<Item=(Idx<Local>, ParamMut)> {
-        self.assert_param_name_len_valid();
+    // FIXME no longer possible, because function type is immutable!
+    // pub fn params_mut(&mut self) -> impl Iterator<Item=(Idx<Local>, ParamMut)> {
+    //     self.assert_param_name_len_valid();
 
-        self.type_.params.iter_mut()
-            .zip(self.param_names.iter_mut())
-            .enumerate()
-            .map(|(idx, (type_, name))|
-                (idx.into(), ParamMut { type_, name })
-            )
-    }
+    //     self.type_.inputs().iter_mut()
+    //         .zip(self.param_names.iter_mut())
+    //         .enumerate()
+    //         .map(|(idx, (type_, name))|
+    //             (idx.into(), ParamMut { type_, name })
+    //         )
+    // }
 
     /// Returns the non-parameter locals together with their index.
     /// Returns an empty iterator for imported functions (which don't have non-param locals).
@@ -1103,19 +1522,44 @@ impl Function {
 
     /// Return the type of the function parameter or non-parameter local with index idx.
     pub fn param_or_local_type(&self, idx: Idx<Local>) -> ValType {
-        self.param_or_local(idx).type_()
+        let idx = idx.to_usize();
+        let param_count = self.type_.inputs().len();
+
+        if idx < param_count {
+            self.type_.inputs()[idx]
+        } else {
+            self.code().expect("imported function cannot have locals").locals[idx - param_count].type_
+        }
     }
 
     /// Return the (optional) debug name of the function parameter or non-parameter local with
     /// index idx.
     pub fn param_or_local_name(&self, idx: Idx<Local>) -> Option<&str> {
-        self.param_or_local(idx).name()
+        self.assert_param_name_len_valid();
+
+        let idx = idx.to_usize();
+        let param_count = self.type_.inputs().len();
+
+        if idx < param_count {
+            self.param_names[idx].as_deref()
+        } else {
+            self.code().expect("imported function cannot have locals").locals[idx - param_count].name.as_deref()
+        }
     }
 
     /// Return a mutable reference to the (optional) debug name of the function parameter or
     /// non-parameter local with index idx.
     pub fn param_or_local_name_mut(&mut self, idx: Idx<Local>) -> &mut Option<String> {
-        self.param_or_local_mut(idx).name()
+        self.assert_param_name_len_valid();
+
+        let idx = idx.to_usize();
+        let param_count = self.param_names.len();
+
+        if idx < param_count {
+            &mut self.param_names[idx]
+        } else {
+            &mut self.code_mut().expect("imported function cannot have locals").locals[idx - param_count].name
+        }
     }
 }
 
@@ -1131,6 +1575,12 @@ impl Code {
     }
 }
 
+impl Default for Code {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // See description on enum type above.
 impl<'a> ParamOrLocalRef<'a> {
     pub fn type_(self) -> ValType {
@@ -1143,22 +1593,6 @@ impl<'a> ParamOrLocalRef<'a> {
         match self {
             ParamOrLocalRef::Param(param) => param.name,
             ParamOrLocalRef::Local(local) => local.name.as_deref(),
-        }
-    }
-}
-
-// See description on enum type above.
-impl<'a> ParamOrLocalMut<'a> {
-    pub fn type_(self) -> &'a mut ValType {
-        match self {
-            ParamOrLocalMut::Param(param) => param.type_,
-            ParamOrLocalMut::Local(local) => &mut local.type_,
-        }
-    }
-    pub fn name(self) -> &'a mut Option<String> {
-        match self {
-            ParamOrLocalMut::Param(param) => param.name,
-            ParamOrLocalMut::Local(local) => &mut local.name,
         }
     }
 }

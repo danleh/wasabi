@@ -1,10 +1,11 @@
+use std::convert::TryInto;
 use std::fmt::Write;
 
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use serde_json;
-use wasm::{BlockType, Idx, Mutability, Val, ValType::*, FunctionType, Label};
-use wasm::highlevel::{Function, GlobalOp, Instr, Instr::*, LocalOp::*, Module, MemoryOp};
+use wasm::{BlockType, Idx, Mutability, Val, ValType::*, Label};
+use wasm::highlevel::{Function, GlobalOp, Instr, Instr::*, LocalOp::*, Module, MemoryOp, FunctionType};
 
 use crate::options::{Hook, HookSet};
 
@@ -42,7 +43,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
     // NOTE must be after exporting table and function, so that their export names are in the static info object
     let module_info: ModuleInfo = (&*module).into();
     let module_info = RwLock::new(module_info);
-    let hooks = HookMap::new(&module);
+    let hooks = HookMap::new(module);
 
     // add global for start, set to false on the first execution of the start function
     let start_not_executed_global = if enabled_hooks.contains(Hook::Start) {
@@ -51,7 +52,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
         None
     };
 
-    module.functions.par_iter_mut().enumerate().for_each(&|(fidx, function): (usize, &mut Function)| {
+    module.functions.par_iter_mut().enumerate().for_each(|(fidx, function): (usize, &mut Function)| {
         let fidx = fidx.into();
         // only instrument non-imported functions
         if function.code().is_none() {
@@ -300,7 +301,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                     if implicit_return
                         && enabled_hooks.contains(Hook::Return) {
                         if let BlockStackElement::Function { .. } = block {
-                            let result_tys = &function.type_.results.clone();
+                            let result_tys = function.type_.results();
                             let result_tmps = function.add_fresh_locals(result_tys);
 
                             instrumented_body.append(&mut save_stack_to_locals(&result_tmps));
@@ -308,7 +309,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                                 location.0,
                                 Const(Val::I32(-1)),
                             ]);
-                            instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &function));
+                            instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, function));
                             instrumented_body.push(hooks.instr(&Return, result_tys));
                         }
                     }
@@ -433,11 +434,11 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                 /* Control Instructions: Calls & Returns */
 
                 Return => {
-                    type_stack.instr(&FunctionType::new(&[], &function.type_.results));
+                    type_stack.instr(&FunctionType::new(&[], function.type_.results()));
 
                     // return hook
                     if enabled_hooks.contains(Hook::Return) {
-                        let result_tys = &function.type_.results.clone();
+                        let result_tys = function.type_.results();
                         let result_tmps = function.add_fresh_locals(result_tys);
 
                         instrumented_body.append(&mut save_stack_to_locals(&result_tmps));
@@ -445,7 +446,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                             location.0,
                             location.1,
                         ]);
-                        instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &function));
+                        instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, function));
                         instrumented_body.push(hooks.instr(&instr, result_tys));
                     }
 
@@ -462,13 +463,13 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                     unreachable_depth = 1;
                 }
                 Call(target_func_idx) => {
-                    let func_ty = &module_info.read().functions[target_func_idx.into_inner()].type_;
+                    let func_ty = &module_info.read().functions[target_func_idx.to_usize()].type_;
                     type_stack.instr(func_ty);
 
                     if enabled_hooks.contains(Hook::Call) {
                         /* pre call hook */
 
-                        let arg_tmps = function.add_fresh_locals(&func_ty.params);
+                        let arg_tmps = function.add_fresh_locals(func_ty.inputs());
 
                         instrumented_body.append(&mut save_stack_to_locals(&arg_tmps));
                         instrumented_body.extend_from_slice(&[
@@ -476,35 +477,35 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                             location.1.clone(),
                             target_func_idx.to_const(),
                         ]);
-                        instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &function));
+                        instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, function));
                         instrumented_body.extend_from_slice(&[
-                            hooks.instr(&instr, &func_ty.params),
+                            hooks.instr(&instr, func_ty.inputs()),
                             instr,
                         ]);
 
                         /* post call hook */
 
-                        let result_tmps = function.add_fresh_locals(&func_ty.results);
+                        let result_tmps = function.add_fresh_locals(func_ty.results());
 
                         instrumented_body.append(&mut save_stack_to_locals(&result_tmps));
                         instrumented_body.extend_from_slice(&[
                             location.0,
                             location.1,
                         ]);
-                        instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &function));
-                        instrumented_body.push(hooks.call_post(&func_ty.results))
+                        instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, function));
+                        instrumented_body.push(hooks.call_post(func_ty.results()))
                     } else {
                         instrumented_body.push(instr);
                     }
                 }
                 CallIndirect(ref func_ty, _ /* table idx == 0 in WASM version 1 */) => {
-                    type_stack.instr(&instr.to_type().unwrap());
+                    type_stack.instr(&instr.simple_type().unwrap());
 
                     if enabled_hooks.contains(Hook::Call) {
                         /* pre call hook */
 
                         let target_table_idx_tmp = function.add_fresh_local(I32);
-                        let arg_tmps = function.add_fresh_locals(&func_ty.params);
+                        let arg_tmps = function.add_fresh_locals(func_ty.inputs());
 
                         instrumented_body.push(Local(Set, target_table_idx_tmp));
                         instrumented_body.append(&mut save_stack_to_locals(&arg_tmps));
@@ -514,23 +515,23 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                             location.1.clone(),
                             Local(Get, target_table_idx_tmp),
                         ]);
-                        instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &function));
+                        instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, function));
                         instrumented_body.extend_from_slice(&[
-                            hooks.instr(&instr, &func_ty.params),
+                            hooks.instr(&instr, func_ty.inputs()),
                             instr.clone(),
                         ]);
 
                         /* post call hook */
 
-                        let result_tmps = function.add_fresh_locals(&func_ty.results);
+                        let result_tmps = function.add_fresh_locals(func_ty.results());
 
                         instrumented_body.append(&mut save_stack_to_locals(&result_tmps));
                         instrumented_body.extend_from_slice(&[
                             location.0,
                             location.1,
                         ]);
-                        instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, &function));
-                        instrumented_body.push(hooks.call_post(&func_ty.results));
+                        instrumented_body.append(&mut restore_locals_with_i64_handling(&result_tmps, function));
+                        instrumented_body.push(hooks.call_post(func_ty.results()));
                     } else {
                         instrumented_body.push(instr.clone());
                     }
@@ -574,7 +575,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                             location.1,
                             Local(Get, condition_tmp),
                         ]);
-                        instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, &function));
+                        instrumented_body.append(&mut restore_locals_with_i64_handling(&arg_tmps, function));
                         // replace select with hook call
                         instrumented_body.push(hooks.instr(&instr, &[ty, ty]));
                     } else {
@@ -604,7 +605,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                     }
                 }
                 Global(op, global_idx) => {
-                    let global_ty = module_info.read().globals[global_idx.into_inner()];
+                    let global_ty = module_info.read().globals[global_idx.to_usize()];
 
                     type_stack.instr(&op.to_type(global_ty));
 
@@ -626,7 +627,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                 /* Memory Instructions */
 
                 MemorySize(_ /* memory idx == 0 in WASM version 1 */) => {
-                    type_stack.instr(&instr.to_type().unwrap());
+                    type_stack.instr(&instr.simple_type().unwrap());
 
                     instrumented_body.push(instr.clone());
 
@@ -641,7 +642,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                     }
                 }
                 MemoryGrow(_ /* memory idx == 0 in WASM version 1 */) => {
-                    type_stack.instr(&instr.to_type().unwrap());
+                    type_stack.instr(&instr.simple_type().unwrap());
 
                     if enabled_hooks.contains(Hook::MemoryGrow) {
                         let input_tmp = function.add_fresh_local(I32);
@@ -669,8 +670,8 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                     type_stack.instr(&ty);
 
                     if enabled_hooks.contains(Hook::Load) {
-                        let addr_tmp = function.add_fresh_local(ty.params[0]);
-                        let value_tmp = function.add_fresh_local(ty.results[0]);
+                        let addr_tmp = function.add_fresh_local(ty.inputs()[0]);
+                        let value_tmp = function.add_fresh_local(ty.results()[0]);
 
                         instrumented_body.extend_from_slice(&[
                             Local(Tee, addr_tmp),
@@ -681,7 +682,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                             Const(Val::I32(memarg.offset as i32)),
                             Const(Val::I32(memarg.alignment_exp as i32)),
                         ]);
-                        instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &function));
+                        instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], function));
                         instrumented_body.push(hooks.instr(&instr, &[]));
                     } else {
                         instrumented_body.push(instr);
@@ -692,8 +693,8 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                     type_stack.instr(&ty);
 
                     if enabled_hooks.contains(Hook::Store) {
-                        let addr_tmp = function.add_fresh_local(ty.params[0]);
-                        let value_tmp = function.add_fresh_local(ty.params[1]);
+                        let addr_tmp = function.add_fresh_local(ty.inputs()[0]);
+                        let value_tmp = function.add_fresh_local(ty.inputs()[1]);
 
                         instrumented_body.append(&mut save_stack_to_locals(&[addr_tmp, value_tmp]));
                         instrumented_body.extend_from_slice(&[
@@ -703,7 +704,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                             Const(Val::I32(memarg.offset as i32)),
                             Const(Val::I32(memarg.alignment_exp as i32)),
                         ]);
-                        instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], &function));
+                        instrumented_body.append(&mut restore_locals_with_i64_handling(&[addr_tmp, value_tmp], function));
                         instrumented_body.push(hooks.instr(&instr, &[]));
                     } else {
                         instrumented_body.push(instr);
@@ -714,7 +715,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                 /* Numeric Instructions */
 
                 Const(val) => {
-                    type_stack.instr(&instr.to_type().unwrap());
+                    type_stack.instr(&instr.simple_type().unwrap());
 
                     instrumented_body.push(instr.clone());
 
@@ -728,14 +729,14 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                         instrumented_body.push(hooks.instr(&instr, &[]));
                     }
                 }
-                Numeric(op) => {
-                    let ty = op.to_type();
+                Unary(_) | Binary(_) => {
+                    let ty = instr.simple_type().unwrap();
                     type_stack.instr(&ty);
 
-                    if (enabled_hooks.contains(Hook::Unary) && ty.params.len() == 1)
-                        || (enabled_hooks.contains(Hook::Binary) && ty.params.len() == 2) {
-                        let input_tmps = function.add_fresh_locals(&ty.params);
-                        let result_tmps = function.add_fresh_locals(&ty.results);
+                    if (enabled_hooks.contains(Hook::Unary) && ty.inputs().len() == 1)
+                        || (enabled_hooks.contains(Hook::Binary) && ty.inputs().len() == 2) {
+                        let input_tmps = function.add_fresh_locals(ty.inputs());
+                        let result_tmps = function.add_fresh_locals(ty.results());
 
                         instrumented_body.append(&mut save_stack_to_locals(&input_tmps));
                         instrumented_body.push(instr.clone());
@@ -746,7 +747,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                         ]);
                         instrumented_body.append(&mut restore_locals_with_i64_handling(
                             &[input_tmps, result_tmps].concat(),
-                            &function));
+                            function));
                         instrumented_body.push(hooks.instr(&instr, &[]));
                     } else {
                         instrumented_body.push(instr);
@@ -787,13 +788,13 @@ trait ToConst {
 
 impl<T> ToConst for Idx<T> {
     fn to_const(self) -> Instr {
-        Const(Val::I32(self.into_inner() as i32))
+        Const(Val::I32(self.to_usize().try_into().unwrap()))
     }
 }
 
 impl ToConst for Label {
     fn to_const(self) -> Instr {
-        Const(Val::I32(self.0 as i32))
+        Const(Val::I32(self.to_usize().try_into().unwrap()))
     }
 }
 

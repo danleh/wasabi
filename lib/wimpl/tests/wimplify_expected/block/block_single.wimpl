@@ -1,0 +1,4 @@
+@label1: block {
+  // Drop of constants is optimized out
+  // i32.const 42
+}

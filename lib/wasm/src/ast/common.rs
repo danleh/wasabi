@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::{fmt, hash};
 use std::convert::TryInto;
 use std::marker::PhantomData;
@@ -7,11 +8,12 @@ use ordered_float::OrderedFloat;
 use serde::{Serialize, Serializer};
 
 use crate::WasmBinary;
+use crate::highlevel::{MemoryOp, FunctionType};
 
 /* AST nodes common to high- and low-level representations. */
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 /// WebAssembly primitive values.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum Val {
     I32(i32),
     I64(i64),
@@ -23,6 +25,17 @@ pub enum Val {
 }
 
 impl Val {
+	// FIXME move to ValType and instead make ValType::default_value()
+    pub fn get_default_value(type_: ValType) -> Self {
+        match type_ {
+            ValType::I32 => Val::I32(0),
+            ValType::I64 => Val::I64(0),
+            ValType::F32 => Val::F32(OrderedFloat(0.0)),
+            ValType::F64 => Val::F64(OrderedFloat(0.0)),
+        }
+    }
+
+    /// Convert a value to the corresponding type.
     pub fn to_type(&self) -> ValType {
         match *self {
             Val::I32(_) => ValType::I32,
@@ -30,6 +43,18 @@ impl Val {
             Val::F32(_) => ValType::F32,
             Val::F64(_) => ValType::F64,
         }
+    }
+
+    /// Parse a number as the given type `ty` and return as a typed value.
+    // Use Result instead of Option for consistency with stdlib FromStr trait.
+    #[allow(clippy::result_unit_err)]
+    pub fn from_str(str: &str, ty: ValType) -> Result<Self, ()> {
+        Ok(match ty {
+            ValType::I32 => Val::I32(str.parse().map_err(|_| ())?),
+            ValType::I64 => Val::I64(str.parse().map_err(|_| ())?),
+            ValType::F32 => Val::F32(str.parse().map_err(|_| ())?),
+            ValType::F64 => Val::F64(str.parse().map_err(|_| ())?),
+        })
     }
 }
 
@@ -56,13 +81,26 @@ pub enum ValType {
     #[tag = 0x7c] F64,
 }
 
-impl fmt::Display for ValType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&format!("{:?}", self).to_lowercase())
-    }
+#[test]
+fn val_type_is_small() {
+    assert_eq!(std::mem::size_of::<ValType>(), 1)
 }
 
 impl ValType {
+    /// Convert to the standard string representation, as in the WebAssembly
+    /// specification and text format.
+    pub fn to_str(self) -> &'static str {
+        match self {
+            ValType::I32 => "i32",
+            ValType::I64 => "i64",
+            ValType::F32 => "f32",
+            ValType::F64 => "f64",
+        }
+    }
+
+    /// Convert to a single character, as used, e.g., by Emscripten.
+    /// Lowercase is for 32 bit, uppercase is for 64 bit; 
+    /// `i` for integers, `f` for floats.
     pub fn to_char(self) -> char {
         match self {
             ValType::I32 => 'i',
@@ -71,43 +109,68 @@ impl ValType {
             ValType::F64 => 'F',
         }
     }
-}
 
-#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]
-#[tag = 0x60]
-// TODO implement interning, i.e., use basically Arc<(Vec, Vec)> to share all equal function types.
-// or use crate https://crates.io/crates/internment
-// TODO would then also need to add params() and results() accessors
-// downside: no longer mutable, but right now isn't anyway, and also just not frequently that you
-// modify an existing function type.
-pub struct FunctionType {
-    // Use Box instead of Vec to save the capacity field (smaller size of the struct), since
-    // funtion types are immutable anyway (i.e., no dynamic adding/removing of input/result types).
-    pub params: Box<[ValType]>,
-    pub results: Box<[ValType]>,
-}
-
-impl FunctionType {
-    pub fn new(params: &[ValType], results: &[ValType]) -> Self {
-        FunctionType { params: params.into(), results: results.into() }
+    pub fn from_char(c: char) -> Option<Self> {
+        match c {
+            'i' => Some(ValType::I32),
+            'I' => Some(ValType::I64),
+            'f' => Some(ValType::F32),
+            'F' => Some(ValType::F64),
+            _ => None,
+        }
     }
 }
 
-impl fmt::Display for FunctionType {
+impl fmt::Display for ValType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&format!("{:?} -> {:?}", self.params, self.results).to_lowercase())
+        f.write_str(self.to_str())
     }
 }
 
+impl FromStr for ValType {
+    type Err = ();
+
+    fn from_str(str: &str) -> Result<Self, Self::Err> {
+        Ok(match str.trim() {
+            "i32" => ValType::I32, 
+            "i64" => ValType::I64, 
+            "f32" => ValType::F32, 
+            "f64" => ValType::F64, 
+            _ => return Err(())
+        })
+    }
+}
+
+/// In the WebAssembly MVP, blocks can return either nothing or a single value.
 // TODO replace all occurrences with FunctionType once we support non-MVP binaries, then remove.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct BlockType(pub Option<ValType>);
 
+#[test]
+fn block_type_is_small() {
+    assert_eq!(std::mem::size_of::<BlockType>(), 1)
+}
+
+impl FromStr for BlockType {
+    type Err = ();
+
+    fn from_str(str: &str) -> Result<Self, Self::Err> {
+        // Re-use implementation for parsing `FunctionType`s.
+        let func_ty = FunctionType::from_str(str)?;
+        match (func_ty.inputs(), func_ty.results()) {
+            ([], []) => Ok(BlockType(None)),
+            ([], [ty]) => Ok(BlockType(Some(*ty))),
+            // `BlockType` is a subset of all `FunctionType`s.
+            _ => Err(())
+        }
+    }
+}
+
 impl fmt::Display for BlockType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.0 {
-            Some(ty) => write!(f, "[{}]", ty),
-            None => write!(f, "[]"),
+            Some(ty) => write!(f, "[] -> [{}]", ty),
+            None => write!(f, "[] -> []"),
         }
     }
 }
@@ -164,27 +227,22 @@ pub enum Mutability {
 pub struct Idx<T>(u32, PhantomData<fn() -> T>);
 
 impl<T> Idx<T> {
-    // TODO replace with two functions, `to_u32` and `to_usize` (the latter is useful, e.g., when
-    // indexing into vectors).
-    pub fn into_inner(self) -> usize { self.0 as usize }
-
-    #[inline]
     pub fn to_u32(self) -> u32 { self.0 }
-}
-
-// TODO replace with TryFrom with custom NonU32IndexError
-// Why accept + convert to a usize if its anyway always u32?
-impl<T> From<usize> for Idx<T> {
-    #[inline]
-    fn from(u: usize) -> Self {
-        Idx(u.try_into().expect("wasm32 only allows u32 indices"), PhantomData)
-    }
+    pub fn to_usize(self) -> usize { self.0 as usize }
 }
 
 impl<T> From<u32> for Idx<T> {
     #[inline]
     fn from(u: u32) -> Self {
         Idx(u, PhantomData)
+    }
+}
+
+// TODO replace with TryFrom with custom NonU32IndexError
+impl<T> From<usize> for Idx<T> {
+    #[inline]
+    fn from(u: usize) -> Self {
+        Idx(u.try_into().expect("wasm32 only allows u32 indices"), PhantomData)
     }
 }
 
@@ -201,7 +259,7 @@ impl<T> fmt::Debug for Idx<T> {
 // parameter, which we don't want. (T is only a marker and not actually contained in Idx<T>.)
 impl<T> Clone for Idx<T> {
     #[inline]
-    fn clone(&self) -> Self { self.into_inner().into() }
+    fn clone(&self) -> Self { self.to_usize().into() }
 }
 
 impl<T> Copy for Idx<T> {}
@@ -241,11 +299,25 @@ impl<T> Serialize for Idx<T> {
 // Similar to indices, labels are just a typed wrapper around numbers in the binary format.
 // TODO make consistent with Idx: make field private, use into_inner().
 #[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct Label(pub u32);
+pub struct Label(u32);
 
 impl Label {
-    pub fn to_u32(self) -> u32 {
-        self.0
+    pub fn to_u32(self) -> u32 { self.0 }
+    pub fn to_usize(self) -> usize { self.0 as usize }
+}
+
+impl From<u32> for Label {
+    #[inline]
+    fn from(u: u32) -> Self {
+        Label(u)
+    }
+}
+
+// TODO replace with TryFrom with custom NonU32IndexError
+impl From<usize> for Label {
+    #[inline]
+    fn from(u: usize) -> Self {
+        Label(u.try_into().expect("wasm32 only allows u32 labels"))
     }
 }
 
@@ -257,7 +329,7 @@ impl Serialize for Label {
 
 /* Code */
 
-#[derive(WasmBinary, Debug, Copy, Clone, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Memarg {
     /// The alignment of load/stores is just a hint for the VM that says "the effective address of
     /// this load/store should be aligned to <alignment>".
@@ -276,12 +348,70 @@ pub struct Memarg {
     /// See https://webassembly.github.io/spec/core/syntax/instructions.html#memory-instructions
     /// and https://webassembly.github.io/spec/core/text/instructions.html#memory-instructions.
     pub alignment_exp: u8,
+
+    // NOTE offset field must come after alignment, because that's how it is
+    // layed out in the binary format. Field order is important!
+    // TODO Note can be removed once lowlevel parser is removed
     pub offset: u32,
 }
 
 impl Memarg {
+    pub fn default(op: impl MemoryOp) -> Self {
+        Self {
+            offset: 0,
+            alignment_exp: op.natural_alignment_exp()
+        }
+    }
+
+    pub fn is_default(self, op: impl MemoryOp) -> bool {
+        self == Self::default(op)
+    }
+
     pub fn alignment(self) -> u32 {
         2u32.pow(self.alignment_exp as u32)
+    }
+
+    /// Formats non-default fields, depends on natural alignment of `op`.
+    pub fn fmt(&self, f: &mut fmt::Formatter<'_>, op: impl MemoryOp) -> fmt::Result {
+        match (self.offset, self.alignment_exp == op.natural_alignment_exp()) {
+            (0, true) => Ok(()),
+            (0, false) => write!(f, "align={}", self.alignment()),
+            (_, true) => write!(f, "offset={}", self.offset),
+            (_, false) => write!(f, "offset={} align={}", self.offset, self.alignment()),
+        }
+    }
+
+    /// Parses Memarg, fills fields with defaults for `op`.
+    // Use Result instead of Option for consistency with stdlib FromStr trait.
+    #[allow(clippy::result_unit_err)]
+    pub fn from_str(s: &str, op: impl MemoryOp) -> Result<Self, ()> {
+        let mut result = Memarg::default(op);
+
+        for field in s.split(' ') {
+            // FIXME Allows for the fields to appear multiple times.
+
+            let field = field.trim();
+            if field.is_empty() {
+                continue;
+            }
+            
+            // Wasm text format does not allow a space around the equals sign,
+            // so we can directly match against offset= as a single "token".
+            if let Some(rest) = field.strip_prefix("offset=") {
+                result.offset = rest.parse().map_err(|_| ())?;
+            } else if let Some(rest) = field.strip_prefix("align=") {
+                let align: usize = rest.parse().map_err(|_| ())?;
+                // FIXME Doesn't check that align_exp is in range for u8.
+                // TODO Use usize::log2() once stabilized and TryInto.
+                let align_exp = (align as f64).log2() as u8;
+                result.alignment_exp = align_exp
+            } else {
+                // Invalid Memarg field.
+                return Err(())
+            }
+        }
+
+        Ok(result)
     }
 }
 
@@ -294,6 +424,7 @@ pub struct RawCustomSection {
     /// If there are multiple custom sections after each other, this will be `None`, 
     /// but the custom sections' relative order will be correct, and the first one
     /// will have this set.
+    // TODO fix this comment, not correct anymore: will point to any previous section
     pub after: Option<SectionId>,
 }
 // Order is important! Follows the ordering of sections in the binary format

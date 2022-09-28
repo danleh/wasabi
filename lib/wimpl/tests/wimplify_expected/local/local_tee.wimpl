@@ -1,0 +1,26 @@
+// Initialization:
+l0: i32 = i32.const 0
+
+// If the stack value at the point of assignment of local.tee is not stored in a temporary first,
+// this could lead to wrong behavior.
+// Potential buggy output if not careful:
+// l0 = i32.const 3
+// l0 = i32.const 7
+// i32.add(l0, l0) // 14, not 10!!
+
+// TODO In this particular instance, the stack variable could be avoided because it just contains
+// a constant. If we don't introduce stack variables for constants, but instead duplicate the 
+// constant. E.g., with a check is_pure() + is_small() on Expr.
+l0: i32 = i32.const 3
+s0: i32 = l0
+l0: i32 = i32.const 7
+i32.add(s0, l0)
+
+// Exact same code for local.set + local.get:
+l0: i32 = i32.const 3
+s1: i32 = l0
+l0: i32 = i32.const 7
+i32.add(s1, l0)
+
+l0: i32 = i32.const 3
+i32.add(l0, l0)

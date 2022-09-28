@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
-use wasm::{FunctionType, Idx, ValType, ValType::*};
-use wasm::highlevel::{Function, Instr, Instr::*, Module, MemoryOp};
+use wasm::{Idx, ValType, ValType::*};
+use wasm::highlevel::{Function, Instr, Instr::*, Module, MemoryOp, FunctionType};
 
 use super::block_stack::BlockStackElement;
 use super::convert_i64::convert_i64_type;
@@ -89,6 +89,7 @@ impl Hook {
                 FunctionType::new(&lowlevel_args, &[]),
                 "__wasabi_hooks".to_string(),
                 lowlevel_name,
+                Vec::new()
             )
         };
 
@@ -127,7 +128,7 @@ impl HookMap {
     /// double-check whether no other functions were added to the module in the meantime).
     #[must_use]
     pub fn finish(self) -> Vec<Hook> {
-        let mut result: Vec<_> = self.map.into_inner().into_iter().map(|(_k, v)| v).collect();
+        let mut result: Vec<_> = self.map.into_inner().into_values().collect();
         result.sort_by_key(|hook| hook.idx);
         result
     }
@@ -153,14 +154,14 @@ impl HookMap {
             MemoryGrow(_) => Hook::new(name, args!(deltaPages: I32, previousSizePages: I32), name, "deltaPages, previousSizePages"),
 
             Load(op, _) => {
-                let ty = op.to_type().results[0];
+                let ty = op.to_type().results()[0];
                 let args = args!(offset: I32, align: I32, addr: I32, value: ty);
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {{addr, offset, align}}, {}", instr_name, &args[3].to_lowlevel_long_expr());
                 Hook::new(name, args, "load", js_args)
             }
             Store(op, _) => {
-                let ty = op.to_type().params[1];
+                let ty = op.to_type().inputs()[1];
                 let args = args!(offset: I32, align: I32, addr: I32, value: ty);
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {{addr, offset, align}}, {}", instr_name, &args[3].to_lowlevel_long_expr());
@@ -168,24 +169,29 @@ impl HookMap {
             }
 
             Const(val) => {
-                let args = args!(value: val.to_type());
+                let ty = val.to_type();
+                let args = args!(value: ty);
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {}", instr_name, args[0].to_lowlevel_long_expr());
                 Hook::new(name, args, "const_", js_args)
             }
-            Numeric(op) => {
+            Unary(op) => {
                 let ty = op.to_type();
-                let highlevel_name = match ty.params.len() {
-                    1 => "unary",
-                    2 => "binary",
-                    _ => unreachable!()
-                };
-                let inputs = ty.params.iter().enumerate().map(|(i, &ty)| Arg { name: format!("input{}", i), ty });
-                let results = ty.results.iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{}", i), ty });
+                let inputs = ty.inputs().iter().enumerate().map(|(i, &ty)| Arg { name: format!("input{}", i), ty });
+                let results = ty.results().iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{}", i), ty });
                 let args = inputs.chain(results).collect::<Vec<_>>();
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {}", instr_name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
-                Hook::new(name, args, highlevel_name, js_args)
+                Hook::new(name, args, "unary", js_args)
+            }
+            Binary(op) => {
+                let ty = op.to_type();
+                let inputs = ty.inputs().iter().enumerate().map(|(i, &ty)| Arg { name: format!("input{}", i), ty });
+                let results = ty.results().iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{}", i), ty });
+                let args = inputs.chain(results).collect::<Vec<_>>();
+                let instr_name = instr.to_name();
+                let js_args = &format!("\"{}\", {}", instr_name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
+                Hook::new(name, args, "binary", js_args)
             }
 
 
@@ -376,7 +382,7 @@ impl HookMap {
 
 /// e.g. "call" + [I32, F64] -> "call_iF"
 fn mangle_polymorphic_name(name: &str, tys: &[ValType]) -> String {
-    let mut mangled = name.to_string().replace(".", "_");
+    let mut mangled = name.to_string().replace('.', "_");
     if !tys.is_empty() {
         mangled.push('_');
     }

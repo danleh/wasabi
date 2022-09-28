@@ -1,0 +1,6 @@
+call f1 (
+  i32.const 1,
+  i64.const 2,
+  f32.const 3,
+  f64.const 4
+)

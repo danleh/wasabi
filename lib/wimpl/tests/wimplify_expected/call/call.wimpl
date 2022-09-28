@@ -1,0 +1,7 @@
+// Drop of constants is optimized out
+// i32.const 0
+call f1 ()
+i32.add(
+    call f2 (i32.const 3, i32.const 42), 
+    i32.const 56
+)
