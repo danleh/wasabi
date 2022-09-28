@@ -5,7 +5,6 @@ use std::convert::TryInto;
  - merge (NOT rebase) wasmparser and wimpl branches
  - make encoding of CodeSection parallel
  - support multi-value, multi-table, multi-memory because they are anyway pretty much supported (and make for less special cases)
- - rename ParseErrorInner to ParseIssue because its used for warnings and errors
  - make AST blocks nested, remove end/else opcodes
  - remove blocktype, replace with function type (this should make our AST multi-value capable)
  - rename wasm crate to wasabi-wasm
@@ -14,18 +13,18 @@ use std::convert::TryInto;
 mod error {
     use crate::extensions::WasmExtension;
 
+    /// Used only for errors (not recoverable, i.e., parsing stops and does not return an AST).
     #[derive(Debug, thiserror::Error)]
     #[error(transparent)]
     pub struct ParseError(
-        // Put the actual error behind a box, to keep the size down to a single pointer.
-        Box<ParseErrorInner>
+        // Put behind a box to limit size of `Result::Err` variant to a single pointer.
+        Box<ParseIssue>
     );
 
     /// Used both for warnings (recoverable, i.e., parsing can continue afterwards) and errors
     /// (not recoverable, i.e., parsing stops and does not return an AST).
-    // TODO if this is used for warnings, rename into ParseIssue again
     #[derive(Debug, thiserror::Error)]
-    pub enum ParseErrorInner {
+    pub enum ParseIssue {
         #[error("error parsing WebAssembly binary at offset 0x{:x}: {}", .0.offset(), .0.message())]
         Wasmparser(#[from] wasmparser::BinaryReaderError),
 
@@ -34,7 +33,7 @@ mod error {
             offset: usize,
             message: &'static str,
             #[source]
-            source: Option<Box<ParseErrorInner>>,
+            source: Option<Box<ParseIssue>>,
         },
 
         #[error("index out of bounds at offset 0x{:x}: invalid {} index {}", offset, index_space, index)]
@@ -54,10 +53,10 @@ mod error {
         Io(#[from] std::io::Error)
     }
 
-    // Allow conversion of everything that can be converted into a `ParseErrorInner` also into the
-    // `ParseError` wrapper directly.
+    // Allow conversion of everything that can be converted into a `ParseIssue`
+    // also into the `ParseError` wrapper directly.
     impl<T> From<T> for ParseError 
-    where T : Into<ParseErrorInner>
+    where T : Into<ParseIssue>
     {
         fn from(err: T) -> Self {
             ParseError(Box::new(err.into()))
@@ -65,18 +64,17 @@ mod error {
     }
 
     // Convenience constructors.
-    // TODO change that to impl `ParseError`, not `ParseErrorInner`.
-    impl ParseErrorInner {
-        pub fn message(offset: usize, message: &'static str, source: Option<Box<ParseErrorInner>>) -> Self {
-            ParseErrorInner::Message { offset, message, source }
+    impl ParseIssue {
+        pub fn message(offset: usize, message: &'static str, source: Option<Box<ParseIssue>>) -> Self {
+            ParseIssue::Message { offset, message, source }
         }
 
         pub fn index(offset: usize, index: u32, index_space: &'static str) -> Self {
-            ParseErrorInner::Index { offset, index, index_space }
+            ParseIssue::Index { offset, index, index_space }
         }
 
         pub fn unsupported(offset: usize, extension: WasmExtension) -> Self {
-            ParseErrorInner::Unsupported { offset, extension }
+            ParseIssue::Unsupported { offset, extension }
         }
     }
 
@@ -136,7 +134,7 @@ pub mod parser {
 
     use crate::extensions::WasmExtension;
     
-    use super::error::{ParseError, ParseErrorInner};
+    use super::error::{ParseError, ParseIssue};
     
     use super::u32_to_usize;
 
@@ -144,7 +142,7 @@ pub mod parser {
     // from bytes fully resident in memory first. 
     // TODO Add a second API from streaming sources, i.e., `io::Read` like here:
     // https://docs.rs/wasmparser/latest/wasmparser/struct.Parser.html#examples
-    pub fn parse_module_with_offsets(bytes: &[u8]) -> Result<(Module, Offsets, Vec<ParseErrorInner>), ParseError> {
+    pub fn parse_module_with_offsets(bytes: &[u8]) -> Result<(Module, Offsets, Vec<ParseIssue>), ParseError> {
         let mut warnings = Vec::new();
 
         // The final module to return.
@@ -169,7 +167,7 @@ pub mod parser {
                         Encoding::Module => {
                             // That's what we are here for :)
                         }
-                        Encoding::Component => Err(ParseErrorInner::unsupported(0, WasmExtension::ComponentModel))?,
+                        Encoding::Component => Err(ParseIssue::unsupported(0, WasmExtension::ComponentModel))?,
                     }
                 }
                 Payload::TypeSection(mut reader) => {
@@ -228,7 +226,7 @@ pub mod parser {
                             }
                             TypeRef::Tag(_) => {
                                 // Same issue regarding `import_offset`.
-                                Err(ParseErrorInner::unsupported(import_offset, WasmExtension::ExceptionHandling))?
+                                Err(ParseIssue::unsupported(import_offset, WasmExtension::ExceptionHandling))?
                             }
                         }
 
@@ -283,7 +281,7 @@ pub mod parser {
                         offset = reader.original_position();
                     }
                 }
-                Payload::TagSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ExceptionHandling))?,
+                Payload::TagSection(reader) => Err(ParseIssue::unsupported(reader.range().start, WasmExtension::ExceptionHandling))?,
                 Payload::GlobalSection(mut reader) => {
                     section_offsets.push((SectionId::Global, reader.range().start));
 
@@ -327,33 +325,33 @@ pub mod parser {
                                 // The `export_offset` is not actually the offset of the function index,
                                 // but wasmparser doesn't offer a way to get the latter.
                                 // This slightly misattributes potential errors, namely to the beginning of the export.
-                                .ok_or_else(|| ParseErrorInner::index(export_offset, index_u32, "function"))?
+                                .ok_or_else(|| ParseIssue::index(export_offset, index_u32, "function"))?
                                 .export
                                 .push(name),
                             ExternalKind::Table => module
                                 .tables
                                 .get_mut(index)
                                 // Same issue regarding `export_offset`.
-                                .ok_or_else(|| ParseErrorInner::index(export_offset, index_u32, "table"))?
+                                .ok_or_else(|| ParseIssue::index(export_offset, index_u32, "table"))?
                                 .export
                                 .push(name),
                             ExternalKind::Memory => module
                                 .memories
                                 .get_mut(index)
                                 // Same issue regarding `export_offset`.
-                                .ok_or_else(|| ParseErrorInner::index(export_offset, index_u32, "memory"))?
+                                .ok_or_else(|| ParseIssue::index(export_offset, index_u32, "memory"))?
                                 .export
                                 .push(name),
                             ExternalKind::Global => module
                                 .globals
                                 .get_mut(index)
                                 // Same issue regarding `export_offset`.
-                                .ok_or_else(|| ParseErrorInner::index(export_offset, index_u32, "global"))?
+                                .ok_or_else(|| ParseIssue::index(export_offset, index_u32, "global"))?
                                 .export
                                 .push(name),
                             ExternalKind::Tag => {
                                 // Same issue regarding `export_offset`.
-                                Err(ParseErrorInner::unsupported(export_offset, WasmExtension::ExceptionHandling))?
+                                Err(ParseIssue::unsupported(export_offset, WasmExtension::ExceptionHandling))?
                             }
                         };
 
@@ -365,7 +363,7 @@ pub mod parser {
 
                     let prev_start = std::mem::replace(&mut module.start, Some(func.into()));
                     if prev_start.is_some() {
-                        Err(ParseErrorInner::message(range.start, "duplicate start section", None))?
+                        Err(ParseIssue::message(range.start, "duplicate start section", None))?
                     }
                 }
                 Payload::ElementSection(mut reader) => {
@@ -386,7 +384,7 @@ pub mod parser {
                             use wasmparser::ElementItem;
                             items.push(match item {
                                 ElementItem::Func(index) => index.into(),
-                                ElementItem::Expr(_) => Err(ParseErrorInner::unsupported(item_offset, WasmExtension::ReferenceTypes))?,
+                                ElementItem::Expr(_) => Err(ParseIssue::unsupported(item_offset, WasmExtension::ReferenceTypes))?,
                             });
 
                             item_offset = items_reader.original_position();
@@ -401,10 +399,10 @@ pub mod parser {
                                 let table = module
                                     .tables
                                     .get_mut(u32_to_usize(table_index))
-                                    .ok_or_else(|| ParseErrorInner::index(element_offset, table_index, "table"))?;
+                                    .ok_or_else(|| ParseIssue::index(element_offset, table_index, "table"))?;
 
                                 if table.type_.0 != element_ty {
-                                    Err(ParseErrorInner::message(element_offset, "table and element type do not match", None))?
+                                    Err(ParseIssue::message(element_offset, "table and element type do not match", None))?
                                 }
 
                                 // Most offset expressions are just a constant and the end instruction.
@@ -420,10 +418,10 @@ pub mod parser {
                                 })
                             }
                             ElementKind::Passive => {
-                                Err(ParseErrorInner::unsupported(element_offset, WasmExtension::BulkMemoryOperations))?
+                                Err(ParseIssue::unsupported(element_offset, WasmExtension::BulkMemoryOperations))?
                             }
                             ElementKind::Declared => {
-                                Err(ParseErrorInner::unsupported(element_offset, WasmExtension::ReferenceTypes))?
+                                Err(ParseIssue::unsupported(element_offset, WasmExtension::ReferenceTypes))?
                             }
                         }
 
@@ -431,7 +429,7 @@ pub mod parser {
                     }
                 }
                 Payload::DataCountSection { count: _, range } => {
-                    Err(ParseErrorInner::unsupported(range.start, WasmExtension::BulkMemoryOperations))?
+                    Err(ParseIssue::unsupported(range.start, WasmExtension::BulkMemoryOperations))?
                 }
                 Payload::DataSection(mut reader) => {
                     section_offsets.push((SectionId::Data, reader.range().start));
@@ -449,7 +447,7 @@ pub mod parser {
                                 let memory = module
                                     .memories
                                     .get_mut(u32_to_usize(memory_index))
-                                    .ok_or_else(|| ParseErrorInner::index(data_offset, memory_index, "memory"))?;
+                                    .ok_or_else(|| ParseIssue::index(data_offset, memory_index, "memory"))?;
 
                                 // Most offset expressions are just a constant and the end instruction.
                                 let mut offset_instrs = Vec::with_capacity(2);
@@ -464,7 +462,7 @@ pub mod parser {
                                 })
                             }
                             DataKind::Passive => {
-                                Err(ParseErrorInner::unsupported(data_offset, WasmExtension::BulkMemoryOperations))?
+                                Err(ParseIssue::unsupported(data_offset, WasmExtension::BulkMemoryOperations))?
                             }
                         }
 
@@ -519,7 +517,7 @@ pub mod parser {
                             let function = module
                                 .functions
                                 .get_mut(u32_to_usize(func_index))
-                                .ok_or_else(|| ParseErrorInner::index(offset, func_index, "function"))?;
+                                .ok_or_else(|| ParseIssue::index(offset, func_index, "function"))?;
                             function.code = ImportOrPresent::Present(code?);
                         }
                     }
@@ -539,7 +537,7 @@ pub mod parser {
                         // If parts of the name section cannot be parsed, collect the issue as a warning and abort parsing the
                         // name section, but produce an AST for the rest of the module.
                         // To make it possible to use the `?` operator, wrap this into a closure.
-                        let mut name_parsing = || -> Result<(), ParseErrorInner> {
+                        let mut name_parsing = || -> Result<(), ParseIssue> {
                             let mut reader = NameSectionReader::new(reader.data(), reader.data_offset())?;
                             while !reader.eof() {
                                 let offset = reader.original_position();
@@ -549,7 +547,7 @@ pub mod parser {
                                     Name::Module(name) => {
                                         let prev = module.name.replace(name.get_name()?.to_string());
                                         if prev.is_some() {
-                                            warnings.push(ParseErrorInner::message(offset, "name section: duplicate module name", None))
+                                            warnings.push(ParseIssue::message(offset, "name section: duplicate module name", None))
                                         }
                                     }
                                     Name::Function(name_map) => {
@@ -561,7 +559,7 @@ pub mod parser {
                                             module
                                                 .functions
                                                 .get_mut(u32_to_usize(function_index))
-                                                .ok_or_else(|| ParseErrorInner::index(offset, function_index, "function"))?
+                                                .ok_or_else(|| ParseIssue::index(offset, function_index, "function"))?
                                                 .name = Some(name.to_string());
                                         }
                                     }
@@ -575,7 +573,7 @@ pub mod parser {
                                             let function = module
                                                 .functions
                                                 .get_mut(u32_to_usize(function_index))
-                                                .ok_or_else(|| ParseErrorInner::index(offset, function_index, "function"))?;
+                                                .ok_or_else(|| ParseIssue::index(offset, function_index, "function"))?;
             
                                             let mut name_map = indirect_naming.get_map()?;
                                             for _ in 0..name_map.get_count() {
@@ -599,13 +597,13 @@ pub mod parser {
                                     | Name::Global(_)
                                     | Name::Element(_)
                                     | Name::Data(_) => {
-                                        warnings.push(ParseErrorInner::unsupported(offset, WasmExtension::ExtendedNameSection))
+                                        warnings.push(ParseIssue::unsupported(offset, WasmExtension::ExtendedNameSection))
                                     }
                                     | Name::Unknown {
                                         ty: _,
                                         data: _,
                                         range: _,
-                                    } => warnings.push(ParseErrorInner::message(offset, "name section: unknown name subsection", None)),
+                                    } => warnings.push(ParseIssue::message(offset, "name section: unknown name subsection", None)),
                                 }
                             }
 
@@ -618,7 +616,7 @@ pub mod parser {
                                 continue;
                             }
                             Err(name_parsing_aborted) => {
-                                warnings.push(ParseErrorInner::Message { 
+                                warnings.push(ParseIssue::Message { 
                                     offset: custom_section_start_offset, 
                                     message: "could not parse name section, adding it as a raw (unparsed) custom section...",
                                     source: Some(Box::new(name_parsing_aborted)),
@@ -636,21 +634,21 @@ pub mod parser {
                     module.custom_sections.push(raw_custom_section);
                 }
                 Payload::ModuleSection { parser: _, range } |
-                Payload::ComponentSection { parser: _, range } => Err(ParseErrorInner::unsupported(range.start, WasmExtension::ComponentModel))?,
-                Payload::InstanceSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
-                Payload::CoreTypeSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
-                Payload::ComponentInstanceSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
-                Payload::ComponentAliasSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
-                Payload::ComponentTypeSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
-                Payload::ComponentCanonicalSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
-                Payload::ComponentStartSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
-                Payload::ComponentImportSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
-                Payload::ComponentExportSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
+                Payload::ComponentSection { parser: _, range } => Err(ParseIssue::unsupported(range.start, WasmExtension::ComponentModel))?,
+                Payload::InstanceSection(reader) => Err(ParseIssue::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
+                Payload::CoreTypeSection(reader) => Err(ParseIssue::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
+                Payload::ComponentInstanceSection(reader) => Err(ParseIssue::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
+                Payload::ComponentAliasSection(reader) => Err(ParseIssue::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
+                Payload::ComponentTypeSection(reader) => Err(ParseIssue::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
+                Payload::ComponentCanonicalSection(reader) => Err(ParseIssue::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
+                Payload::ComponentStartSection(reader) => Err(ParseIssue::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
+                Payload::ComponentImportSection(reader) => Err(ParseIssue::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
+                Payload::ComponentExportSection(reader) => Err(ParseIssue::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
                 Payload::UnknownSection {
                     id: _,
                     contents: _,
                     range,
-                } => Err(ParseErrorInner::message(range.start, "unknown section", None))?,
+                } => Err(ParseIssue::message(range.start, "unknown section", None))?,
                 Payload::End(_offset_bytes) => {
                     // I don't understand what this end marker is for?
                     // If the module ended (i.e., the input buffer is exhausted),
@@ -718,7 +716,7 @@ pub mod parser {
             | wp::Throw { tag_index: _ }
             | wp::Rethrow { relative_depth: _ }
             | wp::Delegate { relative_depth: _ } => {
-                Err(ParseErrorInner::unsupported(offset, WasmExtension::ExceptionHandling))?
+                Err(ParseIssue::unsupported(offset, WasmExtension::ExceptionHandling))?
             }
 
             wp::Br { relative_depth } => Br(Label(relative_depth)),
@@ -739,7 +737,7 @@ pub mod parser {
             wp::Call { function_index } => Call(function_index.into()),
             wp::CallIndirect { type_index, table_index, table_byte } => {
                 if table_index != 0 {
-                    Err(ParseErrorInner::unsupported(offset, WasmExtension::ReferenceTypes))?
+                    Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?
                 }
                 assert!(table_byte == 0, "not sure which extension this is");
                 CallIndirect(types.get(type_index, offset+1)?, 0usize.into())
@@ -749,12 +747,12 @@ pub mod parser {
             | wp::ReturnCallIndirect {
                 type_index: _,
                 table_index: _,
-            } => Err(ParseErrorInner::unsupported(offset, WasmExtension::TailCalls))?,
+            } => Err(ParseIssue::unsupported(offset, WasmExtension::TailCalls))?,
 
             wp::Drop => Drop,
             wp::Select => Select,
 
-            wp::TypedSelect { ty: _ } => Err(ParseErrorInner::unsupported(offset, WasmExtension::ReferenceTypes))?,
+            wp::TypedSelect { ty: _ } => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
 
             wp::LocalGet { local_index } => Local(LocalOp::Get, local_index.into()),
             wp::LocalSet { local_index } => Local(LocalOp::Set, local_index.into()),
@@ -794,13 +792,13 @@ pub mod parser {
             // above 255, so ignore `mem_byte` here.
             wp::MemorySize { mem, mem_byte: _ } => {
                 if mem != 0 {
-                    Err(ParseErrorInner::unsupported(offset, WasmExtension::MultiMemory))?
+                    Err(ParseIssue::unsupported(offset, WasmExtension::MultiMemory))?
                 }
                 MemorySize(0u32.into())
             }
             wp::MemoryGrow { mem, mem_byte: _ } => {
                 if mem != 0 {
-                    Err(ParseErrorInner::unsupported(offset, WasmExtension::MultiMemory))?
+                    Err(ParseIssue::unsupported(offset, WasmExtension::MultiMemory))?
                 }
                 MemoryGrow(0u32.into())
             }
@@ -811,7 +809,7 @@ pub mod parser {
             wp::F64Const { value } => Const(Val::F64(OrderedFloat(f64::from_bits(value.bits())))),
 
             wp::RefNull { ty: _ } | wp::RefIsNull | wp::RefFunc { function_index: _ } => {
-                Err(ParseErrorInner::unsupported(offset, WasmExtension::ReferenceTypes))?
+                Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?
             }
 
             wp::I32Eqz => Numeric(NumericOp::I32Eqz),
@@ -942,7 +940,7 @@ pub mod parser {
             | wp::I32Extend16S
             | wp::I64Extend8S
             | wp::I64Extend16S
-            | wp::I64Extend32S => Err(ParseErrorInner::unsupported(offset, WasmExtension::SignExtensionOps))?,
+            | wp::I64Extend32S => Err(ParseIssue::unsupported(offset, WasmExtension::SignExtensionOps))?,
 
             wp::I32TruncSatF32S
             | wp::I32TruncSatF32U
@@ -951,7 +949,7 @@ pub mod parser {
             | wp::I64TruncSatF32S
             | wp::I64TruncSatF32U
             | wp::I64TruncSatF64S
-            | wp::I64TruncSatF64U => Err(ParseErrorInner::unsupported(offset, WasmExtension::NontrappingFloatToInt))?,
+            | wp::I64TruncSatF64U => Err(ParseIssue::unsupported(offset, WasmExtension::NontrappingFloatToInt))?,
 
             wp::MemoryInit { segment: _, mem: _ }
             | wp::DataDrop { segment: _ }
@@ -965,14 +963,14 @@ pub mod parser {
             | wp::TableCopy {
                 dst_table: _,
                 src_table: _,
-            } => Err(ParseErrorInner::unsupported(offset, WasmExtension::BulkMemoryOperations))?,
+            } => Err(ParseIssue::unsupported(offset, WasmExtension::BulkMemoryOperations))?,
 
-            wp::TableFill { table: _ } => Err(ParseErrorInner::unsupported(offset, WasmExtension::ReferenceTypes))?,
+            wp::TableFill { table: _ } => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
 
             wp::TableGet { table: _ }
             | wp::TableSet { table: _ }
             | wp::TableGrow { table: _ }
-            | wp::TableSize { table: _ } => Err(ParseErrorInner::unsupported(offset, WasmExtension::ReferenceTypes))?,
+            | wp::TableSize { table: _ } => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
 
             wp::MemoryAtomicNotify { memarg: _ }
             | wp::MemoryAtomicWait32 { memarg: _ }
@@ -1041,7 +1039,7 @@ pub mod parser {
             | wp::I64AtomicRmw8CmpxchgU { memarg: _ }
             | wp::I64AtomicRmw16CmpxchgU { memarg: _ }
             | wp::I64AtomicRmw32CmpxchgU { memarg: _ } => {
-                Err(ParseErrorInner::unsupported(offset, WasmExtension::ThreadsAtomics))?
+                Err(ParseIssue::unsupported(offset, WasmExtension::ThreadsAtomics))?
             }
 
             wp::V128Load { memarg: _ }
@@ -1279,7 +1277,7 @@ pub mod parser {
             | wp::F64x2ConvertLowI32x4S
             | wp::F64x2ConvertLowI32x4U
             | wp::F32x4DemoteF64x2Zero
-            | wp::F64x2PromoteLowF32x4 => Err(ParseErrorInner::unsupported(offset, WasmExtension::Simd))?,
+            | wp::F64x2PromoteLowF32x4 => Err(ParseIssue::unsupported(offset, WasmExtension::Simd))?,
 
             | wp::I8x16RelaxedSwizzle
             | wp::I32x4RelaxedTruncSatF32x4S
@@ -1301,18 +1299,18 @@ pub mod parser {
             | wp::I16x8RelaxedQ15mulrS
             | wp::I16x8DotI8x16I7x16S
             | wp::I32x4DotI8x16I7x16AddS
-            | wp::F32x4RelaxedDotBf16x8AddF32x4 => Err(ParseErrorInner::unsupported(offset, WasmExtension::RelaxedSimd))?,
+            | wp::F32x4RelaxedDotBf16x8AddF32x4 => Err(ParseIssue::unsupported(offset, WasmExtension::RelaxedSimd))?,
         })
     }
 
     fn parse_memarg(memarg: wasmparser::MemArg, parser_offset: usize) -> Result<Memarg, ParseError> {
         if memarg.memory != 0 {
-            Err(ParseErrorInner::unsupported(parser_offset, WasmExtension::MultiMemory))?
+            Err(ParseIssue::unsupported(parser_offset, WasmExtension::MultiMemory))?
         }
         let offset: u32 = memarg
             .offset
             .try_into()
-            .map_err(|_| ParseErrorInner::unsupported(parser_offset, WasmExtension::Memory64))?;
+            .map_err(|_| ParseIssue::unsupported(parser_offset, WasmExtension::Memory64))?;
         Ok(Memarg {
             alignment_exp: memarg.align,
             offset,
@@ -1321,10 +1319,10 @@ pub mod parser {
 
     fn parse_memory_ty(ty: wasmparser::MemoryType, offset: usize) -> Result<MemoryType, ParseError> {
         if ty.memory64 {
-            Err(ParseErrorInner::unsupported(offset, WasmExtension::Memory64))?
+            Err(ParseIssue::unsupported(offset, WasmExtension::Memory64))?
         }
         if ty.shared {
-            Err(ParseErrorInner::unsupported(offset, WasmExtension::ThreadsAtomics))?
+            Err(ParseIssue::unsupported(offset, WasmExtension::ThreadsAtomics))?
         }
         Ok(MemoryType(Limits {
             initial_size: ty
@@ -1350,10 +1348,10 @@ pub mod parser {
     fn parse_elem_ty(ty: wasmparser::ValType, offset: usize) -> Result<ElemType, ParseError> {
         use wasmparser::ValType::*;
         match ty {
-            I32 | I64 | F32 | F64 => Err(ParseErrorInner::message(offset, "only reftypes, not value types are allowed as table elements", None))?,
-            V128 => Err(ParseErrorInner::message(offset, "only reftypes, not value types are allowed as table elements", None))?,
+            I32 | I64 | F32 | F64 => Err(ParseIssue::message(offset, "only reftypes, not value types are allowed as table elements", None))?,
+            V128 => Err(ParseIssue::message(offset, "only reftypes, not value types are allowed as table elements", None))?,
             FuncRef => Ok(ElemType::Anyfunc),
-            ExternRef => Err(ParseErrorInner::unsupported(offset, WasmExtension::ReferenceTypes))?,
+            ExternRef => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
         }
     }
 
@@ -1362,7 +1360,7 @@ pub mod parser {
         match ty {
             Empty => Ok(BlockType(None)),
             Type(ty) => Ok(BlockType(Some(parse_val_ty(ty, offset)?))),
-            FuncType(_) => Err(ParseErrorInner::unsupported(offset, WasmExtension::MultiValue))?,
+            FuncType(_) => Err(ParseIssue::unsupported(offset, WasmExtension::MultiValue))?,
         }
     }
 
@@ -1401,9 +1399,9 @@ pub mod parser {
             wasmparser::ValType::I64 => Ok(ValType::I64),
             wasmparser::ValType::F32 => Ok(ValType::F32),
             wasmparser::ValType::F64 => Ok(ValType::F64),
-            wasmparser::ValType::V128 => Err(ParseErrorInner::unsupported(offset, WasmExtension::Simd))?,
-            wasmparser::ValType::FuncRef => Err(ParseErrorInner::unsupported(offset, WasmExtension::ReferenceTypes))?,
-            wasmparser::ValType::ExternRef => Err(ParseErrorInner::unsupported(offset, WasmExtension::ReferenceTypes))?,
+            wasmparser::ValType::V128 => Err(ParseIssue::unsupported(offset, WasmExtension::Simd))?,
+            wasmparser::ValType::FuncRef => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
+            wasmparser::ValType::ExternRef => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
         }
     }
 
@@ -1422,7 +1420,7 @@ pub mod parser {
         pub fn new_type_section(&mut self, count: u32, type_section_offset: usize) -> Result<(), ParseError> {
             let prev_state = self.0.replace(Vec::with_capacity(u32_to_usize(count)));
             match prev_state {
-                Some(_) => Err(ParseErrorInner::message(type_section_offset, "duplicate type section", None))?,
+                Some(_) => Err(ParseIssue::message(type_section_offset, "duplicate type section", None))?,
                 None => Ok(()),
             }
         }
@@ -1442,7 +1440,7 @@ pub mod parser {
                 .unwrap_or(&[])
                 .get(u32_to_usize(index))
                 .cloned()
-                .ok_or_else(|| ParseErrorInner::index(index_offset, index, "type"))?)
+                .ok_or_else(|| ParseIssue::index(index_offset, index, "type"))?)
         }
     }
 
