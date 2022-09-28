@@ -1,7 +1,7 @@
 // TODO move this into wasm crate, maybe utils submodule
 // TODO block_stack as well?
 
-use wasm::{BlockType, FunctionType, ValType};
+use wasm::{BlockType, ValType, highlevel::FunctionType};
 
 use self::TypeStackElement::*;
 
@@ -58,14 +58,14 @@ impl TypeStack {
 
     /// convenience, pops and validates input_tys, then pushes the result_tys
     pub fn instr(&mut self, ty: &FunctionType) {
-        for &input_ty in ty.params.iter().rev() {
+        for &input_ty in ty.inputs().iter().rev() {
             assert_eq!(
                 input_ty,
                 self.pop_val(),
                 "instruction expected input type, but stack top was"
             );
         }
-        for &result_ty in ty.results.iter() {
+        for &result_ty in ty.results().iter() {
             self.push_val(result_ty);
         }
     }

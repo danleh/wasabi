@@ -1,6 +1,6 @@
 use wasm::{Val, ValType, ValType::I32, ValType::I64};
 use wasm::highlevel::{
-    Instr, Instr::Const, Instr::Numeric, NumericOp::I32WrapI64, NumericOp::I64ShrS,
+    Instr, Instr::Const, Instr::Unary, UnaryOp::I32WrapI64, Instr::Binary, BinaryOp::I64ShrS,
 };
 
 /*
@@ -21,11 +21,11 @@ pub fn convert_i64_instr(instr: Instr, ty: ValType) -> Vec<Instr> {
     match ty {
         I64 => vec![
             instr.clone(),
-            Numeric(I32WrapI64), // low bits
+            Unary(I32WrapI64), // low bits
             instr,
             Const(Val::I64(32)), // shift high bits to the right
-            Numeric(I64ShrS),
-            Numeric(I32WrapI64), // high bits
+            Binary(I64ShrS),
+            Unary(I32WrapI64), // high bits
         ],
         _ => vec![instr],
     }
