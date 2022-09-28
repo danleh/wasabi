@@ -3,18 +3,6 @@ name = "wimpl"
 version = "0.1.0"
 edition = "2021"
 
-# Necessary to avoid stack overflow for very deeply nested tests.
-[profile.test]
-opt-level = 2
-lto = "thin"
-
-[profile.release]
-opt-level = 3
-lto = "fat"
-overflow-checks = true
-# For profiling with debug info.
-debug = 1
-
 [dependencies]
 wasm = { path = "../wasm" }
 lazy_static = "1.4.0"
@@ -39,3 +27,15 @@ csv = "1.1.6"
 
 [dev-dependencies]
 walkdir = "2.3.2"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+overflow-checks = true
+# For profiling with debug info.
+debug = 1
+
+[profile.test]
+# Necessary to avoid stack overflow for very deeply nested tests.
+opt-level = 2
+lto = "thin"

@@ -2,7 +2,7 @@ use std::{io::{self, BufRead, Write}, fs::{File, self}, collections::HashMap};
 
 use rustc_hash::FxHashMap;
 
-use wasm::{highlevel::{self, Instr}, Val, Idx};
+use wasm::{self, Instr, Val, Idx};
 use wimpl::{self, FunctionId, analyze::{print_map_count, collect_call_indirect_idx_expr}, callgraph::{Options, reachable_callgraph}, traverse::VisitOptionBodyExt};
 
 fn main() {
@@ -19,7 +19,7 @@ fn main() {
 
     let cg_path = args[5].clone(); 
     
-    let mut wasm = highlevel::Module::from_file(wasm_path).unwrap();
+    let (mut wasm, _offsets, _warnings) = wasm::Module::from_file(wasm_path).unwrap();
     let wimpl = wimpl::wimplify::wimplify(&wasm).unwrap();
 
     let  mut total_num_exports = 0; 
@@ -205,7 +205,7 @@ pub fn collect_call_indirect_load_const_addr(module: &wimpl::Module) -> FxHashMa
         func.body.visit_expr_pre_order(|expr| {
             if let CallIndirect { type_: _, table_idx, args: _ } = &expr.kind {
                 if let Load {
-                    op: crate::highlevel::LoadOp::I32Load,
+                    op: wasm::LoadOp::I32Load,
                     addr,
                 } = &table_idx.kind {
                     if let Const(Val::I32(const_addr)) = &addr.kind {

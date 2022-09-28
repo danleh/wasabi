@@ -2,13 +2,11 @@
 
 use std::convert::TryInto;
 
-use wasm::highlevel;
-
 use crate::*; 
 
 /// The mutable state during conversion.
 pub struct State<'module> {
-    instrs_iter: std::iter::Enumerate<std::slice::Iter<'module, highlevel::Instr>>,
+    instrs_iter: std::iter::Enumerate<std::slice::Iter<'module, wasm::Instr>>,
     type_checker: TypeChecker<'module>,
 
     label_count: u32,
@@ -25,9 +23,9 @@ pub struct State<'module> {
 /// The immutable context information required but never mutated during conversion.
 #[derive(Clone, Copy)]
 pub struct Context<'module> {
-    module: &'module highlevel::Module,
+    module: &'module wasm::Module,
     func_ty: &'module FunctionType,
-    func_idx: Idx<highlevel::Function>,
+    func_idx: Idx<wasm::Function>,
     func_idx_to_id_map: &'module [FunctionId],
 }
 
@@ -37,7 +35,7 @@ fn wimplify_instrs<'module>(
     context: Context<'module>,
 ) -> Result</* was_else */ bool, String> {
 
-    use crate::highlevel::Instr as wasm;
+    use crate::wasm::Instr as wasm;
     use ExprKind::*;
     use Var::*;
 
@@ -170,7 +168,7 @@ fn wimplify_instrs<'module>(
             }
         }
 
-        fn local_idx_to_var(context: Context, local_idx: Idx<highlevel::Local>) -> Var {
+        fn local_idx_to_var(context: Context, local_idx: Idx<::wasm::Local>) -> Var {
             let local_idx = local_idx.to_u32();
             let num_params: u32 = context.func_ty.inputs().len().try_into().expect("more than 2^32 parameters");
             if local_idx < num_params {
@@ -609,13 +607,13 @@ fn wimplify_instrs<'module>(
                 );
             }
 
-            wasm::Local(highlevel::LocalOp::Get, local_idx) => {
+            wasm::Local(::wasm::LocalOp::Get, local_idx) => {
                 let type_ = ty.results()[0];
 
                 push_expr(&mut expr_stack, state, VarRef(local_idx_to_var(context, *local_idx)), type_);
             }
 
-            wasm::Local(highlevel::LocalOp::Set, local_idx) => {
+            wasm::Local(::wasm::LocalOp::Set, local_idx) => {
                 let (rhs, type_) = expr_stack.pop().expect("local.set expects a value on the stack");
                 assert_eq!(type_, ty.inputs()[0]);
 
@@ -629,7 +627,7 @@ fn wimplify_instrs<'module>(
             }
 
             // Essentially equivalent to a local.set followed by a local.get (see above).
-            wasm::Local(highlevel::LocalOp::Tee, local_idx) => {
+            wasm::Local(::wasm::LocalOp::Tee, local_idx) => {
                 let (value, type_) = expr_stack.pop().expect("local.tee expects a value on the stack");
                 assert_eq!(type_, ty.inputs()[0]);
 
@@ -644,13 +642,13 @@ fn wimplify_instrs<'module>(
                 push_expr(&mut expr_stack, state, VarRef(local_var), type_);
             }
 
-            wasm::Global(highlevel::GlobalOp::Get, global_idx) => {
+            wasm::Global(::wasm::GlobalOp::Get, global_idx) => {
                 let type_ = ty.results()[0];
 
                 push_expr(&mut expr_stack, state, VarRef(Global(global_idx.to_u32())), type_);
             }
 
-            wasm::Global(highlevel::GlobalOp::Set, global_idx) => {
+            wasm::Global(::wasm::GlobalOp::Set, global_idx) => {
                 let (rhs, type_) = expr_stack.pop().expect("local.set expects a value on the stack");
                 assert_eq!(type_, ty.inputs()[0]);
 
@@ -740,9 +738,9 @@ fn wimplify_instrs<'module>(
 }
 
 fn wimplify_function_body(
-    function: &highlevel::Function,
-    func_idx: Idx<highlevel::Function>,
-    module: &highlevel::Module, 
+    function: &wasm::Function,
+    func_idx: Idx<wasm::Function>,
+    module: &wasm::Module, 
     module_metadata: &mut Metadata,
     func_orig_idx_to_id_map: &[FunctionId],
 ) -> Result<Option<Body>, String> {
@@ -761,7 +759,7 @@ fn wimplify_function_body(
             // } else {
                 let local_var_initalization_stmt = Stmt::new(StmtKind::Assign {
                     lhs: Var::Local(local_idx.to_u32() - function.type_.inputs().len() as u32),
-                    rhs: ExprKind::Const(Val::get_default_value(loc_type)).into(),
+                    rhs: ExprKind::Const(loc_type.zero()).into(),
                     type_: loc_type,
                 }); 
                 // Note that we do not attach metadata (Wasm source location info) to these generated
@@ -813,7 +811,7 @@ fn wimplify_function_body(
     }
 }
 
-pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
+pub fn wimplify(module: &wasm::Module) -> Result<Module, String> {
     // Generate unique function ids for each function in the module.
     let func_orig_idx_to_id_map = FunctionId::from_module(module);
 
@@ -849,7 +847,7 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
             elements.push(Element { offset, functions })
         }
         Some(Table{
-            type_: TableType::wimplify(table.type_.clone()), //TODO: make it .wimplify()
+            limits: table.limits.clone(),
             import: table.import.clone(),
             elements,
             export: table.export.clone(),
@@ -868,6 +866,6 @@ pub fn wimplify(module: &highlevel::Module) -> Result<Module, String> {
         
         // TODO add (a single) memory.
         
-        metadata: metadata,
+        metadata,
     })
 }

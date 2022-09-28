@@ -3,7 +3,7 @@ use std::{cmp::Reverse, fmt::{self, Display}, iter::FromIterator, cell::RefCell,
 use regex::Regex;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use wasm::highlevel::{StoreOp, LoadOp, FunctionType};
+use wasm::{StoreOp, LoadOp, FunctionType};
 
 use crate::{Body, Expr, Module, Stmt, Var, FunctionId, Function, StmtKind, ExprKind};
 use crate::traverse::VisitOptionBodyExt;
@@ -348,8 +348,8 @@ fn test_add_without_overflow() {
 pub fn approx_i32_eval(expr: &Expr) -> I32Range {
     use crate::Val;
     use crate::ValType;
-    use crate::highlevel::UnaryOp::*;
-    use crate::highlevel::BinaryOp::*;
+    use crate::UnaryOp::*;
+    use crate::BinaryOp::*;
     use ExprKind::*;
     match &expr.kind {
         Const(Val::I32(val)) => I32Range::exact(*val as u32),

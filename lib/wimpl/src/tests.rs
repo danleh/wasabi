@@ -4,11 +4,11 @@ use std::str::FromStr;
 use lazy_static::lazy_static;
 use walkdir::WalkDir;
 
-use wasm::highlevel::LoadOp::*;
-use wasm::highlevel::StoreOp::*;
-use wasm::highlevel::UnaryOp::*;
-use wasm::highlevel::BinaryOp::*;
-use wasm::highlevel::FunctionType;
+use wasm::LoadOp::*;
+use wasm::StoreOp::*;
+use wasm::UnaryOp::*;
+use wasm::BinaryOp::*;
+use wasm::FunctionType;
 use wasm::Memarg;
 use wasm::Val::*;
 use wasm::ValType;

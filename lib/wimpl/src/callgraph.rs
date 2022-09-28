@@ -2,7 +2,7 @@ use core::fmt;
 use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::{File, self}, sync::Mutex, iter::FromIterator, cmp::Reverse, default, collections::{HashSet, HashMap}};
 use rustc_hash::{FxHashSet, FxHashMap};
 
-use wasm::{highlevel, highlevel::FunctionType, Val, ValType};
+use wasm::{self, FunctionType, Val, ValType};
 
 use crate::{Module, FunctionId, ExprKind::{Call, self}, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count, approx_i32_eval, I32Range}, Expr, Stmt};
 use crate::{InstrId, StmtKind};
@@ -20,15 +20,15 @@ pub struct CallGraph(FxHashMap<FunctionId, FxHashSet<FunctionId>>);
 // Get each edge in the call graph 
 #[derive(Default, Clone, Eq, PartialEq)]
 pub struct CallSites(std::collections::BTreeMap<
-    (wasm::Idx<highlevel::Function>, Option<wasm::Idx<highlevel::Instr>>), 
-    (wasm::Idx<highlevel::Function>, Option<Vec<Constraint>>)
+    (wasm::Idx<wasm::Function>, Option<wasm::Idx<wasm::Instr>>), 
+    (wasm::Idx<wasm::Function>, Option<Vec<Constraint>>)
 >);
 
 impl CallSites {
     pub fn add_edge(&mut self, 
-        wasm_loc: Option<wasm::Idx<highlevel::Instr>>, 
-        src: wasm::Idx<highlevel::Function>, 
-        target: wasm::Idx<highlevel::Function>,
+        wasm_loc: Option<wasm::Idx<wasm::Instr>>, 
+        src: wasm::Idx<wasm::Function>, 
+        target: wasm::Idx<wasm::Function>,
         target_info: Option<Vec<Constraint>>, 
     ){
         self.0.insert(
@@ -241,7 +241,7 @@ pub fn reachable_callgraph(
     if let Some(table) = &module.table {
         for element in &table.elements {
             let element_offset = &element.offset;
-            use wasm::highlevel::Instr as wasm;
+            use wasm::Instr as wasm;
             let element_offset = match element_offset.as_slice() {
                 [wasm::Const(Val::I32(offset)), wasm::End] => *offset as u32,
                 // TODO overapproximate: if its an expression we cannot compute statically (like an imported global)

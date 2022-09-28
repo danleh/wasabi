@@ -9,11 +9,7 @@ use std::cell::RefCell;
 
 use arc_interner::ArcIntern;
 
-use wasm::{highlevel::{MemoryOp, Global}, types::{InferredInstructionType, TypeChecker}, Val, ValType, Idx, BlockType};
-use wasm::{
-    highlevel::{self, LoadOp, UnaryOp, BinaryOp, StoreOp, FunctionType},
-    Memarg,
-};
+use wasm::{MemoryOp, Global, types::{InferredInstructionType, TypeChecker}, Val, ValType, Idx, BlockType, self, LoadOp, UnaryOp, BinaryOp, StoreOp, FunctionType, Memarg};
 
 pub mod wimplify;
 pub mod traverse;
@@ -58,16 +54,16 @@ pub struct Metadata {
     id_stmt_map: HashMap<InstrId, Stmt>,
     id_expr_map: HashMap<InstrId, Expr>, 
     instr_location_map: HashMap<InstrId, WasmSrcLocation>,
-    func_id_to_orig_idx_map: HashMap<FunctionId, ::wasm::Idx<highlevel::Function>>, 
+    func_id_to_orig_idx_map: HashMap<FunctionId, ::wasm::Idx<wasm::Function>>, 
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
-pub struct WasmSrcLocation(Idx<highlevel::Function>, Idx<highlevel::Instr>);
+pub struct WasmSrcLocation(Idx<wasm::Function>, Idx<wasm::Instr>);
 
 
 impl Module {
     pub fn from_wasm_file(path: impl AsRef<Path>) -> Result<Module, String> {
-        let wasm_module = highlevel::Module::from_file(path).map_err(|err| err.to_string())?;
+        let (wasm_module, _offsets, _warnings) = wasm::Module::from_file(path).map_err(|err| err.to_string())?;
         wimplify::wimplify(&wasm_module)
     }
 
@@ -80,7 +76,7 @@ impl Module {
         function
     }
 
-    pub fn function_by_idx(&self, idx: Idx<highlevel::Function>) -> &Function {
+    pub fn function_by_idx(&self, idx: Idx<wasm::Function>) -> &Function {
         &self.functions[idx.to_usize()]
     }
 }
@@ -130,7 +126,7 @@ impl FunctionId {
     /// Map every function in the module to a name (if possible).
     /// If there are two functions with the same name, fall back for all of them to the index.
     /// (This way, the order of functions does not change the name assignment.)
-    pub fn from_module(module: &highlevel::Module) -> Vec<FunctionId> {
+    pub fn from_module(module: &wasm::Module) -> Vec<FunctionId> {
         let mut name_map = Vec::with_capacity(module.functions.len());
         
         // The keys of this map are all unique names.
@@ -174,15 +170,15 @@ impl FunctionId {
         name_map
     }
 
-    fn function_to_name(function: &highlevel::Function) -> Option<String> {
+    fn function_to_name(function: &wasm::Function) -> Option<String> {
         // Try different ways of getting a name for a WebAssembly function.
         // First try if the debug name is present, because it's the most "original" or "close to the source".
         let debug_name = function.name.clone();
         // Then try export and import names.
         let first_export_name = function.export.first().cloned();
         let import_field_name = match &function.code {
-            highlevel::ImportOrPresent::Import(module_name, field_name) => Some(format!("{}.{}", module_name, field_name)),
-            highlevel::ImportOrPresent::Present(_) => None,
+            wasm::ImportOrPresent::Import(module_name, field_name) => Some(format!("{}.{}", module_name, field_name)),
+            wasm::ImportOrPresent::Present(_) => None,
         };
         debug_name.or(first_export_name).or(import_field_name)
     }
@@ -501,52 +497,16 @@ impl ExprKind {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Table {
-    pub type_: TableType,
+    pub limits: wasm::Limits,
     pub import: Option<(String, String)>,
     pub elements: Vec<Element>,
     pub export: Vec<String>,
 }
 
-// TODO: remove only use Limits 
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct TableType(pub ElemType, pub Limits);
-
-impl TableType {
-    pub fn wimplify(wasm_ty: ::wasm::TableType) -> TableType {
-        TableType(ElemType::wimplify(wasm_ty.0), Limits::wimplify(wasm_ty.1)) 
-    }
-}
-
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Element {
-    pub offset: Vec<highlevel::Instr>,
+    pub offset: Vec<wasm::Instr>, // TODO shouldnt this be an expr?
     pub functions: Vec<FunctionId>,
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum ElemType {
-    // only value in WASM version 1
-    // #[tag = 0x70] //FIXME: what is this?
-    Anyfunc,
-    // TODO: remove
-}
-
-impl ElemType {
-    pub fn wimplify (_wasm_ty: ::wasm::ElemType) -> ElemType {
-        ElemType::Anyfunc
-    }
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct Limits {
-    pub initial_size: u32,
-    pub max_size: Option<u32>,
-}
-
-impl Limits {
-    pub fn wimplify (wasm_ty: ::wasm::Limits) -> Limits {
-        Limits { initial_size: wasm_ty.initial_size, max_size: wasm_ty.max_size }
-    } 
 }
 
 /// Convenience macro to write Wimpl statements in Rust.
