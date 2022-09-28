@@ -20,7 +20,7 @@ pub enum WasmExtension {
     TailCalls,
     TypeImports,
     MultiMemory,
-    ModuleLinking,
+    ComponentModel,
 }
 
 impl WasmExtension {
@@ -42,7 +42,7 @@ impl WasmExtension {
             TailCalls => "tail calls",
             TypeImports => "type imports",
             MultiMemory => "multiple memories",
-            ModuleLinking => "module linking",
+            ComponentModel => "component model",
         }
     }
 
@@ -65,7 +65,7 @@ impl WasmExtension {
             TailCalls => r"https://github.com/WebAssembly/tail-call",
             TypeImports => r"https://github.com/WebAssembly/proposal-type-imports",
             MultiMemory => r"https://github.com/WebAssembly/multi-memory",
-            ModuleLinking => r"https://github.com/WebAssembly/module-linking",
+            ComponentModel => r"https://github.com/WebAssembly/component-model",
         }
     }
 }
