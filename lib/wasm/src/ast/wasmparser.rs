@@ -32,7 +32,9 @@ mod error {
         #[error("error parsing WebAssembly binary at offset 0x{:x}: {}", offset, message)]
         Message {
             offset: usize,
-            message: &'static str
+            message: &'static str,
+            #[source]
+            source: Option<Box<ParseErrorInner>>,
         },
 
         #[error("index out of bounds at offset 0x{:x}: invalid {} index {}", offset, index_space, index)]
@@ -65,8 +67,8 @@ mod error {
     // Convenience constructors.
     // TODO change that to impl `ParseError`, not `ParseErrorInner`.
     impl ParseErrorInner {
-        pub fn message(offset: usize, message: &'static str) -> Self {
-            ParseErrorInner::Message { offset, message }
+        pub fn message(offset: usize, message: &'static str, source: Option<Box<ParseErrorInner>>) -> Self {
+            ParseErrorInner::Message { offset, message, source }
         }
 
         pub fn index(offset: usize, index: u32, index_space: &'static str) -> Self {
@@ -363,7 +365,7 @@ pub mod parser {
 
                     let prev_start = std::mem::replace(&mut module.start, Some(func.into()));
                     if prev_start.is_some() {
-                        Err(ParseErrorInner::message(range.start, "duplicate start section"))?
+                        Err(ParseErrorInner::message(range.start, "duplicate start section", None))?
                     }
                 }
                 Payload::ElementSection(mut reader) => {
@@ -402,7 +404,7 @@ pub mod parser {
                                     .ok_or_else(|| ParseErrorInner::index(element_offset, table_index, "table"))?;
 
                                 if table.type_.0 != element_ty {
-                                    Err(ParseErrorInner::message(element_offset, "table and element type do not match"))?
+                                    Err(ParseErrorInner::message(element_offset, "table and element type do not match", None))?
                                 }
 
                                 // Most offset expressions are just a constant and the end instruction.
@@ -528,10 +530,12 @@ pub mod parser {
                         .last()
                         .map(|(section, _offset)| section)
                         .cloned();
-                    section_offsets.push((SectionId::Custom(name.clone()), reader.range().start));
+                    let custom_section_start_offset = reader.range().start;
+                    section_offsets.push((SectionId::Custom(name.clone()), custom_section_start_offset));
 
                     // Name custom section.
                     if name == "name" {
+                        // TODO Move into a separate function.
                         // If parts of the name section cannot be parsed, collect the issue as a warning and abort parsing the
                         // name section, but produce an AST for the rest of the module.
                         // To make it possible to use the `?` operator, wrap this into a closure.
@@ -545,7 +549,7 @@ pub mod parser {
                                     Name::Module(name) => {
                                         let prev = module.name.replace(name.get_name()?.to_string());
                                         if prev.is_some() {
-                                            warnings.push(ParseErrorInner::message(offset, "duplicate module name"))
+                                            warnings.push(ParseErrorInner::message(offset, "name section: duplicate module name", None))
                                         }
                                     }
                                     Name::Function(name_map) => {
@@ -601,7 +605,7 @@ pub mod parser {
                                         ty: _,
                                         data: _,
                                         range: _,
-                                    } => warnings.push(ParseErrorInner::message(offset, "unknown name subsection")),
+                                    } => warnings.push(ParseErrorInner::message(offset, "name section: unknown name subsection", None)),
                                 }
                             }
 
@@ -614,19 +618,21 @@ pub mod parser {
                                 continue;
                             }
                             Err(name_parsing_aborted) => {
-                                // Add the warning that stopped parsing the name section as the final warning.
-                                warnings.push(name_parsing_aborted);
+                                warnings.push(ParseErrorInner::Message { 
+                                    offset: custom_section_start_offset, 
+                                    message: "could not parse name section, adding it as a raw (unparsed) custom section...",
+                                    source: Some(Box::new(name_parsing_aborted)),
+                                });
                             }
                         }
                     }
 
-                    // If the custom section is NOT a name section, or its parsing was not successful:
+                    // If the custom section is NOT a name section, or if its parsing was not successful:
                     let raw_custom_section = RawCustomSection {
                         name,
                         content: reader.data().to_vec(),
                         after: previous_section_id,
                     };
-
                     module.custom_sections.push(raw_custom_section);
                 }
                 Payload::ModuleSection { parser: _, range } |
@@ -644,7 +650,7 @@ pub mod parser {
                     id: _,
                     contents: _,
                     range,
-                } => Err(ParseErrorInner::message(range.start, "unknown section"))?,
+                } => Err(ParseErrorInner::message(range.start, "unknown section", None))?,
                 Payload::End(_offset_bytes) => {
                     // I don't understand what this end marker is for?
                     // If the module ended (i.e., the input buffer is exhausted),
@@ -1344,8 +1350,8 @@ pub mod parser {
     fn parse_elem_ty(ty: wasmparser::ValType, offset: usize) -> Result<ElemType, ParseError> {
         use wasmparser::ValType::*;
         match ty {
-            I32 | I64 | F32 | F64 => Err(ParseErrorInner::message(offset, "only reftypes, not value types are allowed as table elements"))?,
-            V128 => Err(ParseErrorInner::message(offset, "only reftypes, not value types are allowed as table elements"))?,
+            I32 | I64 | F32 | F64 => Err(ParseErrorInner::message(offset, "only reftypes, not value types are allowed as table elements", None))?,
+            V128 => Err(ParseErrorInner::message(offset, "only reftypes, not value types are allowed as table elements", None))?,
             FuncRef => Ok(ElemType::Anyfunc),
             ExternRef => Err(ParseErrorInner::unsupported(offset, WasmExtension::ReferenceTypes))?,
         }
@@ -1416,7 +1422,7 @@ pub mod parser {
         pub fn new_type_section(&mut self, count: u32, type_section_offset: usize) -> Result<(), ParseError> {
             let prev_state = self.0.replace(Vec::with_capacity(u32_to_usize(count)));
             match prev_state {
-                Some(_) => Err(ParseErrorInner::message(type_section_offset, "duplicate type section"))?,
+                Some(_) => Err(ParseErrorInner::message(type_section_offset, "duplicate type section", None))?,
                 None => Ok(()),
             }
         }

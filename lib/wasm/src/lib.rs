@@ -61,6 +61,10 @@ impl highlevel::Module {
         let (module, offsets, warnings) = ast::wasmparser::parser::parse_module_with_offsets(&bytes)?;
         for warning in warnings {
             println!("warning: {}", warning);
+            use std::error::Error;
+            if let Some(source) = warning.source() {
+                println!("caused by: {}", source);
+            }
         }
         Ok((module, offsets))
     }
