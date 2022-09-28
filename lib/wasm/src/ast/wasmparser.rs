@@ -2,7 +2,6 @@ use std::convert::TryInto;
 
 /*
  TODO WHEN CONTINUING
- - update wasmparser and wasm-encoder dependencies
  - merge (NOT rebase) wasmparser and wimpl branches
  - make encoding of CodeSection parallel
  - support multi-value, multi-table, multi-memory because they are anyway pretty much supported (and make for less special cases)
@@ -165,7 +164,9 @@ pub mod parser {
                 Payload::Version { num: _, encoding, range: _ } => {
                     // The version number is checked by wasmparser to always be 1.
                     match encoding {
-                        Encoding::Module => todo!(),
+                        Encoding::Module => {
+                            // That's what we are here for :)
+                        }
                         Encoding::Component => Err(ParseErrorInner::unsupported(0, WasmExtension::ComponentModel))?,
                     }
                 }
@@ -523,6 +524,10 @@ pub mod parser {
                 }
                 Payload::CustomSection(reader) => {
                     let name = reader.name().to_string();
+                    let previous_section_id = section_offsets
+                        .last()
+                        .map(|(section, _offset)| section)
+                        .cloned();
                     section_offsets.push((SectionId::Custom(name.clone()), reader.range().start));
 
                     // Name custom section.
@@ -619,18 +624,15 @@ pub mod parser {
                     let raw_custom_section = RawCustomSection {
                         name,
                         content: reader.data().to_vec(),
-                        after: section_offsets
-                            .last()
-                            .map(|(section, _offset)| section)
-                            .cloned(),
+                        after: previous_section_id,
                     };
 
                     module.custom_sections.push(raw_custom_section);
                 }
-                Payload::ModuleSection { parser: _, range } => Err(ParseErrorInner::unsupported(range.start, WasmExtension::ComponentModel))?,
+                Payload::ModuleSection { parser: _, range } |
+                Payload::ComponentSection { parser: _, range } => Err(ParseErrorInner::unsupported(range.start, WasmExtension::ComponentModel))?,
                 Payload::InstanceSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
                 Payload::CoreTypeSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
-                Payload::ComponentSection { parser: _, range } => Err(ParseErrorInner::unsupported(range.start, WasmExtension::ComponentModel))?,
                 Payload::ComponentInstanceSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
                 Payload::ComponentAliasSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
                 Payload::ComponentTypeSection(reader) => Err(ParseErrorInner::unsupported(reader.range().start, WasmExtension::ComponentModel))?,
