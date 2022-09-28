@@ -2,7 +2,6 @@ use std::convert::TryInto;
 
 /*
  TODO WHEN CONTINUING
- - merge (NOT rebase) wasmparser and wimpl branches
  - make encoding of CodeSection parallel
  - support multi-value, multi-table, multi-memory because they are anyway pretty much supported (and make for less special cases)
  - make AST blocks nested, remove end/else opcodes
