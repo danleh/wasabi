@@ -1,5 +1,11 @@
 This document shall list the largest breaking changes for Wasabi's wasm library.
 
+# v0.6.0 (2022-09-28)
+
+- Major refactoring and several breaking changes to API
+- Replace not well-maintained low-level parser with industry-used wasmparser.rs
+- Successfully parses all standards-compliant WebAssembly 1.0 modules in WasmBench (>8k binaries)
+
 # v0.5.0 (2020-05-27)
 
 - Save and return a mapping of sections <-> byte offsets and function bodies ("code") to byte offsets during decoding. Changes the signature of the `WasmBinary::decode` trait method.

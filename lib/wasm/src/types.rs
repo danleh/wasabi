@@ -174,7 +174,7 @@
 use std::{fmt, convert::TryFrom};
 
 use crate::{
-    highlevel::{Function, Instr, Module, Global, ImportOrPresent, Code, FunctionType},
+    Function, Instr, Module, Global, ImportOrPresent, Code, FunctionType,
     Idx, Label, ValType,
 };
 
@@ -985,7 +985,7 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
 mod tests {
     use test_utilities::wasm_files;
 
-    use crate::{highlevel::{Function, Module, Code, Instr, Instr::*, UnaryOp::*, BinaryOp::*, LocalOp, FunctionType, self}, ValType, Val, ValType::*, BlockType, Idx, Label};
+    use crate::{Function, Module, Code, Instr, Instr::*, UnaryOp::*, BinaryOp::*, LocalOp, FunctionType, ValType, Val, ValType::*, BlockType, Idx, Label};
 
     use super::TypeChecker;
 
@@ -996,7 +996,7 @@ mod tests {
         // Use `Box::leak` to be able to return the type checker from this function (dirty but ok 
         // for testing).
         let function = Box::leak(Box::new(Function::new(FunctionType::new(&[I64], &[F64]), Code {
-                locals: vec![highlevel::Local::new(F32)],
+                locals: vec![crate::Local::new(F32)],
                 body: Vec::new(),
             }, Vec::new())
         ));
@@ -1029,7 +1029,7 @@ mod tests {
     pub fn spec_tests_should_typecheck() {
         for path in wasm_files("../../tests/inputs/spec/").unwrap() {
             println!("\t{}", path.display());
-            assert!(TypeChecker::check_module(&Module::from_file(path).unwrap()).is_ok());
+            assert!(TypeChecker::check_module(&Module::from_file(path).unwrap().0).is_ok());
         }
     }
 

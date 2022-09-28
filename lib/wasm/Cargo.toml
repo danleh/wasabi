@@ -6,20 +6,17 @@ authors = ["Daniel Lehmann <mail@dlehmann.eu>"]
 edition = "2021"
 
 [dependencies]
-# TODO remove those three once wasmparser lands
-binary_derive = { path = "binary_derive" }
-wasabi_leb128 = "0.4"
-byteorder = "1"
-
-# For low-level WebAssembly parsing/encoding
+# For low-level WebAssembly parsing/encoding.
 wasmparser = "0.91.0"
 wasm-encoder = "0.17.0"
 
-rayon = "1.5.1"
-serde = { version = "1", features = ["derive"] }
 ordered-float = "3.1.0"
 
 thiserror = "1.0.30"
+
+rayon = "1.5.1"
+
+serde = { version = "1", features = ["derive"] }
 
 # For interning function types and some strings.
 internment = "0.7.0"
