@@ -14,3 +14,6 @@ out/
 
 # generated browser tests
 *_out/
+
+# testing outputs
+lib/wasm/ast-*.txt

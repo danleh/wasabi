@@ -24,6 +24,15 @@ pub struct Options {
     #[structopt(value_name = "input.wasm")]
     pub input_file: PathBuf,
 
+    /// Generate JavaScript code for inclusion in Node.js, not the browser.
+    /// Import Wasabi before the WebAssembly module to analyze with
+    /// `const Wasabi = require('<filename>.wasabi.js');`
+    #[structopt(
+        short = "n",
+        long = "node",
+    )]
+    pub node_js: bool,
+
     /// Output directory (created if it does not exist).
     #[structopt(
         short = "o",

@@ -47,10 +47,19 @@ pub fn wasm_files(root_dir: impl AsRef<Path>) -> Result<Vec<PathBuf>, String> {
 pub fn output_file(test_input_file: impl AsRef<Path>, output_subdir: &'static str) -> io::Result<PathBuf> {
     use std::fs;
 
-    let output_subdir = format!("outputs/{}/", output_subdir);
-    let output_file = PathBuf::from(test_input_file.as_ref().to_string_lossy()
-        .replace("inputs/", &output_subdir));
-    // Ensure the directory exists.
+    // Replace input path component with output + output subdirectory.
+    let output_file = test_input_file.as_ref().iter()
+        .flat_map(|component| {
+            let component = component.to_str().unwrap();
+            if component == "inputs" {
+                vec!["outputs", output_subdir]
+            } else {
+                vec![component]
+            }
+        })
+        .collect::<PathBuf>();
+
+        // Ensure the directory exists.
     fs::create_dir_all(output_file.parent().unwrap_or(&output_file))?;
     Ok(output_file)
 }

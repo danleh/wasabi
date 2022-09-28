@@ -6,3 +6,6 @@ mod common;
 pub use common::*;
 
 mod convert;
+
+// TODO Replacement for lowlevel+convert, instead parses highlevel via wasmparser.rs directly.
+pub(crate) mod wasmparser;

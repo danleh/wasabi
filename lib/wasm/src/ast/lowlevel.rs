@@ -5,7 +5,8 @@ use binary_derive::WasmBinary;
 use ordered_float::OrderedFloat;
 use serde::Serialize;
 
-use crate::{BlockType, GlobalType, Idx, Label, Memarg, MemoryType, RawCustomSection, TableType, ValType, WasmBinary};
+
+use crate::{BlockType, GlobalType, Idx, Label, Memarg, MemoryType, RawCustomSection, TableType, ValType, WasmBinary, SectionId};
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Module {
@@ -16,9 +17,9 @@ pub struct Module {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Offsets {
     /// Section offsets point to the beginning of the content of a section, i.e., after the size.
-    pub sections: Vec<(Discriminant<Section>, usize)>,
+    pub sections: Vec<(SectionId, usize)>,
     /// Code offsets are only present for non-imported function, and also point to after the size
-    /// if the code element (similar to section offsets).
+    /// in the code element (similar to section offsets).
     pub functions_code: Vec<(Idx<Function>, usize)>,
 }
 
@@ -30,11 +31,11 @@ impl Offsets {
     //   Identifying sections by their reference would be nicer (not ambiguous), but
     //   requires self-referential Offset struct (?), so more complicated API with Pin<Module>?
     pub fn sections(&self, section: &Section) -> Vec<usize> {
-        let tag = std::mem::discriminant(section);
+        let section_id = crate::SectionId::from_section(section);
         self.sections.iter()
             .cloned()
             .filter_map(|(section, offset)|
-                if section == tag { Some(offset) } else { None })
+                if section == section_id { Some(offset) } else { None })
             .collect()
     }
 

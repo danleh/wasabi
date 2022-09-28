@@ -19,7 +19,7 @@ fn count_calls_instrumentation_produces_valid_wasm() {
 #[test]
 fn add_hooks_instrumentation_produces_valid_wasm() {
     fn add_all_hooks(module: &mut Module) -> Option<String> {
-        add_hooks(module, HookSet::all())
+        add_hooks(module, HookSet::all(), false)
     }
     test_instrument(add_all_hooks, "add-hooks");
 }

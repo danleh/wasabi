@@ -26,5 +26,13 @@ enumset = "1.0.4"
 main_error = "0.1.0"
 
 [profile.release]
-lto = true
-# debug = true
+opt-level = 3
+lto = "fat"
+overflow-checks = true
+# For profiling with debug info.
+debug = 1
+
+# To speed-up test execution
+[profile.test]
+opt-level = 2
+lto = "thin"

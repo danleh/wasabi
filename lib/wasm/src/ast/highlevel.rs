@@ -25,6 +25,8 @@ pub struct Module {
 
     pub functions: Vec<Function>,
     pub globals: Vec<Global>,
+
+    // TODO make these options to ensure there is only a single one of each
     pub tables: Vec<Table>,
     pub memories: Vec<Memory>,
 
@@ -147,9 +149,11 @@ pub struct Memory {
     pub export: Vec<String>,
 }
 
+// TODO rename: Body, and CodeOrImport -> BodyOrImport
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Code {
     pub locals: Vec<Local>,
+    // TODO rename to instrs
     pub body: Expr,
 }
 
@@ -1261,7 +1265,6 @@ impl Module {
                 locals: locals.into_iter().map(Local::new).collect(),
                 body,
             },
-            Vec::new(),
         ));
         (self.functions.len() - 1).into()
     }
@@ -1270,7 +1273,6 @@ impl Module {
         self.functions.push(Function::new_imported(
             type_,
             module, name,
-            Vec::new(),
         ));
         (self.functions.len() - 1).into()
     }
@@ -1563,6 +1565,12 @@ impl Local {
     }
 }
 
+impl Code {
+    pub fn new() -> Self {
+        Code { locals: Vec::new(), body: Vec::new() }
+    }
+}
+
 // See description on enum type above.
 impl<'a> ParamOrLocalRef<'a> {
     pub fn type_(self) -> ValType {
@@ -1580,6 +1588,22 @@ impl<'a> ParamOrLocalRef<'a> {
 }
 
 impl Global {
+    pub fn new(type_: GlobalType, init: Expr) -> Self {
+        Global { 
+            type_, 
+            init: ImportOrPresent::Present(init), 
+            export: Vec::new(), 
+        }
+    }
+
+    pub fn new_imported(type_: GlobalType, import_module: String, import_name: String) -> Self {
+        Global { 
+            type_, 
+            init: ImportOrPresent::Import(import_module, import_name), 
+            export: Vec::new(),
+        }
+    }
+
     pub fn import(&self) -> Option<(&str, &str)> {
         if let ImportOrPresent::Import(module, name) = &self.init {
             Some((module.as_str(), name.as_str()))
@@ -1598,12 +1622,48 @@ impl Global {
 }
 
 impl Table {
+    pub fn new(type_: TableType) -> Table {
+        Table {
+            type_,
+            import: None,
+            elements: Vec::new(),
+            export: Vec::new(),
+        }
+    }
+
+    pub fn new_imported(type_: TableType, import_module: String, import_name: String) -> Table {
+        Table { 
+            type_, 
+            import: Some((import_module, import_name)),
+            elements: Vec::new(),
+            export: Vec::new()
+        }
+    }
+
     pub fn import(&self) -> Option<(&str, &str)> {
         self.import.as_ref().map(|(module, name)| (module.as_str(), name.as_str()))
     }
 }
 
 impl Memory {
+    pub fn new(type_: MemoryType) -> Memory {
+        Memory {
+            type_,
+            import: None,
+            data: Vec::new(),
+            export: Vec::new(),
+        }
+    }
+
+    pub fn new_imported(type_: MemoryType, import_module: String, import_name: String) -> Memory {
+        Memory { 
+            type_, 
+            import: Some((import_module, import_name)),
+            data: Vec::new(), 
+            export: Vec::new()
+        }
+    }
+
     pub fn import(&self) -> Option<(&str, &str)> {
         self.import.as_ref().map(|(module, name)| (module.as_str(), name.as_str()))
     }

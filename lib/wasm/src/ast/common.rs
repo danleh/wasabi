@@ -17,13 +17,15 @@ use crate::highlevel::{MemoryOp, FunctionType};
 pub enum Val {
     I32(i32),
     I64(i64),
-    // Wrap floats such that they can be ordered and compared (unlike IEEE 754 
-    // floats), e.g., to allow for values or instructions in `HashSet`s.
+    // Wrap floats, such that they can be ordered and compared (unlike IEEE754 floats),
+    // to make it possible, e.g., to put instructions in HashSets etc.
+    // TODO replace those with bitpatterns of the floats, similar to wasmparser::Ieee32 and 64
     F32(OrderedFloat<f32>),
     F64(OrderedFloat<f64>),
 }
 
 impl Val {
+	// FIXME move to ValType and instead make ValType::default_value()
     pub fn get_default_value(type_: ValType) -> Self {
         match type_ {
             ValType::I32 => Val::I32(0),
@@ -140,6 +142,7 @@ impl FromStr for ValType {
 }
 
 /// In the WebAssembly MVP, blocks can return either nothing or a single value.
+// TODO replace all occurrences with FunctionType once we support non-MVP binaries, then remove.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct BlockType(pub Option<ValType>);
 
@@ -172,9 +175,11 @@ impl fmt::Display for BlockType {
     }
 }
 
-#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(WasmBinary, Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct TableType(pub ElemType, pub Limits);
 
+// TODO remove once low-level parser is replaced by wasmparser.
+// TODO or rename Anyref to Funcref
 #[derive(WasmBinary, Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ElemType {
     // only value in WASM version 1
@@ -182,10 +187,11 @@ pub enum ElemType {
     Anyfunc,
 }
 
-#[derive(WasmBinary, Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+// TODO replace with just limits
+#[derive(WasmBinary, Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MemoryType(pub Limits);
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Limits {
     pub initial_size: u32,
     pub max_size: Option<u32>,
@@ -212,10 +218,12 @@ pub enum Mutability {
 
 /* Indices */
 
-#[derive(WasmBinary)]
-// T is only used for static distinction between different index spaces, but has no representation
-// at runtime. Since we don't own T, we don't want a "drop check" and must use fn() -> T, as is
-// recommended in the rustonomicon: https://doc.rust-lang.org/beta/nomicon/phantom-data.html
+/// A WebAssembly index into one of the possible "index spaces" (e.g., functions, globals, etc.)
+/// 
+/// The type parameter T is only used for static distinction between the different index spaces, 
+/// but has no representation at runtime.
+/// Since we don't own T, we don't want a "drop check" and must use fn() -> T, as is
+/// recommended in the rustonomicon: https://doc.rust-lang.org/beta/nomicon/phantom-data.html
 pub struct Idx<T>(u32, PhantomData<fn() -> T>);
 
 impl<T> Idx<T> {
@@ -223,8 +231,7 @@ impl<T> Idx<T> {
     pub fn to_usize(self) -> usize { self.0 as usize }
 }
 
-// Unfortunately, another impl for u32 would make .into() calls ambiguous with integer literals,
-// so only provide the conversion from usize.
+// TODO replace with TryFrom with custom NonU32IndexError
 impl<T> From<usize> for Idx<T> {
     #[inline]
     fn from(u: usize) -> Self {
@@ -232,8 +239,15 @@ impl<T> From<usize> for Idx<T> {
     }
 }
 
-// custom Debug: print index type T, don't print PhantomData
-// e.g. Idx<Function>(3, PhantomData) as "Function 3"
+impl<T> From<u32> for Idx<T> {
+    #[inline]
+    fn from(u: u32) -> Self {
+        Idx(u, PhantomData)
+    }
+}
+
+// Custom `Debug`: print a human-readable version of the index space T, but don't print PhantomData.
+// E.g. print `Idx<Function>(3, PhantomData)` as `Function 3`
 impl<T> fmt::Debug for Idx<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let type_name = std::any::type_name::<T>().split("::").last().unwrap();
@@ -241,8 +255,8 @@ impl<T> fmt::Debug for Idx<T> {
     }
 }
 
-// implement some traits manually, since derive(Copy/Eq) add requirements like T: Clone/PartialEq,
-// which we do not want (T is only a marker and not actually contained).
+// Implement some traits manually, because derive adds unnecessary requirements due to the `T` type
+// parameter, which we don't want. (T is only a marker and not actually contained in Idx<T>.)
 impl<T> Clone for Idx<T> {
     #[inline]
     fn clone(&self) -> Self { self.to_usize().into() }
@@ -264,12 +278,6 @@ impl<T> hash::Hash for Idx<T> {
     }
 }
 
-impl<T> Serialize for Idx<T> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0.serialize(serializer)
-    }
-}
-
 impl<T> PartialOrd for Idx<T> {
     fn partial_cmp(&self, other: &Idx<T>) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -279,6 +287,12 @@ impl<T> PartialOrd for Idx<T> {
 impl<T> Ord for Idx<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.0.cmp(&other.0)
+    }
+}
+
+impl<T> Serialize for Idx<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
     }
 }
 
@@ -331,6 +345,7 @@ pub struct Memarg {
 
     // NOTE offset field must come after alignment, because that's how it is
     // layed out in the binary format. Field order is important!
+    // TODO Note can be removed once lowlevel parser is removed
     pub offset: u32,
 }
 
@@ -398,9 +413,52 @@ impl Memarg {
 pub struct RawCustomSection {
     pub name: String,
     pub content: Vec<u8>,
-    /// Used again during serialization to place the custom section at the right order/position.
-    /// The last non-custom section _before_ this custom section. If there are multiple custom
-    /// sections after each other, this will not include it, but their relative order will
-    /// be respected in the high-level custom section list.
-    pub after: Option<std::mem::Discriminant<super::lowlevel::Section>>,
+    /// The last non-custom section _before_ this custom section. 
+    /// Used during serialization to place the custom section at the right order/position.
+    /// If there are multiple custom sections after each other, this will be `None`, 
+    /// but the custom sections' relative order will be correct, and the first one
+    /// will have this set.
+    // TODO fix this comment, not correct anymore: will point to any previous section
+    pub after: Option<SectionId>,
+}
+// Order is important! Follows the ordering of sections in the binary format
+// (except for custom sections, which can appear anywhere).
+// https://webassembly.github.io/spec/core/binary/modules.html#binary-module
+#[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
+pub enum SectionId {
+    Type,
+    Import,
+    Function,
+    Table,
+    Memory,
+    Global,
+    Export,
+    Start,
+    Element,
+    Code,
+    Data,
+    Custom(String),
+}
+
+// TODO Remove once the old low-level parser code is gone.
+impl SectionId {
+    pub fn from_section(section: &crate::lowlevel::Section) -> Self {
+        use crate::lowlevel::Section::*;
+        use crate::lowlevel::CustomSection;
+        match section {
+            Type(_) => SectionId::Type,
+            Import(_) => SectionId::Import,
+            Function(_) => SectionId::Function,
+            Table(_) => SectionId::Table,
+            Memory(_) => SectionId::Memory,
+            Global(_) => SectionId::Global,
+            Export(_) => SectionId::Export,
+            Start(_) => SectionId::Start,
+            Element(_) => SectionId::Element,
+            Code(_) => SectionId::Code,
+            Data(_) => SectionId::Data,
+            Custom(CustomSection::Name(_)) => SectionId::Custom("name".to_string()),
+            Custom(CustomSection::Raw(RawCustomSection { name, .. })) => SectionId::Custom(name.clone()),
+        }
+    }
 }
