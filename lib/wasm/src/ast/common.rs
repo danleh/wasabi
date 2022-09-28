@@ -231,18 +231,18 @@ impl<T> Idx<T> {
     pub fn to_usize(self) -> usize { self.0 as usize }
 }
 
+impl<T> From<u32> for Idx<T> {
+    #[inline]
+    fn from(u: u32) -> Self {
+        Idx(u, PhantomData)
+    }
+}
+
 // TODO replace with TryFrom with custom NonU32IndexError
 impl<T> From<usize> for Idx<T> {
     #[inline]
     fn from(u: usize) -> Self {
         Idx(u.try_into().expect("wasm32 only allows u32 indices"), PhantomData)
-    }
-}
-
-impl<T> From<u32> for Idx<T> {
-    #[inline]
-    fn from(u: u32) -> Self {
-        Idx(u, PhantomData)
     }
 }
 
@@ -306,8 +306,14 @@ impl Label {
     pub fn to_usize(self) -> usize { self.0 as usize }
 }
 
-// Unfortunately, another impl for u32 would make .into() calls ambiguous with integer literals,
-// so only provide the conversion from usize.
+impl From<u32> for Label {
+    #[inline]
+    fn from(u: u32) -> Self {
+        Label(u)
+    }
+}
+
+// TODO replace with TryFrom with custom NonU32IndexError
 impl From<usize> for Label {
     #[inline]
     fn from(u: usize) -> Self {

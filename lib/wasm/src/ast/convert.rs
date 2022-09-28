@@ -121,6 +121,7 @@ impl From<ll::Module> for hl::Module {
                                 types[type_idx.to_usize()],
                                 // Use an empty body/locals for now, code is only converted later.
                                 hl::Code::new(),
+                                Vec::new(),
                             )
                         );
                     }

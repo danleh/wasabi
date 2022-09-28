@@ -534,7 +534,7 @@ impl<T> WasmBinary for Idx<T> {
         Ok(Idx::from(idx))
     }
     fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
-        self.into_inner().encode(writer)
+        self.to_u32().encode(writer)
     }
 }
 

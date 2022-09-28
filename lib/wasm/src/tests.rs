@@ -44,22 +44,22 @@ fn wasmparser_equal_old_parser() {
         wasm_files.retain(|path| !path.to_string_lossy().contains(hash));
     }
     
-    let remaining_files = Arc::new(std::sync::Mutex::new(wasm_files.clone()));
+    // let remaining_files = Arc::new(std::sync::Mutex::new(wasm_files.clone()));
 
-    let r = remaining_files.clone();
-    let scheduler = std::thread::spawn(move || {
-        let wait_time = Duration::from_millis(5000);
-        loop {
-            std::thread::sleep(wait_time);
-            let remaining_files = r.lock().unwrap();
-            println!("Remaining files: {}", remaining_files.len());
-            if remaining_files.len() < 10 {
-                println!("{:#?}", remaining_files);
-            }
-        }
-    });
+    // let r = remaining_files.clone();
+    // let scheduler = std::thread::spawn(move || {
+    //     let wait_time = Duration::from_millis(5000);
+    //     loop {
+    //         std::thread::sleep(wait_time);
+    //         let remaining_files = r.lock().unwrap();
+    //         println!("Remaining files: {}", remaining_files.len());
+    //         if remaining_files.len() < 10 {
+    //             println!("{:#?}", remaining_files);
+    //         }
+    //     }
+    // });
 
-    wasm_files.iter().for_each(|path| {
+    wasm_files.iter().progress().for_each(|path| {
         // eprintln!("{}", path.display());
         
         let decode_result = highlevel::Module::from_file_with_offsets(&path);
@@ -97,11 +97,11 @@ fn wasmparser_equal_old_parser() {
         // assert_eq!(binary_size_new, binary_size_old, "Binaries differ in size, for file '{}', left = wasmparser, right = old", path.display());
         // assert!(binary_new == binary_old, "Binaries differ in bytes, for file '{}', left = wasmparser, right = old", path.display());
         
-        remaining_files.lock().unwrap().retain(|x| x != path);
+        // remaining_files.lock().unwrap().retain(|x| x != path);
     });
 
-    println!("{:#?}", remaining_files.lock().unwrap());
-    scheduler.join().unwrap();
+    // println!("{:#?}", remaining_files.lock().unwrap());
+    // scheduler.join().unwrap();
 
 }
 

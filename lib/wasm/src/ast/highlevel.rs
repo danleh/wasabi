@@ -64,14 +64,15 @@ pub struct Function {
 /// cheap, it is trivially copy-able and clone-able, only a single unique instance hold in memory,
 /// and references to types are small (only 32 bits, so not even a single pointer).
 /// 
-/// The downsides over just using a "regular", non-interned type are justifyable:
+/// There are downsides over just using "regular", non-interned types,
+/// but I think they are all justifyable:
 /// - The actual types are stored in a global arena, so they are never deallocated.
 /// But since there are very few types in total, and most of them would be shared across different
 /// modules, this is OK.
 /// - Creating a new one requires locking the global arena, but since _new_ types are created very
 /// seldom, this shouldn't be an issue in practice.
 /// - Requires types to be immutable, but that is fine because (function) type signatures are not
-/// altered at runtime.
+/// frequently altered.
 #[derive(Default, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct FunctionType(Intern<crate::lowlevel::FunctionType>);
 
@@ -98,6 +99,7 @@ impl FunctionType {
     }
 }
 
+// TODO remove once wasmparser lands
 impl From<crate::lowlevel::FunctionType> for FunctionType {
     fn from(ty: crate::lowlevel::FunctionType) -> Self {
         Self(Intern::new(ty))
@@ -1118,7 +1120,7 @@ impl FromStr for Instr {
                 let ty = FunctionType::from_str(rest)?;
                 // For the WebAssembly MVP there is only a single table, so the
                 // table index was not printed. Instead assume 0.
-                let table_idx = 0.into();
+                let table_idx = Idx::from(0u32);
                 CallIndirect(ty, table_idx)
             },
             
@@ -1133,8 +1135,8 @@ impl FromStr for Instr {
             
             // For the WebAssembly MVP there is only a single memory, so the
             // memory index was not printed. Instead assume 0.
-            "memory.size" => MemorySize(0.into()),
-            "memory.grow" => MemoryGrow(0.into()),
+            "memory.size" => MemorySize(Idx::from(0u32)),
+            "memory.grow" => MemoryGrow(Idx::from(0u32)),
 
             "i32.const" => Const(Val::from_str(rest, ValType::I32)?),
             "i64.const" => Const(Val::from_str(rest, ValType::I64)?),
@@ -1265,6 +1267,7 @@ impl Module {
                 locals: locals.into_iter().map(Local::new).collect(),
                 body,
             },
+            Vec::new()
         ));
         (self.functions.len() - 1).into()
     }
@@ -1273,6 +1276,7 @@ impl Module {
         self.functions.push(Function::new_imported(
             type_,
             module, name,
+            Vec::new()
         ));
         (self.functions.len() - 1).into()
     }
