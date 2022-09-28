@@ -1271,6 +1271,28 @@ pub mod parser {
             | wp::F64x2ConvertLowI32x4U
             | wp::F32x4DemoteF64x2Zero
             | wp::F64x2PromoteLowF32x4 => Err(ParseErrorInner::unsupported(offset, WasmExtension::Simd))?,
+
+            | wp::I8x16RelaxedSwizzle
+            | wp::I32x4RelaxedTruncSatF32x4S
+            | wp::I32x4RelaxedTruncSatF32x4U
+            | wp::I32x4RelaxedTruncSatF64x2SZero
+            | wp::I32x4RelaxedTruncSatF64x2UZero
+            | wp::F32x4RelaxedFma
+            | wp::F32x4RelaxedFnma
+            | wp::F64x2RelaxedFma
+            | wp::F64x2RelaxedFnma
+            | wp::I8x16RelaxedLaneselect
+            | wp::I16x8RelaxedLaneselect
+            | wp::I32x4RelaxedLaneselect
+            | wp::I64x2RelaxedLaneselect
+            | wp::F32x4RelaxedMin
+            | wp::F32x4RelaxedMax
+            | wp::F64x2RelaxedMin
+            | wp::F64x2RelaxedMax
+            | wp::I16x8RelaxedQ15mulrS
+            | wp::I16x8DotI8x16I7x16S
+            | wp::I32x4DotI8x16I7x16AddS
+            | wp::F32x4RelaxedDotBf16x8AddF32x4 => Err(ParseErrorInner::unsupported(offset, WasmExtension::RelaxedSimd))?,
         })
     }
 
@@ -1291,6 +1313,9 @@ pub mod parser {
     fn parse_memory_ty(ty: wasmparser::MemoryType, offset: usize) -> Result<MemoryType, ParseError> {
         if ty.memory64 {
             Err(ParseErrorInner::unsupported(offset, WasmExtension::Memory64))?
+        }
+        if ty.shared {
+            Err(ParseErrorInner::unsupported(offset, WasmExtension::ThreadsAtomics))?
         }
         Ok(MemoryType(Limits {
             initial_size: ty
@@ -1320,9 +1345,6 @@ pub mod parser {
             V128 => Err(ParseErrorInner::message(offset, "only reftypes, not value types are allowed as table elements"))?,
             FuncRef => Ok(ElemType::Anyfunc),
             ExternRef => Err(ParseErrorInner::unsupported(offset, WasmExtension::ReferenceTypes))?,
-            ExnRef => Err(ParseErrorInner::unsupported(offset, WasmExtension::ExceptionHandling))?,
-            Func => Err(ParseErrorInner::message(offset, "only reftypes, not function types are allowed as table elements"))?,
-            EmptyBlockType => Err(ParseErrorInner::message(offset, "only reftypes, not block types are allowed as table elements"))?,
         }
     }
 
@@ -1421,7 +1443,7 @@ pub mod encode {
     use std::convert::TryInto;
     use std::collections::HashMap;
 
-    use wasm_encoder as we;
+    use wasm_encoder::{self as we, Encode};
 
     /// Add marker types for type-safe `Idx<T>` for the low-level binary format.
     /// Since I cannot extend wasm_encoder and there cannot be another, clashing `we` module, wrap
@@ -1794,9 +1816,13 @@ pub mod encode {
         }
     }
 
-    fn encode_single_instruction_with_end(instrs: &[hl::Instr], state: &mut EncodeState) -> Result<we::Instruction<'static>, EncodeError> {
+    fn encode_single_instruction_with_end(instrs: &[hl::Instr], state: &mut EncodeState) -> Result<we::ConstExpr, EncodeError> {
         match instrs {
-            [single_instr, hl::Instr::End] => encode_instruction(single_instr, state),
+            [single_instr, hl::Instr::End] => {
+                let mut instr_bytes = Vec::with_capacity(2);
+                encode_instruction(single_instr, state)?.encode(&mut instr_bytes);
+                Ok(we::ConstExpr::raw(instr_bytes))
+            },
             _ => Err(EncodeError::message(format!("expected exactly one instruction, followed by an end, but got {:?}. If there is more than one instruction, this is not supported by wasm-encoder for an unknown reason.", instrs))),
         }
     }
@@ -2060,6 +2086,7 @@ pub mod encode {
                 minimum: hl_memory_type.0.initial_size.try_into().expect("u32 to u64 should always succeed"),
                 maximum: hl_memory_type.0.max_size.map(|u32| u32.try_into().expect("u32 to u64 should always succeed")),
                 memory64: false,
+                shared: false,
             }
         }
     }

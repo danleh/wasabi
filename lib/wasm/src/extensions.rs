@@ -13,6 +13,7 @@ pub enum WasmExtension {
     // In rough decreasing order of stability (i.e., increasing order of
     // breaking changes):
     ThreadsAtomics,
+    RelaxedSimd,
     Memory64,
     ExceptionHandling,
     ExtendedNameSection,
@@ -34,6 +35,7 @@ impl WasmExtension {
             Simd => "SIMD",
 
             ThreadsAtomics => "threads and atomics",
+            RelaxedSimd => "relaxed SIMD",
             Memory64 => "64-bit memory",
             ExceptionHandling => "exception handling",
             ExtendedNameSection => "extended name section",
@@ -56,6 +58,7 @@ impl WasmExtension {
             Simd => r"https://github.com/WebAssembly/simd",
 
             ThreadsAtomics => r"https://github.com/WebAssembly/threads",
+            RelaxedSimd => r"https://github.com/WebAssembly/relaxed-simd",
             Memory64 => r"https://github.com/WebAssembly/memory64",
             ExceptionHandling => r"https://github.com/WebAssembly/exception-handling",
             ExtendedNameSection => r"https://github.com/WebAssembly/extended-name-section",
