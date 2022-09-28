@@ -62,7 +62,7 @@ fn wasmparser_equal_old_parser() {
     wasm_files.iter().progress().for_each(|path| {
         // eprintln!("{}", path.display());
         
-        let decode_result = highlevel::Module::from_file_with_offsets(&path);
+        let decode_result = highlevel::Module::from_file_with_offsets(path);
         if let Err(err) = decode_result {
             eprintln!("Could not parse with old '{}'\n{}", path.display(), err);
             return;
@@ -70,7 +70,7 @@ fn wasmparser_equal_old_parser() {
         let (module_old, offsets_old) = decode_result.unwrap();
         // std::fs::write("ast-old.txt", format!("{:#?}", module_old)).unwrap();
 
-        let decode_result = highlevel::Module::from_file_with_offsets_wasmparser(&path);
+        let decode_result = highlevel::Module::from_file_with_offsets_wasmparser(path);
         if let Err(err) = decode_result {
             eprintln!("Could not parse with new '{}'\n{}", path.display(), err);
             return;
@@ -114,17 +114,17 @@ fn roundtrip_produces_same_module_ast() {
     }
 
     wasm_files.iter().progress().for_each(|path| {
-        let (module_old, offsets_old) = highlevel::Module::from_file_with_offsets(&path).unwrap();
-        let (module_new, offsets_new) = highlevel::Module::from_file_with_offsets_wasmparser(&path).unwrap();
+        let (module_old, _offsets_old) = highlevel::Module::from_file_with_offsets(path).unwrap();
+        let (module_new, _offsets_new) = highlevel::Module::from_file_with_offsets_wasmparser(path).unwrap();
 
         let mut binary_old = Vec::new();
         let _binary_size_old = module_new.to_bytes(&mut binary_old)
-            .expect(&format!("could not encode valid wasm file '{}'", path.display()));
+            .unwrap_or_else(|_| panic!("could not encode valid wasm file '{}'", path.display()));
         std::fs::write("bin-old.wasm", &binary_old).unwrap();
 
         let mut binary_new = Vec::new();
         let _binary_size_new = module_new.to_bytes_wasmparser(&mut binary_new)
-            .expect(&format!("could not encode valid wasm file '{}'", path.display()));
+            .unwrap_or_else(|_| panic!("could not encode valid wasm file '{}'", path.display()));
         std::fs::write("bin-new.wasm", &binary_new).unwrap();
 
         let module_old_roundtrip = highlevel::Module::from_file("bin-old.wasm").unwrap();
@@ -139,7 +139,7 @@ fn type_checking() {
     for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
         println!("{}", path.display());
         let module = highlevel::Module::from_file(&path)
-            .expect(&format!("could not decode valid wasm file '{}'", path.display()));
+            .unwrap_or_else(|_| panic!("could not decode valid wasm file '{}'", path.display()));
         TypeChecker::check_module(&module).expect("valid binary should type check");
     }
 }
@@ -149,14 +149,14 @@ fn decode_encode_is_valid_wasm() {
     for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
         println!("{}", path.display());
         let module = highlevel::Module::from_file(&path)
-            .expect(&format!("could not decode valid wasm file '{}'", path.display()));
+            .unwrap_or_else(|_| panic!("could not decode valid wasm file '{}'", path.display()));
 
         let output_path = &output_file(path, "encode").unwrap();
         module.to_file(output_path)
-            .expect(&format!("could not encode wasm to file '{}'", output_path.display()));
+            .unwrap_or_else(|_| panic!("could not encode wasm to file '{}'", output_path.display()));
 
         wasm_validate(output_path)
-            .expect(&format!("could not validate wasm output file '{}'", output_path.display()));
+            .unwrap_or_else(|_| panic!("could not validate wasm output file '{}'", output_path.display()));
     }
 }
 

@@ -1575,6 +1575,12 @@ impl Code {
     }
 }
 
+impl Default for Code {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // See description on enum type above.
 impl<'a> ParamOrLocalRef<'a> {
     pub fn type_(self) -> ValType {

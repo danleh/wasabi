@@ -654,11 +654,11 @@ fn to_lowlevel_functions(functions: &[hl::Function], state: &mut EncodeState) ->
 }
 
 fn to_lowlevel_tables(tables: &[hl::Table], state: &mut EncodeState) -> Vec<TableType> {
-    to_lowlevel_elements!(tables, state, insert_table_idx, |table: &hl::Table| table.type_.clone())
+    to_lowlevel_elements!(tables, state, insert_table_idx, |table: &hl::Table| table.type_)
 }
 
 fn to_lowlevel_memories(memories: &[hl::Memory], state: &mut EncodeState) -> Vec<MemoryType> {
-    to_lowlevel_elements!(memories, state, insert_memory_idx, |memory: &hl::Memory| memory.type_.clone())
+    to_lowlevel_elements!(memories, state, insert_memory_idx, |memory: &hl::Memory| memory.type_)
 }
 
 fn to_lowlevel_globals(globals: &[hl::Global], state: &mut EncodeState) -> Vec<ll::Global> {

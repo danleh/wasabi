@@ -1651,7 +1651,7 @@ pub mod encode {
             }
         }
 
-        add_imports!(functions, insert_function_idx, Function, |f: &hl::Function| state.get_or_insert_type(f.type_.clone()).to_u32());
+        add_imports!(functions, insert_function_idx, Function, |f: &hl::Function| state.get_or_insert_type(f.type_).to_u32());
         add_imports!(tables, insert_table_idx, Table, |t: &hl::Table| we::TableType::from(t.type_));
         add_imports!(memories, insert_memory_idx, Memory, |m: &hl::Memory| we::MemoryType::from(m.type_));
         add_imports!(globals, insert_global_idx, Global, |g: &hl::Global| we::GlobalType::from(g.type_));
@@ -1713,7 +1713,7 @@ pub mod encode {
             if let Some(_code) = function.code() {
                 state.insert_function_idx(function_idx);
 
-                let ll_type_idx = state.get_or_insert_type(function.type_.clone());
+                let ll_type_idx = state.get_or_insert_type(function.type_);
                 function_section.function(ll_type_idx.to_u32());
             }
         }
@@ -1857,7 +1857,7 @@ pub mod encode {
             hl::Instr::Return => we::Instruction::Return,
             hl::Instr::Call(function_idx) => we::Instruction::Call(state.map_function_idx(function_idx)?.to_u32()),
             hl::Instr::CallIndirect(ref function_type, table_idx) => we::Instruction::CallIndirect {
-                ty: state.get_or_insert_type(function_type.clone()).to_u32(),
+                ty: state.get_or_insert_type(*function_type).to_u32(),
                 table: state.map_table_idx(table_idx)?.to_u32(),
             },
             
