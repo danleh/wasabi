@@ -1,19 +1,137 @@
 use std::error::Error;
 use std::fs::File;
 use std::io::{self, Read};
+use std::sync::Arc;
+use std::time::Duration;
 
-// FIXME Replace this with unstable feature test.
 use bencher::{Bencher, benchmark_group, benchmark_main};
+use rayon::prelude::*;
 use test_utilities::*;
+
+use indicatif::ParallelProgressIterator;
+use indicatif::ProgressIterator;
 
 use crate::{highlevel, lowlevel, Idx};
 use crate::binary::DecodeState;
 use crate::WasmBinary;
 
-const WASM_TEST_INPUTS_DIR: &'static str = "../../tests/inputs";
-const WASM_TEST_INPUT_LARGE: &'static str = "../../tests/inputs/real-world/bananabread/bb.wasm";
-const WASM_TEST_INPUT_NAMES_SECTION: &'static str = "../../tests/inputs/name-section/wabt-tests/names.wasm";
-const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &'static str = "../../tests/inputs/name-section/extended-name-section/vuln.wasm";
+const WASMBENCH_DIR: &str = "tests/WasmBench/valid-no-extensions";
+const WASMBENCH_EXCLUDED_FILES: [&str; 3] = [
+    // Valid, but creates very large allocations because it has >500k locals in >1k functions.
+    "31fa012442fd637fca221db4fda94262e99759ab9667147cbedde083aabcc065",
+    // Is actually invalid according to wasm-validate, not sure why it wasn't filtered out before.
+    "4b1082f1c2d634aaebbe9b70331ac6639ab3fe7b0a52459ea4f6baa4f82a82ad",
+    // Panics in the old parser, but works in the new one -> strictly better, so ignore.
+    "a50d67cbaf770807cc1d1723ebc56333188b681538bf3f7679659b184d2f8020"
+];
+
+const WASM_TEST_INPUTS_DIR: &str = "../../tests/inputs";
+const WASM_TEST_INPUT_LARGE: &str = "../../tests/inputs/real-world/bananabread/bb.wasm";
+const WASM_TEST_INPUT_NAMES_SECTION: &str = "../../tests/inputs/name-section/wabt-tests/names.wasm";
+const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &str = "../../tests/inputs/name-section/extended-name-section/vuln.wasm";
+
+#[test]
+fn wasmparser_equal_old_parser() {
+    // for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
+    let mut wasm_files = wasm_files(WASMBENCH_DIR).unwrap();
+    wasm_files.sort_by_cached_key(|f| std::fs::metadata(f).unwrap().len());
+    // let mut wasm_files = [
+    //     "tests/WasmBench/valid-no-extensions\\binaries\\61ca24d2fbe9d1a3e4fe2d4ad343bfbf654c89e72602c09dcb3e163db7595d9b.wasm",
+    // ].iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
+    
+    for hash in WASMBENCH_EXCLUDED_FILES {
+        wasm_files.retain(|path| !path.to_string_lossy().contains(hash));
+    }
+    
+    let remaining_files = Arc::new(std::sync::Mutex::new(wasm_files.clone()));
+
+    let r = remaining_files.clone();
+    let scheduler = std::thread::spawn(move || {
+        let wait_time = Duration::from_millis(5000);
+        loop {
+            std::thread::sleep(wait_time);
+            let remaining_files = r.lock().unwrap();
+            println!("Remaining files: {}", remaining_files.len());
+            if remaining_files.len() < 10 {
+                println!("{:#?}", remaining_files);
+            }
+        }
+    });
+
+    wasm_files.iter().for_each(|path| {
+        // eprintln!("{}", path.display());
+        
+        let decode_result = highlevel::Module::from_file_with_offsets(&path);
+        if let Err(err) = decode_result {
+            eprintln!("Could not parse with old '{}'\n{}", path.display(), err);
+            return;
+        }
+        let (module_old, offsets_old) = decode_result.unwrap();
+        // std::fs::write("ast-old.txt", format!("{:#?}", module_old)).unwrap();
+
+        let decode_result = highlevel::Module::from_file_with_offsets_wasmparser(&path);
+        if let Err(err) = decode_result {
+            eprintln!("Could not parse with new '{}'\n{}", path.display(), err);
+            return;
+        }
+        let (module_new, offsets_new) = decode_result.unwrap();
+        // std::fs::write("ast-new.txt", format!("{:#?}", module_new)).unwrap();
+
+        assert!(module_new == module_old, "ASTs differ for file '{}'", path.display());
+        assert!(offsets_new == offsets_old, "Offsets differ for file '{}'", path.display());
+
+        // println!("{:#?}", module_new);
+        // println!("{:#?}", offsets_new.sections);
+
+        // let mut binary_old = Vec::new();
+        // let binary_size_old = module_new.to_bytes(&mut binary_old)
+        //     .expect(&format!("could not encode valid wasm file '{}'", path.display()));
+        // // std::fs::write("bin-old.wasm", &binary_old).unwrap();
+
+        // let mut binary_new = Vec::new();
+        // let binary_size_new = module_new.to_bytes_wasmparser(&mut binary_new)
+        //     .expect(&format!("could not encode valid wasm file '{}'", path.display()));
+        // // std::fs::write("bin-new.wasm", &binary_new).unwrap();
+
+        // assert_eq!(binary_size_new, binary_size_old, "Binaries differ in size, for file '{}', left = wasmparser, right = old", path.display());
+        // assert!(binary_new == binary_old, "Binaries differ in bytes, for file '{}', left = wasmparser, right = old", path.display());
+        
+        remaining_files.lock().unwrap().retain(|x| x != path);
+    });
+
+    println!("{:#?}", remaining_files.lock().unwrap());
+    scheduler.join().unwrap();
+
+}
+
+#[test]
+fn roundtrip_produces_same_module_ast() {
+    let mut wasm_files = wasm_files(WASMBENCH_DIR).unwrap();
+
+    for hash in WASMBENCH_EXCLUDED_FILES {
+        wasm_files.retain(|path| !path.to_string_lossy().contains(hash));
+    }
+
+    wasm_files.iter().progress().for_each(|path| {
+        let (module_old, offsets_old) = highlevel::Module::from_file_with_offsets(&path).unwrap();
+        let (module_new, offsets_new) = highlevel::Module::from_file_with_offsets_wasmparser(&path).unwrap();
+
+        let mut binary_old = Vec::new();
+        let _binary_size_old = module_new.to_bytes(&mut binary_old)
+            .expect(&format!("could not encode valid wasm file '{}'", path.display()));
+        std::fs::write("bin-old.wasm", &binary_old).unwrap();
+
+        let mut binary_new = Vec::new();
+        let _binary_size_new = module_new.to_bytes_wasmparser(&mut binary_new)
+            .expect(&format!("could not encode valid wasm file '{}'", path.display()));
+        std::fs::write("bin-new.wasm", &binary_new).unwrap();
+
+        let module_old_roundtrip = highlevel::Module::from_file("bin-old.wasm").unwrap();
+        let (module_new_roundtrip, _) = highlevel::Module::from_file_with_offsets_wasmparser("bin-new.wasm").unwrap();
+        assert_eq!(module_old, module_old_roundtrip, "Old roundtrip failed for file '{}'", path.display());
+        assert_eq!(module_new, module_new_roundtrip, "New roundtrip failed for file '{}'", path.display());
+    });
+}
 
 #[test]
 fn decode_encode_is_valid_wasm() {
@@ -130,8 +248,8 @@ fn section_offsets_like_objdump() {
             lowlevel::NameSection { subsections: Vec::new() }
         ))), vec![0x1f]);
     // Also try the (only) function code offset, for completion.
-    assert_eq!(offsets.function_idx_to_offset(Idx::from(0)), Some(0x17));
-    assert_eq!(offsets.function_offset_to_idx(0x17), Some(Idx::from(0)));
+    assert_eq!(offsets.function_idx_to_offset(Idx::from(0u32)), Some(0x17));
+    assert_eq!(offsets.function_offset_to_idx(0x17), Some(Idx::from(0u32)));
 }
 
 #[test]
@@ -140,15 +258,15 @@ fn code_offsets_like_objdump() {
 
     // Test first two and last two functions.
     // Expected values are taken from wasm-objdump output.
-    assert_eq!(offsets.function_idx_to_offset(Idx::from(383)), Some(0x5522));
-    assert_eq!(offsets.function_offset_to_idx(0x5522), Some(Idx::from(383)));
-    assert_eq!(offsets.function_idx_to_offset(Idx::from(384)), Some(0x5545));
-    assert_eq!(offsets.function_offset_to_idx(0x5545), Some(Idx::from(384)));
+    assert_eq!(offsets.function_idx_to_offset(Idx::from(383u32)), Some(0x5522));
+    assert_eq!(offsets.function_offset_to_idx(0x5522), Some(Idx::from(383u32)));
+    assert_eq!(offsets.function_idx_to_offset(Idx::from(384u32)), Some(0x5545));
+    assert_eq!(offsets.function_offset_to_idx(0x5545), Some(Idx::from(384u32)));
 
-    assert_eq!(offsets.function_idx_to_offset(Idx::from(3641)), Some(0x1e38b7));
-    assert_eq!(offsets.function_offset_to_idx(0x1e38b7), Some(Idx::from(3641)));
-    assert_eq!(offsets.function_idx_to_offset(Idx::from(3642)), Some(0x1e38d2));
-    assert_eq!(offsets.function_offset_to_idx(0x1e38d2), Some(Idx::from(3642)));
+    assert_eq!(offsets.function_idx_to_offset(Idx::from(3641u32)), Some(0x1e38b7));
+    assert_eq!(offsets.function_offset_to_idx(0x1e38b7), Some(Idx::from(3641u32)));
+    assert_eq!(offsets.function_idx_to_offset(Idx::from(3642u32)), Some(0x1e38d2));
+    assert_eq!(offsets.function_offset_to_idx(0x1e38d2), Some(Idx::from(3642u32)));
 }
 
 #[test]
@@ -166,7 +284,8 @@ fn extended_name_sections_can_be_parsed_to_lowlevel() {
 
 benchmark_group!(benches, decode_lowlevel_speed, encode_lowlevel_speed,
                           convert_lowlevel_to_highlevel_speed, convert_highlevel_to_lowlevel_speed,
-                          clone_lowlevel_module_speed, clone_highlevel_module_speed);
+                          clone_lowlevel_module_speed, clone_highlevel_module_speed,
+);
 benchmark_main!(benches);
 
 fn decode_lowlevel_speed(bencher: &mut Bencher) {

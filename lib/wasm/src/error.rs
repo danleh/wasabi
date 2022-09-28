@@ -93,7 +93,7 @@ impl error::Error for Error {
 pub trait AddErrInfo<T> {
     /// Adds the error offset and the current parsed type as additional information to the existing
     /// error. Does not change the Ok(_) variant of the Result.
-    fn add_err_info<GrammarElement>(self: Self, offset: usize) -> Result<T, Error>;
+    fn add_err_info<GrammarElement>(self, offset: usize) -> Result<T, Error>;
 }
 
 impl<T> AddErrInfo<T> for Result<T, ParseLeb128Error> {
@@ -121,11 +121,11 @@ impl<T> AddErrInfo<T> for Result<T, io::Error> {
 pub trait SetErrElem<T> {
     /// Update the grammar element that was currently parsed when the error happened to something
     /// more specific (e.g., "Section" instead of a not very useful "u32").
-    fn set_err_elem<GrammarElement>(self: Self) -> Self;
+    fn set_err_elem<GrammarElement>(self) -> Self;
 }
 
 impl<T> SetErrElem<T> for Result<T, Error> {
-    fn set_err_elem<GrammarElement>(self: Self) -> Self {
+    fn set_err_elem<GrammarElement>(self) -> Self {
         self.map_err(|mut err| {
             err.0.grammar_element = grammar_element::<GrammarElement>();
             err

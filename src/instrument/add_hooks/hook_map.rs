@@ -89,7 +89,6 @@ impl Hook {
                 FunctionType::new(&lowlevel_args, &[]),
                 "__wasabi_hooks".to_string(),
                 lowlevel_name,
-                Vec::new(),
             )
         };
 
@@ -97,7 +96,7 @@ impl Hook {
             wasm,
             js,
             // just a placeholder, replaced on insertion in the map
-            idx: 0.into(),
+            idx: Idx::from(0u32),
         }
     }
 

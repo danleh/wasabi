@@ -1,5 +1,6 @@
 // Export AST types directly under crate, without ast prefix.
 mod ast;
+
 pub use crate::ast::*;
 
 // Export WasmBinary trait directly under the crate.
@@ -10,6 +11,8 @@ pub use crate::binary::DecodeState;
 // Export Error and ErrorKind directly under the crate.
 mod error;
 pub use crate::error::{Error, ErrorKind};
+
+mod extensions;
 
 #[cfg(test)]
 mod tests;
@@ -24,6 +27,7 @@ use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use std::path::Path;
 
+// TODO remove
 impl lowlevel::Module {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
         Ok(Self::from_file_with_offsets(path)?.0)
@@ -52,8 +56,36 @@ impl highlevel::Module {
         Ok((module.into(), offsets))
     }
 
+    pub fn from_file_with_offsets_wasmparser(path: impl AsRef<Path>) -> Result<(Self, Offsets), Box<dyn std::error::Error>> {
+        let bytes = std::fs::read(path)?;
+        let (module, offsets, warnings) = ast::wasmparser::parser::parse_module_with_offsets(&bytes)?;
+        for warning in warnings {
+            println!("warning: {}", warning);
+            use std::error::Error;
+            if let Some(source) = warning.source() {
+                println!("caused by: {}", source);
+            }
+        }
+        Ok((module, offsets))
+    }
+
+    // TODO add from_bytes_with_offsets(R) from R: io::Read
+
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> io::Result<usize> {
         let module: lowlevel::Module = self.into();
         module.to_file(path)
+    }
+
+    pub fn to_bytes<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        let module: lowlevel::Module = self.into();
+        module.encode(writer)
+    }
+
+    pub fn to_bytes_wasmparser<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        // TODO it's a bit stupid to serialize to a vector first and then to a file,
+        // but this is what wasm-encode offers...
+        let bytes = ast::wasmparser::encode::encode_module(self).map_err(|_| io::Error::new(io::ErrorKind::Other, "TODO"))?;
+        writer.write_all(&bytes)?;
+        Ok(bytes.len())
     }
 }

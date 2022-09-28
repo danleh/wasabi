@@ -8,10 +8,30 @@ edition = "2018"
 binary_derive = { path = "binary_derive" }
 wasabi_leb128 = "0.4"
 byteorder = "1"
-rayon = "1"
+rayon = "1.5.1"
 serde = { version = "1", features = ["derive"] }
 ordered-float = "1"
+wasmparser = "0.91.0"
+wasm-encoder = "0.17.0"
+thiserror = "1.0.30"
 
 [dev-dependencies]
 test_utilities = { path = "../test_utilities" }
 bencher = "0.1.5"
+criterion = "0.3"
+indicatif = { version = "0.17.1", features = ["rayon"] }
+
+[[bench]]
+name = "parser"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+overflow-checks = true
+# For profiling with debug info.
+debug = 1
+
+[profile.test]
+opt-level = 2
+lto = "thin"

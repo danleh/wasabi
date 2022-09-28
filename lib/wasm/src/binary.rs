@@ -1,5 +1,4 @@
 use std::io;
-use std::marker::PhantomData;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use ordered_float::OrderedFloat;
@@ -47,7 +46,7 @@ impl DecodeState {
     pub fn into_offsets(self, module: &Module) -> Offsets {
         assert_eq!(self.section_offsets.len(), module.sections.len());
         let sections = module.sections.iter()
-            .map(std::mem::discriminant)
+            .map(crate::SectionId::from_section)
             .zip(self.section_offsets.into_iter())
             .collect();
 
@@ -410,10 +409,9 @@ impl WasmBinary for Module {
                     // To insert custom sections at the correct place when serializing again, we
                     // need to remember after which other non-custom section they originally came.
                     if let Section::Custom(CustomSection::Raw(r)) = &mut section {
-                        r.after = last_section_type;
-                    } else {
-                        last_section_type = Some(std::mem::discriminant(&section));
+                        r.after = last_section_type.clone();
                     }
+                    last_section_type = Some(crate::SectionId::from_section(&section));
 
                     sections.push(section);
                 }
@@ -530,9 +528,14 @@ impl WasmBinary for Limits {
     }
 }
 
-impl<T> WasmBinary for PhantomData<T> {
-    fn decode<R: io::Read>(_: &mut R, _: &mut DecodeState) -> Result<Self, Error> { Ok(PhantomData) }
-    fn encode<W: io::Write>(&self, _: &mut W) -> io::Result<usize> { Ok(0) }
+impl<T> WasmBinary for Idx<T> {
+    fn decode<R: io::Read>(reader: &mut R, state: &mut DecodeState) -> Result<Self, Error> {
+        let idx = u32::decode(reader, state).set_err_elem::<Self>()?;
+        Ok(Idx::from(idx))
+    }
+    fn encode<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        self.into_inner().encode(writer)
+    }
 }
 
 /* Custom sections and name subsection parsing. */
