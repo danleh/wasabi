@@ -342,16 +342,15 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
             } => {
                 section_offsets.push((SectionId::Code, range.start));
 
-                function_offsets = Vec::with_capacity(u32_to_usize(count));
+                function_offsets.reserve_exact(u32_to_usize(count));
+                function_bodies.reserve_exact(u32_to_usize(count));
 
                 code_entries_count = count;
-                function_bodies = Vec::with_capacity(u32_to_usize(count));
             }
             wp::Payload::CodeSectionEntry(body) => {
                 let func_index = imported_function_count + current_code_index;
 
                 function_offsets.push((func_index.into(), body.range().start));
-
                 function_bodies.push((func_index, body));
 
                 current_code_index += 1;
@@ -369,6 +368,9 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
                     // Intel Core i7-7500U chip, where there is no slowdown!? I tried copying the function body
                     // bytes and the iterators to have share-nothing, but that improved for the Ryzen only from 2.7x to
                     // roughly 2.4x slowdown.
+                    // Update: I dug into the problem under Windows a bit more. The profiler (AMD uProf, WPR/WPA) tells
+                    // me that a lot of time is spent in the memory allocator. So I guess Windows is pathological here 
+                    // for parallel allocations!?
                     // Since it works fine under Linux, I'll leave it like it is right now.
 
                     // Parse and convert to high-level instructions in parallel.
@@ -379,11 +381,11 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
                         })
                         .collect::<Vec<_>>();
                     // Attach the converted function bodies to the function definitions (not parallel).
-                    for (func_index, offset, code) in function_bodies {
+                    for (func_idx, offset, code) in function_bodies {
                         let function = module
                             .functions
-                            .get_mut(u32_to_usize(func_index))
-                            .ok_or_else(|| ParseIssue::index(offset, func_index, "function"))?;
+                            .get_mut(u32_to_usize(func_idx))
+                            .ok_or_else(|| ParseIssue::index(offset, func_idx, "function"))?;
                         function.code = ImportOrPresent::Present(code?);
                     }
                 }
@@ -457,11 +459,12 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
 }
 
 fn parse_body(body: wp::FunctionBody, types: &Types) -> Result<Code, ParseError> {
-    let mut locals = Vec::new();
     let mut locals_reader = body.get_locals_reader()?;
     let mut offset = locals_reader.original_position();
+    let mut locals = Vec::with_capacity(u32_to_usize(locals_reader.get_count()));
     for _ in 0..locals_reader.get_count() {
         let (count, type_) = locals_reader.read()?;
+        locals.reserve(u32_to_usize(count));
         for _ in 0..count {
             locals.push(Local::new(parse_val_ty(type_, offset)?));
         }
