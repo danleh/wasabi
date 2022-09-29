@@ -190,7 +190,7 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
                     let index_u32 = export.index;
                     let index = u32_to_usize(export.index);
                     
-                    use wasmparser::ExternalKind;
+                    use wp::ExternalKind;
                     match export.kind {
                         ExternalKind::Func => module
                             .functions
@@ -254,18 +254,16 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
                     let mut item_offset = items_reader.original_position();
                     for _ in 0..items_count {
                         let item = items_reader.read()?;
-                        use wasmparser::ElementItem;
                         items.push(match item {
-                            ElementItem::Func(index) => index.into(),
-                            ElementItem::Expr(_) => Err(ParseIssue::unsupported(item_offset, WasmExtension::ReferenceTypes))?,
+                            wp::ElementItem::Func(index) => index.into(),
+                            wp::ElementItem::Expr(_) => Err(ParseIssue::unsupported(item_offset, WasmExtension::ReferenceTypes))?,
                         });
 
                         item_offset = items_reader.original_position();
                     }
 
-                    use wasmparser::ElementKind;
                     match element.kind {
-                        ElementKind::Active {
+                        wp::ElementKind::Active {
                             table_index,
                             offset_expr,
                         } => {
@@ -286,10 +284,10 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
                                 functions: items,
                             })
                         }
-                        ElementKind::Passive => {
+                        wp::ElementKind::Passive => {
                             Err(ParseIssue::unsupported(element_offset, WasmExtension::BulkMemoryOperations))?
                         }
-                        ElementKind::Declared => {
+                        wp::ElementKind::Declared => {
                             Err(ParseIssue::unsupported(element_offset, WasmExtension::ReferenceTypes))?
                         }
                     }
@@ -307,9 +305,8 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
                 for _ in 0..reader.get_count() {
                     let data = reader.read()?;
 
-                    use wasmparser::DataKind;
                     match data.kind {
-                        DataKind::Active {
+                        wp::DataKind::Active {
                             memory_index,
                             offset_expr,
                         } => {
@@ -330,7 +327,7 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
                                 bytes: data.data.to_vec(),
                             })
                         }
-                        DataKind::Passive => {
+                        wp::DataKind::Passive => {
                             Err(ParseIssue::unsupported(data_offset, WasmExtension::BulkMemoryOperations))?
                         }
                     }
@@ -375,12 +372,12 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
                     // Since it works fine under Linux, I'll leave it like it is right now.
 
                     // Parse and convert to high-level instructions in parallel.
-                    let function_bodies: Vec<_> = function_bodies
+                    let function_bodies = function_bodies
                         .par_drain(..)
-                        .map(|(i, body)| {
-                            (i, body.range().start, parse_body(body, &types))
+                        .map(|(func_idx, body)| {
+                            (func_idx, body.range().start, parse_body(body, &types))
                         })
-                        .collect();
+                        .collect::<Vec<_>>();
                     // Attach the converted function bodies to the function definitions (not parallel).
                     for (func_index, offset, code) in function_bodies {
                         let function = module
@@ -402,84 +399,9 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
 
                 // Name custom section.
                 if name == "name" {
-                    // TODO Move into a separate function.
                     // If parts of the name section cannot be parsed, collect the issue as a warning and abort parsing the
                     // name section, but produce an AST for the rest of the module.
-                    // To make it possible to use the `?` operator, wrap this into a closure.
-                    let mut name_parsing = || -> Result<(), ParseIssue> {
-                        let mut reader = wp::NameSectionReader::new(reader.data(), reader.data_offset())?;
-                        while !reader.eof() {
-                            let offset = reader.original_position();
-                            let name_subsection = reader.read()?;
-                            use wasmparser::Name;
-                            match name_subsection {
-                                Name::Module(name) => {
-                                    let prev = module.name.replace(name.get_name()?.to_string());
-                                    if prev.is_some() {
-                                        warnings.push(ParseIssue::message(offset, "name section: duplicate module name", None))
-                                    }
-                                }
-                                Name::Function(name_map) => {
-                                    let mut name_map = name_map.get_map()?;
-                                    for _ in 0..name_map.get_count() {
-                                        let offset = name_map.original_position();
-        
-                                        let wp::Naming { index: function_index, name } = name_map.read()?;
-                                        module
-                                            .functions
-                                            .get_mut(u32_to_usize(function_index))
-                                            .ok_or_else(|| ParseIssue::index(offset, function_index, "function"))?
-                                            .name = Some(name.to_string());
-                                    }
-                                }
-                                Name::Local(indirect_name_map) => {
-                                    let mut indirect_name_map = indirect_name_map.get_indirect_map()?;
-                                    for _ in 0..indirect_name_map.get_indirect_count() {
-                                        let offset = indirect_name_map.original_position();
-                                        
-                                        let indirect_naming = indirect_name_map.read()?;
-                                        let function_index = indirect_naming.indirect_index;
-                                        let function = module
-                                            .functions
-                                            .get_mut(u32_to_usize(function_index))
-                                            .ok_or_else(|| ParseIssue::index(offset, function_index, "function"))?;
-        
-                                        let mut name_map = indirect_naming.get_map()?;
-                                        for _ in 0..name_map.get_count() {
-                                            // FIXME param_or_local_name_mut might panic due to index error
-                                            // TODO refactor param_or_local_name
-                                            // let offset = name_map.original_position();
-        
-                                            let wp::Naming {
-                                                index: local_index,
-                                                name,
-                                            } = name_map.read()?;
-                                            *function.param_or_local_name_mut(local_index.into()) =
-                                                Some(name.to_string());
-                                        }
-                                    }
-                                }
-                                Name::Label(_)
-                                | Name::Type(_)
-                                | Name::Table(_)
-                                | Name::Memory(_)
-                                | Name::Global(_)
-                                | Name::Element(_)
-                                | Name::Data(_) => {
-                                    warnings.push(ParseIssue::unsupported(offset, WasmExtension::ExtendedNameSection))
-                                }
-                                | Name::Unknown {
-                                    ty: _,
-                                    data: _,
-                                    range: _,
-                                } => warnings.push(ParseIssue::message(offset, "name section: unknown name subsection", None)),
-                            }
-                        }
-
-                        Ok(())
-                    };
-
-                    match name_parsing() {
+                    match parse_name_custom_section(reader.data(), reader.data_offset(), &mut warnings, &mut module) {
                         Ok(()) => {
                             // All the names got inserted into the AST, so no need to add a custom section.
                             continue;
@@ -534,7 +456,7 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
     Ok((module, offsets, warnings))
 }
 
-fn parse_body(body: wasmparser::FunctionBody, types: &Types) -> Result<Code, ParseError> {
+fn parse_body(body: wp::FunctionBody, types: &Types) -> Result<Code, ParseError> {
     let mut locals = Vec::new();
     let mut locals_reader = body.get_locals_reader()?;
     let mut offset = locals_reader.original_position();
@@ -563,12 +485,12 @@ fn parse_body(body: wasmparser::FunctionBody, types: &Types) -> Result<Code, Par
 }
 
 fn parse_instr(
-    op: wasmparser::Operator,
+    op: wp::Operator,
     types: &Types,
     offset: usize,
 ) -> Result<Instr, ParseError> {
     use crate::Instr::*;
-    use wasmparser::Operator as wp;
+    use wp::Operator as wp;
     Ok(match op {
         wp::Unreachable => Unreachable,
         wp::Nop => Nop,
@@ -1173,7 +1095,7 @@ fn parse_instr(
     })
 }
 
-fn parse_memarg(memarg: wasmparser::MemArg, parser_offset: usize) -> Result<Memarg, ParseError> {
+fn parse_memarg(memarg: wp::MemArg, parser_offset: usize) -> Result<Memarg, ParseError> {
     if memarg.memory != 0 {
         Err(ParseIssue::unsupported(parser_offset, WasmExtension::MultiMemory))?
     }
@@ -1187,7 +1109,7 @@ fn parse_memarg(memarg: wasmparser::MemArg, parser_offset: usize) -> Result<Mema
     })
 }
 
-fn parse_memory_ty(ty: wasmparser::MemoryType, offset: usize) -> Result<Limits, ParseError> {
+fn parse_memory_ty(ty: wp::MemoryType, offset: usize) -> Result<Limits, ParseError> {
     if ty.memory64 {
         Err(ParseIssue::unsupported(offset, WasmExtension::Memory64))?
     }
@@ -1205,7 +1127,7 @@ fn parse_memory_ty(ty: wasmparser::MemoryType, offset: usize) -> Result<Limits, 
     })
 }
 
-fn parse_table_ty(ty: wasmparser::TableType, offset: usize) -> Result<Limits, ParseError> {
+fn parse_table_ty(ty: wp::TableType, offset: usize) -> Result<Limits, ParseError> {
     parse_elem_ty(ty.element_type, offset)?;
     Ok(Limits {
         initial_size: ty.initial,
@@ -1213,8 +1135,8 @@ fn parse_table_ty(ty: wasmparser::TableType, offset: usize) -> Result<Limits, Pa
     })
 }
 
-fn parse_elem_ty(ty: wasmparser::ValType, offset: usize) -> Result<(), ParseError> {
-    use wasmparser::ValType::*;
+fn parse_elem_ty(ty: wp::ValType, offset: usize) -> Result<(), ParseError> {
+    use wp::ValType::*;
     match ty {
         I32 | I64 | F32 | F64 => Err(ParseIssue::message(offset, "only reftypes, not value types are allowed as table elements", None))?,
         V128 => Err(ParseIssue::message(offset, "only reftypes, not value types are allowed as table elements", None))?,
@@ -1223,8 +1145,8 @@ fn parse_elem_ty(ty: wasmparser::ValType, offset: usize) -> Result<(), ParseErro
     }
 }
 
-fn parse_block_ty(ty: wasmparser::BlockType, offset: usize) -> Result<BlockType, ParseError> {
-    use wasmparser::BlockType::*;
+fn parse_block_ty(ty: wp::BlockType, offset: usize) -> Result<BlockType, ParseError> {
+    use wp::BlockType::*;
     match ty {
         Empty => Ok(BlockType(None)),
         Type(ty) => Ok(BlockType(Some(parse_val_ty(ty, offset)?))),
@@ -1232,8 +1154,8 @@ fn parse_block_ty(ty: wasmparser::BlockType, offset: usize) -> Result<BlockType,
     }
 }
 
-fn parse_func_ty(ty: wasmparser::FuncType, offset: usize) -> Result<FunctionType, ParseError> {
-    let convert_tys = |tys: &[wasmparser::ValType]| -> Result<Box<[ValType]>, ParseError> {
+fn parse_func_ty(ty: wp::FuncType, offset: usize) -> Result<FunctionType, ParseError> {
+    let convert_tys = |tys: &[wp::ValType]| -> Result<Box<[ValType]>, ParseError> {
         let vec: Vec<ValType> = tys
             .iter()
             .cloned()
@@ -1250,7 +1172,7 @@ fn parse_func_ty(ty: wasmparser::FuncType, offset: usize) -> Result<FunctionType
     ))
 }
 
-fn parse_global_ty(ty: wasmparser::GlobalType, offset: usize) -> Result<GlobalType, ParseError> {
+fn parse_global_ty(ty: wp::GlobalType, offset: usize) -> Result<GlobalType, ParseError> {
     Ok(GlobalType(
         parse_val_ty(ty.content_type, offset)?,
         if ty.mutable {
@@ -1261,16 +1183,89 @@ fn parse_global_ty(ty: wasmparser::GlobalType, offset: usize) -> Result<GlobalTy
     ))
 }
 
-fn parse_val_ty(ty: wasmparser::ValType, offset: usize) -> Result<ValType, ParseError> {
+fn parse_val_ty(ty: wp::ValType, offset: usize) -> Result<ValType, ParseError> {
     match ty {
-        wasmparser::ValType::I32 => Ok(ValType::I32),
-        wasmparser::ValType::I64 => Ok(ValType::I64),
-        wasmparser::ValType::F32 => Ok(ValType::F32),
-        wasmparser::ValType::F64 => Ok(ValType::F64),
-        wasmparser::ValType::V128 => Err(ParseIssue::unsupported(offset, WasmExtension::Simd))?,
-        wasmparser::ValType::FuncRef => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
-        wasmparser::ValType::ExternRef => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
+        wp::ValType::I32 => Ok(ValType::I32),
+        wp::ValType::I64 => Ok(ValType::I64),
+        wp::ValType::F32 => Ok(ValType::F32),
+        wp::ValType::F64 => Ok(ValType::F64),
+        wp::ValType::V128 => Err(ParseIssue::unsupported(offset, WasmExtension::Simd))?,
+        wp::ValType::FuncRef => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
+        wp::ValType::ExternRef => Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?,
     }
+}
+
+fn parse_name_custom_section(data: &[u8], data_offset: usize, warnings: &mut Vec<ParseIssue>, module: &mut Module) -> Result<(), ParseIssue> {
+    let mut reader = wp::NameSectionReader::new(data, data_offset)?;
+    while !reader.eof() {
+        let offset = reader.original_position();
+        let name_subsection = reader.read()?;
+        use wp::Name;
+        match name_subsection {
+            Name::Module(name) => {
+                let prev = module.name.replace(name.get_name()?.to_string());
+                if prev.is_some() {
+                    warnings.push(ParseIssue::message(offset, "name section: duplicate module name", None))
+                }
+            }
+            Name::Function(name_map) => {
+                let mut name_map = name_map.get_map()?;
+                for _ in 0..name_map.get_count() {
+                    let offset = name_map.original_position();
+
+                    let wp::Naming { index: function_index, name } = name_map.read()?;
+                    module
+                        .functions
+                        .get_mut(u32_to_usize(function_index))
+                        .ok_or_else(|| ParseIssue::index(offset, function_index, "function"))?
+                        .name = Some(name.to_string());
+                }
+            }
+            Name::Local(indirect_name_map) => {
+                let mut indirect_name_map = indirect_name_map.get_indirect_map()?;
+                for _ in 0..indirect_name_map.get_indirect_count() {
+                    let offset = indirect_name_map.original_position();
+                    
+                    let indirect_naming = indirect_name_map.read()?;
+                    let function_index = indirect_naming.indirect_index;
+                    let function = module
+                        .functions
+                        .get_mut(u32_to_usize(function_index))
+                        .ok_or_else(|| ParseIssue::index(offset, function_index, "function"))?;
+
+                    let mut name_map = indirect_naming.get_map()?;
+                    for _ in 0..name_map.get_count() {
+                        // FIXME param_or_local_name_mut might panic due to index error
+                        // TODO refactor param_or_local_name
+                        // let offset = name_map.original_position();
+
+                        let wp::Naming {
+                            index: local_index,
+                            name,
+                        } = name_map.read()?;
+                        *function.param_or_local_name_mut(local_index.into()) =
+                            Some(name.to_string());
+                    }
+                }
+            }
+            Name::Label(_)
+            | Name::Type(_)
+            | Name::Table(_)
+            | Name::Memory(_)
+            | Name::Global(_)
+            | Name::Element(_)
+            | Name::Data(_) => {
+                warnings.push(ParseIssue::unsupported(offset, WasmExtension::ExtendedNameSection))
+            }
+            | Name::Unknown {
+                ty: _,
+                data: _,
+                range: _,
+            } => warnings.push(ParseIssue::message(offset, "name section: unknown name subsection", None)),
+        }
+    }
+
+    Ok(())
 }
 
 // Wrapper for type map, to offer some convenience like:
@@ -1312,7 +1307,6 @@ impl Types {
     }
 }
 
-// TODO remove?
 fn u32_to_usize(u: u32) -> usize {
     u.try_into().expect("u32 to usize should always succeed")
 }
