@@ -577,7 +577,7 @@ fn data_gathering() {
     let mut file = File::create("data.csv").unwrap();
     writeln!(file, "path, num_functions, num_functions_exported, num_calls, num_ind_calls, unq functions in elem, num_funcs_with_call_ind, num_funcs_with_memory_access, reachable_ratio_trivial, reachable_ratio_ty_only, reachable_ratio_in_table_only, reachable_ratio_ty_and_in_table_and_idx_expr").unwrap(); 
     
-    const WASM_TEST_INPUTS_DIR: &str = "../wasm/tests/wasm/";
+    const WASM_TEST_INPUTS_DIR: &str = "../wasabi_wasm/tests/wasm/";
 
     let mut all_idx_exprs: FxHashMap<String, usize> = FxHashMap::default();
     let mut all_i32_load_store_addr_exprs: FxHashMap<String, usize> = FxHashMap::default();

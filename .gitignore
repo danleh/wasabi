@@ -1,12 +1,9 @@
 # Rust/Cargo
 /target/
 
-# Wasabi output
-out/
-
-# IntelliJ Rust IDE
-/.idea/
-/wasabi.iml
+# IDE files
+.idea/
+.vscode/
 
 # vim
 *~
@@ -15,5 +12,9 @@ out/
 # generated browser tests
 *_out/
 
-# testing outputs
-lib/wasm/ast-*.txt
+# Wasabi output
+out/
+
+# Data from profiling / performance analysis.
+flamegraph*.svg
+perf.data*
