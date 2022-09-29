@@ -58,8 +58,10 @@ pub fn output_file(test_input_file: impl AsRef<Path>, output_subdir: &'static st
             }
         })
         .collect::<PathBuf>();
+    
+    assert_ne!(test_input_file.as_ref(), output_file);
 
-        // Ensure the directory exists.
+    // Ensure the directory exists.
     fs::create_dir_all(output_file.parent().unwrap_or(&output_file))?;
     Ok(output_file)
 }
