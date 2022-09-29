@@ -511,6 +511,8 @@ impl<'module> TypeChecker<'module> {
     // 
     // They do not return the types for individual instructions, only a result
     // whether overall type checking was successful.
+    // TODO Make those functions not part of the TypeChecker impl, but free functions instead.
+    // TODO rename e.g., from `check_module` to `type_check_module`.
 
     /// Type checks all functions and globals in a `module`.
     pub fn check_module(module: &Module) -> Result<(), TypeError> {
