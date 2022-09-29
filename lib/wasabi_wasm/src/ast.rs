@@ -19,6 +19,9 @@ use serde::Serialize;
 // TODO re-org/remove
 pub(crate) mod lowlevel;
 
+// TODO flesh out
+mod function_type;
+
 use crate::{ParseError, ParseWarnings, EncodeError};
 
 
