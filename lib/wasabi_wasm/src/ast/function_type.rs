@@ -158,18 +158,78 @@ mod goedel_number {
     // and in particular no memory allocation for those slices.
     // Use the same lookup table for inputs and results.
 
+    macro_rules! table_init_entries {
+        // Internal macros are marked with @macro, as recommended by https://danielkeep.github.io/tlborm/book/pat-internal-rules.html.
+        // Uses push-down accumulation, as described here https://danielkeep.github.io/tlborm/book/pat-push-down-accumulation.html
+        // The first argument is essentially a "unary counter", see https://danielkeep.github.io/tlborm/book/blk-counting.html
+        // The second argument (after the -> ) is the accumulated result so far.
+        // This case is the recursion anchor: return the result array:
+        (@accum ( ) -> $($seq:expr),+ ) => {{
+            use ValType::*;
+            [$($seq.as_slice() as &'static [ValType]),+]
+        }};
+        // In the accumulator is a list of bracketed lists of identifiers.
+        // The inner lists may be empty, the outer cannot not.
+        (@accum ( $x:tt ) -> $( [ $($seq:ident),* ] ),+ ) => { 
+            table_init_entries!(@accum $x -> $( 
+                [$($seq),*], // FIXME Somehow this is appearing multiple times, not sure why
+                [$($seq,)* I32], 
+                [$($seq,)* I64]
+            ),+ )
+        };
+        // "Public macro interface".
+        ( $x:tt ) => { table_init_entries!(@accum ($x) -> []) };
+    }
+
+    // #[test]
+    fn test_macro() {
+        // trace_macros!(true);
+        table_init_entries!(());
+        table_init_entries!((()));
+        table_init_entries!(((())));
+        table_init_entries!((((()))));
+        // trace_macros!(false);
+    }
+
     const MAX_INPUTS_RESULTS: usize = if MAX_INPUTS > MAX_RESULTS { MAX_INPUTS } else { MAX_RESULTS };
 
     type LookupType = [&'static [ValType]; val_type_seq_max_goedel_number(MAX_INPUTS_RESULTS) + 1];
     const LOOKUP_TABLE: LookupType = {
         let mut table = [[].as_slice(); val_type_seq_max_goedel_number(MAX_INPUTS_RESULTS) + 1];
-    
-        const MAX_SEQ: u8 = if INPUTS_VALTPYES > RESULTS_VALTYPES { INPUTS_VALTPYES } else { RESULTS_VALTYPES };
-        // TODO recursively generate all possible sequences, for each seq
-        // table[seq_to_bitstring(seq).unwrap() as usize] = seq;
-    
+
+        let entries = table_init_entries!(());
+        // for (i, entry) in entries.iter().enumerate() {
+        //     table[1+i] = *entry;
+        // }
+
         table
     };
+
+    #[test]
+    fn test_lookup_table() {
+        assert_eq!(LOOKUP_TABLE[0], []);
+        assert_eq!(LOOKUP_TABLE[1], [ValType::I32]);
+        assert_eq!(LOOKUP_TABLE[2], [ValType::I64]);
+        assert_eq!(LOOKUP_TABLE[3], [ValType::F32]);
+        assert_eq!(LOOKUP_TABLE[4], [ValType::F64]);
+        assert_eq!(LOOKUP_TABLE[5], [ValType::V128]);
+        assert_eq!(LOOKUP_TABLE[6], [ValType::Ref]);
+    }
+
+    fn all_possible_seqs(max_len: usize) -> Box<dyn Iterator<Item = &'static [ValType]>> {
+        match max_len {
+            0 => Box::new(std::iter::once([].as_slice())) as Box<dyn Iterator<Item = &'static [ValType]>>,
+            n => Box::new(
+                all_possible_seqs(n-1)
+                    .chain(all_possible_seqs(n-1).flat_map(|seq|
+                        [ValType::I32, ValType::I64, ValType::F32, ValType::F64, ValType::V128, ValType::Ref].iter().map(move |val_type| {
+                            let mut new_seq = seq.to_vec();
+                            new_seq.push(*val_type);
+                            &*Box::leak(new_seq.into_boxed_slice())
+                        })
+                    ))) as Box<dyn Iterator<Item = &'static [ValType]>>
+        }
+    }
     
     fn goedel_number_to_val_type_seq(u: usize) -> Option<&'static [ValType]> {
         LOOKUP_TABLE.get(u).copied()
@@ -185,124 +245,6 @@ mod goedel_number {
 
 }
 
-// type FnTypeMockup = Option<(NonZeroU16, NonZeroU16)>;
-
-// TODO derive from ValType via log2
-const BITS_PER_VALTYPE: u8 = 3;
-
-fn valtype_to_bits(valtype: ValType) -> u32 {
-    let bits = match valtype {
-        ValType::I32 => 1,
-        ValType::I64 => 2,
-        ValType::F32 => 3,
-        ValType::F64 => 4,
-        ValType::V128 => 5,
-        ValType::Ref => 6,
-    };
-    assert!(bits < 2u32.pow(BITS_PER_VALTYPE as u32));
-    bits
-}
-
-fn seq_to_bitstring<const MAX_SEQ: u8> (val_type_seq: &[ValType]) -> Option<u32> {
-    assert!(2u64.pow(MAX_SEQ as u32) <= usize::MAX as u64);
-
-    if val_type_seq.len() > MAX_SEQ as usize {
-        None
-    } else {
-        let mut result = 0;
-        for val_type in val_type_seq {
-            result <<= BITS_PER_VALTYPE;
-            result |= valtype_to_bits(*val_type);
-        }
-        Some(result)
-    }
-}
-
-const INPUTS_VALTPYES: u8 = 3;
-const RESULTS_VALTYPES: u8 = 2;
-
-const INPUTS_BITS: u8 = INPUTS_VALTPYES * BITS_PER_VALTYPE;
-const RESULTS_BITS: u8 = RESULTS_VALTYPES * BITS_PER_VALTYPE;
-const USED_BITS: u8 = INPUTS_BITS + RESULTS_BITS;
-
-fn pair_to_bitstring(inputs: &[ValType], results: &[ValType]) -> Option<NonZeroU32> {
-    let inputs_bits = seq_to_bitstring::<INPUTS_VALTPYES>(inputs)?;
-    let results_bits = seq_to_bitstring::<RESULTS_VALTYPES>(results)?;
-    let result = (inputs_bits << RESULTS_BITS) | results_bits;
-    let result = result.checked_add(1)?;
-    Some(NonZeroU32::new(result).expect("impossible because of +1"))
-}
-
-// Reverse direction
-
-// A lookup table from bitstring to slice of ValTypes
-const SEQ_LOOKUP_TABLE: SeqLookupType = generate_lookup_table();
-const SEQ_LOOKUP_ENTRIES: usize = 2usize.pow(if INPUTS_BITS > RESULTS_BITS { INPUTS_BITS } else { RESULTS_BITS } as u32);
-type SeqLookupType = [Option<&'static [ValType]>; SEQ_LOOKUP_ENTRIES];
-const fn generate_lookup_table() -> SeqLookupType {
-    let mut table = [None; SEQ_LOOKUP_ENTRIES];
-
-    // FIXME generate 
-    const MAX_SEQ: u8 = if INPUTS_VALTPYES > RESULTS_VALTYPES { INPUTS_VALTPYES } else { RESULTS_VALTYPES };
-    // TODO recursively generate all possible sequences, for each seq
-    // table[seq_to_bitstring(seq).unwrap() as usize] = seq;
-
-    table
-}
-
-fn bitstring_to_seq(bitstring: usize) -> Option<&'static [ValType]> {
-    if bitstring > SEQ_LOOKUP_TABLE.len() {
-        None
-    } else {
-        SEQ_LOOKUP_TABLE[bitstring]
-    }
-}
-
-fn bitstring_to_pair(u: NonZeroU32) -> Option<(&'static [ValType], &'static [ValType])> {
-    let u = u.get() - 1;
-    let u = u as usize;
-    let results_bits = u & ((1 << RESULTS_BITS) - 1);
-    let inputs_bits = u >> RESULTS_BITS;
-
-    let inputs = bitstring_to_seq(inputs_bits)?;
-    let results = bitstring_to_seq(results_bits)?;
-
-    Some((inputs, results))
-}
-
-// TODO automatic tests
-// TODO generate lookup table: index -> (&'static [ValType], &'static [ValType])
-
-
-// values of .0 < 256: statically allocated function types
-// allocate vector of function types, such that index can directly give you the param and result slices
-
-// values of .0 >= 256: dynamically allocated function types
-
-// impl FunctionType {
-//     pub fn from(inputs: &[ValType], results: &[ValType]) -> Self {
-//         match (inputs, results) {
-//             ([], []) => FunctionType::Empty,
-//             ([input], []) => FunctionType::SingleInput(*input),
-//             ([], [result]) => FunctionType::SingleResult(*result),
-//             ([input], [result]) => FunctionType::Unary(*input, *result),
-//             ([input1, input2], [result]) => FunctionType::Binary(*input1, *input2, *result),
-//             _ => todo!()
-//         }
-//     }
-// }
-
-#[test]
-fn pack() {
-    fn print(val_type_seq: &[ValType]) {
-        println!("{:?} == {:?}", val_type_seq, seq_to_bitstring::<16>(val_type_seq))
-    }
-    print(&[]);
-    print(&[ValType::I32]);
-    print(&[ValType::I64]);
-    print(&[ValType::F32]);
-    print(&[ValType::F64]);
-    print(&[ValType::V128]);
-    print(&[ValType::Ref]);
-    print(&[ValType::I32, ValType::I32]);
+mod arena {
+    // TODO
 }
