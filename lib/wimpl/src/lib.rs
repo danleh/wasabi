@@ -9,7 +9,7 @@ use std::cell::RefCell;
 
 use arc_interner::ArcIntern;
 
-use wasm::{MemoryOp, Global, types::{InferredInstructionType, TypeChecker}, Val, ValType, Idx, BlockType, self, LoadOp, UnaryOp, BinaryOp, StoreOp, FunctionType, Memarg};
+use wasabi_wasm::{self as wasm, MemoryOp, Global, types::{InferredInstructionType, TypeChecker}, Val, ValType, Idx, BlockType, self, LoadOp, UnaryOp, BinaryOp, StoreOp, FunctionType, Memarg};
 
 pub mod wimplify;
 pub mod traverse;
@@ -54,7 +54,7 @@ pub struct Metadata {
     id_stmt_map: HashMap<InstrId, Stmt>,
     id_expr_map: HashMap<InstrId, Expr>, 
     instr_location_map: HashMap<InstrId, WasmSrcLocation>,
-    func_id_to_orig_idx_map: HashMap<FunctionId, ::wasm::Idx<wasm::Function>>, 
+    func_id_to_orig_idx_map: HashMap<FunctionId, wasm::Idx<wasm::Function>>, 
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]

@@ -4,14 +4,14 @@ use std::str::FromStr;
 use lazy_static::lazy_static;
 use walkdir::WalkDir;
 
-use wasm::LoadOp::*;
-use wasm::StoreOp::*;
-use wasm::UnaryOp::*;
-use wasm::BinaryOp::*;
-use wasm::FunctionType;
-use wasm::Memarg;
-use wasm::Val::*;
-use wasm::ValType;
+use wasabi_wasm::LoadOp::*;
+use wasabi_wasm::StoreOp::*;
+use wasabi_wasm::UnaryOp::*;
+use wasabi_wasm::BinaryOp::*;
+use wasabi_wasm::FunctionType;
+use wasabi_wasm::Memarg;
+use wasabi_wasm::Val::*;
+use wasabi_wasm::ValType;
 
 use crate::*;
 use crate::StmtKind::*;

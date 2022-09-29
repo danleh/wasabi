@@ -8,7 +8,7 @@ edition = "2018"
 test_utilities = { path = "lib/test_utilities" }
 
 [dependencies]
-wasm = { path = "lib/wasm" }
+wasabi_wasm = { path = "lib/wasm" }
 
 # for parallel instrumentation of functions
 rayon = "1.5.3"

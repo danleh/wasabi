@@ -2,7 +2,7 @@ use std::{fs, io};
 
 use main_error::MainError;
 use structopt::StructOpt;
-use wasm::Module;
+use wasabi_wasm::Module;
 
 use wasabi::instrument::add_hooks;
 use wasabi::options::{HookSet, Options};

@@ -3,7 +3,7 @@ use std::{cmp::Reverse, fmt::{self, Display}, iter::FromIterator, cell::RefCell,
 use regex::Regex;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use wasm::{StoreOp, LoadOp, FunctionType};
+use wasabi_wasm::{StoreOp, LoadOp, FunctionType};
 
 use crate::{Body, Expr, Module, Stmt, Var, FunctionId, Function, StmtKind, ExprKind};
 use crate::traverse::VisitOptionBodyExt;

@@ -1,5 +1,5 @@
 [package]
-name = "wasm"
+name = "wasabi_wasm"
 version = "0.6.0"
 authors = ["Daniel Lehmann <mail@dlehmann.eu>"]
 edition = "2021"

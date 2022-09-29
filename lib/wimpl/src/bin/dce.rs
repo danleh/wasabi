@@ -2,7 +2,7 @@ use std::{io::{self, BufRead, Write}, fs::{File, self}, collections::HashMap};
 
 use rustc_hash::FxHashMap;
 
-use wasm::{self, Instr, Val, Idx};
+use wasabi_wasm::{self as wasm, Instr, Val, Idx};
 use wimpl::{self, FunctionId, analyze::{print_map_count, collect_call_indirect_idx_expr}, callgraph::{Options, reachable_callgraph}, traverse::VisitOptionBodyExt};
 
 fn main() {

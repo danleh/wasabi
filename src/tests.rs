@@ -1,5 +1,5 @@
 use test_utilities::*;
-use wasm::Module;
+use wasabi_wasm::Module;
 
 use crate::instrument::{add_hooks, direct};
 use crate::options::HookSet;

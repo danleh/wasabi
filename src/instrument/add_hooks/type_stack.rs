@@ -1,7 +1,7 @@
 // TODO move this into wasm crate, maybe utils submodule
 // TODO block_stack as well?
 
-use wasm::{BlockType, ValType, FunctionType};
+use wasabi_wasm::{BlockType, ValType, FunctionType};
 
 use self::TypeStackElement::*;
 

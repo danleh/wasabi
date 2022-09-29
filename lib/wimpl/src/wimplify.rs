@@ -2,6 +2,8 @@
 
 use std::convert::TryInto;
 
+use wasabi_wasm as wasm;
+
 use crate::*; 
 
 /// The mutable state during conversion.
@@ -35,7 +37,6 @@ fn wimplify_instrs<'module>(
     context: Context<'module>,
 ) -> Result</* was_else */ bool, String> {
 
-    use crate::wasm::Instr as wasm;
     use ExprKind::*;
     use Var::*;
 
@@ -54,11 +55,11 @@ fn wimplify_instrs<'module>(
             InferredInstructionType::Unreachable => {
                 match instr {
                     // But end and else terminate the current nested block, so return in that case.
-                    wasm::End => {
+                    wasm::Instr::End => {
                         state.label_stack.pop();
                         return Ok(false)
                     },
-                    wasm::Else => {
+                    wasm::Instr::Else => {
                         // Unlike for end, don't pop here because the nested "else" block still follows.
                         return Ok(true)
                     }
@@ -168,7 +169,7 @@ fn wimplify_instrs<'module>(
             }
         }
 
-        fn local_idx_to_var(context: Context, local_idx: Idx<::wasm::Local>) -> Var {
+        fn local_idx_to_var(context: Context, local_idx: Idx<::wasabi_wasm::Local>) -> Var {
             let local_idx = local_idx.to_u32();
             let num_params: u32 = context.func_ty.inputs().len().try_into().expect("more than 2^32 parameters");
             if local_idx < num_params {
@@ -200,7 +201,7 @@ fn wimplify_instrs<'module>(
             label
         };
 
-        fn wasm_label_to_wimpl_label_and_block_var(state: &State, wasm_label: ::wasm::Label) -> (Label, Option<Var>) {
+        fn wasm_label_to_wimpl_label_and_block_var(state: &State, wasm_label: wasm::Label) -> (Label, Option<Var>) {
             let (wimpl_label, is_loop, block_result) = *state.label_stack.iter().rev().nth(wasm_label.to_usize()).expect("invalid branch label, not in label stack");
             
             match (is_loop, block_result) {
@@ -242,14 +243,14 @@ fn wimplify_instrs<'module>(
         // Conversion of each WebAssembly instruction to (one or more) Wimpl statements:
         match instr {
 
-            wasm::Unreachable => {
+            wasm::Instr::Unreachable => {
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
                 push_stmt(stmts_result, state, StmtKind::Unreachable) 
             },
 
-            wasm::Nop => {},
+            wasm::Instr::Nop => {},
 
-            wasm::Block(blocktype) => {
+            wasm::Instr::Block(blocktype) => {
                 // Do this before any statements are pushed out, or expressions added to the stack
                 // (e.g., the block variable holding the result.)
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
@@ -268,7 +269,7 @@ fn wimplify_instrs<'module>(
                     end_label: label,
                 });
             }
-            wasm::Loop(blocktype) => {
+            wasm::Instr::Loop(blocktype) => {
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
                 let label = create_block_label_and_var(state, &mut expr_stack, *blocktype, true);
@@ -286,7 +287,7 @@ fn wimplify_instrs<'module>(
             }
 
             // Translate if into block + if, because the Wimpl if alone cannot have a label/result.
-            wasm::If(blocktype) => {
+            wasm::Instr::If(blocktype) => {
                 let (condition, condition_ty) = expr_stack.pop().expect("if expects a condition which was not found on the stack");
                 assert_eq!(condition_ty, ValType::I32);
 
@@ -320,7 +321,7 @@ fn wimplify_instrs<'module>(
                 });
             },
 
-            wasm::Else => {
+            wasm::Instr::Else => {
                 // Cannot pop because you still want it to be on the label stack while processing the else body.
                 let (_label, is_loop, if_result_var) = *state.label_stack.last().expect("label stack should include if label");
                 assert!(!is_loop, "if block result should never have loop flag set");
@@ -345,7 +346,7 @@ fn wimplify_instrs<'module>(
                 return Ok(true);
             },
 
-            wasm::End => {
+            wasm::Instr::End => {
                 let (_label, _is_loop, block_result_var) = state.label_stack.pop().expect("end of a block expects the matching label to be in the label stack");
 
                 if let Some(block_result_var) = block_result_var {
@@ -367,7 +368,7 @@ fn wimplify_instrs<'module>(
                 return Ok(false)
             }
 
-            wasm::Return => {
+            wasm::Instr::Return => {
                 let (wimpl_label, is_loop, return_var) = *state.label_stack.first().expect("empty label stack, but expected function ");
                 assert_eq!(wimpl_label, Label(0), "first element on the label stack should point to function body label");
                 assert!(!is_loop, "function body block should not have loop flag set");
@@ -389,7 +390,7 @@ fn wimplify_instrs<'module>(
                 push_stmt(stmts_result, state, StmtKind::Br { target: wimpl_label })
             }
 
-            wasm::Br(label) => {
+            wasm::Instr::Br(label) => {
                 let (wimpl_label, block_var) = wasm_label_to_wimpl_label_and_block_var(state, *label);
                 
                 // Handle dataflow ("transported value through branch") by explicit assignment.
@@ -411,7 +412,7 @@ fn wimplify_instrs<'module>(
             },
 
             // Translate br_if as if + (unconditional) br.
-            wasm::BrIf(label) => {
+            wasm::Instr::BrIf(label) => {
                 let (condition, condition_ty) = expr_stack.pop().expect("br_if expects a conditional on the stack");
                 assert_eq!(condition_ty, ValType::I32);
 
@@ -448,7 +449,7 @@ fn wimplify_instrs<'module>(
                 })
             }
 
-            wasm::BrTable { table, default } => {
+            wasm::Instr::BrTable { table, default } => {
                 let (table_index_expr, table_index_ty) = expr_stack.pop().expect("br_table expects an index into the table on the stack");
                 assert_eq!(table_index_ty, ValType::I32);
 
@@ -456,7 +457,7 @@ fn wimplify_instrs<'module>(
                 materialize_all_exprs_as_stmts(state, &mut expr_stack, stmts_result);
 
                 // Similar to br_if above, except that we do this for every target instead of just once.
-                let make_case_body = move |label: ::wasm::Label, state: &mut State, expr_stack: &Vec<(Expr, ValType)>| -> Vec<Stmt> {
+                let make_case_body = move |label: wasm::Label, state: &mut State, expr_stack: &Vec<(Expr, ValType)>| -> Vec<Stmt> {
                     let (wimpl_label, block_var) = wasm_label_to_wimpl_label_and_block_var(state, label);
                     
                     let mut case_body = Vec::with_capacity(1 + block_var.iter().len());
@@ -483,7 +484,7 @@ fn wimplify_instrs<'module>(
                 push_stmt(stmts_result, state, switch);
             }
 
-            wasm::Call(func_index) => {
+            wasm::Instr::Call(func_index) => {
                 let n_args = context.module.function(*func_index).type_.inputs().len();
                 let call_expr = Call {
                     func: context.func_idx_to_id_map[func_index.to_usize()].clone(),
@@ -508,7 +509,7 @@ fn wimplify_instrs<'module>(
                 }
             },
 
-            wasm::CallIndirect(func_type, table_index) => {
+            wasm::Instr::CallIndirect(func_type, table_index) => {
                 assert_eq!(table_index.to_usize(), 0, "WebAssembly MVP must always have a single table");
 
                 let (table_index_expr, table_index_ty) = expr_stack.pop().expect("call_indirect expects a table index on the stack");
@@ -535,7 +536,7 @@ fn wimplify_instrs<'module>(
                 }
             }
 
-            wasm::Drop => {
+            wasm::Instr::Drop => {
                 let expr = expr_stack.pop().expect("drop expects a value on the stack").0;
                 
                 // Optimization:
@@ -565,7 +566,7 @@ fn wimplify_instrs<'module>(
             },
 
             // Translate as if block assigning to a fresh stack variable.
-            wasm::Select => {
+            wasm::Instr::Select => {
                 let (condition, condition_ty) = expr_stack.pop().expect("select expects a conditional on the stack");
                 assert_eq!(condition_ty, ValType::I32);
 
@@ -607,13 +608,13 @@ fn wimplify_instrs<'module>(
                 );
             }
 
-            wasm::Local(::wasm::LocalOp::Get, local_idx) => {
+            wasm::Instr::Local(wasm::LocalOp::Get, local_idx) => {
                 let type_ = ty.results()[0];
 
                 push_expr(&mut expr_stack, state, VarRef(local_idx_to_var(context, *local_idx)), type_);
             }
 
-            wasm::Local(::wasm::LocalOp::Set, local_idx) => {
+            wasm::Instr::Local(wasm::LocalOp::Set, local_idx) => {
                 let (rhs, type_) = expr_stack.pop().expect("local.set expects a value on the stack");
                 assert_eq!(type_, ty.inputs()[0]);
 
@@ -627,7 +628,7 @@ fn wimplify_instrs<'module>(
             }
 
             // Essentially equivalent to a local.set followed by a local.get (see above).
-            wasm::Local(::wasm::LocalOp::Tee, local_idx) => {
+            wasm::Instr::Local(wasm::LocalOp::Tee, local_idx) => {
                 let (value, type_) = expr_stack.pop().expect("local.tee expects a value on the stack");
                 assert_eq!(type_, ty.inputs()[0]);
 
@@ -642,13 +643,13 @@ fn wimplify_instrs<'module>(
                 push_expr(&mut expr_stack, state, VarRef(local_var), type_);
             }
 
-            wasm::Global(::wasm::GlobalOp::Get, global_idx) => {
+            wasm::Instr::Global(wasm::GlobalOp::Get, global_idx) => {
                 let type_ = ty.results()[0];
 
                 push_expr(&mut expr_stack, state, VarRef(Global(global_idx.to_u32())), type_);
             }
 
-            wasm::Global(::wasm::GlobalOp::Set, global_idx) => {
+            wasm::Instr::Global(wasm::GlobalOp::Set, global_idx) => {
                 let (rhs, type_) = expr_stack.pop().expect("local.set expects a value on the stack");
                 assert_eq!(type_, ty.inputs()[0]);
 
@@ -661,7 +662,7 @@ fn wimplify_instrs<'module>(
                 });
             }
 
-            wasm::Load(loadop, memarg) => {
+            wasm::Instr::Load(loadop, memarg) => {
                 let (mut addr, addr_ty) = expr_stack.pop().expect("load expects an address on the stack");
                 assert_eq!(addr_ty, ValType::I32);
 
@@ -674,7 +675,7 @@ fn wimplify_instrs<'module>(
                 }, type_);
             }
 
-            wasm::Store(op, memarg) => {
+            wasm::Instr::Store(op, memarg) => {
                 let (value, value_ty) = expr_stack.pop().expect("store expects a value to store on the stack");
                 assert_eq!(value_ty, ty.inputs()[1]);
 
@@ -692,14 +693,14 @@ fn wimplify_instrs<'module>(
                 });
             }
 
-            wasm::MemorySize(memory_idx) => {
+            wasm::Instr::MemorySize(memory_idx) => {
                 assert_eq!(memory_idx.to_usize(), 0, "Wasm MVP only has a single memory");
 
                 let result_type = ty.results()[0];
                 push_expr(&mut expr_stack, state, MemorySize, result_type);
             }
 
-            wasm::MemoryGrow(memory_idx) => {
+            wasm::Instr::MemoryGrow(memory_idx) => {
                 assert_eq!(memory_idx.to_usize(), 0, "Wasm MVP only has a single memory");
 
                 let (pages, pages_ty) = expr_stack.pop().expect("memory.grow expects a value on the stack");
@@ -709,11 +710,11 @@ fn wimplify_instrs<'module>(
                 push_expr(&mut expr_stack, state, MemoryGrow { pages: Box::new(pages) }, result_type);
             }
 
-            wasm::Const(val) => {
+            wasm::Instr::Const(val) => {
                 push_expr(&mut expr_stack, state, Const(*val), val.to_type());
             }
 
-            wasm::Unary(op) => {
+            wasm::Instr::Unary(op) => {
                 let (arg, type_) = expr_stack.pop().expect("unary operation expects argument on the stack");
                 assert_eq!(type_, ty.inputs()[0]);
 
@@ -721,7 +722,7 @@ fn wimplify_instrs<'module>(
                 push_expr(&mut expr_stack, state, Unary(*op, Box::new(arg)), result_type);
             }
 
-            wasm::Binary(op) => {
+            wasm::Instr::Binary(op) => {
                 let (right, type_) = expr_stack.pop().expect("binary operation expects right argument on the stack");
                 assert_eq!(type_, ty.inputs()[1]);
 

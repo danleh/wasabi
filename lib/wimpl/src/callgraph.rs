@@ -2,7 +2,7 @@ use core::fmt;
 use std::{path::Path, io::{self, Write}, process::{Command, Stdio}, fs::{File, self}, sync::Mutex, iter::FromIterator, cmp::Reverse, default, collections::{HashSet, HashMap}};
 use rustc_hash::{FxHashSet, FxHashMap};
 
-use wasm::{self, FunctionType, Val, ValType};
+use wasabi_wasm::{self as wasm, FunctionType, Val, ValType};
 
 use crate::{Module, FunctionId, ExprKind::{Call, self}, Function, Var, Body, analyze::{VarExprMap, VarExprMapResult, collect_call_indirect_idx_expr, abstract_expr, sort_map_count, collect_i32_load_store_arg_expr, print_map_count, approx_i32_eval, I32Range}, Expr, Stmt};
 use crate::{InstrId, StmtKind};
@@ -241,7 +241,7 @@ pub fn reachable_callgraph(
     if let Some(table) = &module.table {
         for element in &table.elements {
             let element_offset = &element.offset;
-            use wasm::Instr as wasm;
+            use wasabi_wasm::Instr as wasm;
             let element_offset = match element_offset.as_slice() {
                 [wasm::Const(Val::I32(offset)), wasm::End] => *offset as u32,
                 // TODO overapproximate: if its an expression we cannot compute statically (like an imported global)

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
-use wasm::{Idx, ValType, ValType::*, Function, Instr, Instr::*, Module, MemoryOp, FunctionType};
+use wasabi_wasm::{Idx, ValType, ValType::*, Function, Instr, Instr::*, Module, MemoryOp, FunctionType};
 
 use super::block_stack::BlockStackElement;
 use super::convert_i64::convert_i64_type;
