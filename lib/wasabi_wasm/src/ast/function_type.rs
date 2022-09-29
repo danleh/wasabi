@@ -54,11 +54,11 @@ const MAX_RESULTS: usize = 2;
 impl FunctionType {
     pub fn new(inputs: &[ValType], results: &[ValType]) -> Self {
         use goedel_number::*;
-        match (val_type_seq_to_goedel_number::<u16, MAX_INPUTS>(inputs), val_type_seq_to_goedel_number::<u8, MAX_RESULTS>(results)) {
+        match (val_type_seq_to_goedel_number::<MAX_INPUTS>(inputs), val_type_seq_to_goedel_number::<MAX_RESULTS>(results)) {
             (Some(inputs), Some(results)) => {
                 FunctionType::GoedelNumber {
-                    inputs,
-                    results
+                    inputs: inputs.try_into().expect("overflow from usize to smaller type"),
+                    results: results.try_into().expect("overflow from usize to smaller type")
                 }
             },
             _ => Self::new_arena(inputs, results)
@@ -76,7 +76,7 @@ mod goedel_number {
 
     // Forward direction: ValType slice to Gödel number.
 
-    fn val_type_to_goedel_number(val_type: ValType) -> usize {
+    const fn val_type_to_goedel_number(val_type: ValType) -> usize {
         match val_type {
             ValType::I32 => 0,
             ValType::I64 => 1,
@@ -111,10 +111,8 @@ mod goedel_number {
     }
 
     /// Returns `None` if the `seq` is not representable as a Gödel number with
-    /// that 
-    pub fn val_type_seq_to_goedel_number<T: TryFrom<usize>, const MAX_SEQ_LEN: usize>(seq: &[ValType]) -> Option<T> {
-        assert!(T::try_from(val_type_seq_max_goedel_number(MAX_SEQ_LEN)).is_ok(), "Sequences of up to length {MAX_SEQ_LEN} are too large to be represented as a {}", std::any::type_name::<T>());    
-        
+    /// that sequence length.
+    pub const fn val_type_seq_to_goedel_number<const MAX_SEQ_LEN: usize>(seq: &[ValType]) -> Option<usize> {
         let seq_too_long = seq.len() > MAX_SEQ_LEN;
         if seq_too_long {
             return None;
@@ -122,34 +120,27 @@ mod goedel_number {
 
         let mut result = 0usize;
         let mut exponent = 1usize;
-        for val_type in seq { // seq: [i32]
-            result *= exponent; // = 0 * 1 = 0
-            result += val_type_to_goedel_number(*val_type) + 1;
+        let mut i = 0;
+        // Cannot use for loop in const fn -.-
+        while i < seq.len() {
+            let val_type = seq[i];
+            result *= exponent;
+            result += val_type_to_goedel_number(val_type) + 1;
             exponent *= val_type_max_goedel_number() + 1;
+            i += 1;
         }
 
-        #[allow(non_snake_case)]
-        let result = match T::try_from(result) {
-            Ok(result) => result,
-            Err(_number_too_large_for_T) => unreachable!("assert above should make overflow impossible")
-        };
         Some(result)
     }
 
     #[test]
     fn test_val_type_seq_to_goedel_number() {
-        assert_eq!(val_type_seq_to_goedel_number::<u8, 0>(&[]), Some(0));
-        assert_eq!(val_type_seq_to_goedel_number::<u8, 0>(&[ValType::I32]), None);
-        assert_eq!(val_type_seq_to_goedel_number::<u8, 1>(&[ValType::I32]), Some(1));
-        assert_eq!(val_type_seq_to_goedel_number::<u8, 1>(&[ValType::Ref]), Some(6));
-        assert_eq!(val_type_seq_to_goedel_number::<u8, 1>(&[ValType::I32, ValType::I32]), None);
-        assert_eq!(val_type_seq_to_goedel_number::<u8, 2>(&[ValType::I32, ValType::I32]), Some(7));
-    }
-
-    #[test]
-    #[should_panic]
-    fn seq_goedel_numbers_too_large() {
-        val_type_seq_to_goedel_number::<u8, 3>(&[]);
+        assert_eq!(val_type_seq_to_goedel_number::<0>(&[]), Some(0));
+        assert_eq!(val_type_seq_to_goedel_number::<0>(&[ValType::I32]), None);
+        assert_eq!(val_type_seq_to_goedel_number::<1>(&[ValType::I32]), Some(1));
+        assert_eq!(val_type_seq_to_goedel_number::<1>(&[ValType::Ref]), Some(6));
+        assert_eq!(val_type_seq_to_goedel_number::<1>(&[ValType::I32, ValType::I32]), None);
+        assert_eq!(val_type_seq_to_goedel_number::<2>(&[ValType::I32, ValType::I32]), Some(7));
     }
 
 
@@ -164,30 +155,41 @@ mod goedel_number {
         // The first argument is essentially a "unary counter", see https://danielkeep.github.io/tlborm/book/blk-counting.html
         // The second argument (after the -> ) is the accumulated result so far.
         // This case is the recursion anchor: return the result array:
-        (@accum ( ) -> $($seq:expr),+ ) => {{
+        (@accum $table:ident, ( ) -> $($seq:expr),+ ) => {{
             use ValType::*;
-            [$($seq.as_slice() as &'static [ValType]),+]
+            $(
+                let slice = $seq.as_slice();
+                if let Some(index) = val_type_seq_to_goedel_number::<MAX_INPUTS_RESULTS>(slice) {
+                    $table[index] = slice;
+                }
+            )+
         }};
         // In the accumulator is a list of bracketed lists of identifiers.
         // The inner lists may be empty, the outer cannot not.
-        (@accum ( $x:tt ) -> $( [ $($seq:ident),* ] ),+ ) => { 
-            table_init_entries!(@accum $x -> $( 
+        (@accum $table:ident, ( $x:tt ) -> $( [ $($seq:ident),* ] ),+ ) => { 
+            table_init_entries!(@accum $table, $x -> $( 
                 [$($seq),*], // FIXME Somehow this is appearing multiple times, not sure why
                 [$($seq,)* I32], 
-                [$($seq,)* I64]
+                [$($seq,)* I64], 
+                [$($seq,)* F32], 
+                [$($seq,)* F64], 
+                [$($seq,)* V128], 
+                [$($seq,)* Ref]
             ),+ )
         };
         // "Public macro interface".
-        ( $x:tt ) => { table_init_entries!(@accum ($x) -> []) };
+        ( $table:ident, $x:tt ) => { table_init_entries!(@accum $table, ($x) -> []) };
     }
 
-    // #[test]
+    #[test]
     fn test_macro() {
         // trace_macros!(true);
-        table_init_entries!(());
-        table_init_entries!((()));
-        table_init_entries!(((())));
-        table_init_entries!((((()))));
+        // table_init_entries!(());
+        let mut t = vec![&[][..]; 350000];
+        table_init_entries!(t, (((()))));
+        println!("{:?}", t.iter().rfind(|x| !x.is_empty()));
+        // table_init_entries!(((())));
+        // table_init_entries!((((()))));
         // trace_macros!(false);
     }
 
@@ -197,10 +199,7 @@ mod goedel_number {
     const LOOKUP_TABLE: LookupType = {
         let mut table = [[].as_slice(); val_type_seq_max_goedel_number(MAX_INPUTS_RESULTS) + 1];
 
-        let entries = table_init_entries!(());
-        // for (i, entry) in entries.iter().enumerate() {
-        //     table[1+i] = *entry;
-        // }
+        table_init_entries!(table, ((())));
 
         table
     };
@@ -214,6 +213,7 @@ mod goedel_number {
         assert_eq!(LOOKUP_TABLE[4], [ValType::F64]);
         assert_eq!(LOOKUP_TABLE[5], [ValType::V128]);
         assert_eq!(LOOKUP_TABLE[6], [ValType::Ref]);
+        assert_ne!(LOOKUP_TABLE[LOOKUP_TABLE.len()-1], []);
     }
 
     fn all_possible_seqs(max_len: usize) -> Box<dyn Iterator<Item = &'static [ValType]>> {
