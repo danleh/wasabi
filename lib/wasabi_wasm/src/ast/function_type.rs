@@ -15,17 +15,7 @@ use std::{num::*, collections::HashMap, sync::{Mutex, RwLock}};
 
 use once_cell::sync::{OnceCell, Lazy};
 
-// use crate::ValType;
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum ValType {
-    I32,
-    I64,
-    F32,
-    F64,
-    V128,
-    Ref,
-}
+use crate::ValType;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum FunctionType {
@@ -56,10 +46,14 @@ fn function_type_size() {
 impl FunctionType {
     pub fn new(inputs: &[ValType], results: &[ValType]) -> Self {
         let inputs_goedel_number = val_type_seq_to_goedel_number(inputs);
-        if let Ok(inputs) = u16::try_from(inputs_goedel_number) {
-            let results_goedel_number = val_type_seq_to_goedel_number(results);
-            if let Ok(results) = u8::try_from(results_goedel_number) {
-                return FunctionType::GoedelNumber { inputs, results };
+        if inputs_goedel_number < LOOKUP_TABLE_SIZE {
+            if let Ok(inputs) = u16::try_from(inputs_goedel_number) {
+                let results_goedel_number = val_type_seq_to_goedel_number(results);
+                if results_goedel_number < LOOKUP_TABLE_SIZE {
+                    if let Ok(results) = u8::try_from(results_goedel_number) {
+                        return FunctionType::GoedelNumber { inputs, results };
+                    }
+                }
             }
         }
         // Fallback: always succeeds, but is slower.
@@ -102,11 +96,10 @@ fn inspect_function_types() {
     println!("{:?}", FunctionType::new(&[], &[]));
     println!("{:?}", FunctionType::new(&[ValType::I32], &[]));
     println!("{:?}", FunctionType::new(&[], &[ValType::I32]));
-    println!("{:?}", FunctionType::new(&[], &[ValType::I32, ValType::I32, ValType::I32, ValType::I32]));
-    println!("{:?}", FunctionType::new(&[], &[ValType::I32, ValType::I32, ValType::I32, ValType::I64]));
-    println!("{:?}", FunctionType::new(&[], &[ValType::I32, ValType::I32, ValType::I32, ValType::I32]));
+    println!("{:?}", FunctionType::new(&[], &[ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32]));
+    println!("{:?}", FunctionType::new(&[], &[ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I64]));
+    println!("{:?}", FunctionType::new(&[], &[ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32]));
 }
-
 
 // Forward direction: ValType slice to Gödel number.
 
@@ -116,8 +109,6 @@ const fn val_type_to_goedel_number(val_type: ValType) -> usize {
         ValType::I64 => 1,
         ValType::F32 => 2,
         ValType::F64 => 3,
-        ValType::V128 => 4,
-        ValType::Ref => 5,
     }
 }
 
@@ -127,14 +118,12 @@ const fn goedel_number_to_val_type(goedel_number: usize) -> Option<ValType> {
         1 => Some(ValType::I64),
         2 => Some(ValType::F32),
         3 => Some(ValType::F64),
-        4 => Some(ValType::V128),
-        5 => Some(ValType::Ref),
         _ => None
     }
 }
 
 // Determined by the number of variants of `ValType`.
-const VAL_TYPE_MAX_GOEDEL_NUMBER: usize = 5;
+const VAL_TYPE_MAX_GOEDEL_NUMBER: usize = 3;
 
 // This is a geometric series, e.g., for 6 possible values it is:
 // 1 (for the empty sequence) 
@@ -151,9 +140,10 @@ fn test_goedel_number_constants() {
     assert_eq!(val_type_to_goedel_number(ValType::I32), 0);
     assert_eq!(val_type_to_goedel_number(ValType::F64), 3);
     assert_eq!(val_type_seq_max_goedel_number(0), 0);
-    assert_eq!(val_type_seq_max_goedel_number(1), 6);
-    assert_eq!(val_type_seq_max_goedel_number(2), 42);
-    assert_eq!(val_type_seq_max_goedel_number(3), 258);
+    assert_eq!(val_type_seq_max_goedel_number(1), 4);
+    assert_eq!(val_type_seq_max_goedel_number(2), 20);
+    assert_eq!(val_type_seq_max_goedel_number(3), 84);
+    assert_eq!(val_type_seq_max_goedel_number(4), 340);
 }
 
 const fn val_type_seq_to_goedel_number(seq: &[ValType]) -> usize {
@@ -175,25 +165,24 @@ const fn val_type_seq_to_goedel_number(seq: &[ValType]) -> usize {
 fn test_val_type_seq_to_goedel_number() {
     assert_eq!(val_type_seq_to_goedel_number(&[]), 0);
     assert_eq!(val_type_seq_to_goedel_number(&[ValType::I32]), 1);
-    assert_eq!(val_type_seq_to_goedel_number(&[ValType::Ref]), 6);
-    assert_eq!(val_type_seq_to_goedel_number(&[ValType::I32, ValType::I32]), 7);
+    assert_eq!(val_type_seq_to_goedel_number(&[ValType::I32, ValType::I32]), 5);
 }
-
 
 // Reverse direction: Gödel number to slice.
 // Use lookup table with statically allocated slices, because then there is less computation
 // and in particular no memory allocation for those slices.
 // Use the same lookup table for inputs and results.
 
-const LOOKUP_TABLE_SIZE: usize = u16::MAX as usize + 1;
+// const LOOKUP_TABLE_SIZE: usize = u16::MAX as usize + 1;
+const LOOKUP_TABLE_SIZE: usize = 10000;
 
 type LookupType = [&'static [ValType]; LOOKUP_TABLE_SIZE];
 static LOOKUP_TABLE: Lazy<LookupType> = Lazy::new(|| {
     let mut table = [[].as_slice(); LOOKUP_TABLE_SIZE];
 
-    for i in 0..LOOKUP_TABLE_SIZE {
+    for (i, entry) in table.iter_mut().enumerate() {
         let seq = goedel_number_to_val_type_seq(i);
-        table[i] = seq.leak();
+        *entry = seq.leak();
     }
 
     table
@@ -232,13 +221,12 @@ fn goedel_number_to_val_type_seq(mut goedel_number: usize) -> Vec<ValType> {
 fn test_goedel_number_to_val_type_seq() {
     assert_eq!(goedel_number_to_val_type_seq(0), vec![]);
     assert_eq!(goedel_number_to_val_type_seq(1), vec![ValType::I32]);
-    assert_eq!(goedel_number_to_val_type_seq(6), vec![ValType::Ref]);
-    assert_eq!(goedel_number_to_val_type_seq(7), vec![ValType::I32, ValType::I32]);
+    assert_eq!(goedel_number_to_val_type_seq(5), vec![ValType::I32, ValType::I32]);
 }
 
 #[test]
 fn test_goedel_number_roundtrips() {
-    for goedel_number in 0..u16::MAX as usize {
+    for goedel_number in 0..LOOKUP_TABLE_SIZE {
         let val_type_seq = goedel_number_to_val_type_seq(goedel_number);
         let roundtrip = val_type_seq_to_goedel_number(&val_type_seq);
         assert_eq!(goedel_number, roundtrip, "{} -> {:?} -> {}", goedel_number, val_type_seq, roundtrip);
