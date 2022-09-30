@@ -351,6 +351,12 @@ pub struct Module {
     pub metadata: ModuleMetadata,
 }
 
+// TODO Crazy idea: make Module (and Function, Global) generic over InstrRepr, which
+// could even store the original WebAssembly bytes as a vector and only parse on demand,
+// which is more compact, requires less allocations, and is (obviously) faster on module creation.
+// Alternatively, the InstrRepr could also be a tree of blocks, or flat, or even a completely
+// diferent language, such as Wimpl or Stackl.
+
 impl Module {
     pub fn new() -> Self {
         Self::default()
