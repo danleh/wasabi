@@ -461,17 +461,17 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
 fn parse_body(body: wp::FunctionBody, types: &Types) -> Result<Code, ParseError> {
     let mut locals_reader = body.get_locals_reader()?;
     let mut offset = locals_reader.original_position();
+    // Pre-allocate: There are at least as many locals as there are _unique_ local types.
     let mut locals = Vec::with_capacity(u32_to_usize(locals_reader.get_count()));
     for _ in 0..locals_reader.get_count() {
         let (count, type_) = locals_reader.read()?;
-        locals.reserve(u32_to_usize(count));
-        for _ in 0..count {
-            locals.push(Local::new(parse_val_ty(type_, offset)?));
-        }
+        let count = u32_to_usize(count);
+        let type_ = parse_val_ty(type_, offset)?;
+        locals.extend(std::iter::repeat(Local::new(type_)).take(count));
         offset = locals_reader.original_position();
     }
 
-    // There is roughly one instruction per byte, so reserve space for
+    // Pre-allocate: There is roughly one instruction per byte, so reserve space for
     // approximately this many instructions.
     let body_byte_size = body.range().end - body.range().start;
     let mut instrs = Vec::with_capacity(body_byte_size);
