@@ -357,22 +357,6 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
 
                 let last_code_entry = current_code_index == code_entries_count;
                 if last_code_entry {
-                    // Unfortunately, this parallel decoding of function bodies is horrendously slow on Windows 10
-                    // with a Ryzen 5950X, i.e., with two threads it's already 30% slower than single threaded (!)
-                    // and with 32 threads it is 2.7x (!) the runtime of single threaded. There is some contention
-                    // going on, but it's not yet clear why/what:
-                    // a) On the very same machine, under Ubuntu in a VM, it runs faster multi-threaded -> some OS specific
-                    // issue, e.g., memory allocator, thread creation etc? Note that most of the time in the parallel
-                    // version is spent in ntoskrnl.exe under Windows.
-                    // b) False sharing, because the Ryzen 5950X has larger L2/L3 cache lines than e.g., my laptop
-                    // Intel Core i7-7500U chip, where there is no slowdown!? I tried copying the function body
-                    // bytes and the iterators to have share-nothing, but that improved for the Ryzen only from 2.7x to
-                    // roughly 2.4x slowdown.
-                    // Update: I dug into the problem under Windows a bit more. The profiler (AMD uProf, WPR/WPA) tells
-                    // me that a lot of time is spent in the memory allocator. So I guess Windows is pathological here 
-                    // for parallel allocations!?
-                    // Since it works fine under Linux, I'll leave it like it is right now.
-
                     // Parse and convert to high-level instructions in parallel.
                     let function_bodies = function_bodies
                         .par_drain(..)
@@ -471,10 +455,24 @@ fn parse_body(body: wp::FunctionBody, types: &Types) -> Result<Code, ParseError>
         offset = locals_reader.original_position();
     }
 
-    // Pre-allocate: There is roughly one instruction per byte, so reserve space for
-    // approximately this many instructions.
+    // Pre-allocate: We don't know the exact number of instructions yet,
+    // but there are typically one or two bytes per instruction.
+    // So conservatively, bytes / 4 should be a good starting point.
+    // It will almost never over-reserve memory, and at the same time has to 
+    // grow the buffer at most 2 times in case there is really 1 byte per instruction.
+    // and at the same time never over-reserve.
+    // UNFORTUNATELY, on my Windows 10 installation, this pre-allocation is 
+    // causing a massive slowdown during parallel parsing (Ryzen 5950X, 16 cores, 32 threads)
+    // of >200% (!!) vs. just using Vec::new().
+    // It seems the combination of (large?) pre-allocation + allocating from
+    // multiple threads + Windows default allocator sucks big time.
+    // I obviously don't want to get rid of the parallel parsing, so we can either
+    // a) not do the pre-allocation at all (which hurts Linux performance), or
+    // b) use a different allocator on Windows.
     let body_byte_size = body.range().end - body.range().start;
-    let mut instrs = Vec::with_capacity(body_byte_size);
+    let approx_instr_count = body_byte_size / 4;
+    // let mut instrs = Vec::with_capacity(approx_instr_count);
+    let mut instrs = Vec::new();
 
     for op_offset in body.get_operators_reader()?.into_iter_with_offsets() {
         let (op, offset) = op_offset?;
