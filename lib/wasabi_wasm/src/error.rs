@@ -122,8 +122,8 @@ impl EncodeError {
     }
 }
 
-// Allow conversion of everything that can be converted into a `ParseIssue`
-// also into the `ParseError` wrapper directly.
+// Allow conversion of everything that can be converted into a `EncodeErrorInner`
+// also into the `EncodeError` wrapper directly.
 impl<T> From<T> for EncodeError 
 where T : Into<EncodeErrorInner>
 {
