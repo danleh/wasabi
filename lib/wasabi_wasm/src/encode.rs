@@ -5,6 +5,7 @@ use std::{sync::RwLock, convert::TryInto};
 
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
+use nohash_hasher::IntMap;
 
 use wasm_encoder::{self as we, Encode};
 
@@ -32,10 +33,10 @@ struct EncodeState {
     // (functions, globals, etc.) come before (i.e., have a lower index) than all
     // "locally-defined" (i.e., non-imported) elements.
     // We thus have to re-index functions, globals, etc. and use this here to do so.
-    function_idx: FxHashMap<Idx<Function>, Idx<marker::we::Function>>,
-    global_idx: FxHashMap<Idx<Global>, Idx<marker::we::Global>>,
-    table_idx: FxHashMap<Idx<Table>, Idx<marker::we::Table>>,
-    memory_idx: FxHashMap<Idx<Memory>, Idx<marker::we::Memory>>,
+    function_idx: IntMap<Idx<Function>, Idx<marker::we::Function>>,
+    global_idx: IntMap<Idx<Global>, Idx<marker::we::Global>>,
+    table_idx: IntMap<Idx<Table>, Idx<marker::we::Table>>,
+    memory_idx: IntMap<Idx<Memory>, Idx<marker::we::Memory>>,
 
     last_encoded_section: Option<SectionId>,
     custom_sections_encoded: usize,

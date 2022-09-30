@@ -273,9 +273,12 @@ impl<T> Eq for Idx<T> {}
 
 impl<T> hash::Hash for Idx<T> {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state)
+        state.write_u32(self.0)
     }
 }
+
+// Marker trait, showing that `Idx<T>` is compatible with nohash_hasher.
+impl<T> nohash_hasher::IsEnabled for Idx<T> {}
 
 impl<T> PartialOrd for Idx<T> {
     fn partial_cmp(&self, other: &Idx<T>) -> Option<std::cmp::Ordering> {
