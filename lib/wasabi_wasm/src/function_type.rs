@@ -44,6 +44,10 @@ fn function_type_size() {
 }
 
 impl FunctionType {
+    pub fn empty() -> Self {
+        FunctionType::new(&[], &[])
+    }
+
     pub fn new(inputs: &[ValType], results: &[ValType]) -> Self {
         // Ensure three things:
         // 1. The numerical operations do not overflow while converting to the Gödel number.
