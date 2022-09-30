@@ -17,7 +17,11 @@ rayon = "1.5.1"
 
 serde = { version = "1", features = ["derive"] }
 
+# For safe globally initialized data.
 once_cell = "1.15.0"
+
+# For faster hash function in HashSet/HashMap.
+rustc-hash = "1.1.0"
 
 [dev-dependencies]
 test_utilities = { path = "../test_utilities" }

@@ -11,9 +11,10 @@
 //! The problem was that creating lots of function types was slow, because it had to create the
 //! non-interned version first before comparing.
 
-use std::{collections::HashMap, sync::RwLock, cmp::Ordering, fmt, str::FromStr};
+use std::{sync::RwLock, cmp::Ordering, fmt, str::FromStr};
 
 use once_cell::sync::Lazy;
+use rustc_hash::FxHashMap;
 
 use crate::ValType;
 
@@ -309,7 +310,7 @@ fn test_goedel_number_roundtrips() {
 #[derive(Default)]
 struct ArenaInner {
     idx_to_func_type: Vec<(&'static [ValType], &'static [ValType])>,
-    func_type_to_idx: HashMap<(&'static [ValType], &'static [ValType]), usize>,
+    func_type_to_idx: FxHashMap<(&'static [ValType], &'static [ValType]), usize>,
 }
 
 #[derive(Default)]
