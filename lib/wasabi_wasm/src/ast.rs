@@ -1758,24 +1758,22 @@ impl Module {
 
 impl Function {
     pub fn new(type_: FunctionType, code: Code, export: Vec<String>) -> Self {
-        let param_names = vec![None; type_.inputs().len()];
         Function {
             type_,
             code: ImportOrPresent::Present(code),
             export,
             name: None,
-            param_names,
+            param_names: Vec::new(),
         }
     }
 
     pub fn new_imported(type_: FunctionType, import_module: String, import_name: String, export: Vec<String>) -> Self {
-        let param_names = vec![None; type_.inputs().len()];
         Function {
             type_,
             code: ImportOrPresent::Import(import_module, import_name),
             export,
             name: None,
-            param_names,
+            param_names: Vec::new(),
         }
     }
 
@@ -1853,12 +1851,7 @@ impl Function {
 
     // Functions for the number of parameters and non-parameter locals.
 
-    fn assert_param_name_len_valid(&self) {
-        assert!(self.param_names.len() == self.type_.inputs().len());
-    }
-
     pub fn param_count(&self) -> usize {
-        self.assert_param_name_len_valid();
         self.type_.inputs().len()
     }
 
@@ -1921,14 +1914,16 @@ impl Function {
 
     /// Returns the parameters (type and debug name, if any) together with their index.
     pub fn params(&self) -> impl Iterator<Item=(Idx<Local>, ParamRef)> {
-        self.assert_param_name_len_valid();
-
-        self.type_.inputs().iter().cloned()
-            .zip(self.param_names.iter().map(|s| s.as_ref().map(String::as_str)))
+        self.type_.inputs()
+            .iter()
             .enumerate()
-            .map(|(idx, (type_, name))|
-                (idx.into(), ParamRef { type_, name })
-            )
+            .map(|(i, &type_)| (
+                i.into(),
+                ParamRef {
+                    type_,
+                    name: self.param_names.get(i).and_then(|name| name.as_deref()),
+                }
+            ))
     }
 
     // FIXME no longer possible, because function type is immutable!
@@ -1992,13 +1987,11 @@ impl Function {
     /// Return the (optional) debug name of the function parameter or non-parameter local with
     /// index idx.
     pub fn param_or_local_name(&self, idx: Idx<Local>) -> Option<&str> {
-        self.assert_param_name_len_valid();
-
         let idx = idx.to_usize();
         let param_count = self.type_.inputs().len();
 
         if idx < param_count {
-            self.param_names[idx].as_deref()
+            self.param_names.get(idx).and_then(|name| name.as_deref())
         } else {
             self.code().expect("imported function cannot have locals").locals[idx - param_count].name.as_deref()
         }
@@ -2007,12 +2000,12 @@ impl Function {
     /// Return a mutable reference to the (optional) debug name of the function parameter or
     /// non-parameter local with index idx.
     pub fn param_or_local_name_mut(&mut self, idx: Idx<Local>) -> &mut Option<String> {
-        self.assert_param_name_len_valid();
-
         let idx = idx.to_usize();
-        let param_count = self.param_names.len();
+        let param_count = self.type_.inputs().len();
 
         if idx < param_count {
+            // Ensure the param_names vec is long enough.
+            self.param_names.resize(param_count, None);
             &mut self.param_names[idx]
         } else {
             &mut self.code_mut().expect("imported function cannot have locals").locals[idx - param_count].name
