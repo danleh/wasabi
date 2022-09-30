@@ -17,7 +17,7 @@ use serde::Serialize;
 
 pub use crate::function_type::FunctionType;
 
-use crate::{ParseError, ParseWarnings, EncodeError};
+use crate::{ParseError, ParseWarnings, EncodeError, extensions::WasmExtension};
 
 
 /* Values and types. */
@@ -345,10 +345,8 @@ pub struct Module {
 
     pub custom_sections: Vec<RawCustomSection>,
 
-    // TODO pub metadata: ModuleMetadata,
+    pub metadata: ModuleMetadata,
 }
-
-// TODO ModuleMetadata { used_extensions: Vec<WasmExtension>, original_section_offsets: SectionOffsets }
 
 impl Module {
     pub fn new() -> Self {
@@ -392,6 +390,13 @@ impl Module {
         std::fs::write(path, bytes)?;
         Ok(len)
     }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash)]
+pub struct ModuleMetadata {
+    used_extensions: Vec<WasmExtension>,
+    // TODO
+    // original_section_offsets: SectionOffsets
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
