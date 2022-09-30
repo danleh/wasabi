@@ -662,18 +662,24 @@ impl Memarg {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Instr {
-    // TODO convert such that there are never instructions following an 
-    // unreachable state (i.e., unreachable/br/br_table)
-    // Then, insert explicit drops to make sure the stack aligns.
-    // For that, decoding needs to check whether lowlevel::Instr == Unreachable,
-    // br, or br_table, then set a flag that skips to the next end.
-    // This would be the only "information loss" vs. the input Wasm binary.
+    // TODO See below on `Block` for a plan on how to get rid of unreachable code.
     Unreachable,
+    // TODO Remove, can be replaced by `Instr::Block(BlockType::Empty)`.
     Nop,
 
     // TODO Make highlevel::Instr nesting, i.e., Block(BlockType, Vec<Instr>)
     // see, e.g., the reference interpreter: https://github.com/WebAssembly/spec/blob/master/interpreter/valid/valid.ml
     // This would get rid of else and end.
+    // TODO One could also remove dead code by construction, by having optional
+    // terminator instructions, which move control-flow unconditionally somewhere else:
+    // Unreachable, Br, BrTable, Return.
+    // We would get:
+    // enum TerminatorInstr { Unreachable, Br(Label), BrTable(Vec<Label>, Label), Return }
+    // and remove those four from the normal instructions.
+    // We would have those terminators in:
+    // Block(FunctionType, Body), Loop(FunctionType, Body), If(FunctionType, Body, Option<Body>)
+    // with
+    // struct Body(Vec<Instr>, Option<TerminatorInstr>)
     Block(BlockType),
     Loop(BlockType),
     If(BlockType),
@@ -681,9 +687,11 @@ pub enum Instr {
     End,
 
     Br(Label),
+    // TODO Replace with If(FunctionType, Body([], Some(Br(Label))), None)?
     BrIf(Label),
     BrTable { table: Vec<Label>, default: Label },
 
+    // TODO Replace with Br(toplevel)
     Return,
     Call(Idx<Function>),
     // TODO remove Idx<Table>, always 0 in MVP.
@@ -693,8 +701,12 @@ pub enum Instr {
     // value-polymorphism.
     // However, this would require type checking during lowlevel parsing :(
     Drop,
+    // TODO Replace with `If([ty, ty] -> [ty], ...)
     Select,
 
+    // TODO Get rid of all locals by using block params and results only + a pick or copy
+    // instruction, that copies the nth value on the stack to the top.
+    // Benefit: fully in SSA form, decoalesced locals, liveness information explicit.
     Local(LocalOp, Idx<Local>),
     Global(GlobalOp, Idx<Global>),
 
