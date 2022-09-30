@@ -1,9 +1,11 @@
 //! Code for encoding our AST back to the WebAssembly binary format.
 //! Uses `wasm-encoder` for the actual low-level work.
 
-use std::{sync::RwLock, convert::TryInto, collections::HashMap};
+use std::{sync::RwLock, convert::TryInto};
 
 use rayon::prelude::*;
+use rustc_hash::FxHashMap;
+
 use wasm_encoder::{self as we, Encode};
 
 use crate::*;
@@ -23,17 +25,17 @@ mod marker {
 
 #[derive(Default)]
 struct EncodeState {
-    types_idx: RwLock<HashMap<FunctionType, Idx<marker::we::FunctionType>>>,
+    types_idx: RwLock<FxHashMap<FunctionType, Idx<marker::we::FunctionType>>>,
 
     // Mapping of indices from the high-level AST to the low-level binary format.
     // This is necessary, because in the WebAssembly binary format all imported elements
     // (functions, globals, etc.) come before (i.e., have a lower index) than all
     // "locally-defined" (i.e., non-imported) elements.
     // We thus have to re-index functions, globals, etc. and use this here to do so.
-    function_idx: HashMap<Idx<Function>, Idx<marker::we::Function>>,
-    global_idx: HashMap<Idx<Global>, Idx<marker::we::Global>>,
-    table_idx: HashMap<Idx<Table>, Idx<marker::we::Table>>,
-    memory_idx: HashMap<Idx<Memory>, Idx<marker::we::Memory>>,
+    function_idx: FxHashMap<Idx<Function>, Idx<marker::we::Function>>,
+    global_idx: FxHashMap<Idx<Global>, Idx<marker::we::Global>>,
+    table_idx: FxHashMap<Idx<Table>, Idx<marker::we::Table>>,
+    memory_idx: FxHashMap<Idx<Memory>, Idx<marker::we::Memory>>,
 
     last_encoded_section: Option<SectionId>,
     custom_sections_encoded: usize,
