@@ -3,6 +3,7 @@ This document shall list the largest breaking changes for Wasabi's wasm library.
 # v0.6.0 (2022-09-28)
 
 - Replace not well-maintained low-level parser with industry-used wasmparser.rs.
+- New implementation for `FunctionType` which uses Gödel numbers and a global arena as a fallback.
 - Removed low-level AST data structures, simplified high-level AST data structures in some cases.
 - Major refactoring and several breaking changes to API.
 - Successfully parses all standards-compliant WebAssembly 1.0 modules in WasmBench (>8k binaries).
