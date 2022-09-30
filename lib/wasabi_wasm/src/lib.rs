@@ -1,6 +1,7 @@
 mod ast;
 // Export AST types directly under crate, without ast prefix.
 pub use crate::ast::*;
+mod function_type;
 
 mod error;
 // Export error types directly under the crate.

@@ -3,7 +3,7 @@
 //! The goals are:
 //! - Use at most 32 bits of memory, because they are frequently part of larger
 //! AST data types, e.g., in functions and instructions.
-//! - Should be cheap to compare.
+//! - Should be cheap to compare for equality, just a single `u32` comparison.
 //! - Should be cheap to copy, ideally just a memcpy (Rust: Copy trait)
 //! - Should be cheap to create, which is espaclly common in parsing and type checking.
 //! 
@@ -11,13 +11,13 @@
 //! The problem was that creating lots of function types was slow, because it had to create the
 //! non-interned version first before comparing.
 
-use std::{num::*, collections::HashMap, sync::{Mutex, RwLock}};
+use std::{collections::HashMap, sync::RwLock, cmp::Ordering, fmt, str::FromStr};
 
-use once_cell::sync::{OnceCell, Lazy};
+use once_cell::sync::Lazy;
 
 use crate::ValType;
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum FunctionType {
     GoedelNumber {
         // Split into inputs and results (instead of a single Gödel number for both)
@@ -45,13 +45,20 @@ fn function_type_size() {
 
 impl FunctionType {
     pub fn new(inputs: &[ValType], results: &[ValType]) -> Self {
-        let inputs_goedel_number = val_type_seq_to_goedel_number(inputs);
-        if inputs_goedel_number < LOOKUP_TABLE_SIZE {
-            if let Ok(inputs) = u16::try_from(inputs_goedel_number) {
-                let results_goedel_number = val_type_seq_to_goedel_number(results);
-                if results_goedel_number < LOOKUP_TABLE_SIZE {
-                    if let Ok(results) = u8::try_from(results_goedel_number) {
-                        return FunctionType::GoedelNumber { inputs, results };
+        // Ensure three things:
+        // 1. The numerical operations do not overflow while converting to the Gödel number.
+        if let Some(inputs) = val_type_seq_to_goedel_number(inputs) {
+            // 2. The resulting Gödel number does not go beyond the lookup table.
+            if inputs < LOOKUP_TABLE_SIZE {
+                // 3. The resulting Gödel number fits in the target number type.
+                if let Ok(inputs) = u16::try_from(inputs) {
+                    // Same for results...
+                    if let Some(results) = val_type_seq_to_goedel_number(results) {
+                        if results < LOOKUP_TABLE_SIZE {
+                            if let Ok(results) = u8::try_from(results) {
+                                return FunctionType::GoedelNumber { inputs, results };
+                            }
+                        }
                     }
                 }
             }
@@ -91,6 +98,67 @@ impl FunctionType {
     }
 }
 
+impl PartialOrd for FunctionType {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        (self.inputs(), self.results()).partial_cmp(&(other.inputs(), other.results()))
+    }
+}
+
+impl Ord for FunctionType {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.inputs(), self.results()).cmp(&(other.inputs(), other.results()))
+    }
+}
+
+impl fmt::Display for FunctionType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&format!("{:?} -> {:?}", self.inputs(), self.results()).to_lowercase())
+    }
+}
+
+impl FromStr for FunctionType {
+    type Err = ();
+
+    fn from_str(str: &str) -> Result<Self, Self::Err> {
+        fn trim_filter(s: &str) -> Option<&str> {
+            let s = s.trim();
+            if s.is_empty() {
+                None
+            } else {
+                Some(s)
+            }
+        }
+
+        // Split by the arrow.
+        let mut splitted = str.split("->");
+        let params = splitted.next().ok_or(())?;
+        let results = splitted.next().ok_or(())?;
+        if splitted.next().is_some() {
+            // More than one arrow in the type is invalid.
+            return Err(());
+        }
+
+        // Split individual types by comma, and remove brackets.
+        let params = params
+            .trim()
+            .strip_prefix('[').ok_or(())?
+            .strip_suffix(']').ok_or(())?
+            .split(',')
+            .filter_map(trim_filter)
+            .map(ValType::from_str)
+            .collect::<Result<Vec<_>, _>>()?;
+        let results = results
+            .trim()
+            .strip_prefix('[').ok_or(())?
+            .strip_suffix(']').ok_or(())?
+            .split(',')
+            .filter_map(trim_filter)
+            .map(ValType::from_str)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(FunctionType::new(&params, &results))
+    }
+}
+
 #[test]
 fn inspect_function_types() {
     println!("{:?}", FunctionType::new(&[], &[]));
@@ -125,12 +193,13 @@ const fn goedel_number_to_val_type(goedel_number: usize) -> Option<ValType> {
 // Determined by the number of variants of `ValType`.
 const VAL_TYPE_MAX_GOEDEL_NUMBER: usize = 3;
 
-// This is a geometric series, e.g., for 6 possible values it is:
-// 1 (for the empty sequence) 
-// + 6 (for the sequence with one element) 
-// + 36 ...
-// = (1 - 6^(max_seq_len+1)) / (1 - 6)
+#[allow(unused)]
 const fn val_type_seq_max_goedel_number(max_seq_len: u32) -> usize {
+    // This is a geometric series, e.g., for 6 possible values it is:
+    // 1 (for the empty sequence) 
+    // + 6 (for the sequence with one element) 
+    // + 36 ...
+    // = (1 - 6^(max_seq_len+1)) / (1 - 6)
     let goedel_number_count = ((VAL_TYPE_MAX_GOEDEL_NUMBER + 1).pow(max_seq_len + 1) - 1) / VAL_TYPE_MAX_GOEDEL_NUMBER;
     goedel_number_count - 1
 }
@@ -146,26 +215,26 @@ fn test_goedel_number_constants() {
     assert_eq!(val_type_seq_max_goedel_number(4), 340);
 }
 
-const fn val_type_seq_to_goedel_number(seq: &[ValType]) -> usize {
+fn val_type_seq_to_goedel_number(seq: &[ValType]) -> Option<usize> {
     let mut result = 0usize;
 
     // Cannot (yet) use `for` loop in const fn.
     let mut i = 0;
     while i < seq.len() {
         let val_type = seq[i];
-        result *= VAL_TYPE_MAX_GOEDEL_NUMBER + 1;
-        result += val_type_to_goedel_number(val_type) + 1;
+        result = result.checked_mul(VAL_TYPE_MAX_GOEDEL_NUMBER + 1)?;
+        result = result.checked_add(val_type_to_goedel_number(val_type) + 1)?;
         i += 1;
     }
 
-    result
+    Some(result)
 }
 
 #[test]
 fn test_val_type_seq_to_goedel_number() {
-    assert_eq!(val_type_seq_to_goedel_number(&[]), 0);
-    assert_eq!(val_type_seq_to_goedel_number(&[ValType::I32]), 1);
-    assert_eq!(val_type_seq_to_goedel_number(&[ValType::I32, ValType::I32]), 5);
+    assert_eq!(val_type_seq_to_goedel_number(&[]), Some(0));
+    assert_eq!(val_type_seq_to_goedel_number(&[ValType::I32]), Some(1));
+    assert_eq!(val_type_seq_to_goedel_number(&[ValType::I32, ValType::I32]), Some(5));
 }
 
 // Reverse direction: Gödel number to slice.
@@ -228,7 +297,7 @@ fn test_goedel_number_to_val_type_seq() {
 fn test_goedel_number_roundtrips() {
     for goedel_number in 0..LOOKUP_TABLE_SIZE {
         let val_type_seq = goedel_number_to_val_type_seq(goedel_number);
-        let roundtrip = val_type_seq_to_goedel_number(&val_type_seq);
+        let roundtrip = val_type_seq_to_goedel_number(&val_type_seq).unwrap();
         assert_eq!(goedel_number, roundtrip, "{} -> {:?} -> {}", goedel_number, val_type_seq, roundtrip);
     }
 }

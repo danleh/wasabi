@@ -12,15 +12,10 @@
 use core::fmt;
 use std::{str::FromStr, marker::PhantomData, hash, collections::HashSet, path::Path};
 
-use internment::Intern;
 use ordered_float::OrderedFloat;
 use serde::Serialize;
 
-// TODO re-org/remove
-pub(crate) mod lowlevel;
-
-// TODO flesh out
-mod function_type;
+pub use crate::function_type::FunctionType;
 
 use crate::{ParseError, ParseWarnings, EncodeError};
 
@@ -152,72 +147,6 @@ impl FromStr for ValType {
             "f64" => ValType::F64, 
             _ => return Err(())
         })
-    }
-}
-
-/// An immutable, interned version of a function type, such that comparisons for equality are very
-/// cheap, it is trivially copy-able and clone-able, only a single unique instance hold in memory,
-/// and references to types are small (only 32 bits, so not even a single pointer).
-/// 
-/// There are downsides over just using "regular", non-interned types,
-/// but I think they are all justifyable:
-/// - The actual types are stored in a global arena, so they are never deallocated.
-/// But since there are very few types in total, and most of them would be shared across different
-/// modules, this is OK.
-/// - Creating a new one requires locking the global arena, but since _new_ types are created very
-/// seldom, this shouldn't be an issue in practice.
-/// - Requires types to be immutable, but that is fine because (function) type signatures are not
-/// frequently altered.
-#[derive(Default, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct FunctionType(Intern<crate::lowlevel::FunctionType>);
-
-impl FunctionType {
-    pub fn new(inputs: &[ValType], results: &[ValType]) -> Self {
-        // TODO Implement `Borrow` for (&[], &[]) and ll::FunctionType, such that
-        // we don't have to create a low-level function type here.
-        let ty = crate::lowlevel::FunctionType::new(inputs, results);
-        Self::from(ty)
-    }
-
-    // This is not exactly equal to the AsRef trait, because this returns a 'static reference.
-    #[allow(clippy::should_implement_trait)]
-    pub fn as_ref(self) -> &'static crate::lowlevel::FunctionType {
-        self.0.as_ref()
-    }
-
-    pub fn inputs(self) -> &'static [ValType] {
-        self.as_ref().inputs()
-    }
-
-    pub fn results(self) -> &'static [ValType] {
-        self.as_ref().results()
-    }
-}
-
-// TODO remove once wasmparser lands
-impl From<crate::lowlevel::FunctionType> for FunctionType {
-    fn from(ty: crate::lowlevel::FunctionType) -> Self {
-        Self(Intern::new(ty))
-    }
-}
-
-impl fmt::Debug for FunctionType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.as_ref().fmt(f)
-    }
-}
-
-impl fmt::Display for FunctionType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.as_ref().fmt(f)
-    }
-}
-
-impl FromStr for FunctionType {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        crate::lowlevel::FunctionType::from_str(s).map(Into::into)
     }
 }
 

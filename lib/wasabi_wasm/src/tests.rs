@@ -1,6 +1,9 @@
 use std::error::Error;
 
-use indicatif::ProgressIterator;
+use dashmap::DashMap;
+use indicatif::{ProgressIterator, ParallelProgressIterator};
+
+use rayon::prelude::*;
 
 use test_utilities::*;
 
@@ -23,7 +26,66 @@ const WASM_TEST_INPUT_NAMES_SECTION: &str = "../../tests/inputs/name-section/wab
 // const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &str = "../../tests/inputs/name-section/extended-name-section/vuln.wasm";
 
 #[test]
-#[ignore]
+fn function_types_in_wasmbench() {
+    let mut wasm_files = wasm_files(WASMBENCH_DIR).unwrap();
+    for hash in WASMBENCH_EXCLUDED_FILES {
+        wasm_files.retain(|path| !path.to_string_lossy().contains(hash));
+    }
+
+    let type_count = DashMap::new();
+
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(16)
+        .build_global()
+        .unwrap();
+
+    wasm_files.par_iter().progress_count(wasm_files.len() as u64).for_each(|path| {
+        let (module, _offsets, warnings) = Module::from_file(path)
+            .unwrap_or_else(|err| panic!("Could not parse valid binary '{}': {err}", path.display()));
+        if !warnings.is_empty() {
+            eprintln!("Warnings parsing '{}': {:#?}", path.display(), warnings);
+        }
+
+        for func in module.functions {
+            *type_count.entry(func.type_).or_insert(0) += 1;
+            for instr in func.code().iter().flat_map(|code| &code.body) {
+                if let Instr::CallIndirect(func_ty, ..) = instr {
+                    *type_count.entry(*func_ty).or_insert(0u64) += 1;
+                }
+                if let Some(instr_ty) = instr.simple_type() {
+                    *type_count.entry(instr_ty).or_insert(0) += 1;
+                }
+            }
+        }
+    });
+
+    let mut type_count: Vec<_> = type_count.into_iter().collect();
+    type_count.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+    // Print the most common types first.
+    // for (ty, count) in type_count.iter().take(1000) {
+    //     println!("{:10} ; {}", count, ty);
+    // }
+
+    let val_type_seq_count = DashMap::new();
+    type_count
+        .par_iter()
+        .for_each(|(func_ty, count)| {
+            *val_type_seq_count.entry(func_ty.inputs()).or_insert(0u64) += count;
+            *val_type_seq_count.entry(func_ty.results()).or_insert(0u64) += count;
+        });
+    let mut val_type_seq_count: Vec<_> = val_type_seq_count.into_iter().collect();
+    val_type_seq_count.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+    // Print the most common types first.
+    let mut out = String::new();
+    for (ty, count) in val_type_seq_count.iter().take(1000) {
+        use std::fmt::Write;
+        writeln!(&mut out, "{:10} ; [{}]", count, ty.iter().map(|ty| ty.to_string()).collect::<Vec<_>>().join(", ")).unwrap();
+    }
+    std::fs::write("val_type_seq_count.csv", out).unwrap();
+    
+}
+
+#[test]
 fn roundtrip_produces_same_module_ast() {
     let mut wasm_files = wasm_files(WASMBENCH_DIR).unwrap();
     for hash in WASMBENCH_EXCLUDED_FILES {
