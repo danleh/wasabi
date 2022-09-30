@@ -665,6 +665,29 @@ impl Memarg {
     }
 }
 
+#[test]
+fn instr_size() {
+    assert_eq!(std::mem::size_of::<LocalOp>(), 1);
+    assert_eq!(std::mem::size_of::<GlobalOp>(), 1);
+    
+    assert_eq!(std::mem::size_of::<LoadOp>(), 1);
+    assert_eq!(std::mem::size_of::<StoreOp>(), 1);
+    
+    assert_eq!(std::mem::size_of::<UnaryOp>(), 1);
+    assert_eq!(std::mem::size_of::<BinaryOp>(), 1);
+
+    assert_eq!(std::mem::size_of::<Idx<Local>>(), 4);
+    assert_eq!(std::mem::size_of::<Idx<Global>>(), 4);
+    assert_eq!(std::mem::size_of::<Idx<Function>>(), 4);
+    assert_eq!(std::mem::size_of::<Label>(), 4);
+
+    assert_eq!(std::mem::size_of::<Memarg>(), 8);
+    
+    // FIXME These are fucking huge...
+    assert_eq!(std::mem::size_of::<Val>(), 16);
+    assert_eq!(std::mem::size_of::</* BrTable */ (Vec<Label>, Label)>(), 32);
+    assert_eq!(std::mem::size_of::<Instr>(), 32);
+}
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Instr {
