@@ -34,11 +34,6 @@ fn function_types_in_wasmbench() {
 
     let type_count = DashMap::new();
 
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(16)
-        .build_global()
-        .unwrap();
-
     wasm_files.par_iter().progress_count(wasm_files.len() as u64).for_each(|path| {
         let (module, _offsets, warnings) = Module::from_file(path)
             .unwrap_or_else(|err| panic!("Could not parse valid binary '{}': {err}", path.display()));
