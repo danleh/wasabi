@@ -460,19 +460,19 @@ fn parse_body(body: wp::FunctionBody, types: &Types) -> Result<Code, ParseError>
     // So conservatively, bytes / 4 should be a good starting point.
     // It will almost never over-reserve memory, and at the same time has to 
     // grow the buffer at most 2 times in case there is really 1 byte per instruction.
-    // and at the same time never over-reserve.
     // UNFORTUNATELY, on my Windows 10 installation, this pre-allocation is 
     // causing a massive slowdown during parallel parsing (Ryzen 5950X, 16 cores, 32 threads)
-    // of >200% (!!) vs. just using Vec::new().
+    // of >200% (!!) vs. just using Vec::new(), i.e., no pre-allocation at all.
     // It seems the combination of (large?) pre-allocation + allocating from
     // multiple threads + Windows default allocator sucks big time.
     // I obviously don't want to get rid of the parallel parsing, so we can either
-    // a) not do the pre-allocation at all (which hurts Linux performance), or
-    // b) use a different allocator on Windows.
+    // a) not do the pre-allocation at all (which hurts Linux performance, 
+    //    total parsing with Vec::new() here is ~5% slower), or
+    // b) use a different allocator on Windows, or
+    // c) choose a trade-off in pre-allocation between Linux and Windows performance.
     let body_byte_size = body.range().end - body.range().start;
-    let approx_instr_count = body_byte_size / 4;
-    // let mut instrs = Vec::with_capacity(approx_instr_count);
-    let mut instrs = Vec::new();
+    let approx_instr_count = body_byte_size / 8;
+    let mut instrs = Vec::with_capacity(approx_instr_count);
 
     for op_offset in body.get_operators_reader()?.into_iter_with_offsets() {
         let (op, offset) = op_offset?;
