@@ -457,21 +457,34 @@ fn parse_body(body: wp::FunctionBody, types: &Types) -> Result<Code, ParseError>
 
     // Pre-allocate: We don't know the exact number of instructions yet,
     // but there are typically one or two bytes per instruction.
-    // So conservatively, bytes / 4 should be a good starting point.
-    // It will almost never over-reserve memory, and at the same time has to 
-    // grow the buffer at most 2 times in case there is really 1 byte per instruction.
+    // So conservatively, bytes / 2 should be a good starting point.
+    // It will almost never over-reserve memory and has to grow / re-allocate 
+    // at most once in case there really is on avg. 1 instruction per byte.
     // UNFORTUNATELY, on my Windows 10 installation, this pre-allocation is 
     // causing a massive slowdown during parallel parsing (Ryzen 5950X, 16 cores, 32 threads)
     // of >200% (!!) vs. just using Vec::new(), i.e., no pre-allocation at all.
-    // It seems the combination of (large?) pre-allocation + allocating from
-    // multiple threads + Windows default allocator sucks big time.
-    // I obviously don't want to get rid of the parallel parsing, so we can either
-    // a) not do the pre-allocation at all (which hurts Linux performance, 
-    //    total parsing with Vec::new() here is ~5% slower), or
-    // b) use a different allocator on Windows, or
-    // c) choose a trade-off in pre-allocation between Linux and Windows performance.
+    // It seems the combination of pre-allocation + from multiple threads 
+    // sucks big time with the Windows default allocator.
+    // I also tried whether the amount of pre-allocation makes a difference (e.g.,
+    // bytes / 16, or limiting to at most 1024 instructions), but there is a floor.
+    // Even with just Vec::new() it is still >200% slower than Linux.
+    // Speculating, I think the problem is that all threads start parsing functions
+    // at the same time and then compete for some global lock in the allocator.
+    // I considered a couple of options:
+    // a) Get rid of parallel parsing, but I don't want that since for big
+    //    binaries its a huge speedup and embarrassingly parallel.
+    // b) Don't pre-allocate at all, but this hurts Linux performance (overall 
+    //    parsing without this single pre-allocation, i.e., Vec::new() is ~5% slower!)
+    //    and Windows is still >200% slower than Linux, which it shouldn't be.
+    // c) Use a different allocator on Windows. 
+    // Even though I don't like the complexity of d), I think it's the best option
+    // since it fixes the underlying problem, and also improves overall performance
+    // as we are quite allocation-heavy.
+    // For reference, benchmarking a single medium-size binary (bananabread),
+    // parallel parsing is 700% slower with the system allocator, and
+    // encoding is 50% slower with the system allocator vs. mimalloc.
     let body_byte_size = body.range().end - body.range().start;
-    let approx_instr_count = body_byte_size / 8;
+    let approx_instr_count = body_byte_size / 2;
     let mut instrs = Vec::with_capacity(approx_instr_count);
 
     for op_offset in body.get_operators_reader()?.into_iter_with_offsets() {

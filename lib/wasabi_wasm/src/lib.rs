@@ -16,6 +16,11 @@ mod encode;
 #[cfg(test)]
 mod tests;
 
+// See long comment on allocator performance with parallel parsing on Windows 10 in `parse.rs`.
+use mimalloc::MiMalloc;
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 /*
  TODO WHEN CONTINUING
  - support multi-value, multi-table, multi-memory because they are anyway pretty much supported (and make for less special cases)
