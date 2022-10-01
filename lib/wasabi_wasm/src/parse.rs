@@ -481,8 +481,9 @@ fn parse_body(body: wp::FunctionBody, types: &Types) -> Result<Code, ParseError>
     // since it fixes the underlying problem, and also improves overall performance
     // as we are quite allocation-heavy.
     // For reference, benchmarking a single medium-size binary (bananabread),
-    // parallel parsing is 700% slower with the system allocator, and
-    // encoding is 50% slower with the system allocator vs. mimalloc.
+    // parallel parsing is 700% slower with the Windows 10 system allocator, and
+    // encoding is 50% slower vs. mimalloc.
+    // Since the performance is not improved on Linux, just enable it on Windows.
     let body_byte_size = body.range().end - body.range().start;
     let approx_instr_count = body_byte_size / 2;
     let mut instrs = Vec::with_capacity(approx_instr_count);

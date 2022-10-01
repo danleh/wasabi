@@ -16,8 +16,10 @@ mod encode;
 #[cfg(test)]
 mod tests;
 
-// See long comment on allocator performance with parallel parsing on Windows 10 in `parse.rs`.
+// See long comment on Windows 10 allocator performance with parallel parsing in `parse.rs`.
+#[cfg(target_os = "windows")]
 use mimalloc::MiMalloc;
+#[cfg(target_os = "windows")]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 

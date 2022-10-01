@@ -24,6 +24,7 @@ once_cell = "1.15.0"
 rustc-hash = "1.1.0"
 nohash-hasher = "0.2.0"
 
+[target.'cfg(target_os = "windows")'.dependencies]
 # Change the global allocator. 
 # Improves parallel parsing performance under Windows 10 enourmously, by >7x (!).
 # Disable security features for additional performance.
