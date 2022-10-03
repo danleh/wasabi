@@ -2,27 +2,27 @@
 name = "wasabi"
 version = "0.3.0"
 authors = ["Daniel Lehmann <mail@dlehmann.eu>"]
-edition = "2018"
+edition = "2021"
 
 [dev-dependencies]
-test_utilities = { path = "lib/test_utilities" }
+test_utilities = { path = "../test_utilities" }
 
 [dependencies]
-wasabi_wasm = { path = "lib/wasabi_wasm" }
+wasabi_wasm = { path = "../wasabi_wasm" }
 
-# for parallel instrumentation of functions
+# For parallel instrumentation of functions.
 rayon = "1.5.3"
 
-# for upgradable RW lock during instrumentation
+# For upgradable RW lock during instrumentation.
 parking_lot = "0.12.1"
 
 serde = { version = "1.0.145", features = ["derive"] }
 serde_json = "1.0.85"
 serde_plain = "1.0.0"
 
-# command-line interface and error handling
-structopt = "0.3.2" # TODO update to clap v3 beta
-enumset = "1.0.11"
+# Command-line interface and error handling.
+structopt = "0.3.26" # TODO update to clap v3 beta
+enumset = "1.0.12"
 main_error = "0.1.2"
 
 [profile.release]
@@ -33,6 +33,6 @@ overflow-checks = true
 debug = 1
 
 [profile.test]
-# To speed-up test execution
+# To speed-up test execution.
 opt-level = 2
 lto = "thin"

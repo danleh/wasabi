@@ -37,7 +37,8 @@ fn main() -> Result<(), MainError> {
 
     // instrument Wasm and generate JavaScript
     let (mut module, _offsets, _warnings) = Module::from_file(opt.input_file)?;
-    let js = add_hooks(&mut module, enabled_hooks, opt.node_js).unwrap();
+    let (js, hook_count) = add_hooks(&mut module, enabled_hooks, opt.node_js).unwrap();
+    println!("inserted {} low-level hooks", hook_count);
 
     // write output files
     fs::create_dir_all(&opt.output_dir)?;
@@ -45,7 +46,7 @@ fn main() -> Result<(), MainError> {
     fs::write(output_file_wasabi_js, js)?;
     if opt.node_js {
         let output_file_long_js = opt.output_dir.join("long.js");
-        fs::write(output_file_long_js, include_str!("../lib/long.js/long.js"))?;
+        fs::write(output_file_long_js, include_str!("../js/long.js/long.js"))?;
     }
 
     Ok(())

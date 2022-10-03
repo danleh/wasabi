@@ -2,12 +2,11 @@ use wasabi_wasm::{Mutability, Val, ValType::*, Module, FunctionType, GlobalOp::*
 
 /* Direct or "low-level" instrumentations, i.e., where the byte code is manually modified. */
 
-pub fn add_empty_function(module: &mut Module) -> Option<String> {
+pub fn add_empty_function(module: &mut Module) {
     module.add_function(FunctionType::new(&[], &[]), vec![], vec![End]);
-    None
 }
 
-pub fn count_calls(module: &mut Module) -> Option<String> {
+pub fn count_calls(module: &mut Module) {
     let counter = module.add_global(I32, Mutability::Mut, vec![Const(Val::I32(0)), End]);
 
     let getter = module.add_function(
@@ -38,6 +37,4 @@ pub fn count_calls(module: &mut Module) -> Option<String> {
             })
         }
     }
-
-    None
 }

@@ -25,7 +25,7 @@ pub mod type_stack;
 /// Instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, and
 /// other relevant information.
 #[allow(clippy::cognitive_complexity)]
-pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> Option<String> {
+pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> Option<(String, usize)> {
     // make sure table is exported, needed for Wasabi runtime to resolve table indices to function indices.
     for table in &mut module.tables {
         if table.export.is_empty() {
@@ -761,7 +761,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
 
     // actually add the hooks to module and check that inserted Idx is the one on the Hook struct
     let hooks = hooks.finish();
-    println!("generated {} low-level hooks", hooks.len());
+    let hook_count = hooks.len();
     //    let mut hook_list: Vec<(String, FunctionType)> = hooks.iter().map(|hook| (hook.wasm.import.as_ref().map(|opt| opt.1.clone()).unwrap(), hook.wasm.type_.clone())).collect();
     //    hook_list.sort_by_key(|h| h.0.clone());
     //    for hook in hook_list {
@@ -776,7 +776,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
         module.functions.push(hook.wasm);
     }
 
-    Some(generate_js(module_info.into_inner(), &js_hooks, node_js))
+    Some((generate_js(module_info.into_inner(), &js_hooks, node_js), hook_count))
 }
 
 /// convenience to hand (function/instr/local/global) indices to hooks
@@ -855,14 +855,14 @@ fn generate_js(module_info: ModuleInfo, hooks: &[String], node_js: bool) -> Stri
         //    - needs to be run after every instrumentation
         // * Alternative B: compile Wasabi itself to WebAssembly, instrument at runtime
         writeln!(result, "// long.js\n{}\n", 
-            include_str!("../../../lib/long.js/long.js")
+            include_str!("../../../js/long.js/long.js")
                 .lines()
                 .next()
                 .unwrap()
         ).unwrap();
     }
 
-    result += include_str!("../../../lib/runtime.js");
+    result += include_str!("../../../js/runtime.js");
 
     writeln!(result, "\nWasabi.module.info = {};\n", serde_json::to_string(&module_info).unwrap()).unwrap();
 
