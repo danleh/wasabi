@@ -1567,7 +1567,7 @@ impl Instr {
             Local(_, _) | Global(_, _) => None,
             // Value-polymorphic, need abstract type stack.
             Drop | Select => None,
-            // Stack-polymorphic, needs type inference (br* above as weel).
+            // Stack-polymorphic, needs type inference (br* above as well).
             Unreachable => None,
         }
     }
