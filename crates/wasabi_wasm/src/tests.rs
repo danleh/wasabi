@@ -1,38 +1,15 @@
+use std::fs;
 use std::error::Error;
 use std::fmt::Write;
-use std::path::PathBuf;
 
 use dashmap::DashMap;
 use indicatif::ParallelProgressIterator;
 
-use once_cell::sync::Lazy;
 use rayon::prelude::*;
 
 use test_utilities::*;
 
 use crate::{*, types::TypeChecker};
-
-const TEST_INPUTS_DIR: &str = "../../test-inputs";
-static ALL_VALID_TEST_BINARIES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
-    let mut wasm_files = wasm_files(TEST_INPUTS_DIR).unwrap();
-    // Ignore some files:
-    const EXCLUDED_FILES: [&str; 5] = [
-        // Known invalid files:
-        "invalid",
-        // The full set of WasmBench files is too large to run in CI.
-        "all-binaries-metadata",
-        "filtered-binaries-metadata",
-        // Valid, but creates very large allocations because it has >500k locals in >1k functions.
-        "31fa012442fd637fca221db4fda94262e99759ab9667147cbedde083aabcc065",
-        // Is actually invalid according to wasm-validate, 
-        // not sure why it wasn't filtered out of WasmBench before.
-        "4b1082f1c2d634aaebbe9b70331ac6639ab3fe7b0a52459ea4f6baa4f82a82ad",
-    ];
-    for excluded in EXCLUDED_FILES.iter() {
-        wasm_files.retain(|path| !path.to_string_lossy().contains(excluded));
-    }
-    wasm_files
-});
 
 const NAME_SECTION_TEST_BINARY: &str = "../../test-inputs/name-section/wabt-tests/names.wasm";
 const BANANABREAD_REAL_WORLD_TEST_BINARY: &str = "../../test-inputs/real-world/bananabread/bb.wasm";
@@ -67,8 +44,8 @@ fn collect_all_function_types_in_test_set() {
     for (ty, count) in &type_count {
         writeln!(&mut output_contents, "{:10} ; {}", count, ty).unwrap();
     }
-    std::fs::create_dir_all("../../test-outputs/collect-types/").unwrap();
-    std::fs::write("../../test-outputs/collect-types/function_type_count.csv", output_contents).unwrap();
+    fs::create_dir_all("../../test-outputs/collect-types/").unwrap();
+    fs::write("../../test-outputs/collect-types/function_type_count.csv", output_contents).unwrap();
 
     let val_type_seq_count = DashMap::new();
     type_count
@@ -85,7 +62,7 @@ fn collect_all_function_types_in_test_set() {
     for (ty, count) in &val_type_seq_count {
         writeln!(&mut output_contents, "{:10} ; [{}]", count, ty.iter().map(|ty| ty.to_string()).collect::<Vec<_>>().join(", ")).unwrap();
     }
-    std::fs::write("../../test-outputs/collect-types/val_type_seq_count.csv", output_contents).unwrap();
+    fs::write("../../test-outputs/collect-types/val_type_seq_count.csv", output_contents).unwrap();
     
 }
 
@@ -120,18 +97,15 @@ fn type_checking_valid_files() {
 #[test]
 fn decode_encode_is_valid_wasm() {
     ALL_VALID_TEST_BINARIES.par_iter().progress_count(ALL_VALID_TEST_BINARIES.len() as u64).for_each(|path| {
-        // Some binaries do not validate even before we re-encoded them, so ignore those.
-        if wasm_validate(path).is_ok() {
-            let (module, _, _) = Module::from_file(path)
-            .unwrap_or_else(|err| panic!("Could not parse valid binary '{}': {err}", path.display()));
+        let (module, _, _) = Module::from_file(path)
+        .unwrap_or_else(|err| panic!("Could not parse valid binary '{}': {err}", path.display()));
 
-            let output_path = &output_file(path, "encode").unwrap();
-            module.to_file(output_path)
-                .unwrap_or_else(|err| panic!("Could not encode valid binary to file '{}': {err}", output_path.display()));
+        let output_path = &output_file(path, "encode").unwrap();
+        module.to_file(output_path)
+            .unwrap_or_else(|err| panic!("Could not encode valid binary to file '{}': {err}", output_path.display()));
 
-            wasm_validate(output_path)
-                .unwrap_or_else(|err| panic!("Written binary did not validate '{}': {err}", output_path.display()));
-        }
+        wasm_validate(output_path)
+            .unwrap_or_else(|err| panic!("Written binary did not validate '{}': {err}", output_path.display()));
     });
 }
 
