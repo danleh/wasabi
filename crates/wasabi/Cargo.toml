@@ -1,0 +1,38 @@
+[package]
+name = "wasabi"
+version = "0.3.0"
+authors = ["Daniel Lehmann <mail@dlehmann.eu>"]
+edition = "2021"
+
+[dev-dependencies]
+test_utilities = { path = "../test_utilities" }
+
+[dependencies]
+wasabi_wasm = { path = "../wasabi_wasm" }
+
+# For parallel instrumentation of functions.
+rayon = "1.5.3"
+
+# For upgradable RW lock during instrumentation.
+parking_lot = "0.12.1"
+
+serde = { version = "1.0.145", features = ["derive"] }
+serde_json = "1.0.85"
+serde_plain = "1.0.0"
+
+# Command-line interface and error handling.
+structopt = "0.3.26" # TODO update to clap v3 beta
+enumset = "1.0.12"
+main_error = "0.1.2"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+overflow-checks = true
+# For profiling with debug info.
+debug = 1
+
+[profile.test]
+# To speed-up test execution.
+opt-level = 2
+lto = "thin"

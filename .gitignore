@@ -1,20 +1,12 @@
-# Rust/Cargo
-/target/
-
 # IDE files
 .idea/
+*.iml
 .vscode/
 
 # vim
 *~
 *.swp
 
-# generated browser tests
-*_out/
-
-# Wasabi output
+# Wasabi outputs, test outputs
 out/
-
-# Data from profiling / performance analysis.
-flamegraph*.svg
-perf.data*
+/test-outputs/

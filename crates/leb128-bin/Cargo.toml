@@ -1,0 +1,18 @@
+[package]
+name = "leb128-bin"
+version = "0.1.0"
+authors = ["Daniel Lehmann <mail@dlehmann.eu>"]
+edition = "2018"
+
+[[bin]]
+name = "leb128"
+path = "src/main.rs"
+
+[dependencies]
+wasabi_leb128 = "0.4.0"
+main_error = "0.1.2"
+structopt = "0.3.26"
+hex = "0.4.3"
+
+[profile.release]
+lto = true
