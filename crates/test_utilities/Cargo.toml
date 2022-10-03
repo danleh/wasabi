@@ -1,8 +1,8 @@
 [package]
 name = "test_utilities"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Daniel Lehmann <mail@dlehmann.eu>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-walkdir = "2"
+walkdir = "2.3.2"

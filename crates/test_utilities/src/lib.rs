@@ -51,8 +51,8 @@ pub fn output_file(test_input_file: impl AsRef<Path>, output_subdir: &'static st
     let output_file = test_input_file.as_ref().iter()
         .flat_map(|component| {
             let component = component.to_str().unwrap();
-            if component == "inputs" {
-                vec!["outputs", output_subdir]
+            if component == "test-inputs" {
+                vec!["test-outputs", output_subdir]
             } else {
                 vec![component]
             }
