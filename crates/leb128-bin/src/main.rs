@@ -39,7 +39,7 @@ fn main() -> Result<(), MainError> {
     };
 
     if opt.decode {
-        let input = input.replace("0x", "").replace(" ", "");
+        let input = input.replace("0x", "").replace(' ', "");
         let buf = hex::decode(input)?;
         let input_num_bytes = buf.len();
         let mut cursor = io::Cursor::new(buf);
