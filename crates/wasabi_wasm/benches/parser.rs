@@ -2,8 +2,8 @@ use wasabi_wasm::*;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 
-// const WASM_TEST_INPUT_LARGE: &str = "../../tests/inputs/real-world/bananabread/bb.wasm";
-const WASM_TEST_INPUT_LARGE: &str = "../../tests/inputs/real-world/unreal-engine-4/UE4Game-HTML5-Shipping.wasm";
+// const WASM_TEST_INPUT_LARGE: &str = "../../test-inputs/real-world/bananabread/bb.wasm";
+const WASM_TEST_INPUT_LARGE: &str = "../../test-inputs/real-world/unreal-engine-4/UE4Game-HTML5-Shipping.wasm";
 
 fn bench_parser(c: &mut Criterion) {
     let mut group = c.benchmark_group("parser");
