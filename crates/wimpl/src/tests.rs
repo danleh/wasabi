@@ -631,12 +631,17 @@ fn wimplify_with_expected_output() {
 #[test]
 fn wimplify_should_not_crash_on_realistic_files() {
     // FIXME Create own wasm inputs directory, from wasm spec test suite and WasmBench.
-    const WASM_TEST_INPUTS_DIR: &str = "../wasabi_wasm/tests/wasm/";
-    for entry in WalkDir::new(&WASM_TEST_INPUTS_DIR) {
+    const WASM_TEST_INPUTS_DIR: &str = "../../test-inputs/";
+    for entry in WalkDir::new(WASM_TEST_INPUTS_DIR) {
         let path = entry.unwrap().path().to_owned();
+        let path_str = path.as_os_str().to_string_lossy();
+        if path_str.contains("invalid") || path_str.contains("issues") || path_str.contains("WasmBench") {
+            continue;
+        }
 
         if let Some("wasm") = path.extension().and_then(|os_str| os_str.to_str()) {
             if std::fs::metadata(&path).unwrap().is_file() {
+
                 println!("\t{}", path.display());
 
                 let wimpl_module = Module::from_wasm_file(&path);
