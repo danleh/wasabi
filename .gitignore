@@ -1,8 +1,6 @@
-# Rust
-target/
-
 # IDE files
 .idea/
+*.iml
 .vscode/
 
 # vim
