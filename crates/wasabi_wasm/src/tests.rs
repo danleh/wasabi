@@ -1,52 +1,59 @@
 use std::error::Error;
+use std::fmt::Write;
+use std::path::PathBuf;
 
 use dashmap::DashMap;
-use indicatif::{ProgressIterator, ParallelProgressIterator};
+use indicatif::ParallelProgressIterator;
 
+use once_cell::sync::Lazy;
 use rayon::prelude::*;
 
 use test_utilities::*;
 
 use crate::{*, types::TypeChecker};
 
-const WASMBENCH_DIR: &str = "tests/WasmBench/valid-no-extensions";
-const WASMBENCH_EXCLUDED_FILES: [&str; 3] = [
-    // Valid, but creates very large allocations because it has >500k locals in >1k functions.
-    "31fa012442fd637fca221db4fda94262e99759ab9667147cbedde083aabcc065",
-    // Is actually invalid according to wasm-validate, not sure why it wasn't filtered out before.
-    "4b1082f1c2d634aaebbe9b70331ac6639ab3fe7b0a52459ea4f6baa4f82a82ad",
-    // Panics in the old parser, but works in the new one -> strictly better, so ignore.
-    "a50d67cbaf770807cc1d1723ebc56333188b681538bf3f7679659b184d2f8020"
-];
+const TEST_INPUTS_DIR: &str = "../../test-inputs";
+static ALL_VALID_TEST_BINARIES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+    let mut wasm_files = wasm_files(TEST_INPUTS_DIR).unwrap();
+    // Ignore some files:
+    const EXCLUDED_FILES: [&str; 5] = [
+        // Known invalid files:
+        "invalid",
+        // The full set of WasmBench files is too large to run in CI.
+        "all-binaries-metadata",
+        "filtered-binaries-metadata",
+        // Valid, but creates very large allocations because it has >500k locals in >1k functions.
+        "31fa012442fd637fca221db4fda94262e99759ab9667147cbedde083aabcc065",
+        // Is actually invalid according to wasm-validate, 
+        // not sure why it wasn't filtered out of WasmBench before.
+        "4b1082f1c2d634aaebbe9b70331ac6639ab3fe7b0a52459ea4f6baa4f82a82ad",
+    ];
+    for excluded in EXCLUDED_FILES.iter() {
+        wasm_files.retain(|path| !path.to_string_lossy().contains(excluded));
+    }
+    wasm_files
+});
 
-const WASM_TEST_INPUTS_DIR: &str = "../../tests/inputs";
-const WASM_TEST_INPUT_LARGE: &str = "../../tests/inputs/real-world/bananabread/bb.wasm";
-const WASM_TEST_INPUT_NAMES_SECTION: &str = "../../tests/inputs/name-section/wabt-tests/names.wasm";
-// See below...
-// const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &str = "../../tests/inputs/name-section/extended-name-section/vuln.wasm";
+const NAME_SECTION_TEST_BINARY: &str = "../../test-inputs/name-section/wabt-tests/names.wasm";
+const BANANABREAD_REAL_WORLD_TEST_BINARY: &str = "../../test-inputs/real-world/bananabread/bb.wasm";
+
+// Removed this test, because when changing to wasmparser, 
+// we did not port over the low-level parsing of the extended name section.
+// const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &str = "../../test-inputs/name-section/extended-name-section/vuln.wasm";
 
 #[test]
-fn function_types_in_wasmbench() {
-    let mut wasm_files = wasm_files(WASMBENCH_DIR).unwrap();
-    for hash in WASMBENCH_EXCLUDED_FILES {
-        wasm_files.retain(|path| !path.to_string_lossy().contains(hash));
-    }
-
+fn collect_all_function_types_in_test_set() {
     let type_count = DashMap::new();
 
-    wasm_files.par_iter().progress_count(wasm_files.len() as u64).for_each(|path| {
-        let (module, _offsets, warnings) = Module::from_file(path)
+    ALL_VALID_TEST_BINARIES.par_iter().progress_count(ALL_VALID_TEST_BINARIES.len() as u64).for_each(|path| {
+        let (module, _, _) = Module::from_file(path)
             .unwrap_or_else(|err| panic!("Could not parse valid binary '{}': {err}", path.display()));
-        if !warnings.is_empty() {
-            eprintln!("Warnings parsing '{}': {:#?}", path.display(), warnings);
-        }
 
         for func in module.functions {
-            *type_count.entry(func.type_).or_insert(0) += 1;
+            *type_count.entry(func.type_).or_insert(0u64) += 1;
+
+            // Also collect all (easily computable) instruction types.
             for instr in func.code().iter().flat_map(|code| &code.body) {
-                if let Instr::CallIndirect(func_ty, ..) = instr {
-                    *type_count.entry(*func_ty).or_insert(0u64) += 1;
-                }
                 if let Some(instr_ty) = instr.simple_type() {
                     *type_count.entry(instr_ty).or_insert(0) += 1;
                 }
@@ -56,43 +63,41 @@ fn function_types_in_wasmbench() {
 
     let mut type_count: Vec<_> = type_count.into_iter().collect();
     type_count.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
-    // Print the most common types first.
-    // for (ty, count) in type_count.iter().take(1000) {
-    //     println!("{:10} ; {}", count, ty);
-    // }
+    let mut output_contents = String::new();
+    for (ty, count) in &type_count {
+        writeln!(&mut output_contents, "{:10} ; {}", count, ty).unwrap();
+    }
+    std::fs::create_dir_all("../../test-outputs/collect-types/").unwrap();
+    std::fs::write("../../test-outputs/collect-types/function_type_count.csv", output_contents).unwrap();
 
     let val_type_seq_count = DashMap::new();
     type_count
         .par_iter()
         .for_each(|(func_ty, count)| {
-            *val_type_seq_count.entry(func_ty.inputs()).or_insert(0u64) += count;
-            *val_type_seq_count.entry(func_ty.results()).or_insert(0u64) += count;
+            *val_type_seq_count.entry(func_ty.inputs()).or_insert(0) += count;
+            *val_type_seq_count.entry(func_ty.results()).or_insert(0) += count;
         });
     let mut val_type_seq_count: Vec<_> = val_type_seq_count.into_iter().collect();
+
     val_type_seq_count.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
-    // Print the most common types first.
-    let mut out = String::new();
-    for (ty, count) in val_type_seq_count.iter().take(1000) {
-        use std::fmt::Write;
-        writeln!(&mut out, "{:10} ; [{}]", count, ty.iter().map(|ty| ty.to_string()).collect::<Vec<_>>().join(", ")).unwrap();
+
+    let mut output_contents = String::new();
+    for (ty, count) in &val_type_seq_count {
+        writeln!(&mut output_contents, "{:10} ; [{}]", count, ty.iter().map(|ty| ty.to_string()).collect::<Vec<_>>().join(", ")).unwrap();
     }
-    std::fs::write("val_type_seq_count.csv", out).unwrap();
+    std::fs::write("../../test-outputs/collect-types/val_type_seq_count.csv", output_contents).unwrap();
     
 }
 
 #[test]
 fn roundtrip_produces_same_module_ast() {
-    let mut wasm_files = wasm_files(WASMBENCH_DIR).unwrap();
-    for hash in WASMBENCH_EXCLUDED_FILES {
-        wasm_files.retain(|path| !path.to_string_lossy().contains(hash));
-    }
-
-    wasm_files.iter().progress().for_each(|path| {
+    ALL_VALID_TEST_BINARIES.par_iter().progress_count(ALL_VALID_TEST_BINARIES.len() as u64).for_each(|path| {
         let (module, _offsets, warnings) = Module::from_file(path)
             .unwrap_or_else(|err| panic!("Could not parse valid binary '{}': {err}", path.display()));
         if !warnings.is_empty() {
             eprintln!("Warnings parsing '{}': {:#?}", path.display(), warnings);
         }
+
         let bytes = module.to_bytes()
             .unwrap_or_else(|err| panic!("Could not encode valid binary '{}': {err}", path.display()));
 
@@ -102,29 +107,64 @@ fn roundtrip_produces_same_module_ast() {
 }
 
 #[test]
-fn type_checking() {
-    for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
-        println!("{}", path.display());
-        let (module, _, _) = Module::from_file(&path)
+fn type_checking_valid_files() {
+    ALL_VALID_TEST_BINARIES.par_iter().progress_count(ALL_VALID_TEST_BINARIES.len() as u64).for_each(|path| {
+        let (module, _, _) = Module::from_file(path)
             .unwrap_or_else(|err| panic!("Could not parse valid binary '{}': {err}", path.display()));
-        TypeChecker::check_module(&module).expect("valid binary should type check");
-    }
+        
+        TypeChecker::check_module(&module)
+            .unwrap_or_else(|_| panic!("Valid binary '{}' should type check, but did not", path.display()));
+    });
 }
 
 #[test]
 fn decode_encode_is_valid_wasm() {
-    for path in wasm_files(WASM_TEST_INPUTS_DIR).unwrap() {
-        println!("{}", path.display());
-        let (module, _, _) = Module::from_file(&path)
+    ALL_VALID_TEST_BINARIES.par_iter().progress_count(ALL_VALID_TEST_BINARIES.len() as u64).for_each(|path| {
+        // Some binaries do not validate even before we re-encoded them, so ignore those.
+        if wasm_validate(path).is_ok() {
+            let (module, _, _) = Module::from_file(path)
             .unwrap_or_else(|err| panic!("Could not parse valid binary '{}': {err}", path.display()));
 
-        let output_path = &output_file(path, "encode").unwrap();
-        module.to_file(output_path)
-            .unwrap_or_else(|err| panic!("Could not encode valid binary to file '{}': {err}", output_path.display()));
+            let output_path = &output_file(path, "encode").unwrap();
+            module.to_file(output_path)
+                .unwrap_or_else(|err| panic!("Could not encode valid binary to file '{}': {err}", output_path.display()));
 
-        wasm_validate(output_path)
-            .unwrap_or_else(|err| panic!("Written binary did not validate '{}': {err}", output_path.display()));
-    }
+            wasm_validate(output_path)
+                .unwrap_or_else(|err| panic!("Written binary did not validate '{}': {err}", output_path.display()));
+        }
+    });
+}
+
+#[test]
+fn section_offsets_like_objdump() {
+    // Use a wasm file with a custom section for testing section offsets.
+    let (_module, offsets, _warnings) = Module::from_file(NAME_SECTION_TEST_BINARY).unwrap();
+
+    // Expected values are taken from wasm-objdump output.
+    assert_eq!(offsets.section_offsets(SectionId::Type), vec![0xa]);
+    assert_eq!(offsets.section_offsets(SectionId::Function), vec![0x11]);
+    assert_eq!(offsets.section_offsets(SectionId::Code), vec![0x15]);
+    assert_eq!(offsets.section_offsets(SectionId::Custom("name".to_string())), vec![0x1f]);
+    // Also try the (only) function code offset, for completion.
+    assert_eq!(offsets.function_idx_to_offset(Idx::from(0u32)), Some(0x17));
+    assert_eq!(offsets.function_offset_to_idx(0x17), Some(Idx::from(0u32)));
+}
+
+#[test]
+fn code_offsets_like_objdump() {
+    let (_module, offsets, _warnings) = Module::from_file(BANANABREAD_REAL_WORLD_TEST_BINARY).unwrap();
+
+    // Test first two and last two functions.
+    // Expected values are taken from wasm-objdump output.
+    assert_eq!(offsets.function_idx_to_offset(Idx::from(383u32)), Some(0x5522));
+    assert_eq!(offsets.function_offset_to_idx(0x5522), Some(Idx::from(383u32)));
+    assert_eq!(offsets.function_idx_to_offset(Idx::from(384u32)), Some(0x5545));
+    assert_eq!(offsets.function_offset_to_idx(0x5545), Some(Idx::from(384u32)));
+
+    assert_eq!(offsets.function_idx_to_offset(Idx::from(3641u32)), Some(0x1e38b7));
+    assert_eq!(offsets.function_offset_to_idx(0x1e38b7), Some(Idx::from(3641u32)));
+    assert_eq!(offsets.function_idx_to_offset(Idx::from(3642u32)), Some(0x1e38d2));
+    assert_eq!(offsets.function_offset_to_idx(0x1e38d2), Some(Idx::from(3642u32)));
 }
 
 #[test]
@@ -218,36 +258,4 @@ fn error_offsets_correct() {
         0xff, 0xb
     ]].concat();
     assert_error_offset(invalid_instruction, 13);
-}
-
-#[test]
-fn section_offsets_like_objdump() {
-    // Use a wasm file with a custom section for testing section offsets.
-    let (_module, offsets, _warnings) = Module::from_file(WASM_TEST_INPUT_NAMES_SECTION).unwrap();
-
-    // Expected values are taken from wasm-objdump output.
-    assert_eq!(offsets.section_offsets(SectionId::Type), vec![0xa]);
-    assert_eq!(offsets.section_offsets(SectionId::Function), vec![0x11]);
-    assert_eq!(offsets.section_offsets(SectionId::Code), vec![0x15]);
-    assert_eq!(offsets.section_offsets(SectionId::Custom("name".to_string())), vec![0x1f]);
-    // Also try the (only) function code offset, for completion.
-    assert_eq!(offsets.function_idx_to_offset(Idx::from(0u32)), Some(0x17));
-    assert_eq!(offsets.function_offset_to_idx(0x17), Some(Idx::from(0u32)));
-}
-
-#[test]
-fn code_offsets_like_objdump() {
-    let (_module, offsets, _warnings) = Module::from_file(WASM_TEST_INPUT_LARGE).unwrap();
-
-    // Test first two and last two functions.
-    // Expected values are taken from wasm-objdump output.
-    assert_eq!(offsets.function_idx_to_offset(Idx::from(383u32)), Some(0x5522));
-    assert_eq!(offsets.function_offset_to_idx(0x5522), Some(Idx::from(383u32)));
-    assert_eq!(offsets.function_idx_to_offset(Idx::from(384u32)), Some(0x5545));
-    assert_eq!(offsets.function_offset_to_idx(0x5545), Some(Idx::from(384u32)));
-
-    assert_eq!(offsets.function_idx_to_offset(Idx::from(3641u32)), Some(0x1e38b7));
-    assert_eq!(offsets.function_offset_to_idx(0x1e38b7), Some(Idx::from(3641u32)));
-    assert_eq!(offsets.function_idx_to_offset(Idx::from(3642u32)), Some(0x1e38d2));
-    assert_eq!(offsets.function_offset_to_idx(0x1e38d2), Some(Idx::from(3642u32)));
 }
