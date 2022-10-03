@@ -115,6 +115,12 @@ impl Ord for FunctionType {
     }
 }
 
+impl Default for FunctionType {
+    fn default() -> Self {
+        FunctionType::empty()
+    }
+}
+
 impl fmt::Display for FunctionType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&format!("{:?} -> {:?}", self.inputs(), self.results()).to_lowercase())
