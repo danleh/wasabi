@@ -1,4 +1,3 @@
-
 //! Code for type checking and type inference of WebAssembly instructions.
 //! 
 //! # Introduction to WebAssembly type checking
@@ -1029,7 +1028,7 @@ mod tests {
 
     #[test]
     pub fn spec_tests_should_typecheck() {
-        for path in wasm_files("../../tests/inputs/spec/").unwrap() {
+        for path in wasm_files("../../test-inputs/spec/").unwrap() {
             println!("\t{}", path.display());
             assert!(TypeChecker::check_module(&Module::from_file(path).unwrap().0).is_ok());
         }
