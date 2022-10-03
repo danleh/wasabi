@@ -1,30 +1,32 @@
 # Wasabi: A Dynamic Analysis Framework for WebAssembly
 
-Wasabi is a framework for dynamic analysis of WebAssembly binaries.
+Wasabi is a framework for dynamically analyzing WebAssembly binaries.
 A high-level introduction, live demo, and more can be found at http://wasabi.software-lab.org.
 Our ASPLOS 2019 paper [*Wasabi: A Framework for Dynamically Analyzing
-WebAssembly*](https://software-lab.org/publications/asplos2019_Wasabi.pdf) (won a best paper award) contains more in-depth explanations and evaluation results.
+WebAssembly*](https://software-lab.org/publications/asplos2019_Wasabi.pdf) (which won a best paper award) contains more in-depth explanations and evaluation results.
+Check also the `README`s in the other directories of this repository.
 
 
-## Code
+## Source Code
 
 Wasabi is built on binary instrumentation.
 For that, we have developed our own WebAssembly parser, instrumentation library, and encoder in Rust.
-Those libraries may be useful independent of Wasabi for other projects on WebAssembly analysis and instrumentation as well.
-You can find the code in `crates/` (the Rust term for libraries).
+This code may be useful independently of Wasabi as well.
+In fact, we have used it also for other projects on WebAssembly analysis and instrumentation.
+You can find the source code in `crates/` (the Rust term for libraries).
 
 
 ## Tutorial at PLDI 2019
 
-We gave an introduction and tutorial on using Wasabi for dynamically analyzing WebAssembly binaries at PLDI 2019.
-See `tutorial_pldi2019/` for more information.
+We gave an introduction and tutorial on using Wasabi at PLDI 2019.
+See `tutorial-pldi2019/` for more information.
 
 
-## Installation Instructions
+## Installation
 
 **Dependencies** and **useful tools**:
-- Git, CMake, and GCC or Clang for building the dependencies (possibly more)
-- A modern **browser**, e.g., Firefox or Chrome
+- Git, CMake, and GCC or Clang for building the dependencies (possibly more).
+- A modern **browser**, e.g., Firefox or Chrome.
 - **WebAssembly Binary Toolkit (WABT)**: https://github.com/WebAssembly/wabt.
 ```wat2wasm```/```wasm2wat``` for converting Wasm binaries to/from text, ```wasm-objdump``` for inspecting binaries, and ```wasm-interp``` for a simple interpreter. 
 - **Emscripten**: https://emscripten.org. 
@@ -49,9 +51,10 @@ wasabi
 
 ## Short Usage Instructions
 
-**Create** WebAssembly programs:
-* Manually:
-```sexp
+**Create** a WebAssembly program:
+
+Option A) Manually:
+```wasm
 ;; Paste into hello-manual.wat
 (module
     (import "host" "print" (func $i (param i32)))
@@ -62,16 +65,16 @@ wasabi
 )
 ```
 ```bash
-# Assemble binary Wasm file
+# Assemble to binary .wasm file
 wat2wasm hello-manual.wat
 
-# Run binary (imported function host.print is provided by the interpreter)
+# Run the binary. (The imported function host.print is provided by the interpreter.)
 wasm-interp --host-print --run-all-exports hello-manual.wasm
 > called host host.print(i32:42) =>
 > somefun() =>
 ```
 
-* From C with Emscripten:
+Option B) Compile from C with Emscripten:
 ```C
 // Paste into hello.c
 #include <stdio.h>
@@ -134,11 +137,11 @@ Apply **Wasabi** to WebAssembly programs in the **browser**:
     firefox http://localhost:8080/hello.html
     ```
 
-* You can find more example analyses in `example_analyses/`.
+You can find more example Wasabi analyses in `example-analyses/`.
 
-Running WebAssembly and instrumenting with Wasabi for **Node.js**: **TODO**
 
 ## License
 
 Wasabi is licensed under the MIT license.
 See `LICENSE` for details.
+Other code in this repository or used as a dependency may be licensed differently.
