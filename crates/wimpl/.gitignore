@@ -1,8 +1,0 @@
-/target/
-/Cargo.lock
-
-# Callgraph evaluation table.
-/data.csv
-
-# Wimpl test outputs
-/out.wimpl
