@@ -14,7 +14,8 @@
 
 # Wasabi output
 out/
+/test_outputs/
 
 # Data from profiling / performance analysis.
-flamegraph*.svg
-perf.data*
+/flamegraph*.svg
+/perf.data*
