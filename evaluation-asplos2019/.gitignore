@@ -3,3 +3,5 @@
 /programs/
 /programs-analysis/
 /wasm/
+# generated browser tests
+*_out/
