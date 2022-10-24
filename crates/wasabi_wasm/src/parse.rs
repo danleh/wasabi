@@ -1183,8 +1183,9 @@ fn parse_block_ty(ty: wp::BlockType, offset: usize, types: &Types) -> Result<Fun
     //      This isn't ideal since the instructions are being parsed in parallel and 
     //      if you make type mutable, you'll have to deal with locking and unlocking it, 
     //      if you still want to process in parallel. 
-    //   2. Return some list of types and update it? 
-    // For now, I don't deal with this since it's a big change and potentially needs 
+    //   2. Return some list of types and update it?
+    //   3. We decide, that we actually, don't care about this and leave it as is.  
+    // For now, I don't deal with this since it's a design decision it's a big change and potentially needs 
     // bigger changes (like adding a types field to the Module AST). 
     // Instead, while encoding, I make sure that I add in the types that are missing. 
     // This is only a temporary solution though and not correct. 
