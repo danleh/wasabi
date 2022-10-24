@@ -26,6 +26,7 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
     let mut current_code_index = 0;
     let mut section_offsets = Vec::with_capacity(16);
     let mut function_offsets = Vec::new();
+    
     // Put the function bodies in their own vector, such that parallel processing of the
     // code section doesn't require synchronization on the shared `module` variable.
     let mut function_bodies = Vec::new();
@@ -364,7 +365,8 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
                             (func_idx, body.range().start, parse_body(body, &types))
                         })
                         .collect::<Vec<_>>();
-                    // Attach the converted function bodies to the function definitions (not parallel).
+                    
+                        // Attach the converted function bodies to the function definitions (not parallel).
                     for (func_idx, offset, code) in function_bodies {
                         let function = module
                             .functions
@@ -438,7 +440,7 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
         sections: section_offsets,
         functions_code: function_offsets,
     };
-
+    
     Ok((module, offsets, warnings))
 }
 
@@ -510,9 +512,9 @@ fn parse_instr(
         wp::Unreachable => Unreachable,
         wp::Nop => Nop,
 
-        wp::Block { ty } => Block(parse_block_ty(ty, offset+1)?),
-        wp::Loop { ty } => Loop(parse_block_ty(ty, offset+1)?),
-        wp::If { ty } => If(parse_block_ty(ty, offset+1)?),
+        wp::Block { ty } => Block(parse_block_ty(ty, offset+1, types)?),
+        wp::Loop { ty } => Loop(parse_block_ty(ty, offset+1, types)?),
+        wp::If { ty } => If(parse_block_ty(ty, offset+1, types)?),
         wp::Else => Else,
         wp::End => End,
 
@@ -1160,13 +1162,34 @@ fn parse_elem_ty(ty: wp::ValType, offset: usize) -> Result<(), ParseError> {
     }
 }
 
-fn parse_block_ty(ty: wp::BlockType, offset: usize) -> Result<BlockType, ParseError> {
+fn parse_block_ty(ty: wp::BlockType, offset: usize, types: &Types) -> Result<FunctionType, ParseError> {
     use wp::BlockType::*;
-    match ty {
-        Empty => Ok(BlockType(None)),
-        Type(ty) => Ok(BlockType(Some(parse_val_ty(ty, offset)?))),
-        FuncType(_) => Err(ParseIssue::unsupported(offset, WasmExtension::MultiValue))?,
-    }
+    let func_type = match ty {
+        Empty => FunctionType::default(),
+        Type(ty) => {
+            let inputs: Vec<ValType> = Vec::new(); 
+            let results = vec![parse_val_ty(ty, offset)?];  
+            FunctionType::new(&inputs, &results)             
+        },
+        FuncType(ft) => {
+            types.get(ft, offset)? //TODO: Review, is this offset right?              
+        },
+    }; 
+    
+    // FIXME: The FunctionType being created might not exist, in the Empty and Type case. 
+    // I could think of two options to fix this: 
+    //   1. Change the type of the type parameter (Option<Vec<FunctionType>>) 
+    //      to a Set or a HashMap, make it mutable and add to it in the Empty and Type case. 
+    //      This isn't ideal since the instructions are being parsed in parallel and 
+    //      if you make type mutable, you'll have to deal with locking and unlocking it, 
+    //      if you still want to process in parallel. 
+    //   2. Return some list of types and update it? 
+    // For now, I don't deal with this since it's a big change and potentially needs 
+    // bigger changes (like adding a types field to the Module AST). 
+    // Instead, while encoding, I make sure that I add in the types that are missing. 
+    // This is only a temporary solution though and not correct. 
+
+    Ok(func_type)
 }
 
 fn parse_func_ty(ty: wp::FuncType, offset: usize) -> Result<FunctionType, ParseError> {

@@ -150,42 +150,6 @@ impl FromStr for ValType {
     }
 }
 
-
-/// In the WebAssembly MVP, blocks can return either nothing or a single value.
-// TODO replace all occurrences with FunctionType once we support non-MVP binaries, then remove.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct BlockType(pub Option<ValType>);
-
-#[test]
-fn block_type_is_small() {
-    assert_eq!(std::mem::size_of::<BlockType>(), 1)
-}
-
-impl FromStr for BlockType {
-    type Err = ();
-
-    fn from_str(str: &str) -> Result<Self, Self::Err> {
-        // Re-use implementation for parsing `FunctionType`s.
-        let func_ty = FunctionType::from_str(str)?;
-        match (func_ty.inputs(), func_ty.results()) {
-            ([], []) => Ok(BlockType(None)),
-            ([], [ty]) => Ok(BlockType(Some(*ty))),
-            // `BlockType` is a subset of all `FunctionType`s.
-            _ => Err(())
-        }
-    }
-}
-
-impl fmt::Display for BlockType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.0 {
-            Some(ty) => write!(f, "[] -> [{}]", ty),
-            None => write!(f, "[] -> []"),
-        }
-    }
-}
-
-
 /// Limits for tables and memories.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Limits {
@@ -399,6 +363,7 @@ impl Module {
         std::fs::write(path, bytes)?;
         Ok(len)
     }
+
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash)]
@@ -709,9 +674,9 @@ pub enum Instr {
     // Block(FunctionType, Body), Loop(FunctionType, Body), If(FunctionType, Body, Option<Body>)
     // with
     // struct Body(Vec<Instr>, Option<TerminatorInstr>)
-    Block(BlockType),
-    Loop(BlockType),
-    If(BlockType),
+    Block(FunctionType),
+    Loop(FunctionType),
+    If(FunctionType),
     Else,
     End,
 
@@ -1594,9 +1559,9 @@ impl FromStr for Instr {
             "unreachable" => Unreachable,
             "nop" => Nop,
 
-            "block" => Block(BlockType::from_str(rest)?),
-            "loop" => Loop(BlockType::from_str(rest)?),
-            "if" => If(BlockType::from_str(rest)?),
+            "block" => Block(FunctionType::from_str(rest)?),
+            "loop" => Loop(FunctionType::from_str(rest)?),
+            "if" => If(FunctionType::from_str(rest)?),
 
             "else" => Else,
             "end" => End,
@@ -1791,6 +1756,11 @@ impl Module {
         (self.globals.len() - 1).into()
     }
 
+    // FIXME: With the Wasm Multivalue proposal, the types in a Module are not just the types 
+    // of functions, but also the FunctionTypes for Blocks, Loops, IfThenElse.
+    // You'll have to add a types: HashMap<u32, FunctionType> to Module so that you don't 
+    // iterate through the entire module to get a list of types. 
+    // This is a bigger change so I leave it as a fixme for now.  
     pub fn types(&self) -> HashSet<&FunctionType> {
         let mut types = HashSet::new();
         for function in &self.functions {
