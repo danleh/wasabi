@@ -150,6 +150,7 @@ impl FromStr for ValType {
     }
 }
 
+
 /// Limits for tables and memories.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Limits {
@@ -373,6 +374,18 @@ pub struct ModuleMetadata {
     // original_section_offsets: SectionOffsets
 }
 
+impl ModuleMetadata {
+    pub fn add_used_extension(&mut self, extension: WasmExtension) {
+        if !self.used_extensions.contains(&extension) {
+            self.used_extensions.push(extension);
+        }
+    }
+
+    pub fn used_extensions(&self) -> impl Iterator<Item = WasmExtension> + '_ {
+        self.used_extensions.iter().copied()
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ImportOrPresent<T> {
     Import(String, String),
@@ -542,7 +555,6 @@ pub enum SectionId {
 }
 
 
-
 /* Code. */
 
 pub type Expr = Vec<Instr>;
@@ -661,7 +673,7 @@ pub enum Instr {
     // TODO Remove, can be replaced by `Instr::Block(BlockType::Empty)`.
     Nop,
 
-    // TODO Make highlevel::Instr nesting, i.e., Block(BlockType, Vec<Instr>)
+    // TODO Make highlevel::Instr nesting, i.e., Block(FunctionType, Vec<Instr>)
     // see, e.g., the reference interpreter: https://github.com/WebAssembly/spec/blob/master/interpreter/valid/valid.ml
     // This would get rid of else and end.
     // TODO One could also remove dead code by construction, by having optional
