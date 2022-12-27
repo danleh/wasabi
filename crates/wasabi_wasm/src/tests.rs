@@ -95,9 +95,7 @@ fn type_checking_valid_files() {
 }
 
 #[test]
-#[ignore]
 fn decode_encode_is_valid_wasm() {
-    
     ALL_VALID_TEST_BINARIES.par_iter().progress_count(ALL_VALID_TEST_BINARIES.len() as u64).for_each(|path| {
         let (module, _, _) = Module::from_file(path)
         .unwrap_or_else(|err| panic!("Could not parse valid binary '{}': {err}", path.display()));
@@ -106,12 +104,8 @@ fn decode_encode_is_valid_wasm() {
         module.to_file(output_path)
             .unwrap_or_else(|err| panic!("Could not encode valid binary to file '{}': {err}", output_path.display()));
 
-        // FIXME: Fails "expected valid block signature type."
-        // The BlockTypes that are 'new' FunctionTypes are being added correctly,
-        // So, I don't entirely understand why this is failing. 
         wasm_validate(output_path)
             .unwrap_or_else(|err| panic!("Written binary did not validate '{}': {err}", output_path.display()));
-
     });
 }
 
