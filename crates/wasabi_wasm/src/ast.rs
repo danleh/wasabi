@@ -10,7 +10,7 @@
 //!    functions, and locals).
 
 use core::fmt;
-use std::{str::FromStr, marker::PhantomData, hash, collections::HashSet, path::Path};
+use std::{str::FromStr, marker::PhantomData, hash, path::Path};
 
 use ordered_float::OrderedFloat;
 use serde::Serialize;
@@ -1755,22 +1755,6 @@ impl Module {
         });
         (self.globals.len() - 1).into()
     }
-
-    // FIXME: With the Wasm Multivalue proposal, the types in a Module are not just the types 
-    // of functions, but also the FunctionTypes for Blocks, Loops, IfThenElse.
-    // - You'll have to add a types: HashMap<u32, FunctionType> to Module so that you don't 
-    //   iterate through the entire module to get a list of types. 
-    // - Or you could just re-name this function to be function_types, if there isn't any use for 
-    //   iterate through the block-types.      
-    // This is a bigger change and more of a design decision, so I leave it as a fixme for now.
-    pub fn types(&self) -> HashSet<&FunctionType> {
-        let mut types = HashSet::new();
-        for function in &self.functions {
-            types.insert(&function.type_);
-        }
-        types
-    }
-
 }
 
 impl Function {
