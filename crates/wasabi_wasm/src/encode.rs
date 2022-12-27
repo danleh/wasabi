@@ -400,9 +400,9 @@ fn encode_instruction(hl_instr: &Instr, state: &EncodeState) -> Result<we::Instr
         Instr::Unreachable => we::Instruction::Unreachable,
         Instr::Nop => we::Instruction::Nop,
 
-        Instr::Block(block_type) => we::Instruction::Block(we::BlockType::FunctionType(state.get_or_insert_type(block_type).to_u32())),
-        Instr::Loop(block_type) => we::Instruction::Loop(we::BlockType::FunctionType(state.get_or_insert_type(block_type).to_u32())),
-        Instr::If(block_type) => we::Instruction::If(we::BlockType::FunctionType(state.get_or_insert_type(block_type).to_u32())),
+        Instr::Block(block_type) => we::Instruction::Block(encode_block_type(block_type, state)),
+        Instr::Loop(block_type) => we::Instruction::Loop(encode_block_type(block_type, state)),
+        Instr::If(block_type) => we::Instruction::If(encode_block_type(block_type, state)),
         Instr::Else => we::Instruction::Else,
         Instr::End => we::Instruction::End,
         
@@ -625,6 +625,18 @@ fn encode_names(module: &Module, state: &EncodeState) -> Result<Option<we::NameS
     }
 
     Ok(name_section)
+}
+
+fn encode_block_type(func_or_block_ty: FunctionType, state: &EncodeState) -> we::BlockType {
+    match (func_or_block_ty.inputs(), func_or_block_ty.results()) {
+        // Prefer the more compact inline encoding for Wasm MVP block types.
+        ([], []) => we::BlockType::Empty,
+        ([], [val_type]) =>  we::BlockType::Result((*val_type).into()),
+        // Only fall back to a reference to a function type if necessary.
+        (_inputs, _results) => we::BlockType::FunctionType(
+            state.get_or_insert_type(func_or_block_ty).to_u32()
+        )
+    }
 }
 
 impl From<GlobalType> for we::GlobalType {
