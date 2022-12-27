@@ -226,6 +226,9 @@ fn test_goedel_number_constants() {
     assert_eq!(val_type_seq_max_goedel_number(4), 340);
 }
 
+// TODO: Take an iterator instead of a slice, then also do that for
+// `FunctionType::new`. This should allow to remove some allocations in the
+// callers.
 fn val_type_seq_to_goedel_number(seq: &[ValType]) -> Option<usize> {
     let mut result = 0usize;
 
