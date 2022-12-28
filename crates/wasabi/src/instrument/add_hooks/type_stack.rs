@@ -1,7 +1,7 @@
-// TODO move this into wasm crate, maybe utils submodule
-// TODO block_stack as well?
+// TODO Replace this with `wasabi_wasm/types.rs` implementation or
+// (even better) once we have a nested AST this can be removed completely.
 
-use wasabi_wasm::{BlockType, ValType, FunctionType};
+use wasabi_wasm::{ValType, FunctionType};
 
 use self::TypeStackElement::*;
 
@@ -21,7 +21,7 @@ pub struct TypeStack(Vec<TypeStackElement>);
 #[derive(Debug, PartialEq)]
 enum TypeStackElement {
     Val(ValType),
-    BlockBegin(BlockType),
+    BlockBegin(FunctionType),
     FunctionBegin,
     // TODO see add_hooks/mod.rs
     //    Unreachable,
@@ -70,14 +70,14 @@ impl TypeStack {
         }
     }
 
-    pub fn begin(&mut self, block_ty: BlockType) {
+    pub fn begin(&mut self, block_ty: FunctionType) {
         self.0.push(BlockBegin(block_ty))
     }
 
     /// implicitly pops all types from the stack until the last block begin
     /// pushes that blocks result type on the stack
     /// returns the BlockType of that last block, or None if the last block was the whole function
-    pub fn end(&mut self) -> Option<BlockType> {
+    pub fn end(&mut self) -> Option<FunctionType> {
         loop {
             match self.0.pop() {
                 None => panic!("could not end block, no block begin was found on type stack"),
@@ -85,7 +85,7 @@ impl TypeStack {
                 Some(BlockBegin(block_ty)) => {
                     // NOTE there is no validation that the stack is correct at the end of a block
                     // it is unclear to me how it exactly works with, e.g., br/return + drops
-                    if let BlockType(Some(ty)) = block_ty {
+                    if let &[ty] = block_ty.results() {
                         self.push_val(ty);
                     }
                     return Some(block_ty);
@@ -99,7 +99,7 @@ impl TypeStack {
         // reuse code from end...
         let block_ty = self.end().expect("else cannot end a function");
         // but undo pushing of block result (this will be done by the "real" end)
-        if let BlockType(Some(ty)) = block_ty {
+        if let &[ty] = block_ty.results() {
             assert_eq!(ty, self.pop_val());
         }
         self.begin(block_ty);

@@ -10,7 +10,7 @@
 //!    functions, and locals).
 
 use core::fmt;
-use std::{str::FromStr, marker::PhantomData, hash, collections::HashSet, path::Path};
+use std::{str::FromStr, marker::PhantomData, hash, path::Path};
 
 use ordered_float::OrderedFloat;
 use serde::Serialize;
@@ -147,41 +147,6 @@ impl FromStr for ValType {
             "f64" => ValType::F64, 
             _ => return Err(())
         })
-    }
-}
-
-
-/// In the WebAssembly MVP, blocks can return either nothing or a single value.
-// TODO replace all occurrences with FunctionType once we support non-MVP binaries, then remove.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct BlockType(pub Option<ValType>);
-
-#[test]
-fn block_type_is_small() {
-    assert_eq!(std::mem::size_of::<BlockType>(), 1)
-}
-
-impl FromStr for BlockType {
-    type Err = ();
-
-    fn from_str(str: &str) -> Result<Self, Self::Err> {
-        // Re-use implementation for parsing `FunctionType`s.
-        let func_ty = FunctionType::from_str(str)?;
-        match (func_ty.inputs(), func_ty.results()) {
-            ([], []) => Ok(BlockType(None)),
-            ([], [ty]) => Ok(BlockType(Some(*ty))),
-            // `BlockType` is a subset of all `FunctionType`s.
-            _ => Err(())
-        }
-    }
-}
-
-impl fmt::Display for BlockType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.0 {
-            Some(ty) => write!(f, "[] -> [{}]", ty),
-            None => write!(f, "[] -> []"),
-        }
     }
 }
 
@@ -399,6 +364,7 @@ impl Module {
         std::fs::write(path, bytes)?;
         Ok(len)
     }
+
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash)]
@@ -406,6 +372,18 @@ pub struct ModuleMetadata {
     used_extensions: Vec<WasmExtension>,
     // TODO
     // original_section_offsets: SectionOffsets
+}
+
+impl ModuleMetadata {
+    pub fn add_used_extension(&mut self, extension: WasmExtension) {
+        if !self.used_extensions.contains(&extension) {
+            self.used_extensions.push(extension);
+        }
+    }
+
+    pub fn used_extensions(&self) -> impl Iterator<Item = WasmExtension> + '_ {
+        self.used_extensions.iter().copied()
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -577,7 +555,6 @@ pub enum SectionId {
 }
 
 
-
 /* Code. */
 
 pub type Expr = Vec<Instr>;
@@ -693,10 +670,10 @@ fn instr_size() {
 pub enum Instr {
     // TODO See below on `Block` for a plan on how to get rid of unreachable code.
     Unreachable,
-    // TODO Remove, can be replaced by `Instr::Block(BlockType::Empty)`.
+    // TODO Remove, can be replaced by `Instr::Block(FunctionType::empty)`.
     Nop,
 
-    // TODO Make highlevel::Instr nesting, i.e., Block(BlockType, Vec<Instr>)
+    // TODO Make highlevel::Instr nesting, i.e., Block(FunctionType, Vec<Instr>)
     // see, e.g., the reference interpreter: https://github.com/WebAssembly/spec/blob/master/interpreter/valid/valid.ml
     // This would get rid of else and end.
     // TODO One could also remove dead code by construction, by having optional
@@ -709,9 +686,9 @@ pub enum Instr {
     // Block(FunctionType, Body), Loop(FunctionType, Body), If(FunctionType, Body, Option<Body>)
     // with
     // struct Body(Vec<Instr>, Option<TerminatorInstr>)
-    Block(BlockType),
-    Loop(BlockType),
-    If(BlockType),
+    Block(FunctionType),
+    Loop(FunctionType),
+    If(FunctionType),
     Else,
     End,
 
@@ -1594,9 +1571,9 @@ impl FromStr for Instr {
             "unreachable" => Unreachable,
             "nop" => Nop,
 
-            "block" => Block(BlockType::from_str(rest)?),
-            "loop" => Loop(BlockType::from_str(rest)?),
-            "if" => If(BlockType::from_str(rest)?),
+            "block" => Block(FunctionType::from_str(rest)?),
+            "loop" => Loop(FunctionType::from_str(rest)?),
+            "if" => If(FunctionType::from_str(rest)?),
 
             "else" => Else,
             "end" => End,
@@ -1789,14 +1766,6 @@ impl Module {
             export: Vec::new(),
         });
         (self.globals.len() - 1).into()
-    }
-
-    pub fn types(&self) -> HashSet<&FunctionType> {
-        let mut types = HashSet::new();
-        for function in &self.functions {
-            types.insert(&function.type_);
-        }
-        types
     }
 }
 

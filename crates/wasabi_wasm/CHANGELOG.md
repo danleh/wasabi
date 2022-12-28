@@ -1,5 +1,9 @@
 This document shall list the largest breaking changes for Wasabi's wasm library.
 
+# v0.7.0 (2022-12-28)
+
+- Prepare for multi-value support, by merging allowing `FunctionType` on blocks and removing the now obsolete `BlockType`.
+
 # v0.6.0 (2022-09-28)
 
 - Replace not well-maintained low-level parser with industry-used wasmparser.rs.

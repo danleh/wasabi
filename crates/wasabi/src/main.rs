@@ -37,6 +37,9 @@ fn main() -> Result<(), MainError> {
 
     // instrument Wasm and generate JavaScript
     let (mut module, _offsets, _warnings) = Module::from_file(opt.input_file)?;
+    if module.metadata.used_extensions().next().is_some() {
+        return Err(io_err("input file uses Wasm extensions, which are not supported yet by Wasabi").into());
+    }
     let (js, hook_count) = add_hooks(&mut module, enabled_hooks, opt.node_js).unwrap();
     println!("inserted {} low-level hooks", hook_count);
 

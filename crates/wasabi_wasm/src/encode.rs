@@ -257,7 +257,6 @@ fn encode_types(state: &EncodeState) -> we::TypeSection {
             type_.results().iter().copied().map(we::ValType::from)
         );
     }
-
     type_section
 }
 
@@ -401,9 +400,9 @@ fn encode_instruction(hl_instr: &Instr, state: &EncodeState) -> Result<we::Instr
         Instr::Unreachable => we::Instruction::Unreachable,
         Instr::Nop => we::Instruction::Nop,
 
-        Instr::Block(block_type) => we::Instruction::Block(block_type.into()),
-        Instr::Loop(block_type) => we::Instruction::Loop(block_type.into()),
-        Instr::If(block_type) => we::Instruction::If(block_type.into()),
+        Instr::Block(block_type) => we::Instruction::Block(encode_block_type(block_type, state)),
+        Instr::Loop(block_type) => we::Instruction::Loop(encode_block_type(block_type, state)),
+        Instr::If(block_type) => we::Instruction::If(encode_block_type(block_type, state)),
         Instr::Else => we::Instruction::Else,
         Instr::End => we::Instruction::End,
         
@@ -628,6 +627,18 @@ fn encode_names(module: &Module, state: &EncodeState) -> Result<Option<we::NameS
     Ok(name_section)
 }
 
+fn encode_block_type(func_or_block_ty: FunctionType, state: &EncodeState) -> we::BlockType {
+    match (func_or_block_ty.inputs(), func_or_block_ty.results()) {
+        // Prefer the more compact inline encoding for Wasm MVP block types.
+        ([], []) => we::BlockType::Empty,
+        ([], [val_type]) =>  we::BlockType::Result((*val_type).into()),
+        // Only fall back to a reference to a function type if necessary.
+        (_inputs, _results) => we::BlockType::FunctionType(
+            state.get_or_insert_type(func_or_block_ty).to_u32()
+        )
+    }
+}
+
 impl From<GlobalType> for we::GlobalType {
     fn from(hl_global_type: GlobalType) -> Self {
         Self {
@@ -669,15 +680,6 @@ impl From<ValType> for we::ValType {
             I64 => we::ValType::I64,
             F32 => we::ValType::F32,
             F64 => we::ValType::F64,
-        }
-    }
-}
-
-impl From<BlockType> for we::BlockType {
-    fn from(hl_block_type: BlockType) -> Self {
-        match hl_block_type.0 {
-            Some(val_type) => we::BlockType::Result(val_type.into()),
-            None => we::BlockType::Empty,
         }
     }
 }

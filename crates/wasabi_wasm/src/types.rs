@@ -485,9 +485,10 @@ struct BlockFrame {
 
     /// Needed for type-checking that the correct results are on the current sub-stack before 
     /// leaving a block.
+    // TODO: Switch to a "small vector" since there will usually be very few elements.
     expected_results: Vec<ValType>,
 
-    /// Needed for type-checking branches targeting this block: frame Which values does the branch 
+    /// Needed for type-checking branches targeting this block: Which values does the branch 
     /// "transport" from the current stack to the one represented by this frame (the target)?
     /// For loops, these are the inputs to the loop block, for every other block (if, else, block),
     /// it's the output types.
@@ -495,14 +496,13 @@ struct BlockFrame {
     /// In the spec algorithm, this is implemented as a function that switches when queried between
     /// input and result types, depending on the block type. But since the block type is known when
     /// the frame is created, we can switch there already and store the fixed type here.
+    // TODO: Switch to a "small vector" since there will usually be very few elements.
     label_inputs: Vec<ValType>,
 
-    // TODO Once we switch `hl::Instr` to use nested blocks, it is no longer
-    // necessary to check that an `else` instruction closes an `if` block.
-    // Since we assume we only work on valid Wasm modules anyway, and once that
-    // change is made, we don't need to check against the block op anyway,
-    // let's not capture it here, unlike in the spec validation algorithm.
-    // block_op: Instr
+    /// Needed for producing the correct type of `else` instructions: Which inputs did the `if`
+    /// block receive?
+    // TODO: Switch to a "small vector" since there will usually be very few elements.
+    if_inputs: Option<Vec<ValType>>,
 }
 
 impl<'module> TypeChecker<'module> {
@@ -595,7 +595,7 @@ impl<'module> TypeChecker<'module> {
             function,
             block_stack: Vec::new(),
         };
-        self_.push_func_block(function.type_.results().to_vec());
+        self_.push_func_block(function.type_.results());
         self_
     }
 
@@ -672,26 +672,33 @@ impl<'module> TypeChecker<'module> {
 
     // Control stack operations, i.e., when starting, leaving, or jumping to a block.
 
-    fn push_func_block(&mut self, results: Vec<ValType>) {
+    fn push_func_block(&mut self, results: &[ValType]) {
+        let results = results.to_vec();
         self.block_stack.push(BlockFrame {
             value_stack: Vec::new(),
             unreachable: false,
             expected_results: results.clone(),
             label_inputs: results,
+            if_inputs: None,
         })
     }
 
-    fn push_block(&mut self, instr: &Instr, inputs: Vec<ValType>, results: Vec<ValType>) {
-        let label_types = match instr {
-            Instr::Block(_) | Instr::If(_) | Instr::Else => results.clone(),
-            Instr::Loop(_) => inputs.clone(),
+    fn push_block(&mut self, instr: &Instr, inputs: &[ValType], results: &[ValType]) {
+        let label_inputs = match instr {
+            Instr::Loop(_) => inputs,
+            Instr::Block(_) | Instr::If(_) | Instr::Else => results,
             _ => unreachable!("push_block() should never be called with non-block instruction {:?}", instr),
+        };
+        let if_inputs = match instr {
+            Instr::If(_) => Some(inputs.to_vec()),
+            _ => None,
         };
         self.block_stack.push(BlockFrame {
             value_stack: inputs.iter().cloned().map(InferredValType::from).collect(),
             unreachable: false,
-            expected_results: results,
-            label_inputs: label_types
+            expected_results: results.to_vec(),
+            label_inputs: label_inputs.to_vec(),
+            if_inputs
         });
     }
 
@@ -746,7 +753,7 @@ impl<'module> TypeChecker<'module> {
     /// for the subsequent instructions. Because we do not assign types for instructions in dead 
     /// code anyway, this "stack non-minimalism" isn't observable.
     /// Even though internally we clear the current value stack, the returned type is still 
-    /// "non-consuming"
+    /// "non-consuming".
     fn unreachable(&mut self) -> Result<Vec<InferredValType>, TypeError> {
         let frame = self.top_block_mut()?;
         frame.unreachable = true;
@@ -826,22 +833,22 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
         }
 
         // Blocks, i.e., block/loop/if/else.
-        // HACK Attach the input type (always empty in the MVP) to the begin
-        // instruction and the return type (one or none) to the matching end.
+        // HACK: Attach the input type to the begin instruction and the result
+        // type to the matching end. That is, our types for block instructions
+        // describe the stack effect on the parent block's frame.
         // In the reference interpreter and the formalisations, blocks are
         // nested in the AST already, so this hack is not necessary.
         // See https://github.com/WebAssembly/spec/blob/master/interpreter/valid/valid.ml
         // and https://github.com/WasmCert/WasmCert-Isabelle/blob/master/WebAssembly/Wasm_Checker_Types.thy
         Block(block_ty) | Loop(block_ty) => {
-            state.push_block(instr, Vec::new(), block_ty.0.into_iter().collect());
-            // TODO Once we support the multi-value extension, this won't always
-            // be an empty input type.
-            to_inferred_type(FunctionType::new(&[], &[]))
+            state.push_block(instr, block_ty.inputs(), block_ty.results());
+            to_inferred_type(FunctionType::new(block_ty.inputs(), &[]))
         }
         If(block_ty) => {
             state.pop_val_expected(ValType::I32)?;
-            state.push_block(instr, Vec::new(), block_ty.0.into_iter().collect());
-            to_inferred_type(FunctionType::new(&[ValType::I32], &[]))
+            state.push_block(instr, block_ty.inputs(), block_ty.results());
+            let inputs: Vec<ValType> = [&[ValType::I32], block_ty.inputs()].concat();
+            to_inferred_type(FunctionType::new(&inputs, &[]))
         }
         End => {
             let frame = state.pop_block()?;
@@ -855,20 +862,13 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
         }
         Else => {
             let if_frame = state.pop_block()?;
-            
-            // TODO We don't do this check here, because it would require to a block_instr field
-            // in `BlockFrame`. Once `hl::Instr` is nested, this invariant will be true by 
-            // construction of the AST anyway and this code and comment can be removed.
-            // if frame.block_instr != BlockInstr::If {
-            //     Err("else instruction not matching if")?
-            // }
-
-            // Because in the MVP blocks have no inputs, assume empty as the input type here. 
-            // However, once we handle the multi-value extension, we need to get the if's input type
-            // from either the type checker (i.e., a `frame.inputs` field), or if we have a nested
-            // `hl::Instr` AST from the AST node directly.
-            state.push_block(instr, Vec::new(), if_frame.expected_results.clone());
-            to_inferred_type(FunctionType::new(&[], &if_frame.expected_results))
+            let if_inputs = if_frame.if_inputs.ok_or_else(|| TypeError::from("else instruction not matching if"))?;
+            state.push_block(instr, &if_inputs, &if_frame.expected_results);
+            // This is really weird due to our hack of splitting block types between begin and end instructions.
+            // The if instruction has already popped the inputs from the parent stack, so that would be an argument for
+            // using empty input types here. On the other hand, the else also starts a new block itself with the given
+            // inputs on its child stack, so we add them here.
+            to_inferred_type(FunctionType::new(&if_inputs, &if_frame.expected_results))
         }
 
         // Branches: br_if is the only branch that is not followed by dead code.
@@ -930,9 +930,9 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
         // for unreachable that does not consume anything from the stack,
         // but this only works because subsequent dead code won't get a concrete
         // instruction type anyway.
-        // This only concerns the assigned instruction type, the type checker
+        // This only concerns the assigned instruction type. The type checker
         // will still validate that every dead instruction gets its required
-        // inputs from the stack-polymorphic unreachabel instruction. We just
+        // inputs from the stack-polymorphic unreachable instruction. We just
         // cannot tell those types HERE, only later, once they are popped (and
         // the "ellipsis" is "expanded" in concrete types).
         Unreachable => {
@@ -986,7 +986,7 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
 mod tests {
     use test_utilities::wasm_files;
 
-    use crate::{Function, Module, Code, Instr, Instr::*, UnaryOp::*, BinaryOp::*, LocalOp, FunctionType, ValType, Val, ValType::*, BlockType, Idx, Label};
+    use crate::{Function, Module, Code, Instr, Instr::*, UnaryOp::*, BinaryOp::*, LocalOp, FunctionType, ValType, Val, ValType::*, Idx, Label};
 
     use super::TypeChecker;
 
@@ -1005,34 +1005,29 @@ mod tests {
         TypeChecker::begin_function(function, module)
     }
 
+    /// Assert that with the current state of `type_checker`, the next instruction `instr` has the given reachable type.
     fn assert_reachable_type(type_checker: &mut TypeChecker, instr: Instr, inputs: &[ValType], results: &[ValType]) {
+        let expected_ty = FunctionType::new(inputs, results);
         use crate::types::InferredInstructionType::*;
         match type_checker.check_next_instr(&instr) {
             Err(e) => panic!("type checking failed for instruction {}:\n{}", instr, e),
-            Ok(Unreachable) => panic!("type checking produced unreachable type"),
-            Ok(Reachable(ty)) => assert_eq!(ty, FunctionType::new(inputs, results), "wrong type for instruction {}", instr),
+            Ok(Unreachable) => panic!("unreachable type, but should be reachable type {} for instruction {}", expected_ty, instr),
+            Ok(Reachable(ty)) => assert_eq!(ty, expected_ty, "wrong type for instruction {}\nwas {}, should be {}", instr, ty, expected_ty)
         }
     }
 
+    /// Assert that with the current state of `type_checker`, the next instruction `instr` has an unreachable type.
     fn assert_unreachable_type(type_checker: &mut TypeChecker, instr: Instr) {
         use crate::types::InferredInstructionType::*;
         match type_checker.check_next_instr(&instr) {
             Err(e) => panic!("type checking failed for instruction {}:\n{}", instr, e),
-            Ok(Reachable(ty)) => panic!("expected unreachable type but got {}", ty),
+            Ok(Reachable(ty)) => panic!("expected unreachable type but got {} for instruction {}", ty, instr),
             Ok(Unreachable) => {},
         }
     }
     
 
     // Actual tests:
-
-    #[test]
-    pub fn spec_tests_should_typecheck() {
-        for path in wasm_files("../../test-inputs/spec/").unwrap() {
-            println!("\t{}", path.display());
-            assert!(TypeChecker::check_module(&Module::from_file(path).unwrap().0).is_ok());
-        }
-    }
 
     #[test]
     pub fn simple_type_is_known_from_instruction() {
@@ -1049,14 +1044,14 @@ mod tests {
     }
 
     #[test]
-    pub fn function_local_type() {
+    pub fn local_type() {
         let mut type_checker = init_function_module_type_checker();
         assert_reachable_type(&mut type_checker, Const(Val::F32(0.0.into())), &[], &[F32]);
         assert_reachable_type(&mut type_checker, Local(LocalOp::Set, Idx::from(1u32)), &[F32], &[]);
     }
 
     #[test]
-    pub fn value_polymorphic_drop_works() {
+    pub fn value_polymorphic_drop_has_correct_type() {
         let mut type_checker = init_function_module_type_checker();
         assert_reachable_type(&mut type_checker, Const(Val::F32(0.0.into())), &[], &[F32]);
         assert_reachable_type(&mut type_checker, Drop, &[F32], &[]);
@@ -1079,7 +1074,7 @@ mod tests {
     }
 
     #[test]
-    pub fn first_unreachable_is_live_second_dead_code() {
+    pub fn first_unreachable_is_live_second_is_dead_code() {
         let mut type_checker = init_function_module_type_checker();
         assert_reachable_type(&mut type_checker, Unreachable, &[], &[]);
         assert_unreachable_type(&mut type_checker, Unreachable);
@@ -1094,17 +1089,66 @@ mod tests {
     }
 
     #[test]
-    pub fn block_result_type_attached_to_end() {
+    pub fn block_result_type_is_attached_to_end() {
         let mut type_checker = init_function_module_type_checker();
-        assert_reachable_type(&mut type_checker, Block(BlockType(Some(I64))), &[], &[]);
+        assert_reachable_type(&mut type_checker, Block(FunctionType::new(&[], &[I64])), &[], &[]);
         assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
+        assert_reachable_type(&mut type_checker, End, &[], &[I64]);
+    }
+
+    #[test]
+    pub fn block_with_inputs_multi_value_extension() {
+        let mut type_checker = init_function_module_type_checker();
+        assert_reachable_type(&mut type_checker, Block(FunctionType::new(&[F32], &[I64])), &[F32], &[]);
+        assert_reachable_type(&mut type_checker, Const(Val::F32(0.0.into())), &[], &[F32]);
+        assert_reachable_type(&mut type_checker, Binary(F32Add), &[F32, F32], &[F32]);
+        assert_reachable_type(&mut type_checker, Unary(I64TruncF32S), &[F32], &[I64]);
+        // NOTE: The end has always an empty input type, since its type describes the effect on the parent block's stack.
+        assert_reachable_type(&mut type_checker, End, &[], &[I64]);
+    }
+
+    #[test]
+    pub fn loop_with_multiple_results_multi_value_extension() {
+        let mut type_checker = init_function_module_type_checker();
+        assert_reachable_type(&mut type_checker, Loop(FunctionType::new(&[], &[I32, I64])), &[], &[]);
+        assert_reachable_type(&mut type_checker, Const(Val::I32(0)), &[], &[I32]);
+        assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
+        assert_reachable_type(&mut type_checker, End, &[], &[I32, I64]);
+    }
+
+    #[test]
+    pub fn if_else_with_single_result() {
+        let mut type_checker = init_function_module_type_checker();
+        assert_reachable_type(&mut type_checker, Const(Val::I32(0)), &[], &[I32]);
+        // NOTE: Like with blocks, the result type is attached to the matching end (and here also to the else).
+        assert_reachable_type(&mut type_checker, If(FunctionType::new(&[], &[I64])), &[I32], &[]);
+        assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
+        assert_reachable_type(&mut type_checker, Else, &[], &[I64]);
+        assert_reachable_type(&mut type_checker, Const(Val::I64(1)), &[], &[I64]);
+        assert_reachable_type(&mut type_checker, End, &[], &[I64]);
+    }
+
+    #[test]
+    pub fn if_else_with_inputs_multi_value_extension() {
+        let mut type_checker = init_function_module_type_checker();
+        // Block input:
+        assert_reachable_type(&mut type_checker, Const(Val::F64(13.37.into())), &[], &[F64]);
+        // Condition:
+        assert_reachable_type(&mut type_checker, Const(Val::I32(0)), &[], &[I32]);
+        assert_reachable_type(&mut type_checker, If(FunctionType::new(&[F64], &[I64])), &[I32, F64], &[]);
+        assert_reachable_type(&mut type_checker, Unary(I64TruncF64U), &[F64], &[I64]);
+        // NOTE: The else type is especially weird with our hack of attaching the result type to the terminating
+        // instruction of a block. Its result is the result of the if, and its input are the types that are pushed
+        // implicitly on its child stack.
+        assert_reachable_type(&mut type_checker, Else, &[F64], &[I64]);
+        assert_reachable_type(&mut type_checker, Unary(I64TruncF64S), &[F64], &[I64]);
         assert_reachable_type(&mut type_checker, End, &[], &[I64]);
     }
 
     #[test]
     pub fn unconditional_branch_leaves_end_unreachable() {
         let mut type_checker = init_function_module_type_checker();
-        assert_reachable_type(&mut type_checker, Block(BlockType(None)), &[], &[]);
+        assert_reachable_type(&mut type_checker, Block(FunctionType::empty()), &[], &[]);
         assert_reachable_type(&mut type_checker, Br(Label::from(0u32)), &[], &[]);
         assert_unreachable_type(&mut type_checker, End);
     }
@@ -1112,8 +1156,8 @@ mod tests {
     #[test]
     pub fn branch_with_result_to_nested_block() {
         let mut type_checker = init_function_module_type_checker();
-        assert_reachable_type(&mut type_checker, Block(BlockType(Some(I64))), &[], &[]);
-        assert_reachable_type(&mut type_checker, Block(BlockType(None)), &[], &[]);
+        assert_reachable_type(&mut type_checker, Block(FunctionType::new(&[], &[I64])), &[], &[]);
+        assert_reachable_type(&mut type_checker, Block(FunctionType::empty()), &[], &[]);
         assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
         assert_reachable_type(&mut type_checker, Br(Label::from(1u32)), &[I64], &[]);
         assert_unreachable_type(&mut type_checker, End);
@@ -1124,7 +1168,7 @@ mod tests {
     #[test]
     pub fn conditional_branch_to_loop_begin_has_no_input_besides_condition() {
         let mut type_checker = init_function_module_type_checker();
-        assert_reachable_type(&mut type_checker, Loop(BlockType(Some(I64))), &[], &[]);
+        assert_reachable_type(&mut type_checker, Loop(FunctionType::new(&[], &[I64])), &[], &[]);
         assert_reachable_type(&mut type_checker, Const(Val::I32(0)), &[], &[I32]);
         assert_reachable_type(&mut type_checker, BrIf(Label::from(0u32)), &[I32], &[]);
         assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
@@ -1134,8 +1178,8 @@ mod tests {
     #[test]
     pub fn br_table_nested_blocks() {
         let mut type_checker = init_function_module_type_checker();
-        assert_reachable_type(&mut type_checker, Block(BlockType(Some(I64))), &[], &[]);
-        assert_reachable_type(&mut type_checker, Block(BlockType(Some(I64))), &[], &[]);
+        assert_reachable_type(&mut type_checker, Block(FunctionType::new(&[], &[I64])), &[], &[]);
+        assert_reachable_type(&mut type_checker, Block(FunctionType::new(&[], &[I64])), &[], &[]);
         assert_reachable_type(&mut type_checker, Const(Val::I64(42)), &[], &[I64]);
         assert_reachable_type(&mut type_checker, Const(Val::I32(3)), &[], &[I32]);
         assert_reachable_type(&mut type_checker, BrTable { 
@@ -1146,6 +1190,14 @@ mod tests {
         assert_unreachable_type(&mut type_checker, End);
         assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
         assert_reachable_type(&mut type_checker, End, &[], &[I64]);
+    }
+
+    #[test]
+    pub fn spec_tests_should_typecheck() {
+        for path in wasm_files("../../test-inputs/spec/").unwrap() {
+            println!("\t{}", path.display());
+            assert!(TypeChecker::check_module(&Module::from_file(path).unwrap().0).is_ok());
+        }
     }
 
 }

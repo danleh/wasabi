@@ -4,7 +4,7 @@ use std::fmt::Write;
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use serde_json;
-use wasabi_wasm::{BlockType, Idx, Mutability, Val, ValType::*, Label, Function, GlobalOp, Instr, Instr::*, LocalOp::*, Module, MemoryOp, FunctionType};
+use wasabi_wasm::{Idx, Mutability, Val, ValType::*, Label, Function, GlobalOp, Instr, Instr::*, LocalOp::*, Module, MemoryOp, FunctionType};
 
 use crate::options::{Hook, HookSet};
 
@@ -79,7 +79,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
             instrumented_body.extend_from_slice(&[
                 Global(GlobalOp::Get, start_not_executed_global.unwrap()),
                 // ...(if this is the start function and it hasn't run yet)
-                If(BlockType(None)),
+                If(FunctionType::empty()),
                 Const(Val::I32(0)),
                 Global(GlobalOp::Set, start_not_executed_global.unwrap()),
                 fidx.to_const(),
@@ -385,7 +385,7 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
                             instrumented_body.extend_from_slice(&[
                                 // NOTE see local.tee above
                                 Local(Get, condition_tmp),
-                                If(BlockType(None)),
+                                If(FunctionType::empty()),
                             ]);
                             for block in br_target.ended_blocks {
                                 instrumented_body.append(&mut block.to_end_hook_args(fidx));

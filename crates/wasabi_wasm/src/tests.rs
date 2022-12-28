@@ -109,6 +109,9 @@ fn decode_encode_is_valid_wasm() {
     });
 }
 
+// TODO: Also ensure that used_wasm_extensions(encode(decode(wasm))) <= used_wasm_extensions(wasm), i.e., that our
+// encoding does not introduce new extensions.
+
 #[test]
 fn section_offsets_like_objdump() {
     // Use a wasm file with a custom section for testing section offsets.
