@@ -28,6 +28,8 @@ pub static ALL_VALID_TEST_BINARIES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
         "valid-no-extensions",
         // Valid, but creates very large allocations because it has >500k locals in >1k functions.
         "31fa012442fd637fca221db4fda94262e99759ab9667147cbedde083aabcc065",
+        //  Uses typed select instruction, which is non-MVP, but is not filtered out by wasm-validate below.
+        "wasm-spec-tests/build/select.wasm",
     ];
     for excluded in EXCLUDED.iter() {
         valid_binaries.retain(|path| !path.to_string_lossy().contains(excluded));
@@ -49,6 +51,13 @@ pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), String> {
     let path = path.as_ref();
     let validate_output = Command::new("wasm-validate")
         .arg("--ignore-custom-section-errors")
+        // Disable all extensions that we don't support yet.
+        .arg("--disable-saturating-float-to-int")
+        .arg("--disable-sign-extension")
+        .arg("--disable-simd")
+        .arg("--disable-multi-value")
+        .arg("--disable-bulk-memory")
+        .arg("--disable-reference-types")
         .arg(path)
         .output()
         .map_err(|err| err.to_string())?;

@@ -12,12 +12,12 @@ use test_utilities::*;
 use crate::types::TypeChecker;
 use crate::*;
 
-const NAME_SECTION_TEST_BINARY: &str = "../../test-inputs/name-section/wabt-tests/names.wasm";
-const BANANABREAD_REAL_WORLD_TEST_BINARY: &str = "../../test-inputs/real-world/bananabread/bb.wasm";
+const NAME_SECTION_TEST_BINARY: &str = "../../test-inputs/wasm-feature-tests/name-section/wabt-tests/names.wasm";
+const BANANABREAD_REAL_WORLD_TEST_BINARY: &str = "../../test-inputs/real-world-binaries/bananabread/bb.wasm";
 
 // Removed this test, because when changing to wasmparser,
 // we did not port over the low-level parsing of the extended name section.
-// const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &str = "../../test-inputs/name-section/extended-name-section/vuln.wasm";
+// const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &str = "../../test-inputs/wasm-feature-tests/name-section/extended-name-section/vuln.wasm";
 
 #[test]
 fn collect_all_function_types_in_test_set() {
