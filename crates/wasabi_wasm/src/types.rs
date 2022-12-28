@@ -999,8 +999,6 @@ fn check_instr(
 
 #[cfg(test)]
 mod tests {
-    use test_utilities::wasm_files;
-
     use crate::BinaryOp::*;
     use crate::Code;
     use crate::Function;
@@ -1010,7 +1008,6 @@ mod tests {
     use crate::Instr::*;
     use crate::Label;
     use crate::LocalOp;
-    use crate::Module;
     use crate::UnaryOp::*;
     use crate::Val;
     use crate::ValType;
@@ -1226,13 +1223,5 @@ mod tests {
         assert_unreachable_type(&mut type_checker, End);
         assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
         assert_reachable_type(&mut type_checker, End, &[], &[I64]);
-    }
-
-    #[test]
-    pub fn spec_tests_should_typecheck() {
-        for path in wasm_files("../../test-inputs/spec/").unwrap() {
-            println!("\t{}", path.display());
-            assert!(TypeChecker::check_module(&Module::from_file(path).unwrap().0).is_ok());
-        }
     }
 }
