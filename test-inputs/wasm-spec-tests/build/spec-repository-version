@@ -1,0 +1,5 @@
+commit 1782235239ddebaf2cb079b00fdaa2d2c4dedba3
+Author: YAMAMOTO Takashi <yamamoto@midokura.com>
+Date:   Fri Dec 16 00:24:54 2022 +0900
+
+    [test] elem.wast: force to use exprs in a element (#1561)
