@@ -1250,16 +1250,20 @@ fn parse_name_custom_section(data: &[u8], data_offset: usize, warnings: &mut Vec
 
                     let mut name_map = indirect_naming.get_map()?;
                     for _ in 0..name_map.get_count() {
-                        // FIXME param_or_local_name_mut might panic due to index error
-                        // TODO refactor param_or_local_name
-                        // let offset = name_map.original_position();
-
                         let wp::Naming {
                             index: local_index,
                             name,
                         } = name_map.read()?;
-                        *function.param_or_local_name_mut(local_index.into()) =
+
+                        // TODO Refactor param_or_local_name to return a `Result`
+                        // instead of checking the index beforehand.
+                        let offset = name_map.original_position();
+                        if local_index as usize >= (function.param_count() + function.local_count()) {
+                            warnings.push(ParseIssue::index(offset, local_index, "local"));
+                        } else {
+                            *function.param_or_local_name_mut(local_index.into()) =
                             Some(name.to_string());
+                        }
                     }
                 }
             }
