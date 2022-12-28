@@ -1,0 +1,25 @@
+name: CI
+on: [push, pull_request]
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  wasabi_wasm:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v3
+    - run: cargo --version; rustc --version
+      name: Rust version
+    - run: cargo build
+      working-directory: crates/wasabi_wasm/
+    - run: cargo test -- --nocapture
+      working-directory: crates/wasabi_wasm/
+  clippy:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v3
+    - run: cargo --version; cargo clippy --version
+      name: Clippy version
+    - run: cargo clippy
+      working-directory: crates/wasabi_wasm/
+    - run: cargo clippy
+      working-directory: crates/wasabi/
