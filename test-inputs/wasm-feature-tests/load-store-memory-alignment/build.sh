@@ -3,7 +3,5 @@
 rm -rf build/
 mkdir build
 
-for wat in src/*.wat
-do
-    wat2wasm "$wat" -o "build/$(basename $wat).wasm"
-done
+wat2wasm alignment.wat -o build/alignment.wasm
+wasm-objdump -d build/alignment.wasm > build/alignment.wasm-objdump.txt
