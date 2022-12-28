@@ -41,7 +41,7 @@ fn main() -> Result<(), MainError> {
         return Err(io_err("input file uses Wasm extensions, which are not supported yet by Wasabi").into());
     }
     let (js, hook_count) = add_hooks(&mut module, enabled_hooks, opt.node_js).unwrap();
-    println!("inserted {} low-level hooks", hook_count);
+    println!("inserted {hook_count} low-level hooks");
 
     // write output files
     fs::create_dir_all(&opt.output_dir)?;

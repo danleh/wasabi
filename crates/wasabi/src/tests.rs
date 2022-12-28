@@ -34,7 +34,7 @@ fn test_instrument(
     instrument: fn(&mut Module) -> Option<String>,
     instrument_name: &'static str,
 ) {
-    println!("Testing {}", instrument_name);
+    println!("Testing {instrument_name}");
 
     ALL_VALID_TEST_BINARIES.par_iter().for_each(|path| {
         let (mut module, _offsets, _warnings) = Module::from_file(path).unwrap();

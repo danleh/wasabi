@@ -28,6 +28,7 @@ enum TypeStackElement {
 }
 
 impl TypeStack {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         TypeStack(vec![FunctionBegin])
     }
@@ -35,11 +36,7 @@ impl TypeStack {
     /// Returns the number of values on the type stack until the next "block stack"
     /// begins, i.e., either BlockBegin or FunctionBegin.
     pub fn block_depth(&self) -> usize {
-        self.0.iter().rev().take_while(|el|
-            match el {
-                Val(_) => true,
-                _ => false,
-            }).count()
+        self.0.iter().rev().take_while(|el| matches!(el, Val(_))).count()
     }
 
     pub fn push_val(&mut self, ty: ValType) {

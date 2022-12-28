@@ -1652,7 +1652,7 @@ impl fmt::Display for Instr {
             | MemorySize(_) | MemoryGrow(_)
             | Unary(_) | Binary(_) => Ok(()),
 
-            Block(ty) | Loop(ty) | If(ty) => write!(f, " {}", ty),
+            Block(ty) | Loop(ty) | If(ty) => write!(f, " {ty}"),
 
             Br(label) => write!(f, " {}", label.to_u32()),
             BrIf(label) => write!(f, " {}", label.to_u32()),
@@ -1666,7 +1666,7 @@ impl fmt::Display for Instr {
             Call(func_idx) => write!(f, " {}", func_idx.to_u32()),
             // We don't print the table index, because we also don't for memory.size and memory.grow,
             // and because in the MVP the table index is going to be 0 anyway.
-            CallIndirect(func_ty, _table_idx) => write!(f, " {}", func_ty),
+            CallIndirect(func_ty, _table_idx) => write!(f, " {func_ty}"),
 
             Local(_, local_idx) => write!(f, " {}", local_idx.to_u32()),
             Global(_, global_idx) => write!(f, " {}", global_idx.to_u32()),
@@ -1684,7 +1684,7 @@ impl fmt::Display for Instr {
                 memarg.fmt(f, *op)
             },
 
-            Const(val) => write!(f, " {}", val)
+            Const(val) => write!(f, " {val}")
         }
     }
 }

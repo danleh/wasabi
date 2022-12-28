@@ -273,7 +273,7 @@ static LOOKUP_TABLE: Lazy<LookupType> = Lazy::new(|| {
 
 #[test]
 fn lookup_table_size() {
-    println!("number of entries: {}", LOOKUP_TABLE_SIZE);
+    println!("number of entries: {LOOKUP_TABLE_SIZE}");
     println!("size of table: {}", std::mem::size_of_val(LOOKUP_TABLE.as_ref()));
     println!("sum of slice lens: {}", LOOKUP_TABLE.as_ref().iter().map(|seq| seq.len()).sum::<usize>());
 }
@@ -312,7 +312,7 @@ fn test_goedel_number_roundtrips() {
     for goedel_number in 0..LOOKUP_TABLE_SIZE {
         let val_type_seq = goedel_number_to_val_type_seq(goedel_number);
         let roundtrip = val_type_seq_to_goedel_number(&val_type_seq).unwrap();
-        assert_eq!(goedel_number, roundtrip, "{} -> {:?} -> {}", goedel_number, val_type_seq, roundtrip);
+        assert_eq!(goedel_number, roundtrip, "{goedel_number} -> {val_type_seq:?} -> {roundtrip}");
     }
 }
 
@@ -368,6 +368,6 @@ fn test_id_array_roundtrips() {
     for id in 0..2usize.pow(24) {
         let array = usize_to_array(id);
         let roundtrip = array_to_usize(array);
-        assert_eq!(id, roundtrip, "{} -> {:?} -> {}", id, array, roundtrip);
+        assert_eq!(id, roundtrip, "{id} -> {array:?} -> {roundtrip}");
     }
 }

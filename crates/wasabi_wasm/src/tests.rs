@@ -42,7 +42,7 @@ fn collect_all_function_types_in_test_set() {
     type_count.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
     let mut output_contents = String::new();
     for (ty, count) in &type_count {
-        writeln!(&mut output_contents, "{:10} ; {}", count, ty).unwrap();
+        writeln!(&mut output_contents, "{count:10} ; {ty}").unwrap();
     }
     fs::create_dir_all("../../test-outputs/collect-types/").unwrap();
     fs::write("../../test-outputs/collect-types/function_type_count.csv", output_contents).unwrap();
@@ -151,7 +151,7 @@ fn code_offsets_like_objdump() {
 fn error_offsets_correct() {
     fn assert_error_offset(binary: Vec<u8>, expected_offset: usize) {
         let result = Module::from_bytes(&binary);
-        assert!(result.is_err(), "Parsing did not fail, but should have because binary {:?} is invalid", binary);
+        assert!(result.is_err(), "Parsing did not fail, but should have because binary {binary:?} is invalid");
         let err = result.err().unwrap();
         let offset = err.offset().expect("Error should have an offset");
         assert_eq!(offset, expected_offset, "{err}\n{err:?}\nsource: {:?}", err.source());

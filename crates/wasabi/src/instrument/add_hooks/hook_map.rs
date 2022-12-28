@@ -176,8 +176,8 @@ impl HookMap {
             }
             Unary(op) => {
                 let ty = op.to_type();
-                let inputs = ty.inputs().iter().enumerate().map(|(i, &ty)| Arg { name: format!("input{}", i), ty });
-                let results = ty.results().iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{}", i), ty });
+                let inputs = ty.inputs().iter().enumerate().map(|(i, &ty)| Arg { name: format!("input{i}"), ty });
+                let results = ty.results().iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{i}"), ty });
                 let args = inputs.chain(results).collect::<Vec<_>>();
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {}", instr_name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
@@ -185,8 +185,8 @@ impl HookMap {
             }
             Binary(op) => {
                 let ty = op.to_type();
-                let inputs = ty.inputs().iter().enumerate().map(|(i, &ty)| Arg { name: format!("input{}", i), ty });
-                let results = ty.results().iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{}", i), ty });
+                let inputs = ty.inputs().iter().enumerate().map(|(i, &ty)| Arg { name: format!("input{i}"), ty });
+                let results = ty.results().iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{i}"), ty });
                 let args = inputs.chain(results).collect::<Vec<_>>();
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {}", instr_name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
@@ -230,20 +230,20 @@ impl HookMap {
                 Hook::new(name, args, "global", js_args)
             }
             Return => {
-                let args = polymorphic_tys.iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{}", i), ty }).collect::<Vec<_>>();
+                let args = polymorphic_tys.iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{i}"), ty }).collect::<Vec<_>>();
                 let js_args = &format!("[{}]", args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
                 Hook::new(name, args, "return_", js_args)
             }
             Call(_) => {
                 let mut args = args!(targetFunc: I32);
-                args.extend(polymorphic_tys.iter().enumerate().map(|(i, &ty)| Arg { name: format!("arg{}", i), ty }));
+                args.extend(polymorphic_tys.iter().enumerate().map(|(i, &ty)| Arg { name: format!("arg{i}"), ty }));
                 // NOTE calls the high-level call_pre hook with one argument less than call_indirect, thus tableIdx === undefined since this is a direct call
                 let js_args = &format!("targetFunc, [{}]", args[1..].iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
                 Hook::new(name, args, "call_pre", js_args)
             }
             CallIndirect(_, _) => {
                 let mut args = args!(tableIndex: I32);
-                args.extend(polymorphic_tys.iter().enumerate().map(|(i, &ty)| Arg { name: format!("arg{}", i), ty }));
+                args.extend(polymorphic_tys.iter().enumerate().map(|(i, &ty)| Arg { name: format!("arg{i}"), ty }));
                 let js_args = &format!("Wasabi.resolveTableIdx(tableIndex), [{}], tableIndex", args[1..].iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
                 Hook::new(name, args, "call_pre", js_args)
             }
@@ -268,7 +268,7 @@ impl HookMap {
             .iter()
             .enumerate()
             .map(|(i, &ty)| Arg {
-                name: format!("result{}", i),
+                name: format!("result{i}"),
                 ty,
             })
             .collect::<Vec<_>>();

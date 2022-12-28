@@ -71,8 +71,7 @@ impl BlockStack {
         }
         assert!(
             begin_stack.is_empty(),
-            "invalid block nesting: some blocks were not closed, stack at end is {:?}",
-            begin_stack
+            "invalid block nesting: some blocks were not closed, stack at end is {begin_stack:?}"
         );
 
         BlockStack {
@@ -87,8 +86,7 @@ impl BlockStack {
         self.block_stack.push(Block {
             begin,
             end: *self.begin_end_map.get(&begin).expect(&format!(
-                "invalid block nesting: could not find end for block begin at {:?}",
-                begin
+                "invalid block nesting: could not find end for block begin at {begin:?}"
             )),
         });
     }
@@ -97,16 +95,14 @@ impl BlockStack {
         self.block_stack.push(Loop {
             begin,
             end: *self.begin_end_map.get(&begin).expect(&format!(
-                "invalid block nesting: could not find end for loop begin at {:?}",
-                begin
+                "invalid block nesting: could not find end for loop begin at {begin:?}"
             )),
         });
     }
 
     pub fn begin_if(&mut self, begin_if: Idx<Instr>) {
         let end_or_else = *self.begin_end_map.get(&begin_if).expect(&format!(
-            "invalid block nesting: could not find end/else for if begin at {:?}",
-            begin_if
+            "invalid block nesting: could not find end/else for if begin at {begin_if:?}"
         ));
 
         let if_ = if let Some(&end) = self.begin_end_map.get(&end_or_else) {
@@ -142,8 +138,7 @@ impl BlockStack {
                     block_element
                 }
                 block => panic!(
-                    "invalid block nesting: expected if with else on block stack, but got {:?}",
-                    block
+                    "invalid block nesting: expected if with else on block stack, but got {block:?}"
                 ),
             },
             None => panic!("invalid block nesting: expected if, but stack was empty"),
@@ -173,8 +168,7 @@ impl BlockStack {
         let absolute_instr = {
             // the last block of the ended ones is the actual target
             let target_block = ended_blocks.get(label.to_usize()).expect(&format!(
-                "invalid label: cannot find target block for {:?}",
-                label
+                "invalid label: cannot find target block for {label:?}"
             ));
 
             match *target_block {

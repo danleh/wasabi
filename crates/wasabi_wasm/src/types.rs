@@ -295,9 +295,9 @@ impl fmt::Display for StackType {
                 f.write_str("[")?;
                 if let Some((last, tys)) = maybe_unknown_tys.split_last() {
                     for ty in tys {
-                        write!(f, "{}, ", ty)?;
+                        write!(f, "{ty}, ")?;
                     }
-                    write!(f, "{}", last)?;
+                    write!(f, "{last}")?;
                 }
                 f.write_str("] (unreachable)")
             }
@@ -305,9 +305,9 @@ impl fmt::Display for StackType {
                 f.write_str("[")?;
                 if let Some((last, tys)) = tys.split_last() {
                     for ty in tys {
-                        write!(f, "{}, ", ty)?;
+                        write!(f, "{ty}, ")?;
                     }
-                    write!(f, "{}", last)?;
+                    write!(f, "{last}")?;
                 }
                 f.write_str("]")
             }
@@ -405,19 +405,19 @@ impl fmt::Display for TypeError {
         if let Some(function_idx) = self.0.function_idx {
             write!(f, ", function #{}", function_idx.to_usize())?;
             if let Some(function_name) = &self.0.function_name {
-                write!(f, " ({})", function_name)?;
+                write!(f, " ({function_name})")?;
             }
         }
         if let Some(global_idx) = self.0.global_idx {
             write!(f, ", global init expression #{}", global_idx.to_usize())?;
             if let Some(global_name) = &self.0.global_name {
-                write!(f, " ({})", global_name)?;
+                write!(f, " ({global_name})")?;
             }
         }
         if let Some(instruction_idx) = self.0.instruction_idx {
             write!(f, ", instruction #{}", instruction_idx.to_usize())?;
             if let Some(instruction) = &self.0.instruction {
-                write!(f, " ({}) ", instruction)?;
+                write!(f, " ({instruction}) ")?;
             }
         }
         write!(f, ": {}", self.0.message)
@@ -646,7 +646,7 @@ impl<'module> TypeChecker<'module> {
 
     fn pop_val_expected(&mut self, expected: ValType) -> Result<(), TypeError> {
         let actual = self.pop_val()?;
-        expected.join(actual).ok_or_else(|| TypeError::from(format!("expected type {}, but got {}", expected, actual)))?;
+        expected.join(actual).ok_or_else(|| TypeError::from(format!("expected type {expected}, but got {actual}")))?;
         Ok(())
     }
 
@@ -823,7 +823,7 @@ fn check_instr(state: &mut TypeChecker, instr: &Instr, function: &Function, modu
             let ty1 = state.pop_val()?;
             let ty2 = state.pop_val()?;
             let ty = ty1.join(ty2)
-                .ok_or_else(|| TypeError::from(format!("incompatible types {} and {} for select arguments", ty1, ty2)))?;
+                .ok_or_else(|| TypeError::from(format!("incompatible types {ty1} and {ty2} for select arguments")))?;
             state.push_val(ty)?;
             match (ValType::try_from(ty), was_unreachable) {
                 (_, true) => InferredInstructionType::Unreachable,
@@ -1001,7 +1001,7 @@ mod tests {
                 body: Vec::new(),
             }, Vec::new())
         ));
-        let module = Box::leak(Box::new(Module::default()));
+        let module = Box::leak(Box::default());
         TypeChecker::begin_function(function, module)
     }
 
@@ -1010,9 +1010,9 @@ mod tests {
         let expected_ty = FunctionType::new(inputs, results);
         use crate::types::InferredInstructionType::*;
         match type_checker.check_next_instr(&instr) {
-            Err(e) => panic!("type checking failed for instruction {}:\n{}", instr, e),
-            Ok(Unreachable) => panic!("unreachable type, but should be reachable type {} for instruction {}", expected_ty, instr),
-            Ok(Reachable(ty)) => assert_eq!(ty, expected_ty, "wrong type for instruction {}\nwas {}, should be {}", instr, ty, expected_ty)
+            Err(e) => panic!("type checking failed for instruction {instr}:\n{e}"),
+            Ok(Unreachable) => panic!("unreachable type, but should be reachable type {expected_ty} for instruction {instr}"),
+            Ok(Reachable(ty)) => assert_eq!(ty, expected_ty, "wrong type for instruction {instr}\nwas {ty}, should be {expected_ty}")
         }
     }
 
@@ -1020,8 +1020,8 @@ mod tests {
     fn assert_unreachable_type(type_checker: &mut TypeChecker, instr: Instr) {
         use crate::types::InferredInstructionType::*;
         match type_checker.check_next_instr(&instr) {
-            Err(e) => panic!("type checking failed for instruction {}:\n{}", instr, e),
-            Ok(Reachable(ty)) => panic!("expected unreachable type but got {} for instruction {}", ty, instr),
+            Err(e) => panic!("type checking failed for instruction {instr}:\n{e}"),
+            Ok(Reachable(ty)) => panic!("expected unreachable type but got {ty} for instruction {instr}"),
             Ok(Unreachable) => {},
         }
     }

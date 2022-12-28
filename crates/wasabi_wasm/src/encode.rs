@@ -248,8 +248,7 @@ fn encode_types(state: &EncodeState) -> we::TypeSection {
     assert_eq!(
         types_idx.len(),
         types_ordered.last().map(|(_, idx)| idx.to_usize() + 1).unwrap_or(0),
-        "type index space should not have any holes, mapping: {:?}",
-        types_idx
+        "type index space should not have any holes, mapping: {types_idx:?}"
     );
     for (type_, _) in types_ordered {
         type_section.function(
@@ -391,7 +390,7 @@ fn encode_single_instruction_with_end(instrs: &[Instr], state: &mut EncodeState)
             encode_instruction(single_instr, state)?.encode(&mut instr_bytes);
             Ok(we::ConstExpr::raw(instr_bytes))
         },
-        _ => Err(EncodeError::message(format!("expected exactly one instruction, followed by an end, but got {:?}. If there is more than one instruction, this is not supported by wasm-encoder for an unknown reason.", instrs))),
+        _ => Err(EncodeError::message(format!("expected exactly one instruction, followed by an end, but got {instrs:?}. If there is more than one instruction, this is not supported by wasm-encoder for an unknown reason."))),
     }
 }
 
