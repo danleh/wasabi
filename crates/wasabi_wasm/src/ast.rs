@@ -670,7 +670,7 @@ fn instr_size() {
 pub enum Instr {
     // TODO See below on `Block` for a plan on how to get rid of unreachable code.
     Unreachable,
-    // TODO Remove, can be replaced by `Instr::Block(BlockType::Empty)`.
+    // TODO Remove, can be replaced by `Instr::Block(FunctionType::empty)`.
     Nop,
 
     // TODO Make highlevel::Instr nesting, i.e., Block(FunctionType, Vec<Instr>)
