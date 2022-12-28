@@ -32,13 +32,13 @@ pub static ALL_VALID_TEST_BINARIES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
     for excluded in EXCLUDED.iter() {
         valid_binaries.retain(|path| !path.to_string_lossy().contains(excluded));
     }
-    println!("{} .wasm files found.", valid_binaries.len());
+    println!("{} .wasm files found, validating...", valid_binaries.len());
     // Filter out files that are already invalid according to wasm-validate:
     let valid_binaries: Vec<_> = valid_binaries
         .into_par_iter()
         .filter(|path| wasm_validate(path).is_ok())
         .collect();
-    println!("{} .wasm binaries validated.", valid_binaries.len());
+    println!("{} valid .wasm binaries.", valid_binaries.len());
     valid_binaries
 });
 
