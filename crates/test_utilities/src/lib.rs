@@ -7,6 +7,14 @@ use std::path::PathBuf;
 use once_cell::sync::Lazy;
 use rayon::prelude::*;
 
+// TODO: Improve testing and CI setup:
+// 1. Run CI on every commit/PR. Automate with GitHub Actions or similar.
+// 2. Save and commit a list of all .wasm files that previously passed the tests
+// as a measure against regressions.
+// 3. Don't require anything besides Rust to run the tests (what about
+// WABT, Emscripten, spec tests?).
+// 4. Wasabi should pass all tests in the valid-no-extensions directory, verify.
+
 const TEST_INPUTS_DIR: &str = "../../test-inputs/";
 pub static ALL_VALID_TEST_BINARIES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
     println!("Collecting all valid .wasm binaries from '{}'...", TEST_INPUTS_DIR);
@@ -17,18 +25,20 @@ pub static ALL_VALID_TEST_BINARIES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
         // The full set of WasmBench files is too large to run in CI.
         "all-binaries-metadata",
         "filtered-binaries-metadata",
+        "valid-no-extensions",
         // Valid, but creates very large allocations because it has >500k locals in >1k functions.
         "31fa012442fd637fca221db4fda94262e99759ab9667147cbedde083aabcc065",
     ];
     for excluded in EXCLUDED.iter() {
         valid_binaries.retain(|path| !path.to_string_lossy().contains(excluded));
     }
+    println!("{} .wasm files found.", valid_binaries.len());
     // Filter out files that are already invalid according to wasm-validate:
     let valid_binaries: Vec<_> = valid_binaries
         .into_par_iter()
         .filter(|path| wasm_validate(path).is_ok())
         .collect();
-    println!("{} files validated.", valid_binaries.len());
+    println!("{} .wasm binaries validated.", valid_binaries.len());
     valid_binaries
 });
 
