@@ -1,5 +1,3 @@
-- Move away from Travis CI (no longer offered for OSS projects) to GitHub actions (?)
-    * add test also for `wasm` AST/instrumentation library
 
 # Larger Refactorings, Simplification, Long-term Maintainability
 
@@ -23,15 +21,13 @@
 
 # Engineering, Small Features, Tests
 
-- proper error handling in library and binary with this_error and anyhow crates
+- Proper error handling in library and binary with this_error and anyhow crates
     * implement own Error type
     * replace panics with ```Result<_, wasabi::Error>```
     * derive ```From``` and ```Error``` traits
-- Update syn/quote of wasm_binary crate to 1.0 (to stay up to date + remove crate duplication in wasabi crate)
 - Compile wasabi to WebAssembly for Node.JS and in-browser usage (with wasm-bindgen?)
 - Reduce memory allocations (see eval/perf/ heaptrack data) in hook_map::instr() and Hook::new()
     * more borrowing, less String
-- fix wrong handling of ```call_indirect``` in Firefox: exported function object .name property is NOT the Wasm index -> BUG report and compare with Chrome!
 - automatic (```cargo test```-able) integration tests for analyses 
     * using Wasm in Node.js
     * make sure null- or log-all-analysis run without exception
