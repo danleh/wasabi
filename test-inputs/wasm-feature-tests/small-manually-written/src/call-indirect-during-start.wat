@@ -1,5 +1,5 @@
 (module
-    (table $table 1 anyfunc)
+    (table $table 1 funcref)
     (func $f
         i32.const 0
         call_indirect
