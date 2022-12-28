@@ -1,6 +1,6 @@
 (module 
   (import "env" "print" (func $print (param i32)))
-  (table $interp 4 anyfunc)
+  (table $interp 4 funcref)
   (elem $interp (i32.const 0) $print)
   (elem $interp (i32.const 1) $f1)
   (elem $interp (i32.const 2) $f2)
