@@ -1,21 +1,15 @@
 name: Rust CI
-
-on:
-  push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
-
+on: [push, pull_request]
 env:
   CARGO_TERM_COLOR: always
-
 jobs:
-  build:
-
+  wasabi_wasm:
     runs-on: ubuntu-20.04
-
     steps:
     - uses: actions/checkout@v3
-    - name: Run wasabi_wasm tests
-      run: cargo test --verbose
-      working-directory: crates/wasabi_wasm/
+    - name: Rust version
+      run: cargo --version; rustc --version; cargo clippy --version
+    - run: cd crates/wasabi_wasm/
+    - run: cargo build
+    - run: cargo clippy
+    - run: cargo test -- --nocapture
