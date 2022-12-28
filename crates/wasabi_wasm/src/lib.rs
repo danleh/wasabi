@@ -9,9 +9,9 @@ pub use crate::error::*;
 
 pub mod types;
 
+mod encode;
 mod extensions;
 mod parse;
-mod encode;
 
 #[cfg(test)]
 mod tests;

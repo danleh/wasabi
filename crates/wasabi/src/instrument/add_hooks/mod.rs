@@ -4,11 +4,25 @@ use std::fmt::Write;
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use serde_json;
-use wasabi_wasm::{Idx, Mutability, Val, ValType::*, Label, Function, GlobalOp, Instr, Instr::*, LocalOp::*, Module, MemoryOp, FunctionType};
+use wasabi_wasm::Function;
+use wasabi_wasm::FunctionType;
+use wasabi_wasm::GlobalOp;
+use wasabi_wasm::Idx;
+use wasabi_wasm::Instr;
+use wasabi_wasm::Instr::*;
+use wasabi_wasm::Label;
+use wasabi_wasm::LocalOp::*;
+use wasabi_wasm::MemoryOp;
+use wasabi_wasm::Module;
+use wasabi_wasm::Mutability;
+use wasabi_wasm::Val;
+use wasabi_wasm::ValType::*;
 
-use crate::options::{Hook, HookSet};
+use crate::options::Hook;
+use crate::options::HookSet;
 
-use self::block_stack::{BlockStack, BlockStackElement};
+use self::block_stack::BlockStack;
+use self::block_stack::BlockStackElement;
 use self::convert_i64::convert_i64_instr;
 use self::duplicate_stack::*;
 use self::hook_map::HookMap;
@@ -25,7 +39,11 @@ pub mod type_stack;
 /// Instruments every instruction in Jalangi-style with a callback that takes inputs, outputs, and
 /// other relevant information.
 #[allow(clippy::cognitive_complexity)]
-pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> Option<(String, usize)> {
+pub fn add_hooks(
+    module: &mut Module,
+    enabled_hooks: HookSet,
+    node_js: bool,
+) -> Option<(String, usize)> {
     // make sure table is exported, needed for Wasabi runtime to resolve table indices to function indices.
     for table in &mut module.tables {
         if table.export.is_empty() {
@@ -776,7 +794,10 @@ pub fn add_hooks(module: &mut Module, enabled_hooks: HookSet, node_js: bool) -> 
         module.functions.push(hook.wasm);
     }
 
-    Some((generate_js(module_info.into_inner(), &js_hooks, node_js), hook_count))
+    Some((
+        generate_js(module_info.into_inner(), &js_hooks, node_js),
+        hook_count,
+    ))
 }
 
 /// convenience to hand (function/instr/local/global) indices to hooks
@@ -875,7 +896,7 @@ fn generate_js(module_info: ModuleInfo, hooks: &[String], node_js: bool) -> Stri
     ).unwrap();
 
     if node_js {
-        writeln!(result, "\nmodule.exports = Wasabi;").unwrap(); 
+        writeln!(result, "\nmodule.exports = Wasabi;").unwrap();
     }
 
     result

@@ -1,9 +1,10 @@
-use wasabi_wasm::Module;
 use test_utilities::*;
+use wasabi_wasm::Module;
 
 use rayon::prelude::*;
 
-use crate::instrument::{add_hooks, direct};
+use crate::instrument::add_hooks;
+use crate::instrument::direct;
 use crate::options::HookSet;
 
 #[test]
@@ -30,10 +31,7 @@ fn add_hooks_instrumentation_produces_valid_wasm() {
 }
 
 /// Utility function.
-fn test_instrument(
-    instrument: fn(&mut Module) -> Option<String>,
-    instrument_name: &'static str,
-) {
+fn test_instrument(instrument: fn(&mut Module) -> Option<String>, instrument_name: &'static str) {
     println!("Testing {instrument_name}");
 
     ALL_VALID_TEST_BINARIES.par_iter().for_each(|path| {

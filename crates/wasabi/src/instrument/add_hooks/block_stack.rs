@@ -2,7 +2,9 @@
 
 use std::collections::HashMap;
 
-use wasabi_wasm::{Instr, Idx, Label};
+use wasabi_wasm::Idx;
+use wasabi_wasm::Instr;
+use wasabi_wasm::Label;
 
 use self::BlockStackElement::*;
 

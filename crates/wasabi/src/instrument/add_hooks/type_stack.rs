@@ -1,7 +1,8 @@
 // TODO Replace this with `wasabi_wasm/types.rs` implementation or
 // (even better) once we have a nested AST this can be removed completely.
 
-use wasabi_wasm::{ValType, FunctionType};
+use wasabi_wasm::FunctionType;
+use wasabi_wasm::ValType;
 
 use self::TypeStackElement::*;
 
@@ -36,7 +37,11 @@ impl TypeStack {
     /// Returns the number of values on the type stack until the next "block stack"
     /// begins, i.e., either BlockBegin or FunctionBegin.
     pub fn block_depth(&self) -> usize {
-        self.0.iter().rev().take_while(|el| matches!(el, Val(_))).count()
+        self.0
+            .iter()
+            .rev()
+            .take_while(|el| matches!(el, Val(_)))
+            .count()
     }
 
     pub fn push_val(&mut self, ty: ValType) {

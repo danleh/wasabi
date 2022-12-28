@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
-use enumset::{EnumSet, EnumSetType};
-use serde::{Deserialize, Serialize};
+use enumset::EnumSet;
+use enumset::EnumSetType;
+use serde::Deserialize;
+use serde::Serialize;
 use serde_plain;
 use structopt::StructOpt;
 
@@ -27,10 +29,7 @@ pub struct Options {
     /// Generate JavaScript code for inclusion in Node.js, not the browser.
     /// Import Wasabi before the WebAssembly module to analyze with
     /// `const Wasabi = require('<filename>.wasabi.js');`
-    #[structopt(
-        short = "n",
-        long = "node",
-    )]
+    #[structopt(short = "n", long = "node")]
     pub node_js: bool,
 
     /// Output directory (created if it does not exist).

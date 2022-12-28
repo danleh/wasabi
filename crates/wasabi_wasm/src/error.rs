@@ -1,5 +1,5 @@
 //! Typed errors and warnings when parsing/encoding of modules.
- 
+
 use crate::extensions::WasmExtension;
 
 /// Used only for errors (not recoverable, i.e., parsing stops and does not return an AST).
@@ -7,7 +7,7 @@ use crate::extensions::WasmExtension;
 #[error(transparent)]
 pub struct ParseError(
     // Put behind a box to limit size of `Result::Err` variant to a single pointer.
-    Box<ParseIssue>
+    Box<ParseIssue>,
 );
 
 pub type ParseWarnings = Vec<ParseIssue>;
@@ -37,11 +37,11 @@ pub enum ParseIssue {
     #[error("unsupported WebAssembly extension at offset 0x{:x}: {} (see also {})", offset, extension.name(), extension.url())]
     Unsupported {
         offset: usize,
-        extension: WasmExtension
+        extension: WasmExtension,
     },
 
     #[error(transparent)]
-    Io(#[from] std::io::Error)
+    Io(#[from] std::io::Error),
 }
 
 // Convenience constructors/methods.
@@ -81,20 +81,20 @@ impl ParseError {
 
 // Allow conversion of everything that can be converted into a `ParseIssue`
 // also into the `ParseError` wrapper directly.
-impl<T> From<T> for ParseError 
-where T : Into<ParseIssue>
+impl<T> From<T> for ParseError
+where
+    T: Into<ParseIssue>,
 {
     fn from(err: T) -> Self {
         ParseError(Box::new(err.into()))
     }
 }
 
-
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub struct EncodeError(
     // Put the actual error behind a box, to keep the size down to a single pointer.
-    Box<EncodeErrorInner>
+    Box<EncodeErrorInner>,
 );
 
 #[derive(Debug, thiserror::Error)]
@@ -109,7 +109,7 @@ pub enum EncodeErrorInner {
     },
 
     #[error(transparent)]
-    Io(#[from] std::io::Error)
+    Io(#[from] std::io::Error),
 }
 
 impl EncodeError {
@@ -118,14 +118,18 @@ impl EncodeError {
     }
 
     pub fn index<T>(index: crate::Idx<T>, index_space: &'static str) -> Self {
-        EncodeError(Box::new(EncodeErrorInner::Index { index: index.to_u32(), index_space }))
+        EncodeError(Box::new(EncodeErrorInner::Index {
+            index: index.to_u32(),
+            index_space,
+        }))
     }
 }
 
 // Allow conversion of everything that can be converted into a `EncodeErrorInner`
 // also into the `EncodeError` wrapper directly.
-impl<T> From<T> for EncodeError 
-where T : Into<EncodeErrorInner>
+impl<T> From<T> for EncodeError
+where
+    T: Into<EncodeErrorInner>,
 {
     fn from(err: T) -> Self {
         EncodeError(Box::new(err.into()))

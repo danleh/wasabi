@@ -1,7 +1,16 @@
 use std::collections::HashMap;
 
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
-use wasabi_wasm::{Idx, ValType, ValType::*, Function, Instr, Instr::*, Module, MemoryOp, FunctionType};
+use parking_lot::RwLock;
+use parking_lot::RwLockUpgradableReadGuard;
+use wasabi_wasm::Function;
+use wasabi_wasm::FunctionType;
+use wasabi_wasm::Idx;
+use wasabi_wasm::Instr;
+use wasabi_wasm::Instr::*;
+use wasabi_wasm::MemoryOp;
+use wasabi_wasm::Module;
+use wasabi_wasm::ValType;
+use wasabi_wasm::ValType::*;
 
 use super::block_stack::BlockStackElement;
 use super::convert_i64::convert_i64_type;
@@ -88,7 +97,7 @@ impl Hook {
                 FunctionType::new(&lowlevel_args, &[]),
                 "__wasabi_hooks".to_string(),
                 lowlevel_name,
-                Vec::new()
+                Vec::new(),
             )
         };
 

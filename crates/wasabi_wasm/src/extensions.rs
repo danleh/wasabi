@@ -1,4 +1,3 @@
-
 /// See https://webassembly.org/roadmap/ and https://github.com/WebAssembly/proposals.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum WasmExtension {

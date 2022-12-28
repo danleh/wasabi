@@ -6,12 +6,15 @@
 //! - Should be cheap to compare for equality, just a single `u32` comparison.
 //! - Should be cheap to copy, ideally just a memcpy (Rust: Copy trait)
 //! - Should be cheap to create, which is espaclly common in parsing and type checking.
-//! 
+//!
 //! The first solution was to use some form of interning (a global arena for all function types).
 //! The problem was that creating lots of function types was slow, because it had to create the
 //! non-interned version first before comparing.
 
-use std::{sync::RwLock, cmp::Ordering, fmt, str::FromStr};
+use std::cmp::Ordering;
+use std::fmt;
+use std::str::FromStr;
+use std::sync::RwLock;
 
 use once_cell::sync::Lazy;
 use rustc_hash::FxHashMap;
@@ -25,7 +28,7 @@ pub enum FunctionType {
         // because this way, we can reuse the same lookup table for both, which
         // gets massively smaller than a single table with 2^16 entries.
         inputs: u16,
-        results: u8
+        results: u8,
     },
     ArenaAllocated {
         // TODO Once the niche optimizations are improved in later versions of the Rust language
@@ -33,8 +36,8 @@ pub enum FunctionType {
         // it a bit easier/idiomatic to work with.
         // But even with 3 bytes (2^24 = 16.7 million possible ids), it should be more then enough
         // space for a realistic amount of unique function types.
-        id: [u8; 3]
-    }
+        id: [u8; 3],
+    },
 }
 
 #[test]
@@ -80,25 +83,21 @@ impl FunctionType {
 
     pub fn inputs(&self) -> &'static [ValType] {
         match self {
-            FunctionType::GoedelNumber { inputs, results: _ } => {
-                LOOKUP_TABLE[*inputs as usize]
-            },
+            FunctionType::GoedelNumber { inputs, results: _ } => LOOKUP_TABLE[*inputs as usize],
             FunctionType::ArenaAllocated { id } => {
                 let id = array_to_usize(*id);
                 ARENA.get(id).0
-            },
+            }
         }
     }
 
     pub fn results(&self) -> &'static [ValType] {
         match self {
-            FunctionType::GoedelNumber { inputs: _, results } => {
-                LOOKUP_TABLE[*results as usize]
-            },
+            FunctionType::GoedelNumber { inputs: _, results } => LOOKUP_TABLE[*results as usize],
             FunctionType::ArenaAllocated { id } => {
                 let id = array_to_usize(*id);
                 ARENA.get(id).1
-            },
+            }
         }
     }
 }
@@ -197,7 +196,7 @@ const fn goedel_number_to_val_type(goedel_number: usize) -> Option<ValType> {
         1 => Some(ValType::I64),
         2 => Some(ValType::F32),
         3 => Some(ValType::F64),
-        _ => None
+        _ => None,
     }
 }
 
@@ -207,8 +206,8 @@ const VAL_TYPE_MAX_GOEDEL_NUMBER: usize = 3;
 #[allow(unused)]
 const fn val_type_seq_max_goedel_number(max_seq_len: u32) -> usize {
     // This is a geometric series, e.g., for 6 possible values it is:
-    // 1 (for the empty sequence) 
-    // + 6 (for the sequence with one element) 
+    // 1 (for the empty sequence)
+    // + 6 (for the sequence with one element)
     // + 36 ...
     // = (1 - 6^(max_seq_len+1)) / (1 - 6)
     let goedel_number_count = ((VAL_TYPE_MAX_GOEDEL_NUMBER + 1).pow(max_seq_len + 1) - 1) / VAL_TYPE_MAX_GOEDEL_NUMBER;

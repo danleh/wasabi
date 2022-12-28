@@ -1,4 +1,8 @@
-use wasabi_wasm::{Idx, Function, Instr, Local, LocalOp::*};
+use wasabi_wasm::Function;
+use wasabi_wasm::Idx;
+use wasabi_wasm::Instr;
+use wasabi_wasm::Local;
+use wasabi_wasm::LocalOp::*;
 
 /*
  * Helper functions for duplicating stack values

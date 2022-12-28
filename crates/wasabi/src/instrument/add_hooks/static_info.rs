@@ -1,7 +1,15 @@
-use serde::{Serialize, Serializer};
-use wasabi_wasm::{Idx, Label, ValType, Function, Instr, Module, FunctionType};
+use serde::Serialize;
+use serde::Serializer;
+use wasabi_wasm::Function;
+use wasabi_wasm::FunctionType;
+use wasabi_wasm::Idx;
+use wasabi_wasm::Instr;
+use wasabi_wasm::Label;
+use wasabi_wasm::Module;
+use wasabi_wasm::ValType;
 
-use super::block_stack::{BlockStack, BlockStackElement};
+use super::block_stack::BlockStack;
+use super::block_stack::BlockStackElement;
 
 /*
  * Structs for static information that is generated during instrumentation and output as JSON
@@ -17,7 +25,7 @@ pub struct ModuleInfo {
     pub start: Option<Idx<Function>>,
     pub table_export_name: Option<String>,
     pub br_tables: Vec<BrTableInfo>,
-    // For mapping indices of indirectly called functions to the original indices, see 
+    // For mapping indices of indirectly called functions to the original indices, see
     // `resolveTableIdx` in `runtime.js`.
     pub original_function_imports_count: usize,
 }
@@ -34,7 +42,11 @@ impl<'a> From<&'a Module> for ModuleInfo {
                 .get(0)
                 .and_then(|table| table.export.get(0).cloned()),
             br_tables: vec![],
-            original_function_imports_count: module.functions.iter().filter_map(Function::import).count(),
+            original_function_imports_count: module
+                .functions
+                .iter()
+                .filter_map(Function::import)
+                .count(),
         }
     }
 }
@@ -58,7 +70,9 @@ impl<'a> From<&'a Function> for FunctionInfo {
     fn from(function: &Function) -> FunctionInfo {
         FunctionInfo {
             type_: function.type_,
-            import: function.import().map(|(module, name)| (module.to_string(), name.to_string())),
+            import: function
+                .import()
+                .map(|(module, name)| (module.to_string(), name.to_string())),
             export: function.export.clone(),
             locals: function
                 .code()
@@ -72,8 +86,8 @@ impl<'a> From<&'a Function> for FunctionInfo {
 }
 
 fn serialize_function_type<S>(ty: &FunctionType, s: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
+where
+    S: Serializer,
 {
     let mut type_str = String::new();
     for ty in ty.inputs().iter() {
@@ -87,8 +101,8 @@ fn serialize_function_type<S>(ty: &FunctionType, s: S) -> Result<S::Ok, S::Error
 }
 
 fn serialize_types<S>(tys: &[ValType], s: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
+where
+    S: Serializer,
 {
     let mut type_str = String::new();
     for ty in tys {
@@ -144,8 +158,8 @@ pub struct Location(pub Idx<Function>, pub Idx<Instr>);
 // space optimization when serializing: save block stack elements as tuples, not objects with properties
 impl Serialize for BlockStackElement {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
+    where
+        S: Serializer,
     {
         use self::BlockStackElement::*;
         match self {

@@ -1,4 +1,11 @@
-use wasabi_wasm::{Mutability, Val, ValType::*, Module, FunctionType, GlobalOp::*, Instr::*, BinaryOp::*};
+use wasabi_wasm::BinaryOp::*;
+use wasabi_wasm::FunctionType;
+use wasabi_wasm::GlobalOp::*;
+use wasabi_wasm::Instr::*;
+use wasabi_wasm::Module;
+use wasabi_wasm::Mutability;
+use wasabi_wasm::Val;
+use wasabi_wasm::ValType::*;
 
 /* Direct or "low-level" instrumentations, i.e., where the byte code is manually modified. */
 

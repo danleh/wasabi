@@ -1,4 +1,13 @@
-use wasabi_wasm::{Val, ValType, ValType::I32, ValType::I64, Instr, Instr::Const, Instr::Unary, UnaryOp::I32WrapI64, Instr::Binary, BinaryOp::I64ShrS};
+use wasabi_wasm::BinaryOp::I64ShrS;
+use wasabi_wasm::Instr;
+use wasabi_wasm::Instr::Binary;
+use wasabi_wasm::Instr::Const;
+use wasabi_wasm::Instr::Unary;
+use wasabi_wasm::UnaryOp::I32WrapI64;
+use wasabi_wasm::Val;
+use wasabi_wasm::ValType;
+use wasabi_wasm::ValType::I32;
+use wasabi_wasm::ValType::I64;
 
 /*
  * Helper functions for turning i64's into two i32's so that we can pass them to JavaScript

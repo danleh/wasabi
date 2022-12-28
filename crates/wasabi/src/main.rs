@@ -1,11 +1,13 @@
-use std::{fs, io};
+use std::fs;
+use std::io;
 
 use main_error::MainError;
 use structopt::StructOpt;
 use wasabi_wasm::Module;
 
 use wasabi::instrument::add_hooks;
-use wasabi::options::{HookSet, Options};
+use wasabi::options::HookSet;
+use wasabi::options::Options;
 
 // TODO use failure crate and failure::Error type for error handling or use custom error trait
 // TODO remove most, if not all unwrap() and panic!()

@@ -10,15 +10,20 @@
 //!    functions, and locals).
 
 use core::fmt;
-use std::{str::FromStr, marker::PhantomData, hash, path::Path};
+use std::hash;
+use std::marker::PhantomData;
+use std::path::Path;
+use std::str::FromStr;
 
 use ordered_float::OrderedFloat;
 use serde::Serialize;
 
 pub use crate::function_type::FunctionType;
 
-use crate::{ParseError, ParseWarnings, EncodeError, extensions::WasmExtension};
-
+use crate::extensions::WasmExtension;
+use crate::EncodeError;
+use crate::ParseError;
+use crate::ParseWarnings;
 
 /* Values and types. */
 
@@ -68,7 +73,6 @@ impl fmt::Display for Val {
     }
 }
 
-
 /// A WebAssembly value type, e.g., `i32` or `f64`.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -95,7 +99,7 @@ impl ValType {
         }
     }
 
-    /// Convert to the standard string representation, as in the WebAssembly 
+    /// Convert to the standard string representation, as in the WebAssembly
     /// specification and text format.
     pub fn to_str(self) -> &'static str {
         match self {
@@ -107,7 +111,7 @@ impl ValType {
     }
 
     /// Convert to a single character, e.g., as used by Emscripten.
-    /// Lowercase is for 32 bit, uppercase is for 64 bit; 
+    /// Lowercase is for 32 bit, uppercase is for 64 bit;
     /// `i` for integers, `f` for floats.
     pub fn to_char(self) -> char {
         match self {
@@ -141,15 +145,14 @@ impl FromStr for ValType {
 
     fn from_str(str: &str) -> Result<Self, Self::Err> {
         Ok(match str.trim() {
-            "i32" => ValType::I32, 
-            "i64" => ValType::I64, 
-            "f32" => ValType::F32, 
-            "f64" => ValType::F64, 
-            _ => return Err(())
+            "i32" => ValType::I32,
+            "i64" => ValType::I64,
+            "f32" => ValType::F32,
+            "f64" => ValType::F64,
+            _ => return Err(()),
         })
     }
 }
-
 
 /// Limits for tables and memories.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -157,7 +160,6 @@ pub struct Limits {
     pub initial_size: u32,
     pub max_size: Option<u32>,
 }
-
 
 /// Type of global (scalar) variables.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -179,20 +181,23 @@ pub enum Mutability {
     Mut,
 }
 
-
 /* Indices and block labels. */
 
 /// A WebAssembly index into one of the possible "index spaces" (e.g., functions, globals, etc.)
-/// 
-/// The type parameter T is only used for static distinction between the different index spaces, 
+///
+/// The type parameter T is only used for static distinction between the different index spaces,
 /// but has no representation at runtime.
 /// Since we don't own T, we don't want a "drop check" and must use fn() -> T, as is
 /// recommended in the rustonomicon: https://doc.rust-lang.org/beta/nomicon/phantom-data.html
 pub struct Idx<T>(u32, PhantomData<fn() -> T>);
 
 impl<T> Idx<T> {
-    pub fn to_u32(self) -> u32 { self.0 }
-    pub fn to_usize(self) -> usize { self.0 as usize }
+    pub fn to_u32(self) -> u32 {
+        self.0
+    }
+    pub fn to_usize(self) -> usize {
+        self.0 as usize
+    }
 }
 
 impl<T> From<u32> for Idx<T> {
@@ -223,7 +228,9 @@ impl<T> fmt::Debug for Idx<T> {
 // parameter, which we don't want. (T is only a marker and not actually contained in Idx<T>.)
 impl<T> Clone for Idx<T> {
     #[inline]
-    fn clone(&self) -> Self { self.to_usize().into() }
+    fn clone(&self) -> Self {
+        self.to_usize().into()
+    }
 }
 
 impl<T> Copy for Idx<T> {}
@@ -268,8 +275,12 @@ impl<T> Serialize for Idx<T> {
 pub struct Label(u32);
 
 impl Label {
-    pub fn to_u32(self) -> u32 { self.0 }
-    pub fn to_usize(self) -> usize { self.0 as usize }
+    pub fn to_u32(self) -> u32 {
+        self.0
+    }
+    pub fn to_usize(self) -> usize {
+        self.0 as usize
+    }
 }
 
 impl From<u32> for Label {
@@ -292,7 +303,6 @@ impl Serialize for Label {
         self.0.serialize(serializer)
     }
 }
-
 
 /* Overall module structure, sections. */
 
@@ -364,7 +374,6 @@ impl Module {
         std::fs::write(path, bytes)?;
         Ok(len)
     }
-
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash)]
@@ -483,7 +492,6 @@ pub struct Data {
     pub bytes: Vec<u8>,
 }
 
-
 /// Metainformation how low-level sections and function bodies map to byte offsets in the binary.
 // TODO Attach either directly to functions/sections or to the module (but rather the former, otherwise it can get easily lost).
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -498,7 +506,8 @@ pub struct Offsets {
 impl Offsets {
     /// Returns the offsets for all sections with the given id.
     pub fn section_offsets(&self, section: SectionId) -> Vec<usize> {
-        self.sections.iter()
+        self.sections
+            .iter()
             .cloned()
             .filter_map(|(sec, offset)|
                 if sec == section { Some(offset) } else { None })
@@ -507,7 +516,8 @@ impl Offsets {
 
     /// Returns the (original) function index with the  given offset of its code (if any).
     pub fn function_offset_to_idx(&self, code_offset: usize) -> Option<Idx<Function>> {
-        self.functions_code.iter()
+        self.functions_code
+            .iter()
             .cloned()
             .find_map(|(func, offset)|
                 if offset == code_offset { Some(func) } else { None })
@@ -515,7 +525,8 @@ impl Offsets {
 
     /// Returns the code offset of the (original) function with the given index (if any).
     pub fn function_idx_to_offset(&self, idx: Idx<Function>) -> Option<usize> {
-        self.functions_code.iter()
+        self.functions_code
+            .iter()
             .cloned()
             .find_map(|(func, offset)|
                 if func == idx { Some(offset) } else { None })
@@ -527,13 +538,13 @@ impl Offsets {
 pub struct RawCustomSection {
     pub name: String,
     pub content: Vec<u8>,
-    /// The section that came _before_ this custom section, 
+    /// The section that came _before_ this custom section,
     /// `None` if this was the first section in the binary.
     /// Used during serialization to place the custom section at the right order/position.
     pub previous_section: Option<SectionId>,
 }
 
-/// Marker for the different sections in a wasm module, 
+/// Marker for the different sections in a wasm module,
 /// used for ordering (custom) sections during serialization.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum SectionId {
@@ -553,7 +564,6 @@ pub enum SectionId {
     Data,
     Custom(String),
 }
-
 
 /* Code. */
 
@@ -586,7 +596,7 @@ impl Memarg {
     pub fn default(op: impl MemoryOp) -> Self {
         Self {
             offset: 0,
-            alignment_exp: op.natural_alignment_exp()
+            alignment_exp: op.natural_alignment_exp(),
         }
     }
 
@@ -600,7 +610,8 @@ impl Memarg {
 
     /// Formats non-default fields, depends on natural alignment of `op`.
     pub fn fmt(&self, f: &mut fmt::Formatter<'_>, op: impl MemoryOp) -> fmt::Result {
-        match (self.offset, self.alignment_exp == op.natural_alignment_exp()) {
+        let is_natural_alignment = self.alignment_exp == op.natural_alignment_exp();
+        match (self.offset, is_natural_alignment) {
             (0, true) => Ok(()),
             (0, false) => write!(f, "align={}", self.alignment()),
             (_, true) => write!(f, "offset={}", self.offset),
@@ -615,26 +626,26 @@ impl Memarg {
         let mut result = Memarg::default(op);
 
         for field in s.split(' ') {
-            // FIXME Allows for the fields to appear multiple times.
+            // FIXME: Allows for the fields to appear multiple times.
 
             let field = field.trim();
             if field.is_empty() {
                 continue;
             }
-            
+
             // Wasm text format does not allow a space around the equals sign,
             // so we can directly match against offset= as a single "token".
             if let Some(rest) = field.strip_prefix("offset=") {
                 result.offset = rest.parse().map_err(|_| ())?;
             } else if let Some(rest) = field.strip_prefix("align=") {
                 let align: usize = rest.parse().map_err(|_| ())?;
-                // FIXME Doesn't check that align_exp is in range for u8.
-                // TODO Use usize::log2() once stabilized and TryInto.
+                // FIXME: Doesn't check that align_exp is in range for u8.
+                // TODO: Use usize::log2() once stabilized and TryInto.
                 let align_exp = (align as f64).log2() as u8;
                 result.alignment_exp = align_exp
             } else {
                 // Invalid Memarg field.
-                return Err(())
+                return Err(());
             }
         }
 
@@ -646,10 +657,10 @@ impl Memarg {
 fn instr_size() {
     assert_eq!(std::mem::size_of::<LocalOp>(), 1);
     assert_eq!(std::mem::size_of::<GlobalOp>(), 1);
-    
+
     assert_eq!(std::mem::size_of::<LoadOp>(), 1);
     assert_eq!(std::mem::size_of::<StoreOp>(), 1);
-    
+
     assert_eq!(std::mem::size_of::<UnaryOp>(), 1);
     assert_eq!(std::mem::size_of::<BinaryOp>(), 1);
 
@@ -659,7 +670,7 @@ fn instr_size() {
     assert_eq!(std::mem::size_of::<Label>(), 4);
 
     assert_eq!(std::mem::size_of::<Memarg>(), 8);
-    
+
     // FIXME These are fucking huge...
     assert_eq!(std::mem::size_of::<Val>(), 16);
     assert_eq!(std::mem::size_of::</* BrTable */ (Vec<Label>, Label)>(), 32);
@@ -668,15 +679,15 @@ fn instr_size() {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Instr {
-    // TODO See below on `Block` for a plan on how to get rid of unreachable code.
+    // TODO: See below on `Block` for a plan on how to get rid of unreachable code.
     Unreachable,
-    // TODO Remove, can be replaced by `Instr::Block(FunctionType::empty)`.
+    // TODO: Remove, can be replaced by `Instr::Block(FunctionType::empty)`.
     Nop,
 
-    // TODO Make highlevel::Instr nesting, i.e., Block(FunctionType, Vec<Instr>)
+    // TODO: Make highlevel::Instr nesting, i.e., Block(FunctionType, Vec<Instr>)
     // see, e.g., the reference interpreter: https://github.com/WebAssembly/spec/blob/master/interpreter/valid/valid.ml
     // This would get rid of else and end.
-    // TODO One could also remove dead code by construction, by having optional
+    // TODO: One could also remove dead code by construction, by having optional
     // terminator instructions, which move control-flow unconditionally somewhere else:
     // Unreachable, Br, BrTable, Return.
     // We would get:
@@ -693,24 +704,24 @@ pub enum Instr {
     End,
 
     Br(Label),
-    // TODO Replace with If(FunctionType, Body([], Some(Br(Label))), None)?
+    // TODO: Replace with If(FunctionType, Body([], Some(Br(Label))), None)?
     BrIf(Label),
     BrTable { table: Vec<Label>, default: Label },
 
-    // TODO Replace with Br(toplevel)
+    // TODO: Replace with Br(toplevel)
     Return,
     Call(Idx<Function>),
-    // TODO remove Idx<Table>, always 0 in MVP.
+    // TODO: remove Idx<Table>, always 0 in MVP.
     CallIndirect(FunctionType, Idx<Table>),
 
-    // TODO Include the type explicitly in the instruction to remove 
+    // TODO: Include the type explicitly in the instruction to remove
     // value-polymorphism.
     // However, this would require type checking during lowlevel parsing :(
     Drop,
-    // TODO Replace with `If([ty, ty] -> [ty], ...)
+    // TODO: Replace with `If([ty, ty] -> [ty], ...)
     Select,
 
-    // TODO Get rid of all locals by using block params and results only + a pick or copy
+    // TODO: Get rid of all locals by using block params and results only + a pick or copy
     // instruction, that copies the nth value on the stack to the top.
     // Benefit: fully in SSA form, decoalesced locals, liveness information explicit.
     Local(LocalOp, Idx<Local>),
@@ -719,7 +730,7 @@ pub enum Instr {
     Load(LoadOp, Memarg),
     Store(StoreOp, Memarg),
 
-    // TODO remove Idx<Memory>, always 0 in MVP.
+    // TODO: remove Idx<Memory>, always 0 in MVP.
     MemorySize(Idx<Memory>),
     MemoryGrow(Idx<Memory>),
 
@@ -729,7 +740,11 @@ pub enum Instr {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum LocalOp { Get, Set, Tee }
+pub enum LocalOp {
+    Get,
+    Set,
+    Tee,
+}
 
 impl LocalOp {
     pub fn to_type(self, local_ty: ValType) -> FunctionType {
@@ -742,7 +757,10 @@ impl LocalOp {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum GlobalOp { Get, Set }
+pub enum GlobalOp {
+    Get,
+    Set,
+}
 
 impl GlobalOp {
     pub fn to_type(self, global_ty: ValType) -> FunctionType {
@@ -789,7 +807,7 @@ pub enum StoreOp {
 }
 
 /// Common trait for `LoadOp` and `StoreOp`.
-pub trait MemoryOp : Sized + Copy {
+pub trait MemoryOp: Sized + Copy {
     fn to_name(self) -> &'static str;
     fn to_type(self) -> FunctionType;
 
@@ -875,7 +893,7 @@ impl MemoryOp for StoreOp {
             I64Store => "i64.store",
             F32Store => "f32.store",
             F64Store => "f64.store",
-            
+
             I32Store8 => "i32.store8",
             I32Store16 => "i32.store16",
             I64Store8 => "i64.store8",
@@ -949,8 +967,8 @@ impl FromStr for LoadOp {
             "i64.load16_s" => I64Load16S,
             "i64.load16_u" => I64Load16U,
             "i64.load32_s" => I64Load32S,
-            "i64.load32_u" => I64Load32U,            
-            _ => return Err(())
+            "i64.load32_u" => I64Load32U,
+            _ => return Err(()),
         })
     }
 }
@@ -970,7 +988,7 @@ impl FromStr for StoreOp {
             "i64.store8" => I64Store8,
             "i64.store16" => I64Store16,
             "i64.store32" => I64Store32,
-            _ => return Err(())
+            _ => return Err(()),
         })
     }
 }
@@ -1275,7 +1293,7 @@ impl FromStr for UnaryOp {
             "i64.reinterpret_f64" => I64ReinterpretF64,
             "f32.reinterpret_i32" => F32ReinterpretI32,
             "f64.reinterpret_i64" => F64ReinterpretI64,
-            _ => return Err(())
+            _ => return Err(()),
         })
     }
 }
@@ -1463,7 +1481,7 @@ impl FromStr for BinaryOp {
             "f64.min" => F64Min,
             "f64.max" => F64Max,
             "f64.copysign" => F64Copysign,
-            _ => return Err(())
+            _ => return Err(()),
         })
     }
 }
@@ -1477,21 +1495,21 @@ impl Instr {
         match *self {
             Unreachable => "unreachable",
             Nop => "nop",
-            
+
             Block(_) => "block",
             Loop(_) => "loop",
             If(_) => "if",
             Else => "else",
             End => "end",
-            
+
             Br(_) => "br",
             BrIf(_) => "br_if",
             BrTable { .. } => "br_table",
-            
+
             Return => "return",
             Call(_) => "call",
             CallIndirect(_, _) => "call_indirect",
-            
+
             Drop => "drop",
             Select => "select",
 
@@ -1532,7 +1550,10 @@ impl Instr {
             Const(ref val) => Some(FunctionType::new(&[], &[val.to_type()])),
             Unary(ref op) => Some(op.to_type()),
             Binary(ref op) => Some(op.to_type()),
-            CallIndirect(ref func_ty, _) => Some(FunctionType::new(&[func_ty.inputs(), &[I32]].concat(), func_ty.results())),
+            CallIndirect(ref func_ty, _) => Some(FunctionType::new(
+                &[func_ty.inputs(), &[I32]].concat(),
+                func_ty.results(),
+            )),
 
             // Difficult because of nesting and block types.
             Block(_) | Loop(_) | If(_) | Else | End => None,
@@ -1558,7 +1579,7 @@ impl FromStr for Instr {
         use Instr::*;
 
         fn parse_idx<T>(str: &str) -> Result<Idx<T>, ()> {
-            let int: usize = str.parse().map_err(|_| ())?; 
+            let int: usize = str.parse().map_err(|_| ())?;
             Ok(int.into())
         }
         fn parse_label(str: &str) -> Result<Label, ()> {
@@ -1577,21 +1598,25 @@ impl FromStr for Instr {
 
             "else" => Else,
             "end" => End,
-            
+
             "br" => Br(parse_label(rest)?),
             "br_if" => BrIf(parse_label(rest)?),
             "br_table" => {
-                let mut labels = rest.split_whitespace()
+                let mut labels = rest
+                    .split_whitespace()
                     .map(parse_label)
                     .collect::<Result<Vec<_>, _>>()?;
                 // The last label is the default label (which must be present).
                 let default = labels.pop().ok_or(())?;
-                BrTable { table: labels, default }
+                BrTable {
+                    table: labels,
+                    default,
+                }
             }
-            
+
             "return" => Return,
             "call" => {
-                let func_idx = parse_idx(rest)?; 
+                let func_idx = parse_idx(rest)?;
                 Call(func_idx)
             }
             "call_indirect" => {
@@ -1600,17 +1625,17 @@ impl FromStr for Instr {
                 // table index was not printed. Instead assume 0.
                 let table_idx = Idx::from(0u32);
                 CallIndirect(ty, table_idx)
-            },
-            
+            }
+
             "drop" => Drop,
             "select" => Select,
-            
+
             "local.get" => Local(LocalOp::Get, parse_idx(rest)?),
             "local.set" => Local(LocalOp::Set, parse_idx(rest)?),
             "local.tee" => Local(LocalOp::Tee, parse_idx(rest)?),
             "global.get" => Global(GlobalOp::Get, parse_idx(rest)?),
             "global.set" => Global(GlobalOp::Set, parse_idx(rest)?),
-            
+
             // For the WebAssembly MVP there is only a single memory, so the
             // memory index was not printed. Instead assume 0.
             "memory.size" => MemorySize(Idx::from(0u32)),
@@ -1620,16 +1645,16 @@ impl FromStr for Instr {
             "i64.const" => Const(Val::from_str(rest, ValType::I64)?),
             "f32.const" => Const(Val::from_str(rest, ValType::F32)?),
             "f64.const" => Const(Val::from_str(rest, ValType::F64)?),
-            
+
             op if LoadOp::from_str(op).is_ok() => {
                 let op = LoadOp::from_str(op).unwrap();
                 Load(op, Memarg::from_str(rest, op)?)
-            },
+            }
             op if StoreOp::from_str(op).is_ok() => {
                 let op = StoreOp::from_str(op).unwrap();
                 Store(op, Memarg::from_str(rest, op)?)
-            },
-            
+            }
+
             op if UnaryOp::from_str(op).is_ok() => UnaryOp::from_str(op).map(Unary)?,
             op if BinaryOp::from_str(op).is_ok() => BinaryOp::from_str(op).map(Binary)?,
 
@@ -1647,10 +1672,8 @@ impl fmt::Display for Instr {
         use self::Instr::*;
         match self {
             // instructions without arguments
-            Unreachable | Nop | Drop | Select | Return
-            | Else | End
-            | MemorySize(_) | MemoryGrow(_)
-            | Unary(_) | Binary(_) => Ok(()),
+            Unreachable | Nop | Drop | Select | Return | Else | End | MemorySize(_)
+            | MemoryGrow(_) | Unary(_) | Binary(_) => Ok(()),
 
             Block(ty) | Loop(ty) | If(ty) => write!(f, " {ty}"),
 
@@ -1676,15 +1699,15 @@ impl fmt::Display for Instr {
                     f.write_str(" ")?;
                 }
                 memarg.fmt(f, *op)
-            },
+            }
             Store(op, memarg) => {
                 if !memarg.is_default(*op) {
                     f.write_str(" ")?;
                 }
                 memarg.fmt(f, *op)
-            },
+            }
 
-            Const(val) => write!(f, " {val}")
+            Const(val) => write!(f, " {val}"),
         }
     }
 }
@@ -1692,31 +1715,35 @@ impl fmt::Display for Instr {
 /* Impls/functions for typical use cases on WASM modules. */
 
 impl Module {
-
     // Convenient iterators over functions, globals, tables, and memories that include the (typed,
     // high-level) index as well.
     // TODO Add _mut variants for globals, tables, and memories, if needed.
 
-    pub fn functions(&self) -> impl Iterator<Item=(Idx<Function>, &Function)> {
-        self.functions.iter().enumerate().map(|(i, f)| (i.into(), f))
+    pub fn functions(&self) -> impl Iterator<Item = (Idx<Function>, &Function)> {
+        self.functions
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (i.into(), f))
     }
 
-    pub fn functions_mut(&mut self) -> impl Iterator<Item=(Idx<Function>, &mut Function)> {
-        self.functions.iter_mut().enumerate().map(|(i, f)| (i.into(), f))
+    pub fn functions_mut(&mut self) -> impl Iterator<Item = (Idx<Function>, &mut Function)> {
+        self.functions
+            .iter_mut()
+            .enumerate()
+            .map(|(i, f)| (i.into(), f))
     }
 
-    pub fn globals(&self) -> impl Iterator<Item=(Idx<Global>, &Global)> {
+    pub fn globals(&self) -> impl Iterator<Item = (Idx<Global>, &Global)> {
         self.globals.iter().enumerate().map(|(i, g)| (i.into(), g))
     }
 
-    pub fn tables(&self) -> impl Iterator<Item=(Idx<Table>, &Table)> {
+    pub fn tables(&self) -> impl Iterator<Item = (Idx<Table>, &Table)> {
         self.tables.iter().enumerate().map(|(i, t)| (i.into(), t))
     }
 
-    pub fn memories(&self) -> impl Iterator<Item=(Idx<Memory>, &Memory)> {
+    pub fn memories(&self) -> impl Iterator<Item = (Idx<Memory>, &Memory)> {
         self.memories.iter().enumerate().map(|(i, m)| (i.into(), m))
     }
-
 
     // Convenient accessors of functions for the typed, high-level index.
     // TODO Add the same for globals, tables, and memories, if needed.
@@ -1737,29 +1764,40 @@ impl Module {
         &mut self.globals[idx.to_usize()]
     }
 
-
-    pub fn add_function(&mut self, type_: FunctionType, locals: Vec<ValType>, body: Vec<Instr>) -> Idx<Function> {
+    pub fn add_function(
+        &mut self,
+        type_: FunctionType,
+        locals: Vec<ValType>,
+        body: Vec<Instr>,
+    ) -> Idx<Function> {
         self.functions.push(Function::new(
             type_,
             Code {
                 locals: locals.into_iter().map(Local::new).collect(),
                 body,
             },
-            Vec::new()
+            Vec::new(),
         ));
         (self.functions.len() - 1).into()
     }
 
-    pub fn add_function_import(&mut self, type_: FunctionType, module: String, name: String) -> Idx<Function> {
-        self.functions.push(Function::new_imported(
-            type_,
-            module, name,
-            Vec::new()
-        ));
+    pub fn add_function_import(
+        &mut self,
+        type_: FunctionType,
+        module: String,
+        name: String,
+    ) -> Idx<Function> {
+        self.functions
+            .push(Function::new_imported(type_, module, name, Vec::new()));
         (self.functions.len() - 1).into()
     }
 
-    pub fn add_global(&mut self, type_: ValType, mut_: Mutability, init: Vec<Instr>) -> Idx<Global> {
+    pub fn add_global(
+        &mut self,
+        type_: ValType,
+        mut_: Mutability,
+        init: Vec<Instr>,
+    ) -> Idx<Global> {
         self.globals.push(Global {
             type_: GlobalType(type_, mut_),
             init: ImportOrPresent::Present(init),
@@ -1780,7 +1818,12 @@ impl Function {
         }
     }
 
-    pub fn new_imported(type_: FunctionType, import_module: String, import_name: String, export: Vec<String>) -> Self {
+    pub fn new_imported(
+        type_: FunctionType,
+        import_module: String,
+        import_name: String,
+        export: Vec<String>,
+    ) -> Self {
         Function {
             type_,
             code: ImportOrPresent::Import(import_module, import_name),
@@ -1847,7 +1890,8 @@ impl Function {
     /// add a new local with type ty and return its index
     pub fn add_fresh_local(&mut self, ty: ValType) -> Idx<Local> {
         let param_count = self.param_count();
-        let locals = &mut self.code_mut()
+        let locals = &mut self
+            .code_mut()
             .expect("cannot add local to imported function")
             .locals;
         let new_idx = param_count + locals.len();
@@ -1856,11 +1900,8 @@ impl Function {
     }
 
     pub fn add_fresh_locals(&mut self, tys: &[ValType]) -> Vec<Idx<Local>> {
-        tys.iter()
-            .map(|ty| self.add_fresh_local(*ty))
-            .collect()
+        tys.iter().map(|ty| self.add_fresh_local(*ty)).collect()
     }
-
 
     // Functions for the number of parameters and non-parameter locals.
 
@@ -1871,7 +1912,6 @@ impl Function {
     pub fn local_count(&self) -> usize {
         self.code().map(|code| code.locals.len()).unwrap_or(0)
     }
-
 
     // Accessors and iterators for parameters and locals uniformly.
 
@@ -1890,7 +1930,7 @@ impl Function {
     //         .1
     // }
 
-    pub fn param_or_locals(&self) -> impl Iterator<Item=(Idx<Local>, ParamOrLocalRef)> {
+    pub fn param_or_locals(&self) -> impl Iterator<Item = (Idx<Local>, ParamOrLocalRef)> {
         let params = self.params().map(|(i, p)| (i, ParamOrLocalRef::Param(p)));
         let locals = self.locals().map(|(i, l)| (i, ParamOrLocalRef::Local(l)));
         params.chain(locals)
@@ -1956,7 +1996,7 @@ impl Function {
     ///
     /// Since function parameters and locals share the same index space, the returned indices will
     /// start at N, if N is the number of function parameters.
-    pub fn locals(&self) -> impl Iterator<Item=(Idx<Local>, &Local)> {
+    pub fn locals(&self) -> impl Iterator<Item = (Idx<Local>, &Local)> {
         // The index of the non-parameter locals starts after the parameters.
         // This value needs to be moved (not borrowed) into the innermost closure, hence the two
         // nested move annotations on the closures below.
@@ -1970,7 +2010,7 @@ impl Function {
             )
     }
 
-    pub fn locals_mut(&mut self) -> impl Iterator<Item=(Idx<Local>, &mut Local)> {
+    pub fn locals_mut(&mut self) -> impl Iterator<Item = (Idx<Local>, &mut Local)> {
         // Only changed mutability compared with self.locals(), see comments there.
         let param_count = self.param_count();
         self.code_mut().into_iter()
@@ -1982,7 +2022,6 @@ impl Function {
             )
     }
 
-
     // Accessors for a specific parameter/local type/name.
 
     /// Return the type of the function parameter or non-parameter local with index idx.
@@ -1993,7 +2032,10 @@ impl Function {
         if idx < param_count {
             self.type_.inputs()[idx]
         } else {
-            self.code().expect("imported function cannot have locals").locals[idx - param_count].type_
+            self.code()
+                .expect("imported function cannot have locals")
+                .locals[idx - param_count]
+                .type_
         }
     }
 
@@ -2006,7 +2048,11 @@ impl Function {
         if idx < param_count {
             self.param_names.get(idx).and_then(|name| name.as_deref())
         } else {
-            self.code().expect("imported function cannot have locals").locals[idx - param_count].name.as_deref()
+            self.code()
+                .expect("imported function cannot have locals")
+                .locals[idx - param_count]
+                .name
+                .as_deref()
         }
     }
 
@@ -2021,7 +2067,11 @@ impl Function {
             self.param_names.resize(param_count, None);
             &mut self.param_names[idx]
         } else {
-            &mut self.code_mut().expect("imported function cannot have locals").locals[idx - param_count].name
+            &mut self
+                .code_mut()
+                .expect("imported function cannot have locals")
+                .locals[idx - param_count]
+                .name
         }
     }
 }
@@ -2034,7 +2084,10 @@ impl Local {
 
 impl Code {
     pub fn new() -> Self {
-        Code { locals: Vec::new(), body: Vec::new() }
+        Code {
+            locals: Vec::new(),
+            body: Vec::new(),
+        }
     }
 }
 
@@ -2062,17 +2115,17 @@ impl<'a> ParamOrLocalRef<'a> {
 
 impl Global {
     pub fn new(type_: GlobalType, init: Expr) -> Self {
-        Global { 
-            type_, 
-            init: ImportOrPresent::Present(init), 
-            export: Vec::new(), 
+        Global {
+            type_,
+            init: ImportOrPresent::Present(init),
+            export: Vec::new(),
         }
     }
 
     pub fn new_imported(type_: GlobalType, import_module: String, import_name: String) -> Self {
-        Global { 
-            type_, 
-            init: ImportOrPresent::Import(import_module, import_name), 
+        Global {
+            type_,
+            init: ImportOrPresent::Import(import_module, import_name),
             export: Vec::new(),
         }
     }
@@ -2105,16 +2158,18 @@ impl Table {
     }
 
     pub fn new_imported(limits: Limits, import_module: String, import_name: String) -> Table {
-        Table { 
-            limits, 
+        Table {
+            limits,
             import: Some((import_module, import_name)),
             elements: Vec::new(),
-            export: Vec::new()
+            export: Vec::new(),
         }
     }
 
     pub fn import(&self) -> Option<(&str, &str)> {
-        self.import.as_ref().map(|(module, name)| (module.as_str(), name.as_str()))
+        self.import
+            .as_ref()
+            .map(|(module, name)| (module.as_str(), name.as_str()))
     }
 }
 
@@ -2129,15 +2184,17 @@ impl Memory {
     }
 
     pub fn new_imported(limits: Limits, import_module: String, import_name: String) -> Memory {
-        Memory { 
-            limits, 
+        Memory {
+            limits,
             import: Some((import_module, import_name)),
-            data: Vec::new(), 
-            export: Vec::new()
+            data: Vec::new(),
+            export: Vec::new(),
         }
     }
 
     pub fn import(&self) -> Option<(&str, &str)> {
-        self.import.as_ref().map(|(module, name)| (module.as_str(), name.as_str()))
+        self.import
+            .as_ref()
+            .map(|(module, name)| (module.as_str(), name.as_str()))
     }
 }

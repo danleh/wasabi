@@ -1,13 +1,15 @@
 //! Code for encoding our AST back to the WebAssembly binary format.
 //! Uses `wasm-encoder` for the actual low-level work.
 
-use std::{sync::RwLock, convert::TryInto};
+use std::convert::TryInto;
+use std::sync::RwLock;
 
+use nohash_hasher::IntMap;
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
-use nohash_hasher::IntMap;
 
-use wasm_encoder::{self as we, Encode};
+use wasm_encoder as we;
+use wasm_encoder::Encode;
 
 use crate::*;
 
@@ -45,22 +47,32 @@ struct EncodeState {
 macro_rules! encode_state_idx_fns {
     ($insert_fn: ident, $map_fn: ident, $field: ident, $ty: ident, $index_space_str: expr) => {
         /// Add a new mapping from a high-level index to the low-level index in the binary.
-        /// 
+        ///
         /// Unlike for types, the high-level index must be new, otherwise the function panics.
         /// If you want to map an existing index, use `map_*_idx` instead.
         fn $insert_fn(&mut self, highlevel_idx: Idx<$ty>) -> Idx<marker::we::$ty> {
             let new_lowlevel_idx = Idx::from(self.$field.len());
-            let was_new = self.$field.insert(highlevel_idx, new_lowlevel_idx).is_none();
-            assert!(was_new, "high-level index {:?} was inserted twice", highlevel_idx);
+            let was_new = self
+                .$field
+                .insert(highlevel_idx, new_lowlevel_idx)
+                .is_none();
+            assert!(
+                was_new,
+                "high-level index {:?} was inserted twice",
+                highlevel_idx
+            );
             new_lowlevel_idx
         }
 
         fn $map_fn(&self, highlevel_idx: Idx<$ty>) -> Result<Idx<marker::we::$ty>, EncodeError> {
-            self.$field.get(&highlevel_idx).copied().ok_or_else(|| EncodeError::index(highlevel_idx, $index_space_str))
+            self.$field
+                .get(&highlevel_idx)
+                .copied()
+                .ok_or_else(|| EncodeError::index(highlevel_idx, $index_space_str))
         }
     };
 }
-    
+
 impl EncodeState {
     fn get_or_insert_type(&self, type_: FunctionType) -> Idx<marker::we::FunctionType> {
         let mut types_idx = self.types_idx.write().unwrap();
@@ -79,9 +91,9 @@ pub fn encode_module(module: &Module) -> Result<Vec<u8>, EncodeError> {
     let mut state = EncodeState::default();
 
     // Note that the order in which the high-level AST is traversed is not equal to the order
-    // in which low-level sections are written out to the binary. 
+    // in which low-level sections are written out to the binary.
     // Consider the type section: It must be the FIRST section of the low-level binary, but the
-    // set of all types in the module is only known once we have iterated over all functions, 
+    // set of all types in the module is only known once we have iterated over all functions,
     // globals, etc. during conversion to the low-level binary format.
     // Alternatively, one could iterate also twice over the high-level module. Once to collect
     // all types, then write the type section, and then once again to encode the rest of the
@@ -89,7 +101,7 @@ pub fn encode_module(module: &Module) -> Result<Vec<u8>, EncodeError> {
     // In principle, however, all sections must be fully resident in memory before one can write
     // them out anyway, because the section size in bytes is prepended to its contents.
 
-    // First, traverse all imported functions, globals, etc., such that they are at the 
+    // First, traverse all imported functions, globals, etc., such that they are at the
     // beginning of all index spaces.
     let import_section = encode_imports(module, &mut state);
 
@@ -99,7 +111,7 @@ pub fn encode_module(module: &Module) -> Result<Vec<u8>, EncodeError> {
     let (table_section, element_section) = encode_tables(module, &mut state)?;
     let (memory_section, data_section) = encode_memories(module, &mut state)?;
     let global_section = encode_globals(module, &mut state)?;
-    
+
     // The code section can also contain types we haven't seen so far (e.g., in `call_indirect`),
     // so it must be processed before encoding the type section.
     // However the functions, globals, tables, etc. referred to in instructions should all
@@ -153,7 +165,7 @@ pub fn encode_module(module: &Module) -> Result<Vec<u8>, EncodeError> {
     encode_and_insert_custom(&mut encoder, &mut state, module);
     if let Some(function_idx) = module.start {
         let start_section = we::StartSection {
-            function_index: state.map_function_idx(function_idx)?.to_u32()
+            function_index: state.map_function_idx(function_idx)?.to_u32(),
         };
         encoder.section(&start_section);
     }
@@ -195,9 +207,9 @@ fn encode_imports(module: &Module, state: &mut EncodeState) -> we::ImportSection
                 if let Some((module_name, name)) = elem.import() {
                     state.$state_insert_fn(hl_idx);
                     import_section.import(
-                        module_name, 
+                        module_name,
                         name,
-                        we::EntityType::$ll_import_type($hl_to_ll_closure(elem))
+                        we::EntityType::$ll_import_type($hl_to_ll_closure(elem)),
                     );
                 }
             }
@@ -212,7 +224,10 @@ fn encode_imports(module: &Module, state: &mut EncodeState) -> we::ImportSection
     import_section
 }
 
-fn encode_exports(module: &Module, state: &mut EncodeState) -> Result<we::ExportSection, EncodeError> {
+fn encode_exports(
+    module: &Module,
+    state: &mut EncodeState,
+) -> Result<we::ExportSection, EncodeError> {
     let mut export_section = we::ExportSection::new();
 
     macro_rules! add_exports {
@@ -222,11 +237,11 @@ fn encode_exports(module: &Module, state: &mut EncodeState) -> Result<we::Export
                     export_section.export(
                         name,
                         we::ExportKind::$export_kind,
-                        state.$map_idx_fn(hl_idx)?.to_u32()
+                        state.$map_idx_fn(hl_idx)?.to_u32(),
                     );
                 }
             }
-        }
+        };
     }
 
     add_exports!(functions, Func, map_function_idx);
@@ -240,20 +255,24 @@ fn encode_exports(module: &Module, state: &mut EncodeState) -> Result<we::Export
 /// Encode the types in the order in that we gave indices to them.
 fn encode_types(state: &EncodeState) -> we::TypeSection {
     let mut type_section = we::TypeSection::new();
-    
+
     let types_idx = state.types_idx.read().unwrap();
 
-    let mut types_ordered: Vec<(&FunctionType, Idx<marker::we::FunctionType>)> = types_idx.iter().map(|(t, i)| (t, *i)).collect();
+    let mut types_ordered: Vec<(&FunctionType, Idx<marker::we::FunctionType>)> =
+        types_idx.iter().map(|(t, i)| (t, *i)).collect();
     types_ordered.sort_unstable_by_key(|&(_, idx)| idx);
     assert_eq!(
         types_idx.len(),
-        types_ordered.last().map(|(_, idx)| idx.to_usize() + 1).unwrap_or(0),
+        types_ordered
+            .last()
+            .map(|(_, idx)| idx.to_usize() + 1)
+            .unwrap_or(0),
         "type index space should not have any holes, mapping: {types_idx:?}"
     );
     for (type_, _) in types_ordered {
         type_section.function(
             type_.inputs().iter().copied().map(we::ValType::from),
-            type_.results().iter().copied().map(we::ValType::from)
+            type_.results().iter().copied().map(we::ValType::from),
         );
     }
     type_section
@@ -274,7 +293,10 @@ fn encode_functions(module: &Module, state: &mut EncodeState) -> we::FunctionSec
     function_section
 }
 
-fn encode_tables(module: &Module, state: &mut EncodeState) -> Result<(we::TableSection, we::ElementSection), EncodeError> {
+fn encode_tables(
+    module: &Module,
+    state: &mut EncodeState,
+) -> Result<(we::TableSection, we::ElementSection), EncodeError> {
     let mut table_section = we::TableSection::new();
     let mut element_section = we::ElementSection::new();
 
@@ -295,7 +317,9 @@ fn encode_tables(module: &Module, state: &mut EncodeState) -> Result<(we::TableS
                 Some(ll_table_idx.to_u32())
             };
             let ll_offset = encode_single_instruction_with_end(&hl_element.offset, state)?;
-            let ll_elements = hl_element.functions.iter()
+            let ll_elements = hl_element
+                .functions
+                .iter()
                 .map(|function_idx| state.map_function_idx(*function_idx).map(Idx::to_u32))
                 .collect::<Result<Vec<u32>, _>>()?;
             let ll_elements = we::Elements::Functions(ll_elements.as_slice());
@@ -306,7 +330,10 @@ fn encode_tables(module: &Module, state: &mut EncodeState) -> Result<(we::TableS
     Ok((table_section, element_section))
 }
 
-fn encode_memories(module: &Module, state: &mut EncodeState) -> Result<(we::MemorySection, we::DataSection), EncodeError> {
+fn encode_memories(
+    module: &Module,
+    state: &mut EncodeState,
+) -> Result<(we::MemorySection, we::DataSection), EncodeError> {
     let mut memory_section = we::MemorySection::new();
     let mut data_section = we::DataSection::new();
 
@@ -319,7 +346,7 @@ fn encode_memories(module: &Module, state: &mut EncodeState) -> Result<(we::Memo
         };
 
         for data in &memory.data {
-            let ll_offset = encode_single_instruction_with_end( &data.offset, state)?;
+            let ll_offset = encode_single_instruction_with_end(&data.offset, state)?;
             let ll_data = data.bytes.iter().copied();
             data_section.active(ll_memory_idx.to_u32(), &ll_offset, ll_data);
         }
@@ -328,7 +355,10 @@ fn encode_memories(module: &Module, state: &mut EncodeState) -> Result<(we::Memo
     Ok((memory_section, data_section))
 }
 
-fn encode_globals(module: &Module, state: &mut EncodeState) -> Result<we::GlobalSection, EncodeError> {
+fn encode_globals(
+    module: &Module,
+    state: &mut EncodeState,
+) -> Result<we::GlobalSection, EncodeError> {
     let mut global_section = we::GlobalSection::new();
 
     for (global_idx, global) in module.globals() {
@@ -346,11 +376,15 @@ fn encode_code(module: &Module, state: &mut EncodeState) -> Result<we::CodeSecti
     let mut code_section = we::CodeSection::new();
 
     // Encode function bodies in parallel.
-    let ll_functions = module.functions
+    let ll_functions = module
+        .functions
         .par_iter()
         .filter_map(Function::code)
         .map(|code| -> Result<we::Function, EncodeError> {
-            let ll_locals_iter = code.locals.iter().map(|local| we::ValType::from(local.type_));
+            let ll_locals_iter = code
+                .locals
+                .iter()
+                .map(|local| we::ValType::from(local.type_));
             let mut ll_function = we::Function::new_with_locals_types(ll_locals_iter);
             for instr in &code.body {
                 ll_function.instruction(&encode_instruction(instr, state)?);
@@ -368,8 +402,16 @@ fn encode_code(module: &Module, state: &mut EncodeState) -> Result<we::CodeSecti
 // TODO generify to include all sections, not just custom sections
 // fn insert_section<T>(encoder: &mut wasm_encoder::Module, state: &mut EncodeState, section: T, module: &Module, previous_section: Option<SectionId>)
 //     where T: wasm_encoder::Section {
-fn encode_and_insert_custom(encoder: &mut wasm_encoder::Module, state: &mut EncodeState, module: &Module) {
-    for custom in module.custom_sections.iter().skip(state.custom_sections_encoded) {
+fn encode_and_insert_custom(
+    encoder: &mut wasm_encoder::Module,
+    state: &mut EncodeState,
+    module: &Module,
+) {
+    for custom in module
+        .custom_sections
+        .iter()
+        .skip(state.custom_sections_encoded)
+    {
         // FIXME what if the reference .after section is no longer present?
         // Right now, this would drop the custom section.
         if state.last_encoded_section == custom.previous_section {
@@ -383,7 +425,10 @@ fn encode_and_insert_custom(encoder: &mut wasm_encoder::Module, state: &mut Enco
     }
 }
 
-fn encode_single_instruction_with_end(instrs: &[Instr], state: &mut EncodeState) -> Result<we::ConstExpr, EncodeError> {
+fn encode_single_instruction_with_end(
+    instrs: &[Instr],
+    state: &mut EncodeState,
+) -> Result<we::ConstExpr, EncodeError> {
     match instrs {
         [single_instr, Instr::End] => {
             let mut instr_bytes = Vec::with_capacity(2);
@@ -394,7 +439,10 @@ fn encode_single_instruction_with_end(instrs: &[Instr], state: &mut EncodeState)
     }
 }
 
-fn encode_instruction(hl_instr: &Instr, state: &EncodeState) -> Result<we::Instruction<'static>, EncodeError> {
+fn encode_instruction(
+    hl_instr: &Instr,
+    state: &EncodeState,
+) -> Result<we::Instruction<'static>, EncodeError> {
     Ok(match *hl_instr {
         Instr::Unreachable => we::Instruction::Unreachable,
         Instr::Nop => we::Instruction::Nop,
@@ -404,24 +452,24 @@ fn encode_instruction(hl_instr: &Instr, state: &EncodeState) -> Result<we::Instr
         Instr::If(block_type) => we::Instruction::If(encode_block_type(block_type, state)),
         Instr::Else => we::Instruction::Else,
         Instr::End => we::Instruction::End,
-        
+
         Instr::Br(label) => we::Instruction::Br(label.to_u32()),
         Instr::BrIf(label) => we::Instruction::BrIf(label.to_u32()),
         Instr::BrTable { ref table, default } => we::Instruction::BrTable(
             table.iter().map(|label| label.to_u32()).collect(),
-            default.to_u32()
+            default.to_u32(),
         ),
-        
+
         Instr::Return => we::Instruction::Return,
         Instr::Call(function_idx) => we::Instruction::Call(state.map_function_idx(function_idx)?.to_u32()),
         Instr::CallIndirect(ref function_type, table_idx) => we::Instruction::CallIndirect {
             ty: state.get_or_insert_type(*function_type).to_u32(),
             table: state.map_table_idx(table_idx)?.to_u32(),
         },
-        
+
         Instr::Drop => we::Instruction::Drop,
         Instr::Select => we::Instruction::Select,
-        
+
         Instr::Local(LocalOp::Get, local_idx) => we::Instruction::LocalGet(local_idx.to_u32()),
         Instr::Local(LocalOp::Set, local_idx) => we::Instruction::LocalSet(local_idx.to_u32()),
         Instr::Local(LocalOp::Tee, local_idx) => we::Instruction::LocalTee(local_idx.to_u32()),
@@ -442,7 +490,7 @@ fn encode_instruction(hl_instr: &Instr, state: &EncodeState) -> Result<we::Instr
         Instr::Load(LoadOp::I64Load16U, memarg) => we::Instruction::I64Load16U(memarg.into()),
         Instr::Load(LoadOp::I64Load32S, memarg) => we::Instruction::I64Load32S(memarg.into()),
         Instr::Load(LoadOp::I64Load32U, memarg) => we::Instruction::I64Load32U(memarg.into()),
-        
+
         Instr::Store(StoreOp::I32Store, memarg) => we::Instruction::I32Store(memarg.into()),
         Instr::Store(StoreOp::I64Store, memarg) => we::Instruction::I64Store(memarg.into()),
         Instr::Store(StoreOp::F32Store, memarg) => we::Instruction::F32Store(memarg.into()),
@@ -588,7 +636,10 @@ fn encode_instruction(hl_instr: &Instr, state: &EncodeState) -> Result<we::Instr
     })
 }
 
-fn encode_names(module: &Module, state: &EncodeState) -> Result<Option<we::NameSection>, EncodeError> {
+fn encode_names(
+    module: &Module,
+    state: &EncodeState,
+) -> Result<Option<we::NameSection>, EncodeError> {
     // Because `wasm-encode`s name section and name subsections don't track whether they are
     // empty, and we don't want to write empty sections, wrap them in an `Option` here and
     // lazily initialize on access. Then, write them only if they are not `None`.
@@ -598,29 +649,41 @@ fn encode_names(module: &Module, state: &EncodeState) -> Result<Option<we::NameS
         let ll_function_idx = state.map_function_idx(hl_function_idx)?.to_u32();
 
         if let Some(name) = &function.name {
-            functions_subsection.get_or_insert_with(Default::default).append(ll_function_idx, name);
+            functions_subsection
+                .get_or_insert_with(Default::default)
+                .append(ll_function_idx, name);
         }
 
         let mut local_names: Option<we::NameMap> = None;
         for (local_idx, local) in function.param_or_locals() {
             if let Some(name) = local.name() {
-                local_names.get_or_insert_with(Default::default).append(local_idx.to_u32(), name);
+                local_names
+                    .get_or_insert_with(Default::default)
+                    .append(local_idx.to_u32(), name);
             }
         }
         if let Some(local_names) = local_names {
-            locals_subsection.get_or_insert_with(Default::default).append(ll_function_idx, &local_names);
+            locals_subsection
+                .get_or_insert_with(Default::default)
+                .append(ll_function_idx, &local_names);
         }
     }
 
     let mut name_section: Option<we::NameSection> = None;
     if let Some(module_name) = &module.name {
-        name_section.get_or_insert_with(Default::default).module(module_name);
+        name_section
+            .get_or_insert_with(Default::default)
+            .module(module_name);
     }
     if let Some(functions_subsection) = &functions_subsection {
-        name_section.get_or_insert_with(Default::default).functions(functions_subsection);
+        name_section
+            .get_or_insert_with(Default::default)
+            .functions(functions_subsection);
     }
     if let Some(locals_subsection) = &locals_subsection {
-        name_section.get_or_insert_with(Default::default).locals(locals_subsection);
+        name_section
+            .get_or_insert_with(Default::default)
+            .locals(locals_subsection);
     }
 
     Ok(name_section)
@@ -630,7 +693,7 @@ fn encode_block_type(func_or_block_ty: FunctionType, state: &EncodeState) -> we:
     match (func_or_block_ty.inputs(), func_or_block_ty.results()) {
         // Prefer the more compact inline encoding for Wasm MVP block types.
         ([], []) => we::BlockType::Empty,
-        ([], [val_type]) =>  we::BlockType::Result((*val_type).into()),
+        ([], [val_type]) => we::BlockType::Result((*val_type).into()),
         // Only fall back to a reference to a function type if necessary.
         (_inputs, _results) => we::BlockType::FunctionType(
             state.get_or_insert_type(func_or_block_ty).to_u32()
@@ -663,8 +726,13 @@ impl From<Limits> for we::TableType {
 impl From<Limits> for we::MemoryType {
     fn from(limits: Limits) -> Self {
         Self {
-            minimum: limits.initial_size.try_into().expect("u32 to u64 should always succeed"),
-            maximum: limits.max_size.map(|u32| u32.try_into().expect("u32 to u64 should always succeed")),
+            minimum: limits
+                .initial_size
+                .try_into()
+                .expect("u32 to u64 should always succeed"),
+            maximum: limits
+                .max_size
+                .map(|u32| u32.try_into().expect("u32 to u64 should always succeed")),
             memory64: false,
             shared: false,
         }
@@ -686,7 +754,10 @@ impl From<ValType> for we::ValType {
 impl From<Memarg> for we::MemArg {
     fn from(hl_memarg: Memarg) -> Self {
         Self {
-            offset: hl_memarg.offset.try_into().expect("u32 to u64 should always succeed"),
+            offset: hl_memarg
+                .offset
+                .try_into()
+                .expect("u32 to u64 should always succeed"),
             align: hl_memarg.alignment_exp.into(),
             memory_index: 0,
         }

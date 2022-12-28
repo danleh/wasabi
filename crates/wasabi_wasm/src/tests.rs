@@ -1,6 +1,6 @@
-use std::fs;
 use std::error::Error;
 use std::fmt::Write;
+use std::fs;
 
 use dashmap::DashMap;
 use indicatif::ParallelProgressIterator;
@@ -9,12 +9,13 @@ use rayon::prelude::*;
 
 use test_utilities::*;
 
-use crate::{*, types::TypeChecker};
+use crate::types::TypeChecker;
+use crate::*;
 
 const NAME_SECTION_TEST_BINARY: &str = "../../test-inputs/name-section/wabt-tests/names.wasm";
 const BANANABREAD_REAL_WORLD_TEST_BINARY: &str = "../../test-inputs/real-world/bananabread/bb.wasm";
 
-// Removed this test, because when changing to wasmparser, 
+// Removed this test, because when changing to wasmparser,
 // we did not port over the low-level parsing of the extended name section.
 // const WASM_TEST_INPUT_EXTENDED_NAMES_SECTION: &str = "../../test-inputs/name-section/extended-name-section/vuln.wasm";
 
@@ -129,7 +130,8 @@ fn section_offsets_like_objdump() {
 
 #[test]
 fn code_offsets_like_objdump() {
-    let (_module, offsets, _warnings) = Module::from_file(BANANABREAD_REAL_WORLD_TEST_BINARY).unwrap();
+    let (_module, offsets, _warnings) =
+        Module::from_file(BANANABREAD_REAL_WORLD_TEST_BINARY).unwrap();
 
     // Test first two and last two functions.
     // Expected values are taken from wasm-objdump output.

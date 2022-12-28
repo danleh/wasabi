@@ -1,17 +1,19 @@
 //! Code for parsing the WebAssembly binary format to our AST.
 //! Uses `wasmparser` crate for the actual low-level work.
 
-use std::{convert::TryInto, sync::RwLock};
+use std::convert::TryInto;
+use std::sync::RwLock;
 
 use ordered_float::OrderedFloat;
 use rayon::prelude::*;
 
 use wasmparser as wp;
 
-use crate::{*, extensions::WasmExtension};
+use crate::extensions::WasmExtension;
+use crate::*;
 
-// The streaming API of wasmparser is a bit cumbersome, so implement reading 
-// from bytes fully resident in memory first. 
+// The streaming API of wasmparser is a bit cumbersome, so implement reading
+// from bytes fully resident in memory first.
 // TODO Add a second API from streaming sources, i.e., `io::Read` like here:
 // https://docs.rs/wasmparser/latest/wasmparser/struct.Parser.html#examples
 pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), ParseError> {
@@ -172,7 +174,7 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
                     let name = export.name.to_string();
                     let index_u32 = export.index;
                     let index = u32_to_usize(export.index);
-                    
+
                     use wp::ExternalKind;
                     match export.kind {
                         ExternalKind::Func => module
@@ -410,11 +412,15 @@ pub fn parse_module(bytes: &[u8]) -> Result<(Module, Offsets, ParseWarnings), Pa
     };
 
     module.metadata = metadata.into_inner().unwrap();
-    
+
     Ok((module, offsets, warnings))
 }
 
-fn parse_body(body: wp::FunctionBody, types: &Types, metadata: &RwLock<ModuleMetadata>) -> Result<Code, ParseError> {
+fn parse_body(
+    body: wp::FunctionBody,
+    types: &Types,
+    metadata: &RwLock<ModuleMetadata>,
+) -> Result<Code, ParseError> {
     let mut locals_reader = body.get_locals_reader()?;
     let mut offset = locals_reader.original_position();
     // Pre-allocate: There are at least as many locals as there are _unique_ local types.
@@ -430,12 +436,12 @@ fn parse_body(body: wp::FunctionBody, types: &Types, metadata: &RwLock<ModuleMet
     // Pre-allocate: We don't know the exact number of instructions yet,
     // but there are typically one or two bytes per instruction.
     // So conservatively, bytes / 2 should be a good starting point.
-    // It will almost never over-reserve memory and has to grow / re-allocate 
+    // It will almost never over-reserve memory and has to grow / re-allocate
     // at most once in case there really is on avg. 1 instruction per byte.
-    // UNFORTUNATELY, on my Windows 10 installation, this pre-allocation is 
+    // UNFORTUNATELY, on my Windows 10 installation, this pre-allocation is
     // causing a massive slowdown during parallel parsing (Ryzen 5950X, 16 cores, 32 threads)
     // of >200% (!!) vs. just using Vec::new(), i.e., no pre-allocation at all.
-    // It seems the combination of pre-allocation + from multiple threads 
+    // It seems the combination of pre-allocation + from multiple threads
     // sucks big time with the Windows default allocator.
     // I also tried whether the amount of pre-allocation makes a difference (e.g.,
     // bytes / 16, or limiting to at most 1024 instructions), but there is a floor.
@@ -445,10 +451,10 @@ fn parse_body(body: wp::FunctionBody, types: &Types, metadata: &RwLock<ModuleMet
     // I considered a couple of options:
     // a) Get rid of parallel parsing, but I don't want that since for big
     //    binaries its a huge speedup and embarrassingly parallel.
-    // b) Don't pre-allocate at all, but this hurts Linux performance (overall 
+    // b) Don't pre-allocate at all, but this hurts Linux performance (overall
     //    parsing without this single pre-allocation, i.e., Vec::new() is ~5% slower!)
     //    and Windows is still >200% slower than Linux, which it shouldn't be.
-    // c) Use a different allocator on Windows. 
+    // c) Use a different allocator on Windows.
     // Even though I don't like the complexity of d), I think it's the best option
     // since it fixes the underlying problem, and also improves overall performance
     // as we are quite allocation-heavy.
@@ -483,9 +489,9 @@ fn parse_instr(
         wp::Unreachable => Unreachable,
         wp::Nop => Nop,
 
-        wp::Block { blockty } => Block(parse_block_ty(blockty, offset+1, types, metadata)?),
-        wp::Loop { blockty } => Loop(parse_block_ty(blockty, offset+1, types, metadata)?),
-        wp::If { blockty } => If(parse_block_ty(blockty, offset+1, types, metadata)?),
+        wp::Block { blockty } => Block(parse_block_ty(blockty, offset + 1, types, metadata)?),
+        wp::Loop { blockty } => Loop(parse_block_ty(blockty, offset + 1, types, metadata)?),
+        wp::If { blockty } => If(parse_block_ty(blockty, offset + 1, types, metadata)?),
         wp::Else => Else,
         wp::End => End,
 
@@ -519,7 +525,7 @@ fn parse_instr(
                 Err(ParseIssue::unsupported(offset, WasmExtension::ReferenceTypes))?
             }
             assert!(table_byte == 0, "not sure which extension this is");
-            CallIndirect(types.get(type_index, offset+1)?, 0usize.into())
+            CallIndirect(types.get(type_index, offset + 1)?, 0usize.into())
         }
 
         wp::ReturnCall { function_index: _ }
@@ -539,30 +545,30 @@ fn parse_instr(
         wp::GlobalGet { global_index } => Global(GlobalOp::Get, global_index.into()),
         wp::GlobalSet { global_index } => Global(GlobalOp::Set, global_index.into()),
 
-        wp::I32Load { memarg } => Load(LoadOp::I32Load, parse_memarg(memarg, offset+1)?),
-        wp::I64Load { memarg } => Load(LoadOp::I64Load, parse_memarg(memarg, offset+1)?),
-        wp::F32Load { memarg } => Load(LoadOp::F32Load, parse_memarg(memarg, offset+1)?),
-        wp::F64Load { memarg } => Load(LoadOp::F64Load, parse_memarg(memarg, offset+1)?),
-        wp::I32Load8S { memarg } => Load(LoadOp::I32Load8S, parse_memarg(memarg, offset+1)?),
-        wp::I32Load8U { memarg } => Load(LoadOp::I32Load8U, parse_memarg(memarg, offset+1)?),
-        wp::I32Load16S { memarg } => Load(LoadOp::I32Load16S, parse_memarg(memarg, offset+1)?),
-        wp::I32Load16U { memarg } => Load(LoadOp::I32Load16U, parse_memarg(memarg, offset+1)?),
-        wp::I64Load8S { memarg } => Load(LoadOp::I64Load8S, parse_memarg(memarg, offset+1)?),
-        wp::I64Load8U { memarg } => Load(LoadOp::I64Load8U, parse_memarg(memarg, offset+1)?),
-        wp::I64Load16S { memarg } => Load(LoadOp::I64Load16S, parse_memarg(memarg, offset+1)?),
-        wp::I64Load16U { memarg } => Load(LoadOp::I64Load16U, parse_memarg(memarg, offset+1)?),
-        wp::I64Load32S { memarg } => Load(LoadOp::I64Load32S, parse_memarg(memarg, offset+1)?),
-        wp::I64Load32U { memarg } => Load(LoadOp::I64Load32U, parse_memarg(memarg, offset+1)?),
+        wp::I32Load { memarg } => Load(LoadOp::I32Load, parse_memarg(memarg, offset + 1)?),
+        wp::I64Load { memarg } => Load(LoadOp::I64Load, parse_memarg(memarg, offset + 1)?),
+        wp::F32Load { memarg } => Load(LoadOp::F32Load, parse_memarg(memarg, offset + 1)?),
+        wp::F64Load { memarg } => Load(LoadOp::F64Load, parse_memarg(memarg, offset + 1)?),
+        wp::I32Load8S { memarg } => Load(LoadOp::I32Load8S, parse_memarg(memarg, offset + 1)?),
+        wp::I32Load8U { memarg } => Load(LoadOp::I32Load8U, parse_memarg(memarg, offset + 1)?),
+        wp::I32Load16S { memarg } => Load(LoadOp::I32Load16S, parse_memarg(memarg, offset + 1)?),
+        wp::I32Load16U { memarg } => Load(LoadOp::I32Load16U, parse_memarg(memarg, offset + 1)?),
+        wp::I64Load8S { memarg } => Load(LoadOp::I64Load8S, parse_memarg(memarg, offset + 1)?),
+        wp::I64Load8U { memarg } => Load(LoadOp::I64Load8U, parse_memarg(memarg, offset + 1)?),
+        wp::I64Load16S { memarg } => Load(LoadOp::I64Load16S, parse_memarg(memarg, offset + 1)?),
+        wp::I64Load16U { memarg } => Load(LoadOp::I64Load16U, parse_memarg(memarg, offset + 1)?),
+        wp::I64Load32S { memarg } => Load(LoadOp::I64Load32S, parse_memarg(memarg, offset + 1)?),
+        wp::I64Load32U { memarg } => Load(LoadOp::I64Load32U, parse_memarg(memarg, offset + 1)?),
 
-        wp::I32Store { memarg } => Store(StoreOp::I32Store, parse_memarg(memarg, offset+1)?),
-        wp::I64Store { memarg } => Store(StoreOp::I64Store, parse_memarg(memarg, offset+1)?),
-        wp::F32Store { memarg } => Store(StoreOp::F32Store, parse_memarg(memarg, offset+1)?),
-        wp::F64Store { memarg } => Store(StoreOp::F64Store, parse_memarg(memarg, offset+1)?),
-        wp::I32Store8 { memarg } => Store(StoreOp::I32Store8, parse_memarg(memarg, offset+1)?),
-        wp::I32Store16 { memarg } => Store(StoreOp::I32Store16, parse_memarg(memarg, offset+1)?),
-        wp::I64Store8 { memarg } => Store(StoreOp::I64Store8, parse_memarg(memarg, offset+1)?),
-        wp::I64Store16 { memarg } => Store(StoreOp::I64Store16, parse_memarg(memarg, offset+1)?),
-        wp::I64Store32 { memarg } => Store(StoreOp::I64Store32, parse_memarg(memarg, offset+1)?),
+        wp::I32Store { memarg } => Store(StoreOp::I32Store, parse_memarg(memarg, offset + 1)?),
+        wp::I64Store { memarg } => Store(StoreOp::I64Store, parse_memarg(memarg, offset + 1)?),
+        wp::F32Store { memarg } => Store(StoreOp::F32Store, parse_memarg(memarg, offset + 1)?),
+        wp::F64Store { memarg } => Store(StoreOp::F64Store, parse_memarg(memarg, offset + 1)?),
+        wp::I32Store8 { memarg } => Store(StoreOp::I32Store8, parse_memarg(memarg, offset + 1)?),
+        wp::I32Store16 { memarg } => Store(StoreOp::I32Store16, parse_memarg(memarg, offset + 1)?),
+        wp::I64Store8 { memarg } => Store(StoreOp::I64Store8, parse_memarg(memarg, offset + 1)?),
+        wp::I64Store16 { memarg } => Store(StoreOp::I64Store16, parse_memarg(memarg, offset + 1)?),
+        wp::I64Store32 { memarg } => Store(StoreOp::I64Store32, parse_memarg(memarg, offset + 1)?),
 
         // This is not well documented in wasmparser: `mem_byte` and `mem` essentially contain
         // the same information, it's just that mem_byte is the original (single) byte that was
@@ -1131,7 +1137,7 @@ fn parse_block_ty(
     ty: wp::BlockType,
     offset: usize,
     types: &Types,
-    metadata: &RwLock<ModuleMetadata>
+    metadata: &RwLock<ModuleMetadata>,
 ) -> Result<FunctionType, ParseError> {
     use wp::BlockType::*;
     match ty {
@@ -1140,7 +1146,7 @@ fn parse_block_ty(
         FuncType(type_idx) => {
             metadata.write().unwrap().add_used_extension(WasmExtension::MultiValue);
             types.get(type_idx, offset)
-        },
+        }
     }
 }
 
@@ -1187,7 +1193,12 @@ fn parse_val_ty(ty: wp::ValType, offset: usize) -> Result<ValType, ParseError> {
 
 // The difference between `warnings` and returning a `Err(ParseIssue)` is that the latter will abort
 // further parsing of the name section.
-fn parse_name_custom_section(data: &[u8], data_offset: usize, warnings: &mut Vec<ParseIssue>, module: &mut Module) -> Result<(), ParseIssue> {
+fn parse_name_custom_section(
+    data: &[u8],
+    data_offset: usize,
+    warnings: &mut Vec<ParseIssue>,
+    module: &mut Module,
+) -> Result<(), ParseIssue> {
     for name_subsection in wp::NameSectionReader::new(data, data_offset) {
         use wp::Name;
         match name_subsection? {
@@ -1224,7 +1235,7 @@ fn parse_name_custom_section(data: &[u8], data_offset: usize, warnings: &mut Vec
                             warnings.push(ParseIssue::index(offset, local_index, "local"));
                         } else {
                             *function.param_or_local_name_mut(local_index.into()) =
-                            Some(name.to_string());
+                                Some(name.to_string());
                         }
                     }
                 }
@@ -1263,7 +1274,11 @@ impl Types {
     }
 
     /// Next state, where the number of type entries is known, but nothing filled yet.
-    pub fn new_type_section(&mut self, count: u32, type_section_offset: usize) -> Result<(), ParseError> {
+    pub fn new_type_section(
+        &mut self,
+        count: u32,
+        type_section_offset: usize,
+    ) -> Result<(), ParseError> {
         let prev_state = self.0.replace(Vec::with_capacity(u32_to_usize(count)));
         match prev_state {
             Some(_) => Err(ParseIssue::message(type_section_offset, "duplicate type section", None))?,
