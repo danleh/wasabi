@@ -7,6 +7,8 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v3
+    - run: sudo apt install wabt && wasm-validate --version
+      name: Install WABT
     - run: cargo --version; rustc --version; cargo clippy --version
       name: Rust version
     - run: cargo build
@@ -19,6 +21,8 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v3
+    - run: sudo apt install wabt && wasm-validate --version
+      name: Install WABT
     - run: cargo --version; rustc --version; cargo clippy --version
       name: Rust version
     - run: cargo build
