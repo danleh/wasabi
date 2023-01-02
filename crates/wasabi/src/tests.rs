@@ -32,10 +32,8 @@ fn add_hooks_instrumentation_produces_valid_wasm() {
 
 /// Utility function.
 fn test_instrument(instrument: fn(&mut Module) -> Option<String>, instrument_name: &'static str) {
-    println!("Testing {instrument_name}");
-
     // Filter out files that are too large to run in CI.
-    // TODO: Fix Wasabi OOM issues.
+    // FIXME: Wasabi OOM, debug allocations with heaptrack.
     let valid_binaries: Vec<_> = ALL_VALID_TEST_BINARIES
         .par_iter()
         .filter(|path| std::fs::metadata(path).unwrap().len() < 10_000_000)
