@@ -1,12 +1,15 @@
-# IDE files
+# IDE files.
 .idea/
 *.iml
 .vscode/
 
-# vim
+# vim.
 *~
 *.swp
 
-# Wasabi outputs, test outputs
+# Rust build artifacts.
+/target/
+
+# Wasabi outputs, test outputs.
 out/
 /test-outputs/
