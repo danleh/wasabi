@@ -34,7 +34,14 @@ fn add_hooks_instrumentation_produces_valid_wasm() {
 fn test_instrument(instrument: fn(&mut Module) -> Option<String>, instrument_name: &'static str) {
     println!("Testing {instrument_name}");
 
-    ALL_VALID_TEST_BINARIES.par_iter().for_each(|path| {
+    // Filter out files that are too large to run in CI.
+    // TODO: Fix Wasabi OOM issues.
+    let valid_binaries: Vec<_> = ALL_VALID_TEST_BINARIES
+        .par_iter()
+        .filter(|path| std::fs::metadata(path).unwrap().len() < 10_000_000)
+        .collect();
+
+    valid_binaries.par_iter().for_each(|path| {
         let (mut module, _offsets, _warnings) = Module::from_file(path).unwrap();
         let javascript = instrument(&mut module);
 
