@@ -1,0 +1,5 @@
+# All .wasm binaries which Wasabi and its parser library can/should be able to process.
+# Used by the test suites, which can be run with `cargo test`.
+# Please update this file via `cargo test update_valid_inputs_list -- --nocapture`.
+# Lines that begin with # are ignored.
+# Paths are relative to the parent directory of this list file.
