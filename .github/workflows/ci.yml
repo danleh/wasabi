@@ -15,7 +15,7 @@ jobs:
       working-directory: crates/wasabi_wasm/
     - run: cargo clippy
       working-directory: crates/wasabi_wasm/
-    - run: cargo test -- --nocapture
+    - run: cargo test -- --nocapture --test-threads=1
       working-directory: crates/wasabi_wasm/
   wasabi:
     runs-on: ubuntu-20.04
@@ -29,5 +29,5 @@ jobs:
       working-directory: crates/wasabi/
     - run: cargo clippy
       working-directory: crates/wasabi/
-    - run: cargo test -- --nocapture
+    - run: cargo test -- --nocapture --test-threads=1
       working-directory: crates/wasabi/
