@@ -30,6 +30,7 @@ pub static ALL_VALID_TEST_BINARIES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
         "31fa012442fd637fca221db4fda94262e99759ab9667147cbedde083aabcc065",
         //  Uses typed select instruction, which is non-MVP, but is not filtered out by wasm-validate below.
         "wasm-spec-tests/build/select.wasm",
+        "wasm-spec-tests\\build\\select.wasm", // Windows path.
     ];
     for excluded in EXCLUDED.iter() {
         valid_binaries.retain(|path| !path.to_string_lossy().contains(excluded));
