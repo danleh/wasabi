@@ -6,6 +6,7 @@ edition = "2021"
 
 [dev-dependencies]
 test_utilities = { path = "../test_utilities" }
+sha256 = "1.1.1"
 
 [dependencies]
 wasabi_wasm = { path = "../wasabi_wasm" }

@@ -42,7 +42,12 @@ fn test_instrument(instrument: fn(&mut Module) -> Option<String>, instrument_nam
         module.to_file(&output_path).unwrap();
 
         wasm_validate(&output_path)
-            .unwrap_or_else(|err| panic!("Binary '{}' instrumented with {} is no longer valid\n{err}", path.display(), instrument_name));
+            .unwrap_or_else(|err| {
+                let bytes = std::fs::read(&output_path).unwrap();
+                let size = bytes.len();
+                let sha256_hash = sha256::digest(bytes.as_slice());
+                panic!("Binary '{}' instrumented with {} is no longer valid\n{err}\nSize: {size}\nSHA256: {sha256_hash}", path.display(), instrument_name)
+            });
 
         if let Some(javascript) = javascript {
             std::fs::write(output_path.with_extension("wasabi.js"), javascript).unwrap();
