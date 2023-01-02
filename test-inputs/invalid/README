@@ -1,1 +1,1 @@
-invalid WebAssembly programs, run ./show-errors.sh to see why they are invalid
+Invalid WebAssembly programs, either in text or binary format.
