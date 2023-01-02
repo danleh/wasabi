@@ -16,6 +16,8 @@ use rayon::prelude::*;
 // 4. Wasabi should pass all tests in the valid-no-extensions directory, verify.
 
 const TEST_INPUTS_DIR: &str = "../../test-inputs/";
+// TODO: Use an explicit list of valid files instead, that one can load from
+// disk and update when we support more WebAssembly features.
 pub static ALL_VALID_TEST_BINARIES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
     println!("Collecting all valid .wasm binaries from '{}'...", TEST_INPUTS_DIR);
     let mut valid_binaries = wasm_files(TEST_INPUTS_DIR).unwrap();
@@ -36,7 +38,7 @@ pub static ALL_VALID_TEST_BINARIES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
         valid_binaries.retain(|path| !path.to_string_lossy().contains(excluded));
     }
     println!("{} .wasm files found, validating...", valid_binaries.len());
-    // Filter out files that are already invalid according to wasm-validate:
+    // Filter out files that are already invalid according to `wasm-validate`.
     let valid_binaries: Vec<_> = valid_binaries
         .into_par_iter()
         .filter(|path| wasm_validate(path).is_ok())
