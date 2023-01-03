@@ -34,21 +34,8 @@ mimalloc = { version = "0.1.29", default-features = false }
 test_utilities = { path = "../test_utilities" }
 bencher = "0.1.5"
 criterion = "0.4.0"
-indicatif = { version = "0.17.1", features = ["rayon"] }
 dashmap = "5.4.0"
 
 [[bench]]
 name = "parser"
 harness = false
-
-[profile.release]
-opt-level = 3
-lto = "fat"
-overflow-checks = true
-# For profiling with debug info.
-debug = 1
-
-[profile.test]
-# Necessary to avoid stack overflow for very deeply nested tests.
-opt-level = 2
-lto = "thin"

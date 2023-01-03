@@ -5,6 +5,12 @@ authors = ["Daniel Lehmann <mail@dlehmann.eu>"]
 edition = "2021"
 
 [dependencies]
+once_cell = "1.17.0"
+rayon = "1.6.1"
+indicatif = { version = "0.17.2", features = ["rayon"] }
+
+# Only used for the "test commands" when validating/updating the valid-inputs list.
+[dev-dependencies]
+icu = "1.0.0"
+icu_testdata = "1.0.0"
 walkdir = "2.3.2"
-rayon = "1.5.3"
-once_cell = "1.15.0"

@@ -8,7 +8,7 @@
 *.swp
 
 # Rust build artifacts.
-/target/
+target/
 
 # Wasabi outputs, test outputs.
 out/
