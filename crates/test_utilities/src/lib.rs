@@ -235,6 +235,7 @@ fn wasm_files(root_dir: impl AsRef<Path>) -> Vec<PathBuf> {
 }
 
 #[test]
+#[ignore]  // Ignore by default, to avoid accidentally updating the list file.
 pub fn update_valid_inputs_list() {
     use rayon::prelude::*;
     use indicatif::ParallelProgressIterator;
@@ -257,6 +258,7 @@ pub fn update_valid_inputs_list() {
     println!("Checking for new Wasm binaries in '{}/'...", more_inputs_root_dir.display());
     let added_binaries_count = wasm_files(more_inputs_root_dir)
         .par_iter()
+        .panic_fuse()
         .progress()
         .filter(|path|
             // Early exit: Don't validate binaries that are already in the list.
