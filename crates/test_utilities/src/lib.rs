@@ -1,25 +1,17 @@
 //! Utility functions for testing Wasabi and the Wasm library.
 
-use std::ffi::OsStr;
-use std::ffi::OsString;
-use std::fmt;
 use std::io;
 use std::io::BufRead;
 use std::io::Write;
 use std::fs::File;
-use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering;
 
 use icu::collator::Collator;
 use icu::collator::CollatorOptions;
 use icu::locid::Locale;
 use icu::locid::locale;
-use indicatif::ParallelProgressIterator;
 use once_cell::sync::Lazy;
-use rayon::prelude::*;
 
 // TODO: Improve testing and CI setup:
 // 1. Run CI on every commit/PR. Automate with GitHub Actions or similar.
@@ -278,40 +270,48 @@ impl Ord for LocaleString {
     }
 }
 
-#[test]
-pub fn validate_valid_inputs_list() {
-    let valid_inputs = ValidInputsList::parse(VALID_INPUTS_LIST_FILE);
+#[cfg(test)]
+mod commands {
+    use super::*;
 
-    println!("Validating all Wasm binaries in the list '{VALID_INPUTS_LIST_FILE}'...");
-    let validated_binaries_count = valid_inputs
-        .all_files()
-        .par_iter()
-        .progress()
-        // Abort parallel processing as early as possible.
-        .panic_fuse()
-        .map(|path| wasm_validate(path).unwrap())
-        .count();
-    println!("Validated all {validated_binaries_count} Wasm binaries in the list.");
-}
+    use indicatif::ParallelProgressIterator;
+    use rayon::prelude::*;
 
-#[test]
-pub fn update_valid_inputs_list() {
-    let valid_inputs = ValidInputsList::parse(VALID_INPUTS_LIST_FILE);
+    #[test]
+    pub fn validate_valid_inputs_list() {
+        let valid_inputs = ValidInputsList::parse(VALID_INPUTS_LIST_FILE);
 
-    let more_inputs_root_dir = valid_inputs.base_dir.clone();
-    let valid_inputs = std::sync::RwLock::new(valid_inputs);
-    println!("Checking for new Wasm binaries in '{}'...", more_inputs_root_dir.display());
-    // TODO remove wasm_files
-    let added_binaries_count = wasm_files(more_inputs_root_dir).unwrap()
-        .par_iter()
-        .progress()
-        .filter(|path|
-            // Early exit: Don't validate binaries that are already in the list.
-            !valid_inputs.read().unwrap().contains_file(path)
-                && wasm_validate(path).is_ok() 
-                && valid_inputs.write().unwrap().add_file_sorted(path))
-        .count();
+        println!("Validating all Wasm binaries in the list '{VALID_INPUTS_LIST_FILE}'...");
+        let validated_binaries_count = valid_inputs
+            .all_files()
+            .par_iter()
+            .progress()
+            // Abort parallel processing as early as possible.
+            .panic_fuse()
+            .map(|path| wasm_validate(path).unwrap())
+            .count();
+        println!("Validated all {validated_binaries_count} Wasm binaries in the list.");
+    }
 
-    valid_inputs.into_inner().unwrap().save();
-    println!("Added {added_binaries_count} new valid Wasm binaries to the list.");
+    #[test]
+    pub fn update_valid_inputs_list() {
+        let valid_inputs = ValidInputsList::parse(VALID_INPUTS_LIST_FILE);
+
+        let more_inputs_root_dir = valid_inputs.base_dir.clone();
+        let valid_inputs = std::sync::RwLock::new(valid_inputs);
+        println!("Checking for new Wasm binaries in '{}'...", more_inputs_root_dir.display());
+        // TODO remove wasm_files
+        let added_binaries_count = wasm_files(more_inputs_root_dir).unwrap()
+            .par_iter()
+            .progress()
+            .filter(|path|
+                // Early exit: Don't validate binaries that are already in the list.
+                !valid_inputs.read().unwrap().contains_file(path)
+                    && wasm_validate(path).is_ok() 
+                    && valid_inputs.write().unwrap().add_file_sorted(path))
+            .count();
+
+        valid_inputs.into_inner().unwrap().save();
+        println!("Added {added_binaries_count} new valid Wasm binaries to the list.");
+    }
 }
