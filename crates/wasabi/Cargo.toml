@@ -4,10 +4,6 @@ version = "0.3.0"
 authors = ["Daniel Lehmann <mail@dlehmann.eu>"]
 edition = "2021"
 
-[dev-dependencies]
-test_utilities = { path = "../test_utilities" }
-sha256 = "1.1.1"
-
 [dependencies]
 wasabi_wasm = { path = "../wasabi_wasm" }
 
@@ -26,14 +22,6 @@ structopt = "0.3.26" # TODO update to clap v3 beta
 enumset = "1.0.12"
 main_error = "0.1.2"
 
-[profile.release]
-opt-level = 3
-lto = "fat"
-overflow-checks = true
-# For profiling with debug info.
-debug = 1
-
-[profile.test]
-# To speed-up test execution.
-opt-level = 2
-lto = "thin"
+[dev-dependencies]
+test_utilities = { path = "../test_utilities" }
+sha256 = "1.1.1"
