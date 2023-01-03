@@ -24,6 +24,9 @@ pub fn should_be_more_than_ten_valid_test_binaries() {
 /// Runs the test in parallel on all valid Wasm binaries in our test set,
 /// and show a progress bar, since it might take long.
 pub fn for_each_valid_wasm_binary_in_test_set(test_fn: impl Fn(&Path) + Send + Sync) {
+    // Always make sure the progress bar is printed on a new line.
+    eprintln!();
+
     VALID_WASM_BINARIES
         .par_iter()
         // Abort parallel processing as early as possible.
