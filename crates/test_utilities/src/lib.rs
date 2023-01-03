@@ -152,7 +152,7 @@ impl ValidInputsList {
                 let line = line.unwrap();
                 match line.strip_prefix('#') {
                     Some(comment) => ValidInputsLine::Comment(comment.trim().to_string()),
-                    None => ValidInputsLine::File(PathComponents::from(line)),
+                    None => ValidInputsLine::file(line),
                 }
             })
             .collect();
@@ -191,17 +191,12 @@ impl ValidInputsList {
         self.all_files().into_iter().filter(|path| path.exists())
     }
 
-    fn make_line(&self, path: impl AsRef<Path>) -> ValidInputsLine {
-        let path = path.as_ref().strip_prefix(&self.base_dir).expect("The path must be relative to the list file.");
-        ValidInputsLine::File(PathComponents::from(path))
-    }
-
     pub fn contains_file(&self, path: impl AsRef<Path>) -> bool {
-        self.lines.contains(&self.make_line(path))
+        self.lines.contains(&ValidInputsLine::file_strip_base(path, &self.base_dir))
     }
 
     pub fn add_file_sorted(&mut self, path: impl AsRef<Path>) -> bool {
-        let new_line = self.make_line(path);
+        let new_line = ValidInputsLine::file_strip_base(path, &self.base_dir);
         for (i, line) in self.lines.iter().enumerate() {
             use std::cmp::Ordering::*;
             match line.cmp(&new_line) {
@@ -221,52 +216,52 @@ impl ValidInputsList {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 enum ValidInputsLine {
     // Sort comments before files.
     Comment(String),
-    File(PathComponents),
+    File(String),
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-struct PathComponents(Vec<LocaleString>);
+impl ValidInputsLine {
+    // Always use '/' slashes, to keep the list file consistent even when updating it on Windows.
+    pub fn file(path: impl AsRef<Path>) -> Self {
+        Self::File(path.as_ref().to_str().expect("The path must be valid UTF-8.").replace('\\', "/"))
+    }
 
-impl<P> From<P> for PathComponents
-where P: AsRef<Path> {
-    fn from(path: P) -> Self {
-        Self(path.as_ref()
-            .components()
-            .map(|component| LocaleString(component.as_os_str().to_str().expect("non-portable path").to_owned()))
-            .collect())
+    // Keep paths relative to the list file, to not repeat the common prefix.
+    pub fn file_strip_base(path: impl AsRef<Path>, base: impl AsRef<Path>) -> Self {
+        let path = path.as_ref().strip_prefix(base).expect("The path must be relative to the list file.");
+        Self::file(path)
     }
 }
 
-impl From<&PathComponents> for PathBuf {
-    fn from(components: &PathComponents) -> Self {
-        PathBuf::from(components.0.iter().map(|s| s.0.as_str()).collect::<Vec<_>>().join("/"))
+impl Ord for ValidInputsLine {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Nicer string ordering via Unicode collation.
+        // The default Rust string ordering is based on byte values and sorts 
+        // all uppercase characters before lowercase characters (among other things).
+        const LOCALE_EN_US: Locale = locale!("en_US");
+        thread_local! {
+            static COLLATOR: Collator = {
+                Collator::try_new_unstable(&icu_testdata::unstable(), &LOCALE_EN_US.into(), CollatorOptions::new()).unwrap()
+            };
+        }
+
+        use ValidInputsLine::*;
+        match (self, other) {
+            (Comment(self_), Comment(other)) => COLLATOR.with(|c| c.compare(self_, other)),
+            (File(self_), File(other)) => COLLATOR.with(|c| c.compare(self_, other)),
+            // Sort comments before files.
+            (Comment(_), File(_)) => std::cmp::Ordering::Less,
+            (File(_), Comment(_)) => std::cmp::Ordering::Greater,
+        }        
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-struct LocaleString(String);
-
-impl PartialOrd for LocaleString {
+impl PartialOrd for ValidInputsLine {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
-    }
-}
-
-const LOCALE_EN_US: Locale = locale!("en_US");
-
-thread_local! {
-    static COLLATOR: Collator = {
-        Collator::try_new_unstable(&icu_testdata::unstable(), &LOCALE_EN_US.into(), CollatorOptions::new()).unwrap()
-    };
-}
-
-impl Ord for LocaleString {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        COLLATOR.with(|collator| collator.compare(&self.0, &other.0))
     }
 }
 
@@ -278,10 +273,10 @@ mod commands {
     use rayon::prelude::*;
 
     #[test]
-    pub fn validate_valid_inputs_list() {
+    pub fn update_valid_inputs_list() {
         let valid_inputs = ValidInputsList::parse(VALID_INPUTS_LIST_FILE);
 
-        println!("Validating all Wasm binaries in the list '{VALID_INPUTS_LIST_FILE}'...");
+        println!("Validating all Wasm binaries in list '{VALID_INPUTS_LIST_FILE}'...");
         let validated_binaries_count = valid_inputs
             .all_files()
             .par_iter()
@@ -291,15 +286,10 @@ mod commands {
             .map(|path| wasm_validate(path).unwrap())
             .count();
         println!("Validated all {validated_binaries_count} Wasm binaries in the list.");
-    }
-
-    #[test]
-    pub fn update_valid_inputs_list() {
-        let valid_inputs = ValidInputsList::parse(VALID_INPUTS_LIST_FILE);
 
         let more_inputs_root_dir = valid_inputs.base_dir.clone();
         let valid_inputs = std::sync::RwLock::new(valid_inputs);
-        println!("Checking for new Wasm binaries in '{}'...", more_inputs_root_dir.display());
+        println!("Checking for new Wasm binaries in '{}/'...", more_inputs_root_dir.display());
         // TODO remove wasm_files
         let added_binaries_count = wasm_files(more_inputs_root_dir).unwrap()
             .par_iter()
