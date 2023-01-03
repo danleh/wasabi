@@ -256,12 +256,16 @@ pub fn update_valid_inputs_list() {
     let valid_inputs = ValidInputsList::parse(VALID_WASM_BINARIES_LIST_FILE);
 
     println!("Validating all Wasm binaries in list '{VALID_WASM_BINARIES_LIST_FILE}'...");
-    let validated_binaries_count = std::sync::atomic::AtomicUsize::new(0);
-    for_each_valid_wasm_binary_in_test_set(|path| {
-        wasm_validate(path).unwrap();
-        validated_binaries_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    });
-    println!("Validated all {} Wasm binaries in the list.", validated_binaries_count.into_inner());
+    let validated_binaries_count = valid_inputs
+        // NOTE: Validate ALL binaries, which panics if any are missing.
+        .all_files()
+        .par_iter()
+        // Abort parallel processing as early as possible.
+        .panic_fuse()
+        .progress()
+        .map(|path| wasm_validate(path).unwrap())
+        .count();
+    println!("Validated all {validated_binaries_count} Wasm binaries in the list.");
 
     let more_inputs_root_dir = valid_inputs.base_dir.clone();
     let valid_inputs = std::sync::RwLock::new(valid_inputs);
