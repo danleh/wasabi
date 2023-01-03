@@ -34,7 +34,7 @@ fn add_hooks_instrumentation_produces_valid_wasm() {
 fn test_instrument(instrument: fn(&mut Module) -> Option<String>, instrument_name: &'static str) {
     // Filter out files that are too large to run in CI.
     // FIXME: Wasabi OOM, debug allocations with heaptrack.
-    let mut valid_binaries = ALL_VALID_TEST_BINARIES.clone();
+    let mut valid_binaries = VALID_WASM_BINARIES.clone();
     if instrument_name == "add-hooks" {
         let mut count = valid_binaries.len();
         valid_binaries.retain(|path| std::fs::metadata(path).unwrap().len() < 10_000_000);

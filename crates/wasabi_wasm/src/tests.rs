@@ -23,7 +23,7 @@ const BANANABREAD_REAL_WORLD_TEST_BINARY: &str = "../../test-inputs/real-world-b
 fn collect_all_function_types_in_test_set() {
     let type_count = DashMap::new();
 
-    ALL_VALID_TEST_BINARIES.par_iter().progress_count(ALL_VALID_TEST_BINARIES.len() as u64).for_each(|path| {
+    VALID_WASM_BINARIES.par_iter().progress_count(VALID_WASM_BINARIES.len() as u64).for_each(|path| {
         let (module, _, _) = Module::from_file(path)
             .unwrap_or_else(|err| panic!("Could not parse valid binary '{}': {err}", path.display()));
 
@@ -69,7 +69,7 @@ fn collect_all_function_types_in_test_set() {
 
 #[test]
 fn roundtrip_produces_same_module_ast() {
-    ALL_VALID_TEST_BINARIES.par_iter().progress_count(ALL_VALID_TEST_BINARIES.len() as u64).for_each(|path| {
+    VALID_WASM_BINARIES.par_iter().progress_count(VALID_WASM_BINARIES.len() as u64).for_each(|path| {
         let (module, _offsets, warnings) = Module::from_file(path)
             .unwrap_or_else(|err| panic!("Could not parse valid binary '{}': {err}", path.display()));
         if !warnings.is_empty() {
@@ -86,7 +86,7 @@ fn roundtrip_produces_same_module_ast() {
 
 #[test]
 fn type_checking_valid_files() {
-    ALL_VALID_TEST_BINARIES.par_iter().progress_count(ALL_VALID_TEST_BINARIES.len() as u64).for_each(|path| {
+    VALID_WASM_BINARIES.par_iter().progress_count(VALID_WASM_BINARIES.len() as u64).for_each(|path| {
         let (module, _, _) = Module::from_file(path)
             .unwrap_or_else(|err| panic!("Could not parse valid binary '{}': {err}", path.display()));
         
@@ -97,7 +97,7 @@ fn type_checking_valid_files() {
 
 #[test]
 fn decode_encode_is_valid_wasm() {
-    ALL_VALID_TEST_BINARIES.par_iter().progress_count(ALL_VALID_TEST_BINARIES.len() as u64).for_each(|path| {
+    VALID_WASM_BINARIES.par_iter().progress_count(VALID_WASM_BINARIES.len() as u64).for_each(|path| {
         let (module, _, _) = Module::from_file(path)
         .unwrap_or_else(|err| panic!("Could not parse valid binary '{}': {err}", path.display()));
 
