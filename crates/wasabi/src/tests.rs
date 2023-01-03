@@ -1,7 +1,7 @@
+use std::sync::atomic::AtomicUsize;
+
 use test_utilities::*;
 use wasabi_wasm::Module;
-
-use rayon::prelude::*;
 
 use crate::instrument::add_hooks;
 use crate::instrument::direct;
@@ -32,17 +32,16 @@ fn add_hooks_instrumentation_produces_valid_wasm() {
 
 /// Utility function.
 fn test_instrument(instrument: fn(&mut Module) -> Option<String>, instrument_name: &'static str) {
-    // Filter out files that are too large to run in CI.
-    // FIXME: Wasabi OOM, debug allocations with heaptrack.
-    let mut valid_binaries = VALID_WASM_BINARIES.clone();
-    if instrument_name == "add-hooks" {
-        let mut count = valid_binaries.len();
-        valid_binaries.retain(|path| std::fs::metadata(path).unwrap().len() < 10_000_000);
-        count -= valid_binaries.len();
-        println!("Not testing {count} .wasm input files because they are too large.");
-    }
+    let skipped_count = AtomicUsize::new(0);
 
-    valid_binaries.par_iter().for_each(|path| {
+    for_each_valid_wasm_binary_in_test_set(|path| {
+        // Filter out files that are too large to run in CI.
+        // FIXME: Wasabi OOM, debug allocations with heaptrack.
+        if instrument_name == "add-hooks" && std::fs::metadata(path).unwrap().len() > 10_000_000 {
+            skipped_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            return;
+        }
+
         let (mut module, _offsets, _warnings) = Module::from_file(path).unwrap();
         let javascript = instrument(&mut module);
 
@@ -61,4 +60,9 @@ fn test_instrument(instrument: fn(&mut Module) -> Option<String>, instrument_nam
             std::fs::write(output_path.with_extension("wasabi.js"), javascript).unwrap();
         }
     });
+
+    let skipped_count = skipped_count.into_inner();
+    if skipped_count > 0 {
+        println!("Skipped instrumenting {skipped_count} .wasm input files because they are too large for CI.");
+    }
 }

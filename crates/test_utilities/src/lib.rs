@@ -7,16 +7,29 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use once_cell::sync::Lazy;
+use rayon::prelude::*;
+use indicatif::ParallelProgressIterator;
 
 const VALID_WASM_BINARIES_LIST_FILE: &str = "../../test-inputs/valid-wasm-binaries.txt";
 
-pub static VALID_WASM_BINARIES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+static VALID_WASM_BINARIES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
     ValidInputsList::parse(VALID_WASM_BINARIES_LIST_FILE).existing_files().collect()
 });
 
 #[test]
 pub fn should_be_more_than_ten_valid_test_binaries() {
     assert!(VALID_WASM_BINARIES.len() > 10);
+}
+
+/// Runs the test in parallel on all valid Wasm binaries in our test set,
+/// and show a progress bar, since it might take long.
+pub fn for_each_valid_wasm_binary_in_test_set(test_fn: impl Fn(&Path) + Send + Sync) {
+    VALID_WASM_BINARIES
+        .par_iter()
+        // Abort parallel processing as early as possible.
+        .panic_fuse()
+        .progress()
+        .for_each(|path| test_fn(path));
 }
 
 /// Call WABT's wasm-validate tool on a file (WABT needs to be on $PATH).
@@ -237,21 +250,15 @@ fn wasm_files(root_dir: impl AsRef<Path>) -> Vec<PathBuf> {
 #[test]
 #[ignore]  // Ignore by default, to avoid accidentally updating the list file.
 pub fn update_valid_inputs_list() {
-    use rayon::prelude::*;
-    use indicatif::ParallelProgressIterator;
-
     let valid_inputs = ValidInputsList::parse(VALID_WASM_BINARIES_LIST_FILE);
 
     println!("Validating all Wasm binaries in list '{VALID_WASM_BINARIES_LIST_FILE}'...");
-    let validated_binaries_count = valid_inputs
-        .all_files()
-        .par_iter()
-        .progress()
-        // Abort parallel processing as early as possible.
-        .panic_fuse()
-        .map(|path| wasm_validate(path).unwrap())
-        .count();
-    println!("Validated all {validated_binaries_count} Wasm binaries in the list.");
+    let validated_binaries_count = std::sync::atomic::AtomicUsize::new(0);
+    for_each_valid_wasm_binary_in_test_set(|path| {
+        wasm_validate(path).unwrap();
+        validated_binaries_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    });
+    println!("Validated all {} Wasm binaries in the list.", validated_binaries_count.into_inner());
 
     let more_inputs_root_dir = valid_inputs.base_dir.clone();
     let valid_inputs = std::sync::RwLock::new(valid_inputs);

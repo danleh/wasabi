@@ -34,7 +34,6 @@ mimalloc = { version = "0.1.29", default-features = false }
 test_utilities = { path = "../test_utilities" }
 bencher = "0.1.5"
 criterion = "0.4.0"
-indicatif = { version = "0.17.1", features = ["rayon"] }
 dashmap = "5.4.0"
 
 [[bench]]

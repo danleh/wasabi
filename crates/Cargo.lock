@@ -1411,7 +1411,6 @@ dependencies = [
  "bencher",
  "criterion",
  "dashmap",
- "indicatif",
  "mimalloc",
  "nohash-hasher",
  "once_cell",
