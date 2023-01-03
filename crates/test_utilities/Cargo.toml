@@ -6,5 +6,8 @@ edition = "2021"
 
 [dependencies]
 walkdir = "2.3.2"
-rayon = "1.5.3"
-once_cell = "1.15.0"
+rayon = "1.6.1"
+once_cell = "1.17.0"
+indicatif = { version = "0.17.2", features = ["rayon"] }
+icu = "1.0.0"
+icu_testdata = "1.0.0"
