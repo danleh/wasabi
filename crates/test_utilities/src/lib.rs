@@ -18,6 +18,10 @@ static VALID_WASM_BINARIES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
 
 #[test]
 pub fn should_be_more_than_ten_valid_test_binaries() {
+    println!("\n{} valid Wasm binaries in test set:", VALID_WASM_BINARIES.len());
+    for path in VALID_WASM_BINARIES.iter() {
+        println!("  {}", path.display());
+    }
     assert!(VALID_WASM_BINARIES.len() > 10);
 }
 
