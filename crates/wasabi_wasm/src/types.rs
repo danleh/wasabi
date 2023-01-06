@@ -862,8 +862,10 @@ fn check_instr(
         If(block_ty) => {
             state.pop_val_expected(ValType::I32)?;
             state.push_block(instr, block_ty.inputs(), block_ty.results());
-            let inputs: Vec<ValType> = [&[ValType::I32], block_ty.inputs()].concat();
-            to_inferred_type(FunctionType::new(&inputs, &[]))
+            to_inferred_type(FunctionType::from_iter(
+                std::iter::once(ValType::I32).chain(block_ty.inputs().iter().copied()),
+                std::iter::empty()    
+            ))
         }
         End => {
             let frame = state.pop_block()?;

@@ -1551,9 +1551,9 @@ impl Instr {
             Const(ref val) => Some(FunctionType::new(&[], &[val.to_type()])),
             Unary(ref op) => Some(op.to_type()),
             Binary(ref op) => Some(op.to_type()),
-            CallIndirect(ref func_ty, _) => Some(FunctionType::new(
-                &[func_ty.inputs(), &[I32]].concat(),
-                func_ty.results(),
+            CallIndirect(ref func_ty, _) => Some(FunctionType::from_iter(
+                func_ty.inputs().iter().copied().chain(std::iter::once(I32)),
+                func_ty.results().iter().copied(),
             )),
 
             // Difficult because of nesting and block types.
