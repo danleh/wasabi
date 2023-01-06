@@ -89,7 +89,7 @@ impl BlockStack {
     pub fn begin_block(&mut self, begin: Idx<Instr>) {
         self.block_stack.push(Block {
             begin,
-            end: *self.begin_end_map.get(&begin).expect(&format!(
+            end: *self.begin_end_map.get(&begin).unwrap_or_else(|| panic!(
                 "invalid block nesting: could not find end for block begin at {begin:?}"
             )),
         });
@@ -98,14 +98,14 @@ impl BlockStack {
     pub fn begin_loop(&mut self, begin: Idx<Instr>) {
         self.block_stack.push(Loop {
             begin,
-            end: *self.begin_end_map.get(&begin).expect(&format!(
+            end: *self.begin_end_map.get(&begin).unwrap_or_else(|| panic!(
                 "invalid block nesting: could not find end for loop begin at {begin:?}"
             )),
         });
     }
 
     pub fn begin_if(&mut self, begin_if: Idx<Instr>) {
-        let end_or_else = *self.begin_end_map.get(&begin_if).expect(&format!(
+        let end_or_else = *self.begin_end_map.get(&begin_if).unwrap_or_else(|| panic!(
             "invalid block nesting: could not find end/else for if begin at {begin_if:?}"
         ));
 
@@ -171,7 +171,7 @@ impl BlockStack {
         // backward branch when targeting loops, forward for all other blocks
         let absolute_instr = {
             // the last block of the ended ones is the actual target
-            let target_block = ended_blocks.get(label.to_usize()).expect(&format!(
+            let target_block = ended_blocks.get(label.to_usize()).unwrap_or_else(|| panic!(
                 "invalid label: cannot find target block for {label:?}"
             ));
 
