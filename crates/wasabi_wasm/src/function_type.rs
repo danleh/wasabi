@@ -315,10 +315,19 @@ fn test_goedel_number_roundtrips() {
     }
 }
 
-#[derive(Default)]
 struct ArenaInner {
     idx_to_func_type: Vec<(&'static [ValType], &'static [ValType])>,
     func_type_to_idx: FxHashMap<(&'static [ValType], &'static [ValType]), usize>,
+}
+
+impl Default for ArenaInner {
+    fn default() -> Self {
+        const ARENA_PREALLOC_SIZE: usize = 256;
+        Self {
+            idx_to_func_type: Vec::with_capacity(ARENA_PREALLOC_SIZE),
+            func_type_to_idx: FxHashMap::with_capacity_and_hasher(ARENA_PREALLOC_SIZE, Default::default()),
+        }
+    }
 }
 
 #[derive(Default)]
