@@ -369,7 +369,7 @@ impl HookMap {
     /// returns a Call instruction to the requested hook, which either
     /// A) was freshly generated, since it was not requested with these types before,
     /// B) came from the internal hook map.
-    fn get_or_insert<'a>(&self, low_level_name: LowLevelHookName<'a>, generate_hook: impl Fn(String) -> Hook) -> Instr {
+    fn get_or_insert(&self, low_level_name: LowLevelHookName, generate_hook: impl Fn(String) -> Hook) -> Instr {
         // This is quite tricky and currently not possible with the std::sync::RwLock:
         // We want to allow parallel reads to the HashMap, but if a hook is not present, we need
         // to insert it, thus requiring a full mutable lock (no parallelism). Always doing exclusive
@@ -426,7 +426,7 @@ impl<'types> LowLevelHookName<'types> {
         }
     }
 
-    fn to_mangled_string(&self) -> String {
+    fn to_mangled_string(self) -> String {
         let mut mangled = self.hook_stem.replace('.', "_");
         if !self.types.is_empty() {
             mangled.push('_');
