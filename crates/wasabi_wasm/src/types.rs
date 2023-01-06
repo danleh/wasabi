@@ -917,7 +917,7 @@ fn check_instr(
             
             // Pop and immediately push every branch target label types again.
             // This ensures all branch targets have the same type.
-            for label in table {
+            for label in table.iter() {
                 let label_inputs = state.get_block(*label)?.label_inputs.clone();
                 state.pop_vals_expected(&label_inputs)?;
                 state.push_vals(&label_inputs)?;
@@ -1218,7 +1218,7 @@ mod tests {
         assert_reachable_type(&mut type_checker, Const(Val::I64(42)), &[], &[I64]);
         assert_reachable_type(&mut type_checker, Const(Val::I32(3)), &[], &[I32]);
         assert_reachable_type(&mut type_checker, BrTable { 
-            table: vec![Label::from(1u32), Label::from(0u32), Label::from(0u32), Label::from(1u32)], 
+            table: vec![Label::from(1u32), Label::from(0u32), Label::from(0u32), Label::from(1u32)].into_boxed_slice(), 
             default: Label::from(0u32)
         }, &[I32, I64], &[]);
         assert_unreachable_type(&mut type_checker, Binary(I64Add));

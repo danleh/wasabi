@@ -514,7 +514,7 @@ fn parse_instr(
                 table.push(Label::from(target?))
             }
             BrTable {
-                table,
+                table: table.into_boxed_slice(),
                 default,
             }
         }
