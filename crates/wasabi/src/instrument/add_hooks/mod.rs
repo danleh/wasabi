@@ -567,7 +567,7 @@ pub fn add_hooks(
                             location.0,
                             location.1,
                         ]);
-                        instrumented_body.append(&mut convert_i64_instr(Local(Get, tmp), ty));
+                        convert_i64_instr(&mut instrumented_body, Local(Get, tmp), ty);
                         // replace drop with hook call
                         instrumented_body.push(hooks.instr(&instr, &[ty]));
                     } else {
@@ -616,7 +616,7 @@ pub fn add_hooks(
                             location.1,
                             local_idx.to_const(),
                         ]);
-                        instrumented_body.append(&mut convert_i64_instr(Local(Get, local_idx), local_ty));
+                        convert_i64_instr(&mut instrumented_body, Local(Get, local_idx), local_ty);
                         instrumented_body.push(hooks.instr(&instr, &[local_ty]));
                     }
                 }
@@ -634,7 +634,7 @@ pub fn add_hooks(
                             location.1,
                             global_idx.to_const(),
                         ]);
-                        instrumented_body.append(&mut convert_i64_instr(Global(GlobalOp::Get, global_idx), global_ty));
+                        convert_i64_instr(&mut instrumented_body, Global(GlobalOp::Get, global_idx), global_ty);
                         instrumented_body.push(hooks.instr(&instr, &[global_ty]));
                     }
                 }
@@ -741,7 +741,7 @@ pub fn add_hooks(
                             location.1,
                         ]);
                         // optimization: just call T.const again, instead of duplicating result into local
-                        instrumented_body.append(&mut convert_i64_instr(instr.clone(), val.to_type()));
+                        convert_i64_instr(&mut instrumented_body, instr.clone(), val.to_type());
                         instrumented_body.push(hooks.instr(&instr, &[]));
                     }
                 }
