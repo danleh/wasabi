@@ -83,7 +83,8 @@ pub fn add_hooks(
 
         // allocate new instrumented body (i.e., do not modify in-place), since there are too many insertions anyway
         // there are at least 3 new instructions per original one (2 const for location + 1 hook call)
-        let mut instrumented_body = Vec::with_capacity(4 * original_body.len());
+        // later increased to 6, since we saw a lot of re-allocations when analyzing Wasabi with heaptrack.
+        let mut instrumented_body = Vec::with_capacity(6 * original_body.len());
 
         // for branch target resolution (i.e., relative labels -> instruction locations)
         let mut block_stack = BlockStack::new(&original_body);
