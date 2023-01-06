@@ -131,7 +131,7 @@ impl BrTableInfo {
             ResolvedLabel {
                 label,
                 location: Location(func, target.absolute_instr),
-                end_blocks: target.ended_blocks,
+                end_blocks: target.ended_blocks.to_vec(),
             }
         };
         BrTableInfo {

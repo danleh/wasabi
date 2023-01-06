@@ -2,6 +2,8 @@
 
 use std::collections::HashMap;
 
+use smallvec::SmallVec;
+
 use wasabi_wasm::Idx;
 use wasabi_wasm::Instr;
 use wasabi_wasm::Label;
@@ -157,7 +159,7 @@ impl BlockStack {
     /// this requires forward scanning for non-loop block ends (implemented as a precomputed HashMap lookup, so O(1))
     pub fn br_target(&self, label: Label) -> BranchTarget {
         // resolve label to all blocks between the current and the target block
-        let ended_blocks: Vec<BlockStackElement> = self
+        let ended_blocks: SmallVec<[BlockStackElement; 4]> = self
             .block_stack
             .iter()
             .rev()
@@ -205,5 +207,5 @@ pub struct BranchTarget {
     pub absolute_instr: Idx<Instr>,
     /// all blocks that are implicitly ended when performing the branch (including the target block)
     /// in the order how they are left (i.e., innermost [== current block] to outermost [== target block])
-    pub ended_blocks: Vec<BlockStackElement>,
+    pub ended_blocks: SmallVec<[BlockStackElement; 4]>,
 }
