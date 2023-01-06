@@ -89,7 +89,7 @@ fn serialize_function_type<S>(ty: &FunctionType, s: S) -> Result<S::Ok, S::Error
 where
     S: Serializer,
 {
-    let mut type_str = String::new();
+    let mut type_str = String::with_capacity(ty.inputs().len() + ty.results().len() + 1);
     for ty in ty.inputs().iter() {
         type_str.push(ty.to_char());
     }
@@ -104,7 +104,7 @@ fn serialize_types<S>(tys: &[ValType], s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let mut type_str = String::new();
+    let mut type_str = String::with_capacity(tys.len());
     for ty in tys {
         type_str.push(ty.to_char());
     }
