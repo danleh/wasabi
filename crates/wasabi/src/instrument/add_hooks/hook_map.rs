@@ -108,10 +108,6 @@ impl Hook {
             idx: Idx::from(0u32),
         }
     }
-
-    pub fn lowlevel_name(&self) -> String {
-        self.wasm.import().unwrap().1.to_string()
-    }
 }
 
 pub struct HookMap {
@@ -142,38 +138,38 @@ impl HookMap {
     }
 
     pub fn instr(&self, instr: &Instr, polymorphic_tys: &[ValType]) -> Instr {
-        let name = &mangle_polymorphic_name(instr.to_name(), polymorphic_tys)[..];
-        let hook = match *instr {
+        let ll_name = mangle_polymorphic_name(instr.to_name(), polymorphic_tys);
+        let generate_hook = |ll_name: &str| match *instr {
             /*
                 monomorphic instructions:
                 - 1 instruction : 1 hook
                 - types are determined just from instruction
             */
 
-            Nop | Unreachable => Hook::new(name, args!(), name, ""),
+            Nop | Unreachable => Hook::new(ll_name, args!(), ll_name, ""),
 
-            If(_) => Hook::new(name, args!(condition: I32), "if_", "condition === 1"),
-            Br(_) => Hook::new(name, args!(targetLabel: I32, targetInstr: I32), name, "{label: targetLabel, location: {func, instr: targetInstr}}"),
-            BrIf(_) => Hook::new(name, args!(condition: I32, targetLabel: I32, targetInstr: I32), name, "{label: targetLabel, location: {func, instr: targetInstr}}, condition === 1"),
+            If(_) => Hook::new(ll_name, args!(condition: I32), "if_", "condition === 1"),
+            Br(_) => Hook::new(ll_name, args!(targetLabel: I32, targetInstr: I32), ll_name, "{label: targetLabel, location: {func, instr: targetInstr}}"),
+            BrIf(_) => Hook::new(ll_name, args!(condition: I32, targetLabel: I32, targetInstr: I32), ll_name, "{label: targetLabel, location: {func, instr: targetInstr}}, condition === 1"),
             // NOTE js_args is very hacky! We rely on the Hook constructor to close the parenthesis and insert the call statement to endBrTableBlock() here
-            BrTable { .. } => Hook::new(name, args!(tableIdx: I32, brTablesInfoIdx: I32), name, "Wasabi.module.info.brTables[brTablesInfoIdx].table, Wasabi.module.info.brTables[brTablesInfoIdx].default, tableIdx); Wasabi.endBrTableBlocks(brTablesInfoIdx, tableIdx, func"),
+            BrTable { .. } => Hook::new(ll_name, args!(tableIdx: I32, brTablesInfoIdx: I32), ll_name, "Wasabi.module.info.brTables[brTablesInfoIdx].table, Wasabi.module.info.brTables[brTablesInfoIdx].default, tableIdx); Wasabi.endBrTableBlocks(brTablesInfoIdx, tableIdx, func"),
 
-            MemorySize(_) => Hook::new(name, args!(currentSizePages: I32), name, "currentSizePages"),
-            MemoryGrow(_) => Hook::new(name, args!(deltaPages: I32, previousSizePages: I32), name, "deltaPages, previousSizePages"),
+            MemorySize(_) => Hook::new(ll_name, args!(currentSizePages: I32), ll_name, "currentSizePages"),
+            MemoryGrow(_) => Hook::new(ll_name, args!(deltaPages: I32, previousSizePages: I32), ll_name, "deltaPages, previousSizePages"),
 
             Load(op, _) => {
                 let ty = op.to_type().results()[0];
                 let args = args!(offset: I32, align: I32, addr: I32, value: ty);
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {{addr, offset, align}}, {}", instr_name, &args[3].to_lowlevel_long_expr());
-                Hook::new(name, args, "load", js_args)
+                Hook::new(ll_name, args, "load", js_args)
             }
             Store(op, _) => {
                 let ty = op.to_type().inputs()[1];
                 let args = args!(offset: I32, align: I32, addr: I32, value: ty);
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {{addr, offset, align}}, {}", instr_name, &args[3].to_lowlevel_long_expr());
-                Hook::new(name, args, "store", js_args)
+                Hook::new(ll_name, args, "store", js_args)
             }
 
             Const(val) => {
@@ -181,7 +177,7 @@ impl HookMap {
                 let args = args!(value: ty);
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {}", instr_name, args[0].to_lowlevel_long_expr());
-                Hook::new(name, args, "const_", js_args)
+                Hook::new(ll_name, args, "const_", js_args)
             }
             Unary(op) => {
                 let ty = op.to_type();
@@ -190,7 +186,7 @@ impl HookMap {
                 let args = inputs.chain(results).collect::<Vec<_>>();
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {}", instr_name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
-                Hook::new(name, args, "unary", js_args)
+                Hook::new(ll_name, args, "unary", js_args)
             }
             Binary(op) => {
                 let ty = op.to_type();
@@ -199,7 +195,7 @@ impl HookMap {
                 let args = inputs.chain(results).collect::<Vec<_>>();
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {}", instr_name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
-                Hook::new(name, args, "binary", js_args)
+                Hook::new(ll_name, args, "binary", js_args)
             }
 
 
@@ -215,46 +211,46 @@ impl HookMap {
                 assert_eq!(polymorphic_tys.len(), 1, "drop has only one argument");
                 let args = args!(value: polymorphic_tys[0]);
                 let js_args = &args[0].to_lowlevel_long_expr();
-                Hook::new(name, args, "drop", js_args)
+                Hook::new(ll_name, args, "drop", js_args)
             }
             Select => {
                 assert_eq!(polymorphic_tys.len(), 2, "select has two polymorphic arguments");
                 assert_eq!(polymorphic_tys[0], polymorphic_tys[1], "select arguments must be equal");
                 let args = args!(condition: I32, input0: polymorphic_tys[0], input1: polymorphic_tys[1]);
                 let js_args = &format!("condition === 1, {}", args[1..].iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
-                Hook::new(name, args, "select", js_args)
+                Hook::new(ll_name, args, "select", js_args)
             }
             Local(_, _) => {
                 assert_eq!(polymorphic_tys.len(), 1, "local instructions have only one argument");
                 let args = args!(index: I32, value: polymorphic_tys[0]);
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {}", instr_name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
-                Hook::new(name, args, "local", js_args)
+                Hook::new(ll_name, args, "local", js_args)
             }
             Global(_, _) => {
                 assert_eq!(polymorphic_tys.len(), 1, "global instructions have only one argument");
                 let args = args!(index: I32, value: polymorphic_tys[0]);
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {}", instr_name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
-                Hook::new(name, args, "global", js_args)
+                Hook::new(ll_name, args, "global", js_args)
             }
             Return => {
                 let args = polymorphic_tys.iter().enumerate().map(|(i, &ty)| Arg { name: format!("result{i}"), ty }).collect::<Vec<_>>();
                 let js_args = &format!("[{}]", args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
-                Hook::new(name, args, "return_", js_args)
+                Hook::new(ll_name, args, "return_", js_args)
             }
             Call(_) => {
                 let mut args = args!(targetFunc: I32);
                 args.extend(polymorphic_tys.iter().enumerate().map(|(i, &ty)| Arg { name: format!("arg{i}"), ty }));
                 // NOTE calls the high-level call_pre hook with one argument less than call_indirect, thus tableIdx === undefined since this is a direct call
                 let js_args = &format!("targetFunc, [{}]", args[1..].iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
-                Hook::new(name, args, "call_pre", js_args)
+                Hook::new(ll_name, args, "call_pre", js_args)
             }
             CallIndirect(_, _) => {
                 let mut args = args!(tableIndex: I32);
                 args.extend(polymorphic_tys.iter().enumerate().map(|(i, &ty)| Arg { name: format!("arg{i}"), ty }));
                 let js_args = &format!("Wasabi.resolveTableIdx(tableIndex), [{}], tableIndex", args[1..].iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
-                Hook::new(name, args, "call_pre", js_args)
+                Hook::new(ll_name, args, "call_pre", js_args)
             }
 
 
@@ -262,54 +258,57 @@ impl HookMap {
 
             Block(_) | Loop(_) | Else | End => panic!("cannot get hook for block-type instruction with this method, please use the other methods specialized to the block type"),
         };
-        self.get_or_insert(hook)
+
+        self.get_or_insert(&ll_name, generate_hook)
     }
 
     /* special hooks that do not directly correspond to an instruction or need additional information */
 
     pub fn start(&self) -> Instr {
-        self.get_or_insert(Hook::new("start", vec![], "start", ""))
+        self.get_or_insert("start", |ll_name| Hook::new(ll_name, vec![], "start", ""))
     }
 
     pub fn call_post(&self, result_tys: &[ValType]) -> Instr {
-        let name = mangle_polymorphic_name("call_post", result_tys);
-        let args = result_tys
-            .iter()
-            .enumerate()
-            .map(|(i, &ty)| Arg {
-                name: format!("result{i}"),
-                ty,
-            })
-            .collect::<Vec<_>>();
-        let js_args = &format!(
-            "[{}]",
-            args.iter()
-                .map(Arg::to_lowlevel_long_expr)
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        self.get_or_insert(Hook::new(name, args, "call_post", js_args))
+        let ll_name = mangle_polymorphic_name("call_post", result_tys);
+        let generate_hook = move |ll_name| {
+            let args = result_tys
+                .iter()
+                .enumerate()
+                .map(|(i, &ty)| Arg {
+                    name: format!("result{i}"),
+                    ty,
+                })
+                .collect::<Vec<_>>();
+            let js_args = &format!(
+                "[{}]",
+                args.iter()
+                    .map(Arg::to_lowlevel_long_expr)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            Hook::new(ll_name, args, "call_post", js_args)
+        };
+        self.get_or_insert(&ll_name, generate_hook)
     }
 
     pub fn begin_function(&self) -> Instr {
-        self.get_or_insert(Hook::new("begin_function", vec![], "begin", "\"function\""))
+        self.get_or_insert("begin_function", |ll_name| Hook::new(ll_name, vec![], "begin", "\"function\""))
     }
 
     pub fn begin_block(&self) -> Instr {
-        self.get_or_insert(Hook::new("begin_block", vec![], "begin", "\"block\""))
+        self.get_or_insert("begin_block", |ll_name| Hook::new(ll_name, vec![], "begin", "\"block\""))
     }
 
     pub fn begin_loop(&self) -> Instr {
-        self.get_or_insert(Hook::new("begin_loop", vec![], "begin", "\"loop\""))
+        self.get_or_insert("begin_loop", |ll_name| Hook::new(ll_name, vec![], "begin", "\"loop\""))
     }
 
     pub fn begin_if(&self) -> Instr {
-        self.get_or_insert(Hook::new("begin_if", vec![], "begin", "\"if\""))
+        self.get_or_insert("begin_if", |ll_name| Hook::new(ll_name, vec![], "begin", "\"if\""))
     }
 
     pub fn begin_else(&self) -> Instr {
-        self.get_or_insert(Hook::new(
-            "begin_else",
+        self.get_or_insert("begin_else", |ll_name| Hook::new(ll_name, 
             args!(ifInstr: I32),
             "begin",
             "\"else\", {func, instr: ifInstr}",
@@ -317,45 +316,45 @@ impl HookMap {
     }
 
     pub fn end(&self, block: &BlockStackElement) -> Instr {
-        self.get_or_insert(match *block {
-            BlockStackElement::Function { .. } => Hook::new(
-                "end_function",
+        let (ll_name, generate_hook): (&str, fn(&str) -> Hook) = match *block {
+            BlockStackElement::Function { .. } => ("end_function", |ll_name| Hook::new(
+                ll_name,
                 vec![],
                 "end",
                 "\"function\", {func, instr: -1}",
-            ),
-            BlockStackElement::Block { .. } => Hook::new(
-                "end_block",
+            )),
+            BlockStackElement::Block { .. } => ("end_block", |ll_name| Hook::new(
+                ll_name,
                 args!(beginInstr: I32),
                 "end",
                 "\"block\", {func, instr: beginInstr}",
-            ),
-            BlockStackElement::Loop { .. } => Hook::new(
-                "end_loop",
+            )),
+            BlockStackElement::Loop { .. } => ("end_loop", |ll_name| Hook::new(
+                ll_name,
                 args!(beginInstr: I32),
                 "end",
                 "\"loop\", {func, instr: beginInstr}",
-            ),
-            BlockStackElement::If { .. } => Hook::new(
-                "end_if",
+            )),
+            BlockStackElement::If { .. } => ("end_if", |ll_name| Hook::new(
+                ll_name,
                 args!(beginInstr: I32),
                 "end",
                 "\"if\", {func, instr: beginInstr}",
-            ),
-            BlockStackElement::Else { .. } => Hook::new(
-                "end_else",
+            )),
+            BlockStackElement::Else { .. } => ("end_else", |ll_name| Hook::new(
+                ll_name,
                 args!(elseInstr: I32, ifInstr: I32),
                 "end",
                 "\"else\", {func, instr: elseInstr}, {func, instr: ifInstr}",
-            ),
-        })
+            )),
+        };
+        self.get_or_insert(ll_name, generate_hook)
     }
 
     /// returns a Call instruction to the requested hook, which either
     /// A) was freshly generated, since it was not requested with these types before,
     /// B) came from the internal hook map.
-    fn get_or_insert(&self, hook: Hook) -> Instr {
-        let hook_name = hook.lowlevel_name();
+    fn get_or_insert<'a>(&self, low_level_name: &'a str, generate_hook: impl Fn(&'a str) -> Hook) -> Instr {
         // This is quite tricky and currently not possible with the std::sync::RwLock:
         // We want to allow parallel reads to the HashMap, but if a hook is not present, we need
         // to insert it, thus requiring a full mutable lock (no parallelism). Always doing exclusive
@@ -373,12 +372,13 @@ impl HookMap {
         //      and getting the write lock, we might end up with two hook implementations!
         // Thus: parking_lot::RwLock, which offers an atomic upgrade from read -> write lock
         let map = self.map.upgradable_read();
-        let hook_idx = match map.get(&hook_name).map(|h| h.idx) {
+        let hook_idx = match map.get(low_level_name).map(|h| h.idx) {
             Some(hook_idx) => hook_idx,
             None => {
                 let mut map = RwLockUpgradableReadGuard::upgrade(map);
                 let idx = (self.original_function_count + map.len()).into();
-                map.insert(hook_name, Hook { idx, ..hook });
+                let hook = generate_hook(low_level_name);
+                map.insert(low_level_name.to_string(), Hook { idx, ..hook });
                 idx
             }
         };
@@ -390,7 +390,7 @@ impl HookMap {
 
 /// e.g. "call" + [I32, F64] -> "call_iF"
 fn mangle_polymorphic_name(name: &str, tys: &[ValType]) -> String {
-    let mut mangled = name.to_string().replace('.', "_");
+    let mut mangled = name.replace('.', "_");
     if !tys.is_empty() {
         mangled.push('_');
     }
