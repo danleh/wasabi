@@ -13,6 +13,10 @@ rayon = "1.6.1"
 # For upgradable RW lock during instrumentation.
 parking_lot = "0.12.1"
 
+smallvec = "1.10.0"
+# For faster hash function in HashSet/HashMap.
+nohash-hasher = "0.2.0"
+
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.91"
 serde_plain = "1.0.1"

@@ -52,7 +52,28 @@ impl FunctionType {
         FunctionType::new(&[], &[])
     }
 
+    /// If the types are already slices, use this function.
+    // TODO: Once specialization is stable, this can be a specialization of `from_iter`, which is the generic case.
     pub fn new(inputs: &[ValType], results: &[ValType]) -> Self {
+        if let Some(function_type) = Self::new_goedel(inputs.iter().cloned(), results.iter().cloned()) {
+            function_type
+        } else {
+            Self::new_arena(inputs, results)
+        }
+    }
+
+    /// Use if your types are not already slices and you want to avoid the allocation in the (common) case of Goedel numbers.
+    pub fn from_iter(inputs: impl IntoIterator<Item=ValType> + Clone, results: impl IntoIterator<Item=ValType> + Clone) -> Self {
+        if let Some(function_type) = Self::new_goedel(inputs.clone(), results.clone()) {
+            function_type
+        } else {
+            let inputs: Vec<ValType> = inputs.into_iter().collect();
+            let results: Vec<ValType> = results.into_iter().collect();
+            Self::new_arena(&inputs, &results)
+        }
+    }
+
+    fn new_goedel(inputs: impl IntoIterator<Item=ValType>, results: impl IntoIterator<Item=ValType>) -> Option<Self> {
         // Ensure three things:
         // 1. The numerical operations do not overflow while converting to the Gödel number.
         if let Some(inputs) = val_type_seq_to_goedel_number(inputs) {
@@ -64,17 +85,18 @@ impl FunctionType {
                     if let Some(results) = val_type_seq_to_goedel_number(results) {
                         if results < LOOKUP_TABLE_SIZE {
                             if let Ok(results) = u8::try_from(results) {
-                                return FunctionType::GoedelNumber { inputs, results };
+                                return Some(FunctionType::GoedelNumber { inputs, results });
                             }
                         }
                     }
                 }
             }
         }
-        // Fallback: always succeeds, but is slower.
-        Self::new_arena(inputs, results)
+        None
     }
 
+    /// Fallback: always succeeds, but is slower.
+    /// Also needs slices of the types as input, not just iterators.
     fn new_arena(inputs: &[ValType], results: &[ValType]) -> Self {
         let id = ARENA.get_or_insert(inputs, results);
         let id = usize_to_array(id);
@@ -225,19 +247,12 @@ fn test_goedel_number_constants() {
     assert_eq!(val_type_seq_max_goedel_number(4), 340);
 }
 
-// TODO: Take an iterator instead of a slice, then also do that for
-// `FunctionType::new`. This should allow to remove some allocations in the
-// callers.
-fn val_type_seq_to_goedel_number(seq: &[ValType]) -> Option<usize> {
+fn val_type_seq_to_goedel_number(seq: impl IntoIterator<Item=ValType>) -> Option<usize> {
     let mut result = 0usize;
 
-    // Cannot (yet) use `for` loop in const fn.
-    let mut i = 0;
-    while i < seq.len() {
-        let val_type = seq[i];
+    for val_type in seq {
         result = result.checked_mul(VAL_TYPE_MAX_GOEDEL_NUMBER + 1)?;
         result = result.checked_add(val_type_to_goedel_number(val_type) + 1)?;
-        i += 1;
     }
 
     Some(result)
@@ -245,9 +260,9 @@ fn val_type_seq_to_goedel_number(seq: &[ValType]) -> Option<usize> {
 
 #[test]
 fn test_val_type_seq_to_goedel_number() {
-    assert_eq!(val_type_seq_to_goedel_number(&[]), Some(0));
-    assert_eq!(val_type_seq_to_goedel_number(&[ValType::I32]), Some(1));
-    assert_eq!(val_type_seq_to_goedel_number(&[ValType::I32, ValType::I32]), Some(5));
+    assert_eq!(val_type_seq_to_goedel_number([]), Some(0));
+    assert_eq!(val_type_seq_to_goedel_number([ValType::I32]), Some(1));
+    assert_eq!(val_type_seq_to_goedel_number([ValType::I32, ValType::I32]), Some(5));
 }
 
 // Reverse direction: Gödel number to slice.
@@ -310,15 +325,24 @@ fn test_goedel_number_to_val_type_seq() {
 fn test_goedel_number_roundtrips() {
     for goedel_number in 0..LOOKUP_TABLE_SIZE {
         let val_type_seq = goedel_number_to_val_type_seq(goedel_number);
-        let roundtrip = val_type_seq_to_goedel_number(&val_type_seq).unwrap();
+        let roundtrip = val_type_seq_to_goedel_number(val_type_seq.clone()).unwrap();
         assert_eq!(goedel_number, roundtrip, "{goedel_number} -> {val_type_seq:?} -> {roundtrip}");
     }
 }
 
-#[derive(Default)]
 struct ArenaInner {
     idx_to_func_type: Vec<(&'static [ValType], &'static [ValType])>,
     func_type_to_idx: FxHashMap<(&'static [ValType], &'static [ValType]), usize>,
+}
+
+impl Default for ArenaInner {
+    fn default() -> Self {
+        const ARENA_PREALLOC_SIZE: usize = 256;
+        Self {
+            idx_to_func_type: Vec::with_capacity(ARENA_PREALLOC_SIZE),
+            func_type_to_idx: FxHashMap::with_capacity_and_hasher(ARENA_PREALLOC_SIZE, Default::default()),
+        }
+    }
 }
 
 #[derive(Default)]

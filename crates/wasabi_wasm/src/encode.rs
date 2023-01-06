@@ -431,7 +431,7 @@ fn encode_single_instruction_with_end(
 ) -> Result<we::ConstExpr, EncodeError> {
     match instrs {
         [single_instr, Instr::End] => {
-            let mut instr_bytes = Vec::with_capacity(2);
+            let mut instr_bytes = Vec::with_capacity(8);
             encode_instruction(single_instr, state)?.encode(&mut instr_bytes);
             Ok(we::ConstExpr::raw(instr_bytes))
         },

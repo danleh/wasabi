@@ -1,6 +1,7 @@
 #![allow(clippy::expect_fun_call)]
 
-use std::collections::HashMap;
+use nohash_hasher::IntMap;
+use smallvec::SmallVec;
 
 use wasabi_wasm::Idx;
 use wasabi_wasm::Instr;
@@ -18,9 +19,9 @@ use self::BlockStackElement::*;
 
 #[derive(Debug)]
 pub struct BlockStack {
-    block_stack: Vec<BlockStackElement>,
+    block_stack: SmallVec<[BlockStackElement; 8]>,
     /// Maps the beginning of a block to its end (or else, for if) instruction. Pre-computed on new().
-    begin_end_map: HashMap<Idx<Instr>, Idx<Instr>>,
+    begin_end_map: IntMap<Idx<Instr>, Idx<Instr>>,
 }
 
 #[derive(Debug, Clone)]
@@ -50,10 +51,12 @@ pub enum BlockStackElement {
 
 impl BlockStack {
     pub fn new(instrs: &[Instr]) -> Self {
-        // build this already at construction, so that we know later in O(1) where the end's are
-        let mut begin_end_map: HashMap<Idx<Instr>, Idx<Instr>> = HashMap::new();
+        const PREALLOC_BLOCK_STACK_SIZE: usize = 4;
 
-        let mut begin_stack: Vec<Idx<Instr>> = vec![];
+        // build this already at construction, so that we know later in O(1) where the end's are
+        let mut begin_end_map: IntMap<Idx<Instr>, Idx<Instr>> = IntMap::with_capacity_and_hasher(PREALLOC_BLOCK_STACK_SIZE, Default::default());
+
+        let mut begin_stack: SmallVec<[Idx<Instr>; 16]> = SmallVec::with_capacity(PREALLOC_BLOCK_STACK_SIZE);
         for (iidx, instr) in instrs[..instrs.len() - 1].iter().enumerate() {
             let iidx = iidx.into();
             match *instr {
@@ -76,18 +79,18 @@ impl BlockStack {
             "invalid block nesting: some blocks were not closed, stack at end is {begin_stack:?}"
         );
 
-        BlockStack {
-            block_stack: vec![Function {
-                end: (instrs.len() - 1).into(),
-            }],
-            begin_end_map,
-        }
+        let mut block_stack = SmallVec::with_capacity(PREALLOC_BLOCK_STACK_SIZE);
+        block_stack.push(Function {
+            end: (instrs.len() - 1).into(),
+        });
+
+        BlockStack { block_stack, begin_end_map }
     }
 
     pub fn begin_block(&mut self, begin: Idx<Instr>) {
         self.block_stack.push(Block {
             begin,
-            end: *self.begin_end_map.get(&begin).expect(&format!(
+            end: *self.begin_end_map.get(&begin).unwrap_or_else(|| panic!(
                 "invalid block nesting: could not find end for block begin at {begin:?}"
             )),
         });
@@ -96,14 +99,14 @@ impl BlockStack {
     pub fn begin_loop(&mut self, begin: Idx<Instr>) {
         self.block_stack.push(Loop {
             begin,
-            end: *self.begin_end_map.get(&begin).expect(&format!(
+            end: *self.begin_end_map.get(&begin).unwrap_or_else(|| panic!(
                 "invalid block nesting: could not find end for loop begin at {begin:?}"
             )),
         });
     }
 
     pub fn begin_if(&mut self, begin_if: Idx<Instr>) {
-        let end_or_else = *self.begin_end_map.get(&begin_if).expect(&format!(
+        let end_or_else = *self.begin_end_map.get(&begin_if).unwrap_or_else(|| panic!(
             "invalid block nesting: could not find end/else for if begin at {begin_if:?}"
         ));
 
@@ -157,7 +160,7 @@ impl BlockStack {
     /// this requires forward scanning for non-loop block ends (implemented as a precomputed HashMap lookup, so O(1))
     pub fn br_target(&self, label: Label) -> BranchTarget {
         // resolve label to all blocks between the current and the target block
-        let ended_blocks: Vec<BlockStackElement> = self
+        let ended_blocks: SmallVec<[BlockStackElement; 4]> = self
             .block_stack
             .iter()
             .rev()
@@ -169,7 +172,7 @@ impl BlockStack {
         // backward branch when targeting loops, forward for all other blocks
         let absolute_instr = {
             // the last block of the ended ones is the actual target
-            let target_block = ended_blocks.get(label.to_usize()).expect(&format!(
+            let target_block = ended_blocks.get(label.to_usize()).unwrap_or_else(|| panic!(
                 "invalid label: cannot find target block for {label:?}"
             ));
 
@@ -205,5 +208,5 @@ pub struct BranchTarget {
     pub absolute_instr: Idx<Instr>,
     /// all blocks that are implicitly ended when performing the branch (including the target block)
     /// in the order how they are left (i.e., innermost [== current block] to outermost [== target block])
-    pub ended_blocks: Vec<BlockStackElement>,
+    pub ended_blocks: SmallVec<[BlockStackElement; 4]>,
 }

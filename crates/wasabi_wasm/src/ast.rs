@@ -17,6 +17,7 @@ use std::str::FromStr;
 
 use ordered_float::OrderedFloat;
 use serde::Serialize;
+use smallvec::SmallVec;
 
 pub use crate::function_type::FunctionType;
 
@@ -654,7 +655,7 @@ impl Memarg {
 }
 
 #[test]
-fn instr_size() {
+fn instr_size_should_not_be_too_large() {
     assert_eq!(std::mem::size_of::<LocalOp>(), 1);
     assert_eq!(std::mem::size_of::<GlobalOp>(), 1);
 
@@ -671,10 +672,9 @@ fn instr_size() {
 
     assert_eq!(std::mem::size_of::<Memarg>(), 8);
 
-    // FIXME These are fucking huge...
+    // These are pretty large, but the only way to get it smaller is to store things out-of-line.
     assert_eq!(std::mem::size_of::<Val>(), 16);
-    assert_eq!(std::mem::size_of::</* BrTable */ (Vec<Label>, Label)>(), 32);
-    assert_eq!(std::mem::size_of::<Instr>(), 32);
+    assert_eq!(std::mem::size_of::<Instr>(), 24);
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -706,7 +706,7 @@ pub enum Instr {
     Br(Label),
     // TODO: Replace with If(FunctionType, Body([], Some(Br(Label))), None)?
     BrIf(Label),
-    BrTable { table: Vec<Label>, default: Label },
+    BrTable { table: Box<[Label]>, default: Label },
 
     // TODO: Replace with Br(toplevel)
     Return,
@@ -1550,9 +1550,9 @@ impl Instr {
             Const(ref val) => Some(FunctionType::new(&[], &[val.to_type()])),
             Unary(ref op) => Some(op.to_type()),
             Binary(ref op) => Some(op.to_type()),
-            CallIndirect(ref func_ty, _) => Some(FunctionType::new(
-                &[func_ty.inputs(), &[I32]].concat(),
-                func_ty.results(),
+            CallIndirect(ref func_ty, _) => Some(FunctionType::from_iter(
+                func_ty.inputs().iter().copied().chain(std::iter::once(I32)),
+                func_ty.results().iter().copied(),
             )),
 
             // Difficult because of nesting and block types.
@@ -1609,7 +1609,7 @@ impl FromStr for Instr {
                 // The last label is the default label (which must be present).
                 let default = labels.pop().ok_or(())?;
                 BrTable {
-                    table: labels,
+                    table: labels.into_boxed_slice(),
                     default,
                 }
             }
@@ -1680,7 +1680,7 @@ impl fmt::Display for Instr {
             Br(label) => write!(f, " {}", label.to_u32()),
             BrIf(label) => write!(f, " {}", label.to_u32()),
             BrTable { table, default } => {
-                for label in table {
+                for label in table.iter() {
                     write!(f, " {}", label.to_u32())?;
                 }
                 write!(f, " {}", default.to_u32())
@@ -1899,7 +1899,7 @@ impl Function {
         new_idx.into()
     }
 
-    pub fn add_fresh_locals(&mut self, tys: &[ValType]) -> Vec<Idx<Local>> {
+    pub fn add_fresh_locals(&mut self, tys: &[ValType]) -> SmallVec<[Idx<Local>; 8]> {
         tys.iter().map(|ty| self.add_fresh_local(*ty)).collect()
     }
 

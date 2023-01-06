@@ -7,6 +7,7 @@ use std::sync::RwLock;
 use ordered_float::OrderedFloat;
 use rayon::prelude::*;
 
+use smallvec::SmallVec;
 use wasmparser as wp;
 
 use crate::extensions::WasmExtension;
@@ -513,7 +514,7 @@ fn parse_instr(
                 table.push(Label::from(target?))
             }
             BrTable {
-                table,
+                table: table.into_boxed_slice(),
                 default,
             }
         }
@@ -1151,15 +1152,14 @@ fn parse_block_ty(
 }
 
 fn parse_func_ty(ty: wp::FuncType, offset: usize) -> Result<FunctionType, ParseError> {
-    let convert_tys = |tys: &[wp::ValType]| -> Result<Box<[ValType]>, ParseError> {
-        let vec: Vec<ValType> = tys
-            .iter()
-            .cloned()
+    let convert_tys = |tys: &[wp::ValType]| -> Result<_, ParseError> {
+        let mut smallvec: SmallVec<[ValType; 8]> = SmallVec::new();
+        for ty in tys {
             // The `offset` for error reporting is not exactly correct, because it marks the start
             // of the function type, not the individual wrong parameter/result type.
-            .map(|ty| parse_val_ty(ty, offset))
-            .collect::<Result<_, _>>()?;
-        Ok(vec.into())
+            smallvec.push(parse_val_ty(*ty, offset)?);
+        }
+        Ok(smallvec)
     };
 
     Ok(FunctionType::new(
