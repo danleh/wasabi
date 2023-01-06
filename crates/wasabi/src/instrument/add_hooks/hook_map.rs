@@ -113,7 +113,7 @@ impl Hook {
 pub struct HookMap {
     /// remember requested (= already inserted) hooks by their low-level name
     /// NOTE wrapped in RwLock to support concurrent lookup (and single-threaded insertion, but this is uncommon anyway)
-    map: RwLock<HashMap<String, Hook>>,
+    map: RwLock<HashMap<LowLevelHookName<'static>, Hook>>,
     /// needed to determine the function index of the created hooks (should start after the functions
     /// that are already present in the module)
     original_function_count: usize,
@@ -138,24 +138,24 @@ impl HookMap {
     }
 
     pub fn instr(&self, instr: &Instr, polymorphic_tys: &[ValType]) -> Instr {
-        let ll_name = mangle_polymorphic_name(instr.to_name(), polymorphic_tys);
-        let generate_hook = |ll_name: &str| match *instr {
+        let ll_name = LowLevelHookName::polymorphic(instr.to_name(), polymorphic_tys);
+        let generate_hook = |ll_name: String| match *instr {
             /*
                 monomorphic instructions:
                 - 1 instruction : 1 hook
                 - types are determined just from instruction
             */
 
-            Nop | Unreachable => Hook::new(ll_name, args!(), ll_name, ""),
+            Nop | Unreachable => Hook::new(&ll_name, args!(), &ll_name, ""),
 
-            If(_) => Hook::new(ll_name, args!(condition: I32), "if_", "condition === 1"),
-            Br(_) => Hook::new(ll_name, args!(targetLabel: I32, targetInstr: I32), ll_name, "{label: targetLabel, location: {func, instr: targetInstr}}"),
-            BrIf(_) => Hook::new(ll_name, args!(condition: I32, targetLabel: I32, targetInstr: I32), ll_name, "{label: targetLabel, location: {func, instr: targetInstr}}, condition === 1"),
+            If(_) => Hook::new(&ll_name, args!(condition: I32), "if_", "condition === 1"),
+            Br(_) => Hook::new(&ll_name, args!(targetLabel: I32, targetInstr: I32), &ll_name, "{label: targetLabel, location: {func, instr: targetInstr}}"),
+            BrIf(_) => Hook::new(&ll_name, args!(condition: I32, targetLabel: I32, targetInstr: I32), &ll_name, "{label: targetLabel, location: {func, instr: targetInstr}}, condition === 1"),
             // NOTE js_args is very hacky! We rely on the Hook constructor to close the parenthesis and insert the call statement to endBrTableBlock() here
-            BrTable { .. } => Hook::new(ll_name, args!(tableIdx: I32, brTablesInfoIdx: I32), ll_name, "Wasabi.module.info.brTables[brTablesInfoIdx].table, Wasabi.module.info.brTables[brTablesInfoIdx].default, tableIdx); Wasabi.endBrTableBlocks(brTablesInfoIdx, tableIdx, func"),
+            BrTable { .. } => Hook::new(&ll_name, args!(tableIdx: I32, brTablesInfoIdx: I32), &ll_name, "Wasabi.module.info.brTables[brTablesInfoIdx].table, Wasabi.module.info.brTables[brTablesInfoIdx].default, tableIdx); Wasabi.endBrTableBlocks(brTablesInfoIdx, tableIdx, func"),
 
-            MemorySize(_) => Hook::new(ll_name, args!(currentSizePages: I32), ll_name, "currentSizePages"),
-            MemoryGrow(_) => Hook::new(ll_name, args!(deltaPages: I32, previousSizePages: I32), ll_name, "deltaPages, previousSizePages"),
+            MemorySize(_) => Hook::new(&ll_name, args!(currentSizePages: I32), &ll_name, "currentSizePages"),
+            MemoryGrow(_) => Hook::new(&ll_name, args!(deltaPages: I32, previousSizePages: I32), &ll_name, "deltaPages, previousSizePages"),
 
             Load(op, _) => {
                 let ty = op.to_type().results()[0];
@@ -259,17 +259,17 @@ impl HookMap {
             Block(_) | Loop(_) | Else | End => panic!("cannot get hook for block-type instruction with this method, please use the other methods specialized to the block type"),
         };
 
-        self.get_or_insert(&ll_name, generate_hook)
+        self.get_or_insert(ll_name, generate_hook)
     }
 
     /* special hooks that do not directly correspond to an instruction or need additional information */
 
     pub fn start(&self) -> Instr {
-        self.get_or_insert("start", |ll_name| Hook::new(ll_name, vec![], "start", ""))
+        self.get_or_insert(LowLevelHookName::monomorphic("start"), |ll_name| Hook::new(ll_name, vec![], "start", ""))
     }
 
     pub fn call_post(&self, result_tys: &[ValType]) -> Instr {
-        let ll_name = mangle_polymorphic_name("call_post", result_tys);
+        let ll_name = LowLevelHookName::polymorphic("call_post", result_tys);
         let generate_hook = move |ll_name| {
             let args = result_tys
                 .iter()
@@ -288,27 +288,27 @@ impl HookMap {
             );
             Hook::new(ll_name, args, "call_post", js_args)
         };
-        self.get_or_insert(&ll_name, generate_hook)
+        self.get_or_insert(ll_name, generate_hook)
     }
 
     pub fn begin_function(&self) -> Instr {
-        self.get_or_insert("begin_function", |ll_name| Hook::new(ll_name, vec![], "begin", "\"function\""))
+        self.get_or_insert(LowLevelHookName::monomorphic("begin_function"), |ll_name| Hook::new(ll_name, vec![], "begin", "\"function\""))
     }
 
     pub fn begin_block(&self) -> Instr {
-        self.get_or_insert("begin_block", |ll_name| Hook::new(ll_name, vec![], "begin", "\"block\""))
+        self.get_or_insert(LowLevelHookName::monomorphic("begin_block"), |ll_name| Hook::new(ll_name, vec![], "begin", "\"block\""))
     }
 
     pub fn begin_loop(&self) -> Instr {
-        self.get_or_insert("begin_loop", |ll_name| Hook::new(ll_name, vec![], "begin", "\"loop\""))
+        self.get_or_insert(LowLevelHookName::monomorphic("begin_loop"), |ll_name| Hook::new(ll_name, vec![], "begin", "\"loop\""))
     }
 
     pub fn begin_if(&self) -> Instr {
-        self.get_or_insert("begin_if", |ll_name| Hook::new(ll_name, vec![], "begin", "\"if\""))
+        self.get_or_insert(LowLevelHookName::monomorphic("begin_if"), |ll_name| Hook::new(ll_name, vec![], "begin", "\"if\""))
     }
 
     pub fn begin_else(&self) -> Instr {
-        self.get_or_insert("begin_else", |ll_name| Hook::new(ll_name, 
+        self.get_or_insert(LowLevelHookName::monomorphic("begin_else"), |ll_name| Hook::new(ll_name, 
             args!(ifInstr: I32),
             "begin",
             "\"else\", {func, instr: ifInstr}",
@@ -316,37 +316,52 @@ impl HookMap {
     }
 
     pub fn end(&self, block: &BlockStackElement) -> Instr {
-        let (ll_name, generate_hook): (&str, fn(&str) -> Hook) = match *block {
-            BlockStackElement::Function { .. } => ("end_function", |ll_name| Hook::new(
-                ll_name,
-                vec![],
-                "end",
-                "\"function\", {func, instr: -1}",
-            )),
-            BlockStackElement::Block { .. } => ("end_block", |ll_name| Hook::new(
-                ll_name,
-                args!(beginInstr: I32),
-                "end",
-                "\"block\", {func, instr: beginInstr}",
-            )),
-            BlockStackElement::Loop { .. } => ("end_loop", |ll_name| Hook::new(
-                ll_name,
-                args!(beginInstr: I32),
-                "end",
-                "\"loop\", {func, instr: beginInstr}",
-            )),
-            BlockStackElement::If { .. } => ("end_if", |ll_name| Hook::new(
-                ll_name,
-                args!(beginInstr: I32),
-                "end",
-                "\"if\", {func, instr: beginInstr}",
-            )),
-            BlockStackElement::Else { .. } => ("end_else", |ll_name| Hook::new(
-                ll_name,
-                args!(elseInstr: I32, ifInstr: I32),
-                "end",
-                "\"else\", {func, instr: elseInstr}, {func, instr: ifInstr}",
-            )),
+        let (ll_name, generate_hook): (_, fn(String) -> Hook) = match *block {
+            BlockStackElement::Function { .. } => (
+                LowLevelHookName::monomorphic("end_function"),
+                |ll_name| Hook::new(
+                    ll_name,
+                    vec![],
+                    "end",
+                    "\"function\", {func, instr: -1}",
+                )
+            ),
+            BlockStackElement::Block { .. } => (
+                LowLevelHookName::monomorphic("end_block"),
+                |ll_name| Hook::new(
+                    ll_name,
+                    args!(beginInstr: I32),
+                    "end",
+                    "\"block\", {func, instr: beginInstr}",
+                )
+            ),
+            BlockStackElement::Loop { .. } => (
+                LowLevelHookName::monomorphic("end_loop"),
+                |ll_name| Hook::new(
+                    ll_name,
+                    args!(beginInstr: I32),
+                    "end",
+                    "\"loop\", {func, instr: beginInstr}",
+                )
+            ),
+            BlockStackElement::If { .. } => (
+                LowLevelHookName::monomorphic("end_if"),
+                |ll_name| Hook::new(
+                    ll_name,
+                    args!(beginInstr: I32),
+                    "end",
+                    "\"if\", {func, instr: beginInstr}",
+                )
+            ),
+            BlockStackElement::Else { .. } => (
+                LowLevelHookName::monomorphic("end_else"),
+                |ll_name| Hook::new(
+                    ll_name,
+                    args!(elseInstr: I32, ifInstr: I32),
+                    "end",
+                    "\"else\", {func, instr: elseInstr}, {func, instr: ifInstr}",
+                )
+            ),
         };
         self.get_or_insert(ll_name, generate_hook)
     }
@@ -354,7 +369,7 @@ impl HookMap {
     /// returns a Call instruction to the requested hook, which either
     /// A) was freshly generated, since it was not requested with these types before,
     /// B) came from the internal hook map.
-    fn get_or_insert<'a>(&self, low_level_name: &'a str, generate_hook: impl Fn(&'a str) -> Hook) -> Instr {
+    fn get_or_insert<'a>(&self, low_level_name: LowLevelHookName<'a>, generate_hook: impl Fn(String) -> Hook) -> Instr {
         // This is quite tricky and currently not possible with the std::sync::RwLock:
         // We want to allow parallel reads to the HashMap, but if a hook is not present, we need
         // to insert it, thus requiring a full mutable lock (no parallelism). Always doing exclusive
@@ -372,13 +387,13 @@ impl HookMap {
         //      and getting the write lock, we might end up with two hook implementations!
         // Thus: parking_lot::RwLock, which offers an atomic upgrade from read -> write lock
         let map = self.map.upgradable_read();
-        let hook_idx = match map.get(low_level_name).map(|h| h.idx) {
+        let hook_idx = match map.get(&low_level_name).map(|h| h.idx) {
             Some(hook_idx) => hook_idx,
             None => {
                 let mut map = RwLockUpgradableReadGuard::upgrade(map);
                 let idx = (self.original_function_count + map.len()).into();
-                let hook = generate_hook(low_level_name);
-                map.insert(low_level_name.to_string(), Hook { idx, ..hook });
+                let hook = generate_hook(low_level_name.to_mangled_string());
+                map.insert(low_level_name.leak(), Hook { idx, ..hook });
                 idx
             }
         };
@@ -386,16 +401,39 @@ impl HookMap {
     }
 }
 
-/* utility functions */
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+struct LowLevelHookName<'types> {
+    hook_stem: &'static str,
+    types: &'types [ValType],
+}
 
-/// e.g. "call" + [I32, F64] -> "call_iF"
-fn mangle_polymorphic_name(name: &str, tys: &[ValType]) -> String {
-    let mut mangled = name.replace('.', "_");
-    if !tys.is_empty() {
-        mangled.push('_');
+impl<'types> LowLevelHookName<'types> {
+    /// Mangles the name based on the "hook stem" and the types, 
+    /// e.g. "call" + [I32, F64] -> "call_iF"
+    fn polymorphic(hook_stem: &'static str, types: &'types [ValType]) -> Self {
+        Self { hook_stem, types }
     }
-    for ty in tys {
-        mangled.push(ty.to_char());
+
+    fn monomorphic(hook_stem: &'static str) -> Self {
+        Self { hook_stem, types: &[] }
     }
-    mangled
+
+    fn leak(self) -> LowLevelHookName<'static> {
+        let types = self.types.to_vec();
+        LowLevelHookName {
+            hook_stem: self.hook_stem,
+            types: types.leak(),
+        }
+    }
+
+    fn to_mangled_string(&self) -> String {
+        let mut mangled = self.hook_stem.replace('.', "_");
+        if !self.types.is_empty() {
+            mangled.push('_');
+        }
+        for ty in self.types {
+            mangled.push(ty.to_char());
+        }
+        mangled
+    }
 }
