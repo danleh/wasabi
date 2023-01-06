@@ -68,7 +68,7 @@ pub fn add_hooks(
         None
     };
 
-    module.functions.iter_mut().enumerate().for_each(|(fidx, function): (usize, &mut Function)| {
+    module.functions.par_iter_mut().enumerate().for_each(|(fidx, function): (usize, &mut Function)| {
         let fidx = fidx.into();
         // only instrument non-imported functions
         if function.code().is_none() {
