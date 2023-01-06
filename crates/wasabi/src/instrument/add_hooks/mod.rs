@@ -334,7 +334,7 @@ pub fn add_hooks(
                     // because the end hook that is inserted now is never called (dead code)
 
                     if enabled_hooks.contains(Hook::End) {
-                        instrumented_body.append(&mut block.to_end_hook_args(fidx));
+                        block.append_end_hook_args(&mut instrumented_body, fidx);
                         instrumented_body.push(hooks.end(&block))
                     }
 
@@ -362,7 +362,7 @@ pub fn add_hooks(
                     // end hooks for all intermediate blocks that are "jumped over"
                     if enabled_hooks.contains(Hook::End) {
                         for block in br_target.ended_blocks {
-                            instrumented_body.append(&mut block.to_end_hook_args(fidx));
+                            block.append_end_hook_args(&mut instrumented_body, fidx);
                             instrumented_body.push(hooks.end(&block));
                         }
                     }
@@ -405,7 +405,7 @@ pub fn add_hooks(
                                 If(FunctionType::empty()),
                             ]);
                             for block in br_target.ended_blocks {
-                                instrumented_body.append(&mut block.to_end_hook_args(fidx));
+                                block.append_end_hook_args(&mut instrumented_body, fidx);
                                 instrumented_body.push(hooks.end(&block));
                             }
                             // of the artificially inserted if block before
@@ -469,7 +469,7 @@ pub fn add_hooks(
                     // end hooks for all intermediate blocks that are "jumped over"
                     if enabled_hooks.contains(Hook::End) {
                         for block in block_stack.return_target().ended_blocks {
-                            instrumented_body.append(&mut block.to_end_hook_args(fidx));
+                            block.append_end_hook_args(&mut instrumented_body, fidx);
                             instrumented_body.push(hooks.end(&block));
                         }
                     }
@@ -816,26 +816,25 @@ impl ToConst for Label {
 }
 
 impl BlockStackElement {
-    fn to_end_hook_args(&self, fidx: Idx<Function>) -> Vec<Instr> {
+    fn append_end_hook_args(&self, append_to: &mut Vec<Instr>, fidx: Idx<Function>) {
         match self {
-            BlockStackElement::Function { end } => vec![fidx.to_const(), end.to_const()],
+            BlockStackElement::Function { end } => append_to.extend_from_slice(&[
+                fidx.to_const(), 
+                end.to_const()
+            ]),
             BlockStackElement::Block { begin, end }
             | BlockStackElement::Loop { begin, end }
-            | BlockStackElement::If {
-                begin_if: begin,
-                end,
-                ..
-            } => vec![fidx.to_const(), end.to_const(), begin.to_const()],
-            BlockStackElement::Else {
-                begin_else,
-                begin_if,
-                end,
-            } => vec![
+            | BlockStackElement::If { begin_if: begin, end, .. } => append_to.extend_from_slice(&[
+                fidx.to_const(),
+                end.to_const(),
+                begin.to_const()
+            ]),
+            BlockStackElement::Else { begin_else, begin_if, end } => append_to.extend_from_slice(&[
                 fidx.to_const(),
                 end.to_const(),
                 begin_else.to_const(),
                 begin_if.to_const(),
-            ],
+            ]),
         }
     }
     fn end(&self) -> Idx<Instr> {
