@@ -1,5 +1,4 @@
 use std::convert::TryInto;
-use std::fmt::Write;
 
 use parking_lot::RwLock;
 use rayon::prelude::*;
@@ -866,7 +865,7 @@ fn generate_js(module_info: ModuleInfo, hooks: &[String], node_js: bool) -> Stri
     if node_js {
         // For Node.js, write the long.js dependency to a separate file (in main) and
         // only `require()` it here.
-        writeln!(result, "const Long = require('./long.js');\n").unwrap();
+        result.push_str("const Long = require('./long.js');");
     } else {
         // Browser case (default):
         // FIXME super hacky: just cat together long.js dependency, program-independent, and
@@ -875,28 +874,30 @@ fn generate_js(module_info: ModuleInfo, hooks: &[String], node_js: bool) -> Stri
         //    - users need to install another tool
         //    - needs to be run after every instrumentation
         // * Alternative B: compile Wasabi itself to WebAssembly, instrument at runtime
-        writeln!(result, "// long.js\n{}\n", 
-            include_str!("../../../js/long.js/long.js")
-                .lines()
-                .next()
-                .unwrap()
-        ).unwrap();
+        result.push_str("// long.js\n");
+        result.push_str(include_str!("../../../js/long.js/long.js")
+            .lines()
+            .next()
+            .expect("could not include long.js dependency"));
     }
+    result.push_str("\n\n");
 
-    result += include_str!("../../../js/runtime.js");
+    result.push_str(include_str!("../../../js/runtime.js"));
+    result.push_str("\n");
 
-    writeln!(result, "\nWasabi.module.info = {};\n", serde_json::to_string(&module_info).unwrap()).unwrap();
+    result.push_str("Wasabi.module.info = ");
+    result.push_str(&serde_json::to_string(&module_info).unwrap());
+    result.push_str(";\n\n");
 
-    writeln!(result, "Wasabi.module.lowlevelHooks = {{\n    {}\n}};", 
-        hooks
-            .iter()
-            .flat_map(|s| s.split('\n'))
-            .collect::<Vec<&str>>()
-            .join("\n    ")
-    ).unwrap();
+    result.push_str("Wasabi.module.lowlevelHooks = {\n");
+    for hook in hooks {
+        result.push_str(hook);
+        result.push_str("\n");
+    }
+    result.push_str("};\n");
 
     if node_js {
-        writeln!(result, "\nmodule.exports = Wasabi;").unwrap();
+        result.push_str("\nmodule.exports = Wasabi;\n");
     }
 
     result
