@@ -1,6 +1,7 @@
 // TODO Replace this with `wasabi_wasm/types.rs` implementation or
 // (even better) once we have a nested AST this can be removed completely.
 
+use smallvec::SmallVec;
 use wasabi_wasm::FunctionType;
 use wasabi_wasm::ValType;
 
@@ -17,7 +18,7 @@ use self::TypeStackElement::*;
  */
 
 #[derive(Debug)]
-pub struct TypeStack(Vec<TypeStackElement>);
+pub struct TypeStack(SmallVec<[TypeStackElement; 16]>);
 
 #[derive(Debug, PartialEq)]
 enum TypeStackElement {
@@ -31,7 +32,9 @@ enum TypeStackElement {
 impl TypeStack {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        TypeStack(vec![FunctionBegin])
+        let mut smallvec = SmallVec::new();
+        smallvec.push(FunctionBegin);
+        TypeStack(smallvec)
     }
 
     /// Returns the number of values on the type stack until the next "block stack"

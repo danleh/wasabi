@@ -1393,6 +1393,7 @@ version = "0.3.0"
 dependencies = [
  "enumset",
  "main_error",
+ "nohash-hasher",
  "parking_lot",
  "rayon",
  "serde",

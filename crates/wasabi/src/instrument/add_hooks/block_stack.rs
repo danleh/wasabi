@@ -1,7 +1,6 @@
 #![allow(clippy::expect_fun_call)]
 
-use std::collections::HashMap;
-
+use nohash_hasher::IntMap;
 use smallvec::SmallVec;
 
 use wasabi_wasm::Idx;
@@ -20,9 +19,9 @@ use self::BlockStackElement::*;
 
 #[derive(Debug)]
 pub struct BlockStack {
-    block_stack: Vec<BlockStackElement>,
+    block_stack: SmallVec<[BlockStackElement; 8]>,
     /// Maps the beginning of a block to its end (or else, for if) instruction. Pre-computed on new().
-    begin_end_map: HashMap<Idx<Instr>, Idx<Instr>>,
+    begin_end_map: IntMap<Idx<Instr>, Idx<Instr>>,
 }
 
 #[derive(Debug, Clone)]
@@ -52,10 +51,12 @@ pub enum BlockStackElement {
 
 impl BlockStack {
     pub fn new(instrs: &[Instr]) -> Self {
-        // build this already at construction, so that we know later in O(1) where the end's are
-        let mut begin_end_map: HashMap<Idx<Instr>, Idx<Instr>> = HashMap::new();
+        const PREALLOC_BLOCK_STACK_SIZE: usize = 4;
 
-        let mut begin_stack: Vec<Idx<Instr>> = vec![];
+        // build this already at construction, so that we know later in O(1) where the end's are
+        let mut begin_end_map: IntMap<Idx<Instr>, Idx<Instr>> = IntMap::with_capacity_and_hasher(PREALLOC_BLOCK_STACK_SIZE, Default::default());
+
+        let mut begin_stack: SmallVec<[Idx<Instr>; 16]> = SmallVec::with_capacity(PREALLOC_BLOCK_STACK_SIZE);
         for (iidx, instr) in instrs[..instrs.len() - 1].iter().enumerate() {
             let iidx = iidx.into();
             match *instr {
@@ -78,12 +79,12 @@ impl BlockStack {
             "invalid block nesting: some blocks were not closed, stack at end is {begin_stack:?}"
         );
 
-        BlockStack {
-            block_stack: vec![Function {
-                end: (instrs.len() - 1).into(),
-            }],
-            begin_end_map,
-        }
+        let mut block_stack = SmallVec::with_capacity(PREALLOC_BLOCK_STACK_SIZE);
+        block_stack.push(Function {
+            end: (instrs.len() - 1).into(),
+        });
+
+        BlockStack { block_stack, begin_end_map }
     }
 
     pub fn begin_block(&mut self, begin: Idx<Instr>) {

@@ -1900,7 +1900,7 @@ impl Function {
         new_idx.into()
     }
 
-    pub fn add_fresh_locals(&mut self, tys: &[ValType]) -> SmallVec<[Idx<Local>; 4]> {
+    pub fn add_fresh_locals(&mut self, tys: &[ValType]) -> SmallVec<[Idx<Local>; 8]> {
         tys.iter().map(|ty| self.add_fresh_local(*ty)).collect()
     }
 
