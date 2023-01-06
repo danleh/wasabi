@@ -11,11 +11,11 @@ jobs:
       name: Install WABT
     - run: cargo --version; rustc --version; cargo clippy --version
       name: Rust version
-    - run: cargo build
+    - run: cargo build -- --color=always
       working-directory: crates/wasabi_wasm/
-    - run: cargo clippy
+    - run: cargo clippy -- --color=always
       working-directory: crates/wasabi_wasm/
-    - run: cargo test -- --nocapture --test-threads=1
+    - run: cargo test -- --nocapture --test-threads=1 --color=always
       working-directory: crates/wasabi_wasm/
   wasabi:
     runs-on: ubuntu-20.04
@@ -25,9 +25,9 @@ jobs:
       name: Install WABT
     - run: cargo --version; rustc --version; cargo clippy --version
       name: Rust version
-    - run: cargo build
+    - run: cargo build -- --color=always
       working-directory: crates/wasabi/
-    - run: cargo clippy
+    - run: cargo clippy -- --color=always
       working-directory: crates/wasabi/
-    - run: cargo test -- --nocapture --test-threads=1
+    - run: cargo test -- --nocapture --test-threads=1 --color=always
       working-directory: crates/wasabi/
