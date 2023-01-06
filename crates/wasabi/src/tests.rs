@@ -35,9 +35,8 @@ fn test_instrument(instrument: fn(&mut Module) -> Option<String>, instrument_nam
     let skipped_count = AtomicUsize::new(0);
 
     for_each_valid_wasm_binary_in_test_set(|path| {
-        // Filter out files that are too large to run in CI.
-        // FIXME: Wasabi OOM, debug allocations with heaptrack.
-        if instrument_name == "add-hooks" && std::fs::metadata(path).unwrap().len() > 10_000_000 {
+        // HACK: Filter out files that are too large to run in CI, because they use too much memory to `wasm-validate` (>12GB for the instrumented UE4!).
+        if instrument_name == "add-hooks" && std::fs::metadata(path).unwrap().len() > 1_000_000 && sys_info::mem_info().unwrap().total < 32_000_000 {
             skipped_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             return;
         }
@@ -64,5 +63,6 @@ fn test_instrument(instrument: fn(&mut Module) -> Option<String>, instrument_nam
     let skipped_count = skipped_count.into_inner();
     if skipped_count > 0 {
         println!("Skipped instrumenting {skipped_count} .wasm input files because they are too large for CI.");
+        println!("Total system memory: {:?} bytes", sys_info::mem_info().map(|info| info.total));
     }
 }
