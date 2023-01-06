@@ -33,10 +33,10 @@ pub fn save_stack_to_locals(
 /// function is necessary to get the types of the locals
 pub fn restore_locals_with_i64_handling(
     append_to: &mut Vec<Instr>,
-    locals: &[Idx<Local>],
+    locals: impl IntoIterator<Item=Idx<Local>>,
     function: &Function,
 ) {
-    for &local in locals {
+    for local in locals {
         super::convert_i64::convert_i64_instr(
             append_to,
             Instr::Local(Get, local),

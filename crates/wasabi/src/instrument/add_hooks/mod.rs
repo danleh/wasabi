@@ -326,7 +326,7 @@ pub fn add_hooks(
                                 location.0,
                                 Const(Val::I32(-1)),
                             ]);
-                            restore_locals_with_i64_handling(&mut instrumented_body, &result_tmps, function);
+                            restore_locals_with_i64_handling(&mut instrumented_body, result_tmps, function);
                             instrumented_body.push(hooks.instr(&Return, result_tys));
                         }
                     }
@@ -463,7 +463,7 @@ pub fn add_hooks(
                             location.0,
                             location.1,
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, &result_tmps, function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, result_tmps, function);
                         instrumented_body.push(hooks.instr(&instr, result_tys));
                     }
 
@@ -494,7 +494,7 @@ pub fn add_hooks(
                             location.1.clone(),
                             target_func_idx.to_const(),
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, &arg_tmps, function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, arg_tmps, function);
                         instrumented_body.extend_from_slice(&[
                             hooks.instr(&instr, func_ty.inputs()),
                             instr,
@@ -509,7 +509,7 @@ pub fn add_hooks(
                             location.0,
                             location.1,
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, &result_tmps, function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, result_tmps, function);
                         instrumented_body.push(hooks.call_post(func_ty.results()))
                     } else {
                         instrumented_body.push(instr);
@@ -532,7 +532,7 @@ pub fn add_hooks(
                             location.1.clone(),
                             Local(Get, target_table_idx_tmp),
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, &arg_tmps, function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, arg_tmps, function);
                         instrumented_body.extend_from_slice(&[
                             hooks.instr(&instr, func_ty.inputs()),
                             instr.clone(),
@@ -547,7 +547,7 @@ pub fn add_hooks(
                             location.0,
                             location.1,
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, &result_tmps, function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, result_tmps, function);
                         instrumented_body.push(hooks.call_post(func_ty.results()));
                     } else {
                         instrumented_body.push(instr.clone());
@@ -592,7 +592,7 @@ pub fn add_hooks(
                             location.1,
                             Local(Get, condition_tmp),
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, &arg_tmps, function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, arg_tmps, function);
                         // replace select with hook call
                         instrumented_body.push(hooks.instr(&instr, &[ty, ty]));
                     } else {
@@ -699,7 +699,7 @@ pub fn add_hooks(
                             Const(Val::I32(memarg.offset as i32)),
                             Const(Val::I32(memarg.alignment_exp as i32)),
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, &[addr_tmp, value_tmp], function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, [addr_tmp, value_tmp], function);
                         instrumented_body.push(hooks.instr(&instr, &[]));
                     } else {
                         instrumented_body.push(instr);
@@ -721,7 +721,7 @@ pub fn add_hooks(
                             Const(Val::I32(memarg.offset as i32)),
                             Const(Val::I32(memarg.alignment_exp as i32)),
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, &[addr_tmp, value_tmp], function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, [addr_tmp, value_tmp], function);
                         instrumented_body.push(hooks.instr(&instr, &[]));
                     } else {
                         instrumented_body.push(instr);
@@ -762,7 +762,7 @@ pub fn add_hooks(
                             location.0,
                             location.1,
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, &[input_tmps, result_tmps].concat(), function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, input_tmps.iter().chain( result_tmps.iter()).copied(), function);
                         instrumented_body.push(hooks.instr(&instr, &[]));
                     } else {
                         instrumented_body.push(instr);
@@ -881,7 +881,7 @@ fn generate_js(module_info: ModuleInfo, hooks: &[String], node_js: bool) -> Stri
     result.push_str("\n\n");
 
     result.push_str(include_str!("../../../js/runtime.js"));
-    result.push_str("\n");
+    result.push('\n');
 
     result.push_str("Wasabi.module.info = ");
     result.push_str(&serde_json::to_string(&module_info).unwrap());
@@ -890,7 +890,7 @@ fn generate_js(module_info: ModuleInfo, hooks: &[String], node_js: bool) -> Stri
     result.push_str("Wasabi.module.lowlevelHooks = {\n");
     for hook in hooks {
         result.push_str(hook);
-        result.push_str("\n");
+        result.push('\n');
     }
     result.push_str("};\n");
 
