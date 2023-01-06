@@ -1418,6 +1418,7 @@ dependencies = [
  "rayon",
  "rustc-hash",
  "serde",
+ "smallvec",
  "test_utilities",
  "thiserror",
  "wasm-encoder",

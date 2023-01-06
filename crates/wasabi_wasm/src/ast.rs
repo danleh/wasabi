@@ -17,6 +17,7 @@ use std::str::FromStr;
 
 use ordered_float::OrderedFloat;
 use serde::Serialize;
+use smallvec::SmallVec;
 
 pub use crate::function_type::FunctionType;
 
@@ -1899,7 +1900,7 @@ impl Function {
         new_idx.into()
     }
 
-    pub fn add_fresh_locals(&mut self, tys: &[ValType]) -> Vec<Idx<Local>> {
+    pub fn add_fresh_locals(&mut self, tys: &[ValType]) -> SmallVec<[Idx<Local>; 4]> {
         tys.iter().map(|ty| self.add_fresh_local(*ty)).collect()
     }
 
