@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicUsize;
+use std::sync::Mutex;
 
 use test_utilities::*;
 use wasabi_wasm::Module;
@@ -32,12 +32,14 @@ fn add_hooks_instrumentation_produces_valid_wasm() {
 
 /// Utility function.
 fn test_instrument(instrument: fn(&mut Module) -> Option<String>, instrument_name: &'static str) {
-    let skipped_count = AtomicUsize::new(0);
+    let skipped_binaries = Mutex::new(Vec::new());
 
     for_each_valid_wasm_binary_in_test_set(|path| {
         // HACK: Filter out files that are too large to run in CI, because they use too much memory to `wasm-validate` (>12GB for the instrumented UE4!).
-        if instrument_name == "add-hooks" && std::fs::metadata(path).unwrap().len() > 1_000_000 && sys_info::mem_info().unwrap().total < 32_000_000 {
-            skipped_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let large_binary = std::fs::metadata(path).unwrap().len() > 5_000_000;
+        let little_memory = sys_info::mem_info().unwrap().total < 16_000_000_000;
+        if instrument_name == "add-hooks" && large_binary && little_memory {
+            skipped_binaries.lock().unwrap().push(path.to_path_buf());
             return;
         }
 
@@ -46,6 +48,9 @@ fn test_instrument(instrument: fn(&mut Module) -> Option<String>, instrument_nam
 
         let output_path = output_file(path, instrument_name).unwrap();
         module.to_file(&output_path).unwrap();
+        if let Some(javascript) = javascript {
+            std::fs::write(output_path.with_extension("wasabi.js"), javascript).unwrap();
+        }
 
         wasm_validate(&output_path)
             .unwrap_or_else(|err| {
@@ -54,15 +59,16 @@ fn test_instrument(instrument: fn(&mut Module) -> Option<String>, instrument_nam
                 let sha256_hash = sha256::digest(bytes.as_slice());
                 panic!("Binary '{}' instrumented with {} is no longer valid\n{err}\nSize: {size}\nSHA256: {sha256_hash}", path.display(), instrument_name)
             });
-
-        if let Some(javascript) = javascript {
-            std::fs::write(output_path.with_extension("wasabi.js"), javascript).unwrap();
-        }
     });
 
-    let skipped_count = skipped_count.into_inner();
-    if skipped_count > 0 {
-        println!("Skipped instrumenting {skipped_count} .wasm input files because they are too large for CI.");
-        println!("Total system memory: {:?} bytes", sys_info::mem_info().map(|info| info.total));
+    let skipped_binaries = skipped_binaries.into_inner().unwrap();
+    if !skipped_binaries.is_empty() {
+        println!("Skipped instrumenting {} .wasm input files because they are too large for CI:", skipped_binaries.len());
+        for path in skipped_binaries {
+            println!("  {}", path.display());
+        }
+        if let Ok(mem_info) = sys_info::mem_info() {
+            println!("Total system memory: {} bytes", mem_info.total);
+        }
     }
 }
