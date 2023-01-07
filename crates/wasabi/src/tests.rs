@@ -36,8 +36,8 @@ fn test_instrument(instrument: fn(&mut Module) -> Option<String>, instrument_nam
 
     for_each_valid_wasm_binary_in_test_set(|path| {
         // HACK: Filter out files that are too large to run in CI, because they use too much memory to `wasm-validate` (>12GB for the instrumented UE4!).
-        let large_binary = std::fs::metadata(path).unwrap().len() > 5_000_000;
-        let little_memory = sys_info::mem_info().unwrap().total < 16_000_000_000;
+        let large_binary = std::fs::metadata(path).unwrap().len() > 5_000_000 /* bytes */;
+        let little_memory = sys_info::mem_info().unwrap().total < 16_000_000 /* MB */;
         if instrument_name == "add-hooks" && large_binary && little_memory {
             skipped_binaries.lock().unwrap().push(path.to_path_buf());
             return;
