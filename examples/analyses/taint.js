@@ -120,8 +120,10 @@
 
         select(location, cond, first, second) {
             values().pop();
-            values().pop();
-            values().pop();
+            const taint2 = ensureTaint(values().pop(), location);
+            const taint1 = ensureTaint(values().pop(), location);
+            if (cond) values().push(taint1);
+            else values().push(taint2);
         },
 
         begin(location, type) {
