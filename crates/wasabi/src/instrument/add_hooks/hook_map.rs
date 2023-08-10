@@ -148,9 +148,9 @@ impl HookMap {
 
             Nop | Unreachable => Hook::new(&ll_name, args!(), &ll_name, ""),
 
-            If(_) => Hook::new(&ll_name, args!(condition: I32), "if_", "condition === 1"),
+            If(_) => Hook::new(&ll_name, args!(condition: I32), "if_", "condition !== 0"),
             Br(_) => Hook::new(&ll_name, args!(targetLabel: I32, targetInstr: I32), &ll_name, "{label: targetLabel, location: {func, instr: targetInstr}}"),
-            BrIf(_) => Hook::new(&ll_name, args!(condition: I32, targetLabel: I32, targetInstr: I32), &ll_name, "{label: targetLabel, location: {func, instr: targetInstr}}, condition === 1"),
+            BrIf(_) => Hook::new(&ll_name, args!(condition: I32, targetLabel: I32, targetInstr: I32), &ll_name, "{label: targetLabel, location: {func, instr: targetInstr}}, condition !== 0"),
             // NOTE js_args is very hacky! We rely on the Hook constructor to close the parenthesis and insert the call statement to endBrTableBlock() here
             BrTable { .. } => Hook::new(&ll_name, args!(tableIdx: I32, brTablesInfoIdx: I32), &ll_name, "Wasabi.module.info.brTables[brTablesInfoIdx].table, Wasabi.module.info.brTables[brTablesInfoIdx].default, tableIdx); Wasabi.endBrTableBlocks(brTablesInfoIdx, tableIdx, func"),
 
@@ -217,7 +217,7 @@ impl HookMap {
                 assert_eq!(polymorphic_tys.len(), 2, "select has two polymorphic arguments");
                 assert_eq!(polymorphic_tys[0], polymorphic_tys[1], "select arguments must be equal");
                 let args = args!(condition: I32, input0: polymorphic_tys[0], input1: polymorphic_tys[1]);
-                let js_args = &format!("condition === 1, {}", args[1..].iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
+                let js_args = &format!("condition !== 0, {}", args[1..].iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
                 Hook::new(ll_name, args, "select", js_args)
             }
             Local(_, _) => {
