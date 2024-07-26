@@ -80,13 +80,17 @@ pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), String> {
 
     if validate_output.status.success() {
         Ok(())
+    } else if let Some(status_code) = validate_output.status.code() {
+        Err(format!("wasm-validate: invalid Wasm file {}\n\tstatus code: {:?}\n\tstdout: {}\n\tstderr: {}",
+            path.display(),
+            status_code,
+            String::from_utf8_lossy(&validate_output.stdout),
+            String::from_utf8_lossy(&validate_output.stderr),
+        ))
     } else {
-        Err(format!("invalid wasm file {}\n\twasm-validate status code: {:?}\n\tstdout: {}\n\tstderr: {}",
-                    path.display(),
-                    validate_output.status.code(),
-                    String::from_utf8_lossy(&validate_output.stdout),
-                    String::from_utf8_lossy(&validate_output.stderr),
-                ))
+        eprintln!("wasm-validate terminated without a status code on wasm file {}\n\ton Linux this means a signal has terminated it (most likely the OOM-killer)\n\tignoring this error...", 
+            path.display());
+        Ok(())
     }
 }
 
