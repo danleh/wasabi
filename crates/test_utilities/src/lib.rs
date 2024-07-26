@@ -43,7 +43,7 @@ pub fn for_each_valid_wasm_binary_in_test_set(test_fn: impl Fn(&Path) + Send + S
                     .map(|file| file.len())
                     .unwrap_or(0);
 
-            const AST_BYTES_PER_INSTRUCTION_BYTE_APPROX: u64 = 100;
+            const AST_BYTES_PER_INSTRUCTION_BYTE_APPROX: u64 = 20;
             let memory_needed_for_ast_approx = module_size_bytes * AST_BYTES_PER_INSTRUCTION_BYTE_APPROX;
 
             let memory_available = {
@@ -52,7 +52,7 @@ pub fn for_each_valid_wasm_binary_in_test_set(test_fn: impl Fn(&Path) + Send + S
                 system.available_memory()
             };
             if memory_needed_for_ast_approx > memory_available {
-                eprintln!("Skipping {} due to running low on memory...\n\t{} bytes memory available\n\t{} bytes module size\n\t{} bytes approx. required", path.display(), memory_available, module_size_bytes, memory_needed_for_ast_approx);
+                eprintln!("Skipping {} due to running low on memory...\n\t{:10} bytes memory available\n\t{:10} bytes module size\n\t{:10} bytes approx. required", path.display(), memory_available, module_size_bytes, memory_needed_for_ast_approx);
                 return;
             }
     
