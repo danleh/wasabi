@@ -81,8 +81,9 @@ pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), String> {
     if validate_output.status.success() {
         Ok(())
     } else {
-        Err(format!("invalid wasm file {}\n{}\n{}",
+        Err(format!("invalid wasm file {}\n\twasm-validate status code: {:?}\n\tstdout: {}\n\tstderr: {}",
                     path.display(),
+                    validate_output.status.code(),
                     String::from_utf8_lossy(&validate_output.stdout),
                     String::from_utf8_lossy(&validate_output.stderr),
                 ))
