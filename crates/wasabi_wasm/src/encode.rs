@@ -1,7 +1,6 @@
 //! Code for encoding our AST back to the WebAssembly binary format.
 //! Uses `wasm-encoder` for the actual low-level work.
 
-use std::convert::TryInto;
 use std::sync::RwLock;
 
 use nohash_hasher::IntMap;
@@ -728,11 +727,10 @@ impl From<Limits> for we::MemoryType {
         Self {
             minimum: limits
                 .initial_size
-                .try_into()
-                .expect("u32 to u64 should always succeed"),
+                .into(),
             maximum: limits
                 .max_size
-                .map(|u32| u32.try_into().expect("u32 to u64 should always succeed")),
+                .map(|u32| u32.into()),
             memory64: false,
             shared: false,
         }
@@ -756,8 +754,7 @@ impl From<Memarg> for we::MemArg {
         Self {
             offset: hl_memarg
                 .offset
-                .try_into()
-                .expect("u32 to u64 should always succeed"),
+                .into(),
             align: hl_memarg.alignment_exp.into(),
             memory_index: 0,
         }

@@ -550,7 +550,7 @@ impl<'module> TypeChecker<'module> {
                         e.0.instruction_idx = Some(instr_idx.into());
                         e.0.instruction = Some(instr.clone());
 
-                        e.0.function_name = function.name.clone();
+                        e.0.function_name.clone_from(&function.name);
 
                         e
                     })?;

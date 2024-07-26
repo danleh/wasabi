@@ -39,8 +39,8 @@ impl<'a> From<&'a Module> for ModuleInfo {
             // if the module has no table, there cannot be a call_indirect, so this null will never be read from JS runtime
             table_export_name: module
                 .tables
-                .get(0)
-                .and_then(|table| table.export.get(0).cloned()),
+                .first()
+                .and_then(|table| table.export.first().cloned()),
             br_tables: vec![],
             original_function_imports_count: module
                 .functions
