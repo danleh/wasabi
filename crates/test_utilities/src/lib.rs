@@ -212,7 +212,7 @@ impl Ord for ValidInputsLine {
         const LOCALE_EN_US: Locale = locale!("en_US");
         thread_local! {
             static COLLATOR: Collator = {
-                Collator::try_new_unstable(&icu_testdata::unstable(), &LOCALE_EN_US.into(), CollatorOptions::new()).unwrap()
+                Collator::try_new(&LOCALE_EN_US.into(), CollatorOptions::new()).unwrap()
             };
         }
 
