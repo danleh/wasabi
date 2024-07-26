@@ -2,7 +2,7 @@
 //! representation for them.
 //! The goals are:
 //! - Use at most 32 bits of memory, because they are frequently part of larger
-//! AST data types, e.g., in functions and instructions.
+//!   AST data types, e.g., in functions and instructions.
 //! - Should be cheap to compare for equality, just a single `u32` comparison.
 //! - Should be cheap to copy, ideally just a memcpy (Rust: Copy trait)
 //! - Should be cheap to create, which is espaclly common in parsing and type checking.
