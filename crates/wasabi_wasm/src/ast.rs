@@ -230,7 +230,7 @@ impl<T> fmt::Debug for Idx<T> {
 impl<T> Clone for Idx<T> {
     #[inline]
     fn clone(&self) -> Self {
-        self.to_usize().into()
+        *self
     }
 }
 

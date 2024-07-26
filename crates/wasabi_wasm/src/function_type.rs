@@ -126,7 +126,7 @@ impl FunctionType {
 
 impl PartialOrd for FunctionType {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        (self.inputs(), self.results()).partial_cmp(&(other.inputs(), other.results()))
+        Some(self.cmp(other))
     }
 }
 
