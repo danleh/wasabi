@@ -681,7 +681,6 @@ fn instr_size_should_not_be_too_large() {
 pub enum Instr {
     // TODO: See below on `Block` for a plan on how to get rid of unreachable code.
     Unreachable,
-    // TODO: Remove, can be replaced by `Instr::Block(FunctionType::empty)`.
     Nop,
 
     // TODO: Make highlevel::Instr nesting, i.e., Block(FunctionType, Vec<Instr>)
