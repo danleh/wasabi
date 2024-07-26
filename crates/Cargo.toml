@@ -4,6 +4,7 @@ members = [
     "wasabi_wasm",
     "test_utilities",
 ]
+resolver = "2"
 
 [profile.release]
 # Optimize all the things!
