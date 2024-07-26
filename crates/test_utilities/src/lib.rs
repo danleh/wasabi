@@ -52,7 +52,7 @@ pub fn for_each_valid_wasm_binary_in_test_set(test_fn: impl Fn(&Path) + Send + S
                 system.available_memory()
             };
             if memory_needed_for_ast_approx > memory_available {
-                eprintln!("Skipping {} due to running low on memory...\n\t{:10} bytes memory available\n\t{:10} bytes module size\n\t{:10} bytes approx. required", path.display(), memory_available, module_size_bytes, memory_needed_for_ast_approx);
+                eprintln!("Skipping {} due to running low on memory...\n\t{:10} bytes memory available\n\t{:10} bytes module size\n\t{:10} bytes memory approximately required", path.display(), memory_available, module_size_bytes, memory_needed_for_ast_approx);
                 return;
             }
     
@@ -88,8 +88,9 @@ pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), String> {
             String::from_utf8_lossy(&validate_output.stderr),
         ))
     } else {
-        eprintln!("wasm-validate terminated without a status code on wasm file {}\n\ton Linux this means a signal has terminated it (most likely the OOM-killer)\n\tignoring this error...", 
-            path.display());
+        let file_size = fs::metadata(path).map(|file| file.len()).unwrap_or(0);
+        eprintln!("wasm-validate terminated without a status code on {}\n\t{:10} bytes file size\n\tOn Linux this means a signal has terminated it (most likely the OOM-killer)\n\tignoring this error...", 
+            path.display(), file_size);
         Ok(())
     }
 }
