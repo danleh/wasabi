@@ -31,3 +31,6 @@ jobs:
       working-directory: crates/wasabi/
     - run: cargo test -- --nocapture --test-threads=1 --color=always
       working-directory: crates/wasabi/
+      env:
+        # Let's limit this to only two workers in the hope that this limits max memory usage and thus OOMs.
+        RAYON_NUM_THREADS: 2
