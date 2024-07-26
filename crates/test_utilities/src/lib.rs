@@ -2,6 +2,7 @@
 
 use std::io;
 use std::io::BufRead;
+use std::fs;
 use std::fs::File;
 use std::path::Path;
 use std::path::PathBuf;
@@ -9,6 +10,7 @@ use std::path::PathBuf;
 use once_cell::sync::Lazy;
 use rayon::prelude::*;
 use indicatif::ParallelProgressIterator;
+use sysinfo::System;
 
 const VALID_WASM_BINARIES_LIST_FILE: &str = "../../test-inputs/valid-wasm-binaries.txt";
 
@@ -36,7 +38,26 @@ pub fn for_each_valid_wasm_binary_in_test_set(test_fn: impl Fn(&Path) + Send + S
         // Abort parallel processing as early as possible.
         .panic_fuse()
         .progress()
-        .for_each(|path| test_fn(path));
+        .for_each(|path| {
+            let module_size_bytes = fs::metadata(path)
+                    .map(|file| file.len())
+                    .unwrap_or(0);
+
+            const AST_BYTES_PER_INSTRUCTION_BYTE_APPROX: u64 = 100;
+            let memory_needed_for_ast_approx = module_size_bytes * AST_BYTES_PER_INSTRUCTION_BYTE_APPROX;
+
+            let memory_available = {
+                let mut system = System::new();
+                system.refresh_memory();
+                system.available_memory()
+            };
+            if memory_needed_for_ast_approx > memory_available {
+                eprintln!("Skipping {} due to running low on memory...\n\t{} bytes memory available\n\t{} bytes module size\n\t{} bytes approx. required", path.display(), memory_available, module_size_bytes, memory_needed_for_ast_approx);
+                return;
+            }
+    
+            test_fn(path)}
+        );
 }
 
 /// Call WABT's wasm-validate tool on a file (WABT needs to be on $PATH).
