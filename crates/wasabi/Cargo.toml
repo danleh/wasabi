@@ -29,4 +29,3 @@ main_error = "0.1.2"
 [dev-dependencies]
 test_utilities = { path = "../test_utilities" }
 sha256 = "1.1.1"
-sys-info = "0.9.1"

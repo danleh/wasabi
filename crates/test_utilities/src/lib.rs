@@ -43,7 +43,7 @@ pub fn for_each_valid_wasm_binary_in_test_set(test_fn: impl Fn(&Path) + Send + S
                     .map(|file| file.len())
                     .unwrap_or(0);
 
-            const AST_BYTES_PER_INSTRUCTION_BYTE_APPROX: u64 = 20;
+            const AST_BYTES_PER_INSTRUCTION_BYTE_APPROX: u64 = 50;
             let memory_needed_for_ast_approx = module_size_bytes * AST_BYTES_PER_INSTRUCTION_BYTE_APPROX;
 
             let memory_available = {
