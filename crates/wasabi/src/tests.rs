@@ -54,7 +54,7 @@ fn test_instrument(instrument: fn(&mut Module) -> Option<String>, instrument_nam
             }
             // NOTE: If the instrumented binary is very large, `wasm-validate` can OOM. Log but ignore this here.
             Err(err @ WasmValidateError::CouldNotValidate { .. }) => {
-                eprintln!("{err}\nignoring this here (possible OOM), please validate manually...")
+                eprintln!("{err}\n\tignoring this here (possible OOM), please validate manually...")
             }
         }
     });

@@ -58,7 +58,7 @@ pub fn for_each_valid_wasm_binary_in_test_set(test_fn: impl Fn(&Path) + Send + S
                 system.available_memory()
             };
             if memory_needed_for_ast_approx > memory_available {
-                eprintln!("Skipping {} due to running low on memory...\n\t{:10} bytes memory available\n\t{:10} bytes module size\n\t{:10} bytes memory approximately required", path.display(), memory_available, module_size_bytes, memory_needed_for_ast_approx);
+                eprintln!("skipping '{}' due to running low on memory...\n\t{:10} bytes memory available\n\t{:10} bytes module size\n\t{:10} bytes memory approximately required", path.display(), memory_available, module_size_bytes, memory_needed_for_ast_approx);
                 return;
             }
 
@@ -130,12 +130,12 @@ impl fmt::Display for WasmValidateError {
             } => {
                 writeln!(f, "invalid Wasm file {input_file}")?;
                 writeln!(f, "\twasm-validate status code: {status_code}")?;
-                writeln!(f, "\tstdout: {stdout}")?;
-                writeln!(f, "\tstderr: {stderr}")
+                writeln!(f, "\tstdout: {}", stdout.trim())?;
+                writeln!(f, "\tstderr: {}", stderr.trim())
             }
             WasmValidateError::CouldNotValidate { input_file, error } => {
                 writeln!(f, "could not validate Wasm file {input_file}")?;
-                writeln!(f, "possibly crash, error: {error}")
+                writeln!(f, "\tpossibly crash\n\t{}", error.trim())
             }
         }
     }
@@ -162,13 +162,15 @@ pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), WasmValidateError> {
         Ok(validate_output) => match validate_output.status.code() {
             Some(0) => {
                 assert!(validate_output.stdout.is_empty());
+
                 // Warnings don't make validation fail but _are_ printed on stderr.
                 let stderr = String::from_utf8_lossy(&validate_output.stderr);
                 let stderr = stderr.trim();
                 if !stderr.is_empty() {
                     let file_info = WasmFileInfo::new(path);
-                    eprintln!("wasm-validate warning on {file_info}: {stderr}");
+                    eprintln!("wasm-validate warning on {file_info}:\n\t{stderr}");
                 }
+
                 Ok(())
             },
             Some(status_code) => Err(WasmValidateError::InvalidWasmFile {
