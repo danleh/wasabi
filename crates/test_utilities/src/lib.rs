@@ -162,7 +162,11 @@ pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), WasmValidateError> {
         Ok(validate_output) => match validate_output.status.code() {
             Some(0) => {
                 assert!(validate_output.stdout.is_empty());
-                assert!(validate_output.stderr.is_empty(), "{}", String::from_utf8_lossy(&validate_output.stderr));
+                // Warnings don't make validation fail but _are_ printed on stderr.
+                let stderr = String::from_utf8_lossy(&validate_output.stderr);
+                if !stderr.is_empty() {
+                    eprintln!("wasm-validate warning: {stderr}");
+                }
                 Ok(())
             },
             Some(status_code) => Err(WasmValidateError::InvalidWasmFile {
