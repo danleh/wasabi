@@ -819,18 +819,21 @@ impl ToConst for Label {
 impl BlockStackElement {
     fn append_end_hook_args(&self, append_to: &mut Vec<Instr>, fidx: Idx<Function>) {
         match self {
-            BlockStackElement::Function { end } => append_to.extend_from_slice(&[
-                fidx.to_const(), 
-                end.to_const()
-            ]),
+            BlockStackElement::Function { end } => {
+                append_to.extend_from_slice(&[fidx.to_const(), end.to_const()])
+            }
             BlockStackElement::Block { begin, end }
             | BlockStackElement::Loop { begin, end }
-            | BlockStackElement::If { begin_if: begin, end, .. } => append_to.extend_from_slice(&[
-                fidx.to_const(),
-                end.to_const(),
-                begin.to_const()
-            ]),
-            BlockStackElement::Else { begin_else, begin_if, end } => append_to.extend_from_slice(&[
+            | BlockStackElement::If {
+                begin_if: begin,
+                end,
+                ..
+            } => append_to.extend_from_slice(&[fidx.to_const(), end.to_const(), begin.to_const()]),
+            BlockStackElement::Else {
+                begin_else,
+                begin_if,
+                end,
+            } => append_to.extend_from_slice(&[
                 fidx.to_const(),
                 end.to_const(),
                 begin_else.to_const(),
@@ -858,7 +861,8 @@ fn generate_js(module_info: ModuleInfo, hooks: &[String], node_js: bool) -> Stri
 *   - generated from program-to-instrument: static information and low-level hooks
 */
 
-"#.to_string();
+"#
+    .to_string();
 
     if node_js {
         // For Node.js, write the long.js dependency to a separate file (in main) and
@@ -873,10 +877,12 @@ fn generate_js(module_info: ModuleInfo, hooks: &[String], node_js: bool) -> Stri
         //    - needs to be run after every instrumentation
         // * Alternative B: compile Wasabi itself to WebAssembly, instrument at runtime
         result.push_str("// long.js\n");
-        result.push_str(include_str!("../../../js/long.js/long.js")
-            .lines()
-            .next()
-            .expect("could not include long.js dependency"));
+        result.push_str(
+            include_str!("../../../js/long.js/long.js")
+                .lines()
+                .next()
+                .expect("could not include long.js dependency"),
+        );
     }
     result.push_str("\n\n");
 

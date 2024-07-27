@@ -79,10 +79,28 @@ impl EncodeState {
         *types_idx.entry(type_).or_insert(new_idx)
     }
 
-    encode_state_idx_fns!(insert_function_idx, map_function_idx, function_idx, Function, "function");
+    encode_state_idx_fns!(
+        insert_function_idx,
+        map_function_idx,
+        function_idx,
+        Function,
+        "function"
+    );
     encode_state_idx_fns!(insert_table_idx, map_table_idx, table_idx, Table, "table");
-    encode_state_idx_fns!(insert_memory_idx, map_memory_idx, memory_idx, Memory, "memory");
-    encode_state_idx_fns!(insert_global_idx, map_global_idx, global_idx, Global, "global");
+    encode_state_idx_fns!(
+        insert_memory_idx,
+        map_memory_idx,
+        memory_idx,
+        Memory,
+        "memory"
+    );
+    encode_state_idx_fns!(
+        insert_global_idx,
+        map_global_idx,
+        global_idx,
+        Global,
+        "global"
+    );
 }
 
 pub fn encode_module(module: &Module) -> Result<Vec<u8>, EncodeError> {
@@ -212,13 +230,21 @@ fn encode_imports(module: &Module, state: &mut EncodeState) -> we::ImportSection
                     );
                 }
             }
-        }
+        };
     }
 
-    add_imports!(functions, insert_function_idx, Function, |f: &Function| state.get_or_insert_type(f.type_).to_u32());
-    add_imports!(tables, insert_table_idx, Table, |t: &Table| we::TableType::from(t.limits));
-    add_imports!(memories, insert_memory_idx, Memory, |m: &Memory| we::MemoryType::from(m.limits));
-    add_imports!(globals, insert_global_idx, Global, |g: &Global| we::GlobalType::from(g.type_));
+    add_imports!(functions, insert_function_idx, Function, |f: &Function| {
+        state.get_or_insert_type(f.type_).to_u32()
+    });
+    add_imports!(tables, insert_table_idx, Table, |t: &Table| {
+        we::TableType::from(t.limits)
+    });
+    add_imports!(memories, insert_memory_idx, Memory, |m: &Memory| {
+        we::MemoryType::from(m.limits)
+    });
+    add_imports!(globals, insert_global_idx, Global, |g: &Global| {
+        we::GlobalType::from(g.type_)
+    });
 
     import_section
 }
@@ -460,7 +486,9 @@ fn encode_instruction(
         ),
 
         Instr::Return => we::Instruction::Return,
-        Instr::Call(function_idx) => we::Instruction::Call(state.map_function_idx(function_idx)?.to_u32()),
+        Instr::Call(function_idx) => {
+            we::Instruction::Call(state.map_function_idx(function_idx)?.to_u32())
+        }
         Instr::CallIndirect(ref function_type, table_idx) => we::Instruction::CallIndirect {
             ty: state.get_or_insert_type(*function_type).to_u32(),
             table: state.map_table_idx(table_idx)?.to_u32(),
@@ -472,8 +500,12 @@ fn encode_instruction(
         Instr::Local(LocalOp::Get, local_idx) => we::Instruction::LocalGet(local_idx.to_u32()),
         Instr::Local(LocalOp::Set, local_idx) => we::Instruction::LocalSet(local_idx.to_u32()),
         Instr::Local(LocalOp::Tee, local_idx) => we::Instruction::LocalTee(local_idx.to_u32()),
-        Instr::Global(GlobalOp::Get, global_idx) => we::Instruction::GlobalGet(state.map_global_idx(global_idx)?.to_u32()),
-        Instr::Global(GlobalOp::Set, global_idx) => we::Instruction::GlobalSet(state.map_global_idx(global_idx)?.to_u32()),
+        Instr::Global(GlobalOp::Get, global_idx) => {
+            we::Instruction::GlobalGet(state.map_global_idx(global_idx)?.to_u32())
+        }
+        Instr::Global(GlobalOp::Set, global_idx) => {
+            we::Instruction::GlobalSet(state.map_global_idx(global_idx)?.to_u32())
+        }
 
         Instr::Load(LoadOp::I32Load, memarg) => we::Instruction::I32Load(memarg.into()),
         Instr::Load(LoadOp::I64Load, memarg) => we::Instruction::I64Load(memarg.into()),
@@ -500,8 +532,12 @@ fn encode_instruction(
         Instr::Store(StoreOp::I64Store16, memarg) => we::Instruction::I64Store16(memarg.into()),
         Instr::Store(StoreOp::I64Store32, memarg) => we::Instruction::I64Store32(memarg.into()),
 
-        Instr::MemorySize(memory_idx) => we::Instruction::MemorySize(state.map_memory_idx(memory_idx)?.to_u32()),
-        Instr::MemoryGrow(memory_idx) => we::Instruction::MemoryGrow(state.map_memory_idx(memory_idx)?.to_u32()),
+        Instr::MemorySize(memory_idx) => {
+            we::Instruction::MemorySize(state.map_memory_idx(memory_idx)?.to_u32())
+        }
+        Instr::MemoryGrow(memory_idx) => {
+            we::Instruction::MemoryGrow(state.map_memory_idx(memory_idx)?.to_u32())
+        }
 
         Instr::Const(Val::I32(value)) => we::Instruction::I32Const(value),
         Instr::Const(Val::I64(value)) => we::Instruction::I64Const(value),
@@ -694,9 +730,9 @@ fn encode_block_type(func_or_block_ty: FunctionType, state: &EncodeState) -> we:
         ([], []) => we::BlockType::Empty,
         ([], [val_type]) => we::BlockType::Result((*val_type).into()),
         // Only fall back to a reference to a function type if necessary.
-        (_inputs, _results) => we::BlockType::FunctionType(
-            state.get_or_insert_type(func_or_block_ty).to_u32()
-        )
+        (_inputs, _results) => {
+            we::BlockType::FunctionType(state.get_or_insert_type(func_or_block_ty).to_u32())
+        }
     }
 }
 
@@ -725,12 +761,8 @@ impl From<Limits> for we::TableType {
 impl From<Limits> for we::MemoryType {
     fn from(limits: Limits) -> Self {
         Self {
-            minimum: limits
-                .initial_size
-                .into(),
-            maximum: limits
-                .max_size
-                .map(|u32| u32.into()),
+            minimum: limits.initial_size.into(),
+            maximum: limits.max_size.map(|u32| u32.into()),
             memory64: false,
             shared: false,
         }
@@ -752,9 +784,7 @@ impl From<ValType> for we::ValType {
 impl From<Memarg> for we::MemArg {
     fn from(hl_memarg: Memarg) -> Self {
         Self {
-            offset: hl_memarg
-                .offset
-                .into(),
+            offset: hl_memarg.offset.into(),
             align: hl_memarg.alignment_exp.into(),
             memory_index: 0,
         }

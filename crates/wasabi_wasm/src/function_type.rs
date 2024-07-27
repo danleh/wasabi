@@ -55,7 +55,9 @@ impl FunctionType {
     /// If the types are already slices, use this function.
     // TODO: Once specialization is stable, this can be a specialization of `from_iter`, which is the generic case.
     pub fn new(inputs: &[ValType], results: &[ValType]) -> Self {
-        if let Some(function_type) = Self::new_goedel(inputs.iter().cloned(), results.iter().cloned()) {
+        if let Some(function_type) =
+            Self::new_goedel(inputs.iter().cloned(), results.iter().cloned())
+        {
             function_type
         } else {
             Self::new_arena(inputs, results)
@@ -63,7 +65,10 @@ impl FunctionType {
     }
 
     /// Use if your types are not already slices and you want to avoid the allocation in the (common) case of Goedel numbers.
-    pub fn from_iter(inputs: impl IntoIterator<Item=ValType> + Clone, results: impl IntoIterator<Item=ValType> + Clone) -> Self {
+    pub fn from_iter(
+        inputs: impl IntoIterator<Item = ValType> + Clone,
+        results: impl IntoIterator<Item = ValType> + Clone,
+    ) -> Self {
         if let Some(function_type) = Self::new_goedel(inputs.clone(), results.clone()) {
             function_type
         } else {
@@ -73,7 +78,10 @@ impl FunctionType {
         }
     }
 
-    fn new_goedel(inputs: impl IntoIterator<Item=ValType>, results: impl IntoIterator<Item=ValType>) -> Option<Self> {
+    fn new_goedel(
+        inputs: impl IntoIterator<Item = ValType>,
+        results: impl IntoIterator<Item = ValType>,
+    ) -> Option<Self> {
         // Ensure three things:
         // 1. The numerical operations do not overflow while converting to the Gödel number.
         if let Some(inputs) = val_type_seq_to_goedel_number(inputs) {
@@ -173,16 +181,20 @@ impl FromStr for FunctionType {
         // Split individual types by comma, and remove brackets.
         let params = params
             .trim()
-            .strip_prefix('[').ok_or(())?
-            .strip_suffix(']').ok_or(())?
+            .strip_prefix('[')
+            .ok_or(())?
+            .strip_suffix(']')
+            .ok_or(())?
             .split(',')
             .filter_map(trim_filter)
             .map(ValType::from_str)
             .collect::<Result<Vec<_>, _>>()?;
         let results = results
             .trim()
-            .strip_prefix('[').ok_or(())?
-            .strip_suffix(']').ok_or(())?
+            .strip_prefix('[')
+            .ok_or(())?
+            .strip_suffix(']')
+            .ok_or(())?
             .split(',')
             .filter_map(trim_filter)
             .map(ValType::from_str)
@@ -196,9 +208,48 @@ fn inspect_function_types() {
     println!("{:?}", FunctionType::new(&[], &[]));
     println!("{:?}", FunctionType::new(&[ValType::I32], &[]));
     println!("{:?}", FunctionType::new(&[], &[ValType::I32]));
-    println!("{:?}", FunctionType::new(&[], &[ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32]));
-    println!("{:?}", FunctionType::new(&[], &[ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I64]));
-    println!("{:?}", FunctionType::new(&[], &[ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32]));
+    println!(
+        "{:?}",
+        FunctionType::new(
+            &[],
+            &[
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32
+            ]
+        )
+    );
+    println!(
+        "{:?}",
+        FunctionType::new(
+            &[],
+            &[
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I64
+            ]
+        )
+    );
+    println!(
+        "{:?}",
+        FunctionType::new(
+            &[],
+            &[
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32
+            ]
+        )
+    );
 }
 
 // Forward direction: ValType slice to Gödel number.
@@ -232,7 +283,8 @@ const fn val_type_seq_max_goedel_number(max_seq_len: u32) -> usize {
     // + 6 (for the sequence with one element)
     // + 36 ...
     // = (1 - 6^(max_seq_len+1)) / (1 - 6)
-    let goedel_number_count = ((VAL_TYPE_MAX_GOEDEL_NUMBER + 1).pow(max_seq_len + 1) - 1) / VAL_TYPE_MAX_GOEDEL_NUMBER;
+    let goedel_number_count =
+        ((VAL_TYPE_MAX_GOEDEL_NUMBER + 1).pow(max_seq_len + 1) - 1) / VAL_TYPE_MAX_GOEDEL_NUMBER;
     goedel_number_count - 1
 }
 
@@ -247,7 +299,7 @@ fn test_goedel_number_constants() {
     assert_eq!(val_type_seq_max_goedel_number(4), 340);
 }
 
-fn val_type_seq_to_goedel_number(seq: impl IntoIterator<Item=ValType>) -> Option<usize> {
+fn val_type_seq_to_goedel_number(seq: impl IntoIterator<Item = ValType>) -> Option<usize> {
     let mut result = 0usize;
 
     for val_type in seq {
@@ -262,7 +314,10 @@ fn val_type_seq_to_goedel_number(seq: impl IntoIterator<Item=ValType>) -> Option
 fn test_val_type_seq_to_goedel_number() {
     assert_eq!(val_type_seq_to_goedel_number([]), Some(0));
     assert_eq!(val_type_seq_to_goedel_number([ValType::I32]), Some(1));
-    assert_eq!(val_type_seq_to_goedel_number([ValType::I32, ValType::I32]), Some(5));
+    assert_eq!(
+        val_type_seq_to_goedel_number([ValType::I32, ValType::I32]),
+        Some(5)
+    );
 }
 
 // Reverse direction: Gödel number to slice.
@@ -288,8 +343,18 @@ static LOOKUP_TABLE: Lazy<LookupType> = Lazy::new(|| {
 #[test]
 fn lookup_table_size() {
     println!("number of entries: {LOOKUP_TABLE_SIZE}");
-    println!("size of table: {}", std::mem::size_of_val(LOOKUP_TABLE.as_ref()));
-    println!("sum of slice lens: {}", LOOKUP_TABLE.as_ref().iter().map(|seq| seq.len()).sum::<usize>());
+    println!(
+        "size of table: {}",
+        std::mem::size_of_val(LOOKUP_TABLE.as_ref())
+    );
+    println!(
+        "sum of slice lens: {}",
+        LOOKUP_TABLE
+            .as_ref()
+            .iter()
+            .map(|seq| seq.len())
+            .sum::<usize>()
+    );
 }
 
 #[test]
@@ -318,7 +383,10 @@ fn goedel_number_to_val_type_seq(mut goedel_number: usize) -> Vec<ValType> {
 fn test_goedel_number_to_val_type_seq() {
     assert_eq!(goedel_number_to_val_type_seq(0), vec![]);
     assert_eq!(goedel_number_to_val_type_seq(1), vec![ValType::I32]);
-    assert_eq!(goedel_number_to_val_type_seq(5), vec![ValType::I32, ValType::I32]);
+    assert_eq!(
+        goedel_number_to_val_type_seq(5),
+        vec![ValType::I32, ValType::I32]
+    );
 }
 
 #[test]
@@ -326,7 +394,10 @@ fn test_goedel_number_roundtrips() {
     for goedel_number in 0..LOOKUP_TABLE_SIZE {
         let val_type_seq = goedel_number_to_val_type_seq(goedel_number);
         let roundtrip = val_type_seq_to_goedel_number(val_type_seq.clone()).unwrap();
-        assert_eq!(goedel_number, roundtrip, "{goedel_number} -> {val_type_seq:?} -> {roundtrip}");
+        assert_eq!(
+            goedel_number, roundtrip,
+            "{goedel_number} -> {val_type_seq:?} -> {roundtrip}"
+        );
     }
 }
 
@@ -340,7 +411,10 @@ impl Default for ArenaInner {
         const ARENA_PREALLOC_SIZE: usize = 256;
         Self {
             idx_to_func_type: Vec::with_capacity(ARENA_PREALLOC_SIZE),
-            func_type_to_idx: FxHashMap::with_capacity_and_hasher(ARENA_PREALLOC_SIZE, Default::default()),
+            func_type_to_idx: FxHashMap::with_capacity_and_hasher(
+                ARENA_PREALLOC_SIZE,
+                Default::default(),
+            ),
         }
     }
 }

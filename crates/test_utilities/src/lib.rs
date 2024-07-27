@@ -1,26 +1,31 @@
 //! Utility functions for testing Wasabi and the Wasm library.
 
-use std::io;
-use std::io::BufRead;
 use std::fs;
 use std::fs::File;
+use std::io;
+use std::io::BufRead;
 use std::path::Path;
 use std::path::PathBuf;
 
+use indicatif::ParallelProgressIterator;
 use once_cell::sync::Lazy;
 use rayon::prelude::*;
-use indicatif::ParallelProgressIterator;
 use sysinfo::System;
 
 const VALID_WASM_BINARIES_LIST_FILE: &str = "../../test-inputs/valid-wasm-binaries.txt";
 
 static VALID_WASM_BINARIES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
-    ValidInputsList::parse(VALID_WASM_BINARIES_LIST_FILE).existing_files().collect()
+    ValidInputsList::parse(VALID_WASM_BINARIES_LIST_FILE)
+        .existing_files()
+        .collect()
 });
 
 #[test]
 pub fn should_be_more_than_ten_valid_test_binaries() {
-    println!("\n{} valid Wasm binaries in test set:", VALID_WASM_BINARIES.len());
+    println!(
+        "\n{} valid Wasm binaries in test set:",
+        VALID_WASM_BINARIES.len()
+    );
     for path in VALID_WASM_BINARIES.iter() {
         println!("  {}", path.display());
     }
@@ -55,7 +60,7 @@ pub fn for_each_valid_wasm_binary_in_test_set(test_fn: impl Fn(&Path) + Send + S
                 eprintln!("Skipping {} due to running low on memory...\n\t{:10} bytes memory available\n\t{:10} bytes module size\n\t{:10} bytes memory approximately required", path.display(), memory_available, module_size_bytes, memory_needed_for_ast_approx);
                 return;
             }
-    
+
             test_fn(path)}
         );
 }
@@ -81,7 +86,8 @@ pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), String> {
     if validate_output.status.success() {
         Ok(())
     } else if let Some(status_code) = validate_output.status.code() {
-        Err(format!("wasm-validate: invalid Wasm file {}\n\tstatus code: {:?}\n\tstdout: {}\n\tstderr: {}",
+        Err(format!(
+            "wasm-validate: invalid Wasm file {}\n\tstatus code: {:?}\n\tstdout: {}\n\tstderr: {}",
             path.display(),
             status_code,
             String::from_utf8_lossy(&validate_output.stdout),
@@ -95,13 +101,18 @@ pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), String> {
     }
 }
 
-/// Ad-hoc utility function: map input .wasm file to file in output dir with custom 
+/// Ad-hoc utility function: map input .wasm file to file in output dir with custom
 /// subdirectory, e.g., bla.wasm + "transformXYZ" -> "outputs/transformXYZ/bla.wasm"
-pub fn output_file(test_input_file: impl AsRef<Path>, output_subdir: &'static str) -> io::Result<PathBuf> {
+pub fn output_file(
+    test_input_file: impl AsRef<Path>,
+    output_subdir: &'static str,
+) -> io::Result<PathBuf> {
     use std::fs;
 
     // Replace input path component with output + output subdirectory.
-    let output_file = test_input_file.as_ref().iter()
+    let output_file = test_input_file
+        .as_ref()
+        .iter()
         .flat_map(|component| {
             let component = component.to_str().unwrap();
             if component == "test-inputs" {
@@ -111,7 +122,7 @@ pub fn output_file(test_input_file: impl AsRef<Path>, output_subdir: &'static st
             }
         })
         .collect::<PathBuf>();
-    
+
     assert_ne!(test_input_file.as_ref(), output_file);
 
     // Ensure the directory exists.
@@ -120,7 +131,7 @@ pub fn output_file(test_input_file: impl AsRef<Path>, output_subdir: &'static st
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]  // Used in test code.
+#[allow(dead_code)] // Used in test code.
 struct ValidInputsList {
     list_file: PathBuf,
     base_dir: PathBuf,
@@ -130,7 +141,10 @@ struct ValidInputsList {
 impl ValidInputsList {
     pub fn parse(list_file: impl AsRef<Path>) -> Self {
         let list_file = list_file.as_ref().to_owned();
-        let base_dir = list_file.parent().expect("list file has no parent directory").to_owned();
+        let base_dir = list_file
+            .parent()
+            .expect("list file has no parent directory")
+            .to_owned();
         let lines = io::BufReader::new(File::open(&list_file).unwrap())
             .lines()
             .map(|line| {
@@ -157,8 +171,11 @@ impl ValidInputsList {
         for line in &self.lines {
             match line {
                 ValidInputsLine::Comment(comment) => writeln!(writer, "# {comment}"),
-                ValidInputsLine::File(path_components) => writeln!(writer, "{}", PathBuf::from(path_components).display()),
-            }.unwrap();
+                ValidInputsLine::File(path_components) => {
+                    writeln!(writer, "{}", PathBuf::from(path_components).display())
+                }
+            }
+            .unwrap();
         }
     }
 
@@ -166,22 +183,24 @@ impl ValidInputsList {
     pub fn all_files(&self) -> Vec<PathBuf> {
         self.lines
             .iter()
-            .filter_map(|line| 
+            .filter_map(|line| {
                 if let ValidInputsLine::File(path_components) = line {
                     Some(self.base_dir.clone().join(PathBuf::from(path_components)))
                 } else {
                     None
-                })
+                }
+            })
             .collect()
     }
-    
+
     pub fn existing_files(&self) -> impl Iterator<Item = PathBuf> {
         self.all_files().into_iter().filter(|path| path.exists())
     }
 
     #[cfg(test)]
     pub fn contains_file(&self, path: impl AsRef<Path>) -> bool {
-        self.lines.contains(&ValidInputsLine::file_strip_base(path, &self.base_dir))
+        self.lines
+            .contains(&ValidInputsLine::file_strip_base(path, &self.base_dir))
     }
 
     #[cfg(test)]
@@ -193,12 +212,12 @@ impl ValidInputsList {
                 // Already present.
                 Equal => return false,
                 // Continue searching.
-                Less => {},
+                Less => {}
                 // Insert in increasing order.
                 Greater => {
                     self.lines.insert(i, new_line);
                     return true;
-                },
+                }
             }
         }
         self.lines.push(new_line);
@@ -216,27 +235,35 @@ enum ValidInputsLine {
 impl ValidInputsLine {
     /// Always use '/' slashes in the list file, to keep it consistent even when updating it on Windows.
     pub fn file(path: impl AsRef<Path>) -> Self {
-        Self::File(path.as_ref().to_str().expect("The path must be valid UTF-8.").replace('\\', "/"))
+        Self::File(
+            path.as_ref()
+                .to_str()
+                .expect("The path must be valid UTF-8.")
+                .replace('\\', "/"),
+        )
     }
 
     #[cfg(test)]
     /// Keep paths relative to the list file, to not repeat the common prefix.
     pub fn file_strip_base(path: impl AsRef<Path>, base: impl AsRef<Path>) -> Self {
-        let path = path.as_ref().strip_prefix(base).expect("The path must be relative to the list file.");
+        let path = path
+            .as_ref()
+            .strip_prefix(base)
+            .expect("The path must be relative to the list file.");
         Self::file(path)
     }
 }
 
 #[cfg(test)]
 /// Nicer string ordering via Unicode collation.
-/// The default Rust string ordering is based on byte values and sorts 
+/// The default Rust string ordering is based on byte values and sorts
 /// all uppercase characters before lowercase characters (among other things).
 impl Ord for ValidInputsLine {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         use icu::collator::Collator;
         use icu::collator::CollatorOptions;
-        use icu::locid::Locale;
         use icu::locid::locale;
+        use icu::locid::Locale;
 
         const LOCALE_EN_US: Locale = locale!("en_US");
         thread_local! {
@@ -252,7 +279,7 @@ impl Ord for ValidInputsLine {
             // Sort comments before files.
             (Comment(_), File(_)) => std::cmp::Ordering::Less,
             (File(_), Comment(_)) => std::cmp::Ordering::Greater,
-        }        
+        }
     }
 }
 
@@ -264,7 +291,7 @@ impl PartialOrd for ValidInputsLine {
 }
 
 #[cfg(test)]
-/// Return all *.wasm files recursively under a root directory that do not have "out/" in their 
+/// Return all *.wasm files recursively under a root directory that do not have "out/" in their
 /// path (because out/ is the default instrumentation output directory of Wasabi).
 fn wasm_files(root_dir: impl AsRef<Path>) -> Vec<PathBuf> {
     use walkdir::WalkDir;
@@ -274,7 +301,11 @@ fn wasm_files(root_dir: impl AsRef<Path>) -> Vec<PathBuf> {
         let path = entry.unwrap().path().to_owned();
         if std::fs::metadata(&path).unwrap().is_file() {
             if let Some("wasm") = path.extension().and_then(|os_str| os_str.to_str()) {
-                if !path.components().flat_map(|comp| comp.as_os_str().to_str()).any(|dir| dir == "out") {
+                if !path
+                    .components()
+                    .flat_map(|comp| comp.as_os_str().to_str())
+                    .any(|dir| dir == "out")
+                {
                     wasm_files.push(path);
                 }
             }
@@ -284,7 +315,7 @@ fn wasm_files(root_dir: impl AsRef<Path>) -> Vec<PathBuf> {
 }
 
 #[test]
-#[ignore]  // Ignore by default, to avoid accidentally updating the list file.
+#[ignore] // Ignore by default, to avoid accidentally updating the list file.
 pub fn update_valid_inputs_list() {
     let valid_inputs = ValidInputsList::parse(VALID_WASM_BINARIES_LIST_FILE);
 
@@ -302,7 +333,10 @@ pub fn update_valid_inputs_list() {
 
     let more_inputs_root_dir = valid_inputs.base_dir.clone();
     let valid_inputs = std::sync::RwLock::new(valid_inputs);
-    println!("Checking for new Wasm binaries in '{}/'...", more_inputs_root_dir.display());
+    println!(
+        "Checking for new Wasm binaries in '{}/'...",
+        more_inputs_root_dir.display()
+    );
     let added_binaries_count = wasm_files(more_inputs_root_dir)
         .par_iter()
         .panic_fuse()
@@ -310,7 +344,7 @@ pub fn update_valid_inputs_list() {
         .filter(|path|
             // Early exit: Don't validate binaries that are already in the list.
             !valid_inputs.read().unwrap().contains_file(path)
-                && wasm_validate(path).is_ok() 
+                && wasm_validate(path).is_ok()
                 && valid_inputs.write().unwrap().add_file_sorted(path))
         .count();
 

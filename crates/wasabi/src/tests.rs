@@ -7,25 +7,32 @@ use crate::options::HookSet;
 
 #[test]
 fn add_empty_function_produces_valid_wasm() {
-    test_instrument(|module| {
-        direct::add_empty_function(module);
-        None
-    }, "add-empty-function");
+    test_instrument(
+        |module| {
+            direct::add_empty_function(module);
+            None
+        },
+        "add-empty-function",
+    );
 }
 
 #[test]
 fn count_calls_instrumentation_produces_valid_wasm() {
-    test_instrument(|module| {
-        direct::count_calls(module);
-        None
-    }, "count-calls");
+    test_instrument(
+        |module| {
+            direct::count_calls(module);
+            None
+        },
+        "count-calls",
+    );
 }
 
 #[test]
 fn add_hooks_instrumentation_produces_valid_wasm() {
-    test_instrument(|module| {
-        add_hooks(module, HookSet::all(), false).map(|opt| opt.0)
-    }, "add-hooks");
+    test_instrument(
+        |module| add_hooks(module, HookSet::all(), false).map(|opt| opt.0),
+        "add-hooks",
+    );
 }
 
 /// Utility function.

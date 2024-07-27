@@ -11,10 +11,7 @@ use wasabi_wasm::LocalOp::*;
 
 /// save top locals.len() stack values into locals with the given index
 /// types of locals must match stack, not enforced by this function!
-pub fn save_stack_to_locals(
-    append_to: &mut Vec<Instr>,
-    locals: &[Idx<Local>]
-) {
+pub fn save_stack_to_locals(append_to: &mut Vec<Instr>, locals: &[Idx<Local>]) {
     // copy stack values into locals
     for &local in locals.iter().skip(1).rev() {
         append_to.push(Instr::Local(Set, local));
@@ -33,7 +30,7 @@ pub fn save_stack_to_locals(
 /// function is necessary to get the types of the locals
 pub fn restore_locals_with_i64_handling(
     append_to: &mut Vec<Instr>,
-    locals: impl IntoIterator<Item=Idx<Local>>,
+    locals: impl IntoIterator<Item = Idx<Local>>,
     function: &Function,
 ) {
     for local in locals {

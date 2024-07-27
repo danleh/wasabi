@@ -19,7 +19,11 @@ pub enum ParseIssue {
     #[error("error parsing WebAssembly binary at offset 0x{:x}: {}", .0.offset(), .0.message())]
     Wasmparser(#[from] wasmparser::BinaryReaderError),
 
-    #[error("error parsing WebAssembly binary at offset 0x{:x}: {}", offset, message)]
+    #[error(
+        "error parsing WebAssembly binary at offset 0x{:x}: {}",
+        offset,
+        message
+    )]
     Message {
         offset: usize,
         message: &'static str,
@@ -27,7 +31,12 @@ pub enum ParseIssue {
         source: Option<Box<ParseIssue>>,
     },
 
-    #[error("index out of bounds at offset 0x{:x}: invalid {} index {}", offset, index_space, index)]
+    #[error(
+        "index out of bounds at offset 0x{:x}: invalid {} index {}",
+        offset,
+        index_space,
+        index
+    )]
     Index {
         offset: usize,
         index: u32,
@@ -47,11 +56,19 @@ pub enum ParseIssue {
 // Convenience constructors/methods.
 impl ParseIssue {
     pub fn message(offset: usize, message: &'static str, source: Option<Box<ParseIssue>>) -> Self {
-        ParseIssue::Message { offset, message, source }
+        ParseIssue::Message {
+            offset,
+            message,
+            source,
+        }
     }
 
     pub fn index(offset: usize, index: u32, index_space: &'static str) -> Self {
-        ParseIssue::Index { offset, index, index_space }
+        ParseIssue::Index {
+            offset,
+            index,
+            index_space,
+        }
     }
 
     pub fn unsupported(offset: usize, extension: WasmExtension) -> Self {

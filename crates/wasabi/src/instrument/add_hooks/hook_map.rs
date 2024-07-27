@@ -139,7 +139,8 @@ impl HookMap {
 
     pub fn instr(&self, instr: &Instr, polymorphic_tys: &[ValType]) -> Instr {
         let ll_name = LowLevelHookName::polymorphic(instr.to_name(), polymorphic_tys);
-        let generate_hook = |ll_name: String| match *instr {
+        let generate_hook = |ll_name: String| {
+            match *instr {
             /*
                 monomorphic instructions:
                 - 1 instruction : 1 hook
@@ -257,6 +258,7 @@ impl HookMap {
             /* instructions that need additional information and thus have own method */
 
             Block(_) | Loop(_) | Else | End => panic!("cannot get hook for block-type instruction with this method, please use the other methods specialized to the block type"),
+            }
         };
 
         self.get_or_insert(ll_name, generate_hook)
@@ -265,7 +267,9 @@ impl HookMap {
     /* special hooks that do not directly correspond to an instruction or need additional information */
 
     pub fn start(&self) -> Instr {
-        self.get_or_insert(LowLevelHookName::monomorphic("start"), |ll_name| Hook::new(ll_name, vec![], "start", ""))
+        self.get_or_insert(LowLevelHookName::monomorphic("start"), |ll_name| {
+            Hook::new(ll_name, vec![], "start", "")
+        })
     }
 
     pub fn call_post(&self, result_tys: &[ValType]) -> Instr {
@@ -292,76 +296,85 @@ impl HookMap {
     }
 
     pub fn begin_function(&self) -> Instr {
-        self.get_or_insert(LowLevelHookName::monomorphic("begin_function"), |ll_name| Hook::new(ll_name, vec![], "begin", "\"function\""))
+        self.get_or_insert(LowLevelHookName::monomorphic("begin_function"), |ll_name| {
+            Hook::new(ll_name, vec![], "begin", "\"function\"")
+        })
     }
 
     pub fn begin_block(&self) -> Instr {
-        self.get_or_insert(LowLevelHookName::monomorphic("begin_block"), |ll_name| Hook::new(ll_name, vec![], "begin", "\"block\""))
+        self.get_or_insert(LowLevelHookName::monomorphic("begin_block"), |ll_name| {
+            Hook::new(ll_name, vec![], "begin", "\"block\"")
+        })
     }
 
     pub fn begin_loop(&self) -> Instr {
-        self.get_or_insert(LowLevelHookName::monomorphic("begin_loop"), |ll_name| Hook::new(ll_name, vec![], "begin", "\"loop\""))
+        self.get_or_insert(LowLevelHookName::monomorphic("begin_loop"), |ll_name| {
+            Hook::new(ll_name, vec![], "begin", "\"loop\"")
+        })
     }
 
     pub fn begin_if(&self) -> Instr {
-        self.get_or_insert(LowLevelHookName::monomorphic("begin_if"), |ll_name| Hook::new(ll_name, vec![], "begin", "\"if\""))
+        self.get_or_insert(LowLevelHookName::monomorphic("begin_if"), |ll_name| {
+            Hook::new(ll_name, vec![], "begin", "\"if\"")
+        })
     }
 
     pub fn begin_else(&self) -> Instr {
-        self.get_or_insert(LowLevelHookName::monomorphic("begin_else"), |ll_name| Hook::new(ll_name, 
-            args!(ifInstr: I32),
-            "begin",
-            "\"else\", {func, instr: ifInstr}",
-        ))
+        self.get_or_insert(LowLevelHookName::monomorphic("begin_else"), |ll_name| {
+            Hook::new(
+                ll_name,
+                args!(ifInstr: I32),
+                "begin",
+                "\"else\", {func, instr: ifInstr}",
+            )
+        })
     }
 
     pub fn end(&self, block: &BlockStackElement) -> Instr {
         let (ll_name, generate_hook): (_, fn(String) -> Hook) = match *block {
-            BlockStackElement::Function { .. } => (
-                LowLevelHookName::monomorphic("end_function"),
-                |ll_name| Hook::new(
-                    ll_name,
-                    vec![],
-                    "end",
-                    "\"function\", {func, instr: -1}",
-                )
-            ),
-            BlockStackElement::Block { .. } => (
-                LowLevelHookName::monomorphic("end_block"),
-                |ll_name| Hook::new(
-                    ll_name,
-                    args!(beginInstr: I32),
-                    "end",
-                    "\"block\", {func, instr: beginInstr}",
-                )
-            ),
-            BlockStackElement::Loop { .. } => (
-                LowLevelHookName::monomorphic("end_loop"),
-                |ll_name| Hook::new(
-                    ll_name,
-                    args!(beginInstr: I32),
-                    "end",
-                    "\"loop\", {func, instr: beginInstr}",
-                )
-            ),
-            BlockStackElement::If { .. } => (
-                LowLevelHookName::monomorphic("end_if"),
-                |ll_name| Hook::new(
+            BlockStackElement::Function { .. } => {
+                (LowLevelHookName::monomorphic("end_function"), |ll_name| {
+                    Hook::new(ll_name, vec![], "end", "\"function\", {func, instr: -1}")
+                })
+            }
+            BlockStackElement::Block { .. } => {
+                (LowLevelHookName::monomorphic("end_block"), |ll_name| {
+                    Hook::new(
+                        ll_name,
+                        args!(beginInstr: I32),
+                        "end",
+                        "\"block\", {func, instr: beginInstr}",
+                    )
+                })
+            }
+            BlockStackElement::Loop { .. } => {
+                (LowLevelHookName::monomorphic("end_loop"), |ll_name| {
+                    Hook::new(
+                        ll_name,
+                        args!(beginInstr: I32),
+                        "end",
+                        "\"loop\", {func, instr: beginInstr}",
+                    )
+                })
+            }
+            BlockStackElement::If { .. } => (LowLevelHookName::monomorphic("end_if"), |ll_name| {
+                Hook::new(
                     ll_name,
                     args!(beginInstr: I32),
                     "end",
                     "\"if\", {func, instr: beginInstr}",
                 )
-            ),
-            BlockStackElement::Else { .. } => (
-                LowLevelHookName::monomorphic("end_else"),
-                |ll_name| Hook::new(
-                    ll_name,
-                    args!(elseInstr: I32, ifInstr: I32),
-                    "end",
-                    "\"else\", {func, instr: elseInstr}, {func, instr: ifInstr}",
-                )
-            ),
+            }),
+            BlockStackElement::Else { .. } => {
+                (LowLevelHookName::monomorphic("end_else"), |ll_name| {
+                    Hook::new(
+                        ll_name,
+                        args!(elseInstr: I32, ifInstr: I32),
+                        "end",
+                        "\"else\", {func, instr: elseInstr}, {func, instr: ifInstr}",
+                    )
+                })
+            }
         };
         self.get_or_insert(ll_name, generate_hook)
     }
@@ -369,7 +382,11 @@ impl HookMap {
     /// returns a Call instruction to the requested hook, which either
     /// A) was freshly generated, since it was not requested with these types before,
     /// B) came from the internal hook map.
-    fn get_or_insert(&self, low_level_name: LowLevelHookName, generate_hook: impl Fn(String) -> Hook) -> Instr {
+    fn get_or_insert(
+        &self,
+        low_level_name: LowLevelHookName,
+        generate_hook: impl Fn(String) -> Hook,
+    ) -> Instr {
         // This is quite tricky and currently not possible with the std::sync::RwLock:
         // We want to allow parallel reads to the HashMap, but if a hook is not present, we need
         // to insert it, thus requiring a full mutable lock (no parallelism). Always doing exclusive
@@ -408,14 +425,17 @@ struct LowLevelHookName<'types> {
 }
 
 impl<'types> LowLevelHookName<'types> {
-    /// Mangles the name based on the "hook stem" and the types, 
+    /// Mangles the name based on the "hook stem" and the types,
     /// e.g. "call" + [I32, F64] -> "call_iF"
     fn polymorphic(hook_stem: &'static str, types: &'types [ValType]) -> Self {
         Self { hook_stem, types }
     }
 
     fn monomorphic(hook_stem: &'static str) -> Self {
-        Self { hook_stem, types: &[] }
+        Self {
+            hook_stem,
+            types: &[],
+        }
     }
 
     fn leak(self) -> LowLevelHookName<'static> {

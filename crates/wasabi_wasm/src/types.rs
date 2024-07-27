@@ -697,7 +697,10 @@ impl<'module> TypeChecker<'module> {
         let label_inputs = match instr {
             Instr::Loop(_) => inputs,
             Instr::Block(_) | Instr::If(_) | Instr::Else => results,
-            _ => unreachable!("push_block() should never be called with non-block instruction {:?}", instr),
+            _ => unreachable!(
+                "push_block() should never be called with non-block instruction {:?}",
+                instr
+            ),
         };
         let if_inputs = match instr {
             Instr::If(_) => Some(inputs.to_vec()),
@@ -717,7 +720,9 @@ impl<'module> TypeChecker<'module> {
         // then block begins, so this error won't be possible any more and we
         // could use `expect()` here, and remove the `Result` from this function
         // and many others in the type checker.
-        self.block_stack.last().ok_or_else(|| "empty block stack".into())
+        self.block_stack
+            .last()
+            .ok_or_else(|| "empty block stack".into())
     }
 
     fn top_block_mut(&mut self) -> Result<&mut BlockFrame, TypeError> {
@@ -725,7 +730,9 @@ impl<'module> TypeChecker<'module> {
         // then block begins, so this error won't be possible any more and we
         // could use `expect()` here, and remove the `Result` from this function
         // and many others in the type checker.
-        self.block_stack.last_mut().ok_or_else(|| "empty block stack".into())
+        self.block_stack
+            .last_mut()
+            .ok_or_else(|| "empty block stack".into())
     }
 
     fn get_block(&self, label: Label) -> Result<&BlockFrame, TypeError> {
@@ -864,7 +871,7 @@ fn check_instr(
             state.push_block(instr, block_ty.inputs(), block_ty.results());
             to_inferred_type(FunctionType::from_iter(
                 std::iter::once(ValType::I32).chain(block_ty.inputs().iter().copied()),
-                std::iter::empty()    
+                std::iter::empty()
             ))
         }
         End => {
@@ -892,7 +899,7 @@ fn check_instr(
         BrIf(label) => {
             // Condition.
             state.pop_val_expected(ValType::I32)?;
-            
+
             let label_input_tys = state.get_block(*label)?.label_inputs.clone();
             state.pop_vals_expected(&label_input_tys)?;
             state.push_vals(&label_input_tys)?;
@@ -914,7 +921,7 @@ fn check_instr(
         BrTable { table, default } => {
             // Branch index.
             state.pop_val_expected(ValType::I32)?;
-            
+
             // Pop and immediately push every branch target label types again.
             // This ensures all branch targets have the same type.
             for label in table.iter() {
@@ -1056,11 +1063,12 @@ mod tests {
         use crate::types::InferredInstructionType::*;
         match type_checker.check_next_instr(&instr) {
             Err(e) => panic!("type checking failed for instruction {instr}:\n{e}"),
-            Ok(Reachable(ty)) => panic!("expected unreachable type but got {ty} for instruction {instr}"),
-            Ok(Unreachable) => {},
+            Ok(Reachable(ty)) => {
+                panic!("expected unreachable type but got {ty} for instruction {instr}")
+            }
+            Ok(Unreachable) => {}
         }
     }
-    
 
     // Actual tests:
 
@@ -1075,14 +1083,24 @@ mod tests {
     #[test]
     pub fn function_parameter_type() {
         let mut type_checker = init_function_module_type_checker();
-        assert_reachable_type(&mut type_checker, Local(LocalOp::Get, Idx::from(0u32)), &[], &[I64]);
+        assert_reachable_type(
+            &mut type_checker,
+            Local(LocalOp::Get, Idx::from(0u32)),
+            &[],
+            &[I64],
+        );
     }
 
     #[test]
     pub fn local_type() {
         let mut type_checker = init_function_module_type_checker();
         assert_reachable_type(&mut type_checker, Const(Val::F32(0.0.into())), &[], &[F32]);
-        assert_reachable_type(&mut type_checker, Local(LocalOp::Set, Idx::from(1u32)), &[F32], &[]);
+        assert_reachable_type(
+            &mut type_checker,
+            Local(LocalOp::Set, Idx::from(1u32)),
+            &[F32],
+            &[],
+        );
     }
 
     #[test]
@@ -1126,7 +1144,12 @@ mod tests {
     #[test]
     pub fn block_result_type_is_attached_to_end() {
         let mut type_checker = init_function_module_type_checker();
-        assert_reachable_type(&mut type_checker, Block(FunctionType::new(&[], &[I64])), &[], &[]);
+        assert_reachable_type(
+            &mut type_checker,
+            Block(FunctionType::new(&[], &[I64])),
+            &[],
+            &[],
+        );
         assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
         assert_reachable_type(&mut type_checker, End, &[], &[I64]);
     }
@@ -1134,7 +1157,12 @@ mod tests {
     #[test]
     pub fn block_with_inputs_multi_value_extension() {
         let mut type_checker = init_function_module_type_checker();
-        assert_reachable_type(&mut type_checker, Block(FunctionType::new(&[F32], &[I64])), &[F32], &[]);
+        assert_reachable_type(
+            &mut type_checker,
+            Block(FunctionType::new(&[F32], &[I64])),
+            &[F32],
+            &[],
+        );
         assert_reachable_type(&mut type_checker, Const(Val::F32(0.0.into())), &[], &[F32]);
         assert_reachable_type(&mut type_checker, Binary(F32Add), &[F32, F32], &[F32]);
         assert_reachable_type(&mut type_checker, Unary(I64TruncF32S), &[F32], &[I64]);
@@ -1145,7 +1173,12 @@ mod tests {
     #[test]
     pub fn loop_with_multiple_results_multi_value_extension() {
         let mut type_checker = init_function_module_type_checker();
-        assert_reachable_type(&mut type_checker, Loop(FunctionType::new(&[], &[I32, I64])), &[], &[]);
+        assert_reachable_type(
+            &mut type_checker,
+            Loop(FunctionType::new(&[], &[I32, I64])),
+            &[],
+            &[],
+        );
         assert_reachable_type(&mut type_checker, Const(Val::I32(0)), &[], &[I32]);
         assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
         assert_reachable_type(&mut type_checker, End, &[], &[I32, I64]);
@@ -1156,7 +1189,12 @@ mod tests {
         let mut type_checker = init_function_module_type_checker();
         assert_reachable_type(&mut type_checker, Const(Val::I32(0)), &[], &[I32]);
         // NOTE: Like with blocks, the result type is attached to the matching end (and here also to the else).
-        assert_reachable_type(&mut type_checker, If(FunctionType::new(&[], &[I64])), &[I32], &[]);
+        assert_reachable_type(
+            &mut type_checker,
+            If(FunctionType::new(&[], &[I64])),
+            &[I32],
+            &[],
+        );
         assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
         assert_reachable_type(&mut type_checker, Else, &[], &[I64]);
         assert_reachable_type(&mut type_checker, Const(Val::I64(1)), &[], &[I64]);
@@ -1167,10 +1205,20 @@ mod tests {
     pub fn if_else_with_inputs_multi_value_extension() {
         let mut type_checker = init_function_module_type_checker();
         // Block input:
-        assert_reachable_type(&mut type_checker, Const(Val::F64(13.37.into())), &[], &[F64]);
+        assert_reachable_type(
+            &mut type_checker,
+            Const(Val::F64(13.37.into())),
+            &[],
+            &[F64],
+        );
         // Condition:
         assert_reachable_type(&mut type_checker, Const(Val::I32(0)), &[], &[I32]);
-        assert_reachable_type(&mut type_checker, If(FunctionType::new(&[F64], &[I64])), &[I32, F64], &[]);
+        assert_reachable_type(
+            &mut type_checker,
+            If(FunctionType::new(&[F64], &[I64])),
+            &[I32, F64],
+            &[],
+        );
         assert_reachable_type(&mut type_checker, Unary(I64TruncF64U), &[F64], &[I64]);
         // NOTE: The else type is especially weird with our hack of attaching the result type to the terminating
         // instruction of a block. Its result is the result of the if, and its input are the types that are pushed
@@ -1191,7 +1239,12 @@ mod tests {
     #[test]
     pub fn branch_with_result_to_nested_block() {
         let mut type_checker = init_function_module_type_checker();
-        assert_reachable_type(&mut type_checker, Block(FunctionType::new(&[], &[I64])), &[], &[]);
+        assert_reachable_type(
+            &mut type_checker,
+            Block(FunctionType::new(&[], &[I64])),
+            &[],
+            &[],
+        );
         assert_reachable_type(&mut type_checker, Block(FunctionType::empty()), &[], &[]);
         assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
         assert_reachable_type(&mut type_checker, Br(Label::from(1u32)), &[I64], &[]);
@@ -1203,7 +1256,12 @@ mod tests {
     #[test]
     pub fn conditional_branch_to_loop_begin_has_no_input_besides_condition() {
         let mut type_checker = init_function_module_type_checker();
-        assert_reachable_type(&mut type_checker, Loop(FunctionType::new(&[], &[I64])), &[], &[]);
+        assert_reachable_type(
+            &mut type_checker,
+            Loop(FunctionType::new(&[], &[I64])),
+            &[],
+            &[],
+        );
         assert_reachable_type(&mut type_checker, Const(Val::I32(0)), &[], &[I32]);
         assert_reachable_type(&mut type_checker, BrIf(Label::from(0u32)), &[I32], &[]);
         assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);
@@ -1213,14 +1271,35 @@ mod tests {
     #[test]
     pub fn br_table_nested_blocks() {
         let mut type_checker = init_function_module_type_checker();
-        assert_reachable_type(&mut type_checker, Block(FunctionType::new(&[], &[I64])), &[], &[]);
-        assert_reachable_type(&mut type_checker, Block(FunctionType::new(&[], &[I64])), &[], &[]);
+        assert_reachable_type(
+            &mut type_checker,
+            Block(FunctionType::new(&[], &[I64])),
+            &[],
+            &[],
+        );
+        assert_reachable_type(
+            &mut type_checker,
+            Block(FunctionType::new(&[], &[I64])),
+            &[],
+            &[],
+        );
         assert_reachable_type(&mut type_checker, Const(Val::I64(42)), &[], &[I64]);
         assert_reachable_type(&mut type_checker, Const(Val::I32(3)), &[], &[I32]);
-        assert_reachable_type(&mut type_checker, BrTable { 
-            table: vec![Label::from(1u32), Label::from(0u32), Label::from(0u32), Label::from(1u32)].into_boxed_slice(), 
-            default: Label::from(0u32)
-        }, &[I32, I64], &[]);
+        assert_reachable_type(
+            &mut type_checker,
+            BrTable {
+                table: vec![
+                    Label::from(1u32),
+                    Label::from(0u32),
+                    Label::from(0u32),
+                    Label::from(1u32),
+                ]
+                .into_boxed_slice(),
+                default: Label::from(0u32),
+            },
+            &[I32, I64],
+            &[],
+        );
         assert_unreachable_type(&mut type_checker, Binary(I64Add));
         assert_unreachable_type(&mut type_checker, End);
         assert_reachable_type(&mut type_checker, Const(Val::I64(0)), &[], &[I64]);

@@ -54,9 +54,11 @@ impl BlockStack {
         const PREALLOC_BLOCK_STACK_SIZE: usize = 4;
 
         // build this already at construction, so that we know later in O(1) where the end's are
-        let mut begin_end_map: IntMap<Idx<Instr>, Idx<Instr>> = IntMap::with_capacity_and_hasher(PREALLOC_BLOCK_STACK_SIZE, Default::default());
+        let mut begin_end_map: IntMap<Idx<Instr>, Idx<Instr>> =
+            IntMap::with_capacity_and_hasher(PREALLOC_BLOCK_STACK_SIZE, Default::default());
 
-        let mut begin_stack: SmallVec<[Idx<Instr>; 16]> = SmallVec::with_capacity(PREALLOC_BLOCK_STACK_SIZE);
+        let mut begin_stack: SmallVec<[Idx<Instr>; 16]> =
+            SmallVec::with_capacity(PREALLOC_BLOCK_STACK_SIZE);
         for (iidx, instr) in instrs[..instrs.len() - 1].iter().enumerate() {
             let iidx = iidx.into();
             match *instr {
@@ -84,31 +86,34 @@ impl BlockStack {
             end: (instrs.len() - 1).into(),
         });
 
-        BlockStack { block_stack, begin_end_map }
+        BlockStack {
+            block_stack,
+            begin_end_map,
+        }
     }
 
     pub fn begin_block(&mut self, begin: Idx<Instr>) {
         self.block_stack.push(Block {
             begin,
-            end: *self.begin_end_map.get(&begin).unwrap_or_else(|| panic!(
-                "invalid block nesting: could not find end for block begin at {begin:?}"
-            )),
+            end: *self.begin_end_map.get(&begin).unwrap_or_else(|| {
+                panic!("invalid block nesting: could not find end for block begin at {begin:?}")
+            }),
         });
     }
 
     pub fn begin_loop(&mut self, begin: Idx<Instr>) {
         self.block_stack.push(Loop {
             begin,
-            end: *self.begin_end_map.get(&begin).unwrap_or_else(|| panic!(
-                "invalid block nesting: could not find end for loop begin at {begin:?}"
-            )),
+            end: *self.begin_end_map.get(&begin).unwrap_or_else(|| {
+                panic!("invalid block nesting: could not find end for loop begin at {begin:?}")
+            }),
         });
     }
 
     pub fn begin_if(&mut self, begin_if: Idx<Instr>) {
-        let end_or_else = *self.begin_end_map.get(&begin_if).unwrap_or_else(|| panic!(
-            "invalid block nesting: could not find end/else for if begin at {begin_if:?}"
-        ));
+        let end_or_else = *self.begin_end_map.get(&begin_if).unwrap_or_else(|| {
+            panic!("invalid block nesting: could not find end/else for if begin at {begin_if:?}")
+        });
 
         let if_ = if let Some(&end) = self.begin_end_map.get(&end_or_else) {
             If {
@@ -172,9 +177,9 @@ impl BlockStack {
         // backward branch when targeting loops, forward for all other blocks
         let absolute_instr = {
             // the last block of the ended ones is the actual target
-            let target_block = ended_blocks.get(label.to_usize()).unwrap_or_else(|| panic!(
-                "invalid label: cannot find target block for {label:?}"
-            ));
+            let target_block = ended_blocks
+                .get(label.to_usize())
+                .unwrap_or_else(|| panic!("invalid label: cannot find target block for {label:?}"));
 
             match *target_block {
                 Loop { begin, .. } => begin,

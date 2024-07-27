@@ -212,7 +212,10 @@ impl<T> From<u32> for Idx<T> {
 impl<T> From<usize> for Idx<T> {
     #[inline]
     fn from(u: usize) -> Self {
-        Idx(u.try_into().expect("wasm32 only allows u32 indices"), PhantomData)
+        Idx(
+            u.try_into().expect("wasm32 only allows u32 indices"),
+            PhantomData,
+        )
     }
 }
 
@@ -510,8 +513,7 @@ impl Offsets {
         self.sections
             .iter()
             .cloned()
-            .filter_map(|(sec, offset)|
-                if sec == section { Some(offset) } else { None })
+            .filter_map(|(sec, offset)| if sec == section { Some(offset) } else { None })
             .collect()
     }
 
@@ -520,8 +522,13 @@ impl Offsets {
         self.functions_code
             .iter()
             .cloned()
-            .find_map(|(func, offset)|
-                if offset == code_offset { Some(func) } else { None })
+            .find_map(|(func, offset)| {
+                if offset == code_offset {
+                    Some(func)
+                } else {
+                    None
+                }
+            })
     }
 
     /// Returns the code offset of the (original) function with the given index (if any).
@@ -529,8 +536,7 @@ impl Offsets {
         self.functions_code
             .iter()
             .cloned()
-            .find_map(|(func, offset)|
-                if func == idx { Some(offset) } else { None })
+            .find_map(|(func, offset)| if func == idx { Some(offset) } else { None })
     }
 }
 
@@ -1215,8 +1221,12 @@ impl UnaryOp {
             I32Clz | I32Ctz | I32Popcnt => FunctionType::new(&[I32], &[I32]),
             I64Clz | I64Ctz | I64Popcnt => FunctionType::new(&[I64], &[I64]),
 
-            F32Abs | F32Neg | F32Ceil | F32Floor | F32Trunc | F32Nearest | F32Sqrt => FunctionType::new(&[F32], &[F32]),
-            F64Abs | F64Neg | F64Ceil | F64Floor | F64Trunc | F64Nearest | F64Sqrt => FunctionType::new(&[F64], &[F64]),
+            F32Abs | F32Neg | F32Ceil | F32Floor | F32Trunc | F32Nearest | F32Sqrt => {
+                FunctionType::new(&[F32], &[F32])
+            }
+            F64Abs | F64Neg | F64Ceil | F64Floor | F64Trunc | F64Nearest | F64Sqrt => {
+                FunctionType::new(&[F64], &[F64])
+            }
 
             // conversions
             I32WrapI64 => FunctionType::new(&[I64], &[I32]),
@@ -1384,16 +1394,28 @@ impl BinaryOp {
         use BinaryOp::*;
         use ValType::*;
         match self {
-            I32Eq | I32Ne | I32LtS | I32LtU | I32GtS | I32GtU | I32LeS | I32LeU | I32GeS | I32GeU => FunctionType::new(&[I32, I32], &[I32]),
-            I64Eq | I64Ne | I64LtS | I64LtU | I64GtS | I64GtU | I64LeS | I64LeU | I64GeS | I64GeU => FunctionType::new(&[I64, I64], &[I32]),
+            I32Eq | I32Ne | I32LtS | I32LtU | I32GtS | I32GtU | I32LeS | I32LeU | I32GeS
+            | I32GeU => FunctionType::new(&[I32, I32], &[I32]),
+            I64Eq | I64Ne | I64LtS | I64LtU | I64GtS | I64GtU | I64LeS | I64LeU | I64GeS
+            | I64GeU => FunctionType::new(&[I64, I64], &[I32]),
 
             F32Eq | F32Ne | F32Lt | F32Gt | F32Le | F32Ge => FunctionType::new(&[F32, F32], &[I32]),
             F64Eq | F64Ne | F64Lt | F64Gt | F64Le | F64Ge => FunctionType::new(&[F64, F64], &[I32]),
 
-            I32Add | I32Sub | I32Mul | I32DivS | I32DivU | I32RemS | I32RemU | I32And | I32Or | I32Xor | I32Shl | I32ShrS | I32ShrU | I32Rotl | I32Rotr => FunctionType::new(&[I32, I32], &[I32]),
-            I64Add | I64Sub | I64Mul | I64DivS | I64DivU | I64RemS | I64RemU | I64And | I64Or | I64Xor | I64Shl | I64ShrS | I64ShrU | I64Rotl | I64Rotr => FunctionType::new(&[I64, I64], &[I64]),
-            F32Add | F32Sub | F32Mul | F32Div | F32Min | F32Max | F32Copysign => FunctionType::new(&[F32, F32], &[F32]),
-            F64Add | F64Sub | F64Mul | F64Div | F64Min | F64Max | F64Copysign => FunctionType::new(&[F64, F64], &[F64]),
+            I32Add | I32Sub | I32Mul | I32DivS | I32DivU | I32RemS | I32RemU | I32And | I32Or
+            | I32Xor | I32Shl | I32ShrS | I32ShrU | I32Rotl | I32Rotr => {
+                FunctionType::new(&[I32, I32], &[I32])
+            }
+            I64Add | I64Sub | I64Mul | I64DivS | I64DivU | I64RemS | I64RemU | I64And | I64Or
+            | I64Xor | I64Shl | I64ShrS | I64ShrU | I64Rotl | I64Rotr => {
+                FunctionType::new(&[I64, I64], &[I64])
+            }
+            F32Add | F32Sub | F32Mul | F32Div | F32Min | F32Max | F32Copysign => {
+                FunctionType::new(&[F32, F32], &[F32])
+            }
+            F64Add | F64Sub | F64Mul | F64Div | F64Min | F64Max | F64Copysign => {
+                FunctionType::new(&[F64, F64], &[F64])
+            }
         }
     }
 }
@@ -1965,17 +1987,16 @@ impl Function {
     // }
 
     /// Returns the parameters (type and debug name, if any) together with their index.
-    pub fn params(&self) -> impl Iterator<Item=(Idx<Local>, ParamRef)> {
-        self.type_.inputs()
-            .iter()
-            .enumerate()
-            .map(|(i, &type_)| (
+    pub fn params(&self) -> impl Iterator<Item = (Idx<Local>, ParamRef)> {
+        self.type_.inputs().iter().enumerate().map(|(i, &type_)| {
+            (
                 i.into(),
                 ParamRef {
                     type_,
                     name: self.param_names.get(i).and_then(|name| name.as_deref()),
-                }
-            ))
+                },
+            )
+        })
     }
 
     // FIXME no longer possible, because function type is immutable!
@@ -2000,25 +2021,23 @@ impl Function {
         // This value needs to be moved (not borrowed) into the innermost closure, hence the two
         // nested move annotations on the closures below.
         let param_count = self.param_count();
-        self.code().into_iter()
-            .flat_map(move |code|
-                code.locals.iter()
-                    .enumerate()
-                    .map(move |(idx, local)|
-                        ((param_count + idx).into(), local))
-            )
+        self.code().into_iter().flat_map(move |code| {
+            code.locals
+                .iter()
+                .enumerate()
+                .map(move |(idx, local)| ((param_count + idx).into(), local))
+        })
     }
 
     pub fn locals_mut(&mut self) -> impl Iterator<Item = (Idx<Local>, &mut Local)> {
         // Only changed mutability compared with self.locals(), see comments there.
         let param_count = self.param_count();
-        self.code_mut().into_iter()
-            .flat_map(move |code|
-                code.locals.iter_mut()
-                    .enumerate()
-                    .map(move |(idx, local)|
-                        ((param_count + idx).into(), local))
-            )
+        self.code_mut().into_iter().flat_map(move |code| {
+            code.locals
+                .iter_mut()
+                .enumerate()
+                .map(move |(idx, local)| ((param_count + idx).into(), local))
+        })
     }
 
     // Accessors for a specific parameter/local type/name.
