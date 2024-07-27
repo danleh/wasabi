@@ -22,10 +22,9 @@ serde_json = "1.0.91"
 serde_plain = "1.0.1"
 
 # Command-line interface and error handling.
-structopt = "0.3.26" # TODO update to clap v3 beta
+structopt = "0.3.26" # TODO update to clap v4
 enumset = "1.0.12"
 main_error = "0.1.2"
 
 [dev-dependencies]
 test_utilities = { path = "../test_utilities" }
-sha256 = "1.1.1"

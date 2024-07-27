@@ -1578,6 +1578,7 @@ dependencies = [
  "indicatif",
  "once_cell",
  "rayon",
+ "sha256",
  "sysinfo",
  "walkdir",
 ]
@@ -1759,7 +1760,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_plain",
- "sha256",
  "smallvec",
  "structopt",
  "test_utilities",

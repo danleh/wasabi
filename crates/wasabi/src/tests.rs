@@ -47,13 +47,15 @@ fn test_instrument(instrument: fn(&mut Module) -> Option<String>, instrument_nam
             std::fs::write(output_path.with_extension("wasabi.js"), javascript).unwrap();
         }
 
-        // NOTE: If the instrumented binary is very large, `wasm-validate` can OOM and then return NO error description! -.-
-        wasm_validate(&output_path)
-            .unwrap_or_else(|err| {
-                let bytes = std::fs::read(&output_path).unwrap();
-                let size = bytes.len();
-                let sha256_hash = sha256::digest(bytes.as_slice());
-                panic!("Binary '{}' instrumented with {} is no longer valid\n{}\nSize: {size}\nSHA256: {sha256_hash}", path.display(), instrument_name, err.trim())
-            });
+        match wasm_validate(&output_path) {
+            Ok(()) => {}
+            Err(err @ WasmValidateError::InvalidWasmFile { .. }) => {
+                panic!("instrumentation with {instrument_name} of input file '{}' produces invalid Wasm\n{err}", path.display())
+            }
+            // NOTE: If the instrumented binary is very large, `wasm-validate` can OOM. Log but ignore this here.
+            Err(err @ WasmValidateError::CouldNotValidate { .. }) => {
+                eprintln!("{err}\nignoring this here (possible OOM), please validate manually...")
+            }
+        }
     });
 }

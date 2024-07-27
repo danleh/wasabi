@@ -1,5 +1,6 @@
 //! Utility functions for testing Wasabi and the Wasm library.
 
+use core::fmt;
 use std::fs;
 use std::fs::File;
 use std::io;
@@ -61,12 +62,87 @@ pub fn for_each_valid_wasm_binary_in_test_set(test_fn: impl Fn(&Path) + Send + S
                 return;
             }
 
-            test_fn(path)}
-        );
+            test_fn(path)
+        });
+}
+
+#[derive(Debug)]
+/// Information about the input file, in case there is an error during validation.
+pub struct WasmFileInfo {
+    pub path: PathBuf,
+    pub file_size: Option<usize>,
+    /// This is useful especially for WasmBench files, which are named by their SHA256 hash.
+    pub sha256_digest: String,
+}
+
+impl WasmFileInfo {
+    pub fn new(path: &Path) -> Self {
+        let mut result = Self {
+            path: path.to_owned(),
+            file_size: None,
+            sha256_digest: String::new(),
+        };
+        // Try to add file size and SHA hash, if available.
+        if let Ok(bytes) = fs::read(path) {
+            result.file_size = Some(bytes.len());
+            result.sha256_digest = sha256::digest(bytes);
+        }
+        result
+    }
+}
+
+impl fmt::Display for WasmFileInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "'{}', ", self.path.display())?;
+        if let Some(size) = self.file_size {
+            write!(f, "size: {size} bytes, SHA256: {}", self.sha256_digest)
+        } else {
+            assert!(self.sha256_digest.is_empty());
+            write!(f, "no size or SHA256 available, does the file exist?")
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum WasmValidateError {
+    InvalidWasmFile {
+        input_file: WasmFileInfo,
+        status_code: i32,
+        stdout: String,
+        stderr: String,
+    },
+    CouldNotValidate {
+        input_file: WasmFileInfo,
+        error: String,
+    },
+}
+
+impl std::error::Error for WasmValidateError {}
+
+impl fmt::Display for WasmValidateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WasmValidateError::InvalidWasmFile {
+                input_file,
+                status_code,
+                stdout,
+                stderr,
+            } => {
+                writeln!(f, "invalid Wasm file {input_file}")?;
+                writeln!(f, "\twasm-validate status code: {status_code}")?;
+                writeln!(f, "\tstdout: {stdout}")?;
+                writeln!(f, "\tstderr: {stderr}")
+            }
+            WasmValidateError::CouldNotValidate { input_file, error } => {
+                writeln!(f, "could not validate Wasm file {input_file}")?;
+                writeln!(f, "possibly crash, error: {error}")
+            }
+        }
+    }
 }
 
 /// Call WABT's wasm-validate tool on a file (WABT needs to be on $PATH).
-pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), String> {
+pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), WasmValidateError> {
     use std::process::Command;
 
     let path = path.as_ref();
@@ -80,24 +156,30 @@ pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), String> {
         // .arg("--disable-bulk-memory")
         // .arg("--disable-reference-types")
         .arg(path)
-        .output()
-        .map_err(|err| err.to_string())?;
+        .output();
 
-    if validate_output.status.success() {
-        Ok(())
-    } else if let Some(status_code) = validate_output.status.code() {
-        Err(format!(
-            "wasm-validate: invalid Wasm file {}\n\tstatus code: {:?}\n\tstdout: {}\n\tstderr: {}",
-            path.display(),
-            status_code,
-            String::from_utf8_lossy(&validate_output.stdout),
-            String::from_utf8_lossy(&validate_output.stderr),
-        ))
-    } else {
-        let file_size = fs::metadata(path).map(|file| file.len()).unwrap_or(0);
-        eprintln!("wasm-validate terminated without a status code on {}\n\t{:10} bytes file size\n\tOn Linux this means a signal has terminated it (most likely the OOM-killer)\n\tignoring this error...", 
-            path.display(), file_size);
-        Ok(())
+    match validate_output {
+        Ok(validate_output) => match validate_output.status.code() {
+            Some(0) => {
+                assert!(validate_output.stdout.is_empty());
+                assert!(validate_output.stderr.is_empty());
+                Ok(())
+            },
+            Some(status_code) => Err(WasmValidateError::InvalidWasmFile {
+                input_file: WasmFileInfo::new(path),
+                status_code,
+                stdout: String::from_utf8_lossy(&validate_output.stdout).to_string(),
+                stderr: String::from_utf8_lossy(&validate_output.stderr).to_string()
+            }),
+            None => Err(WasmValidateError::CouldNotValidate {
+                input_file: WasmFileInfo::new(path),
+                error: "wasm-validate terminated without a status code, on Linux this means it was terminated by a signal (possibly the OOM killer)".to_string()
+            }),
+        },
+        Err(err) => Err(WasmValidateError::CouldNotValidate {
+            input_file: WasmFileInfo::new(path),
+            error: err.to_string()
+        }),
     }
 }
 
@@ -327,7 +409,10 @@ pub fn update_valid_inputs_list() {
         // Abort parallel processing as early as possible.
         .panic_fuse()
         .progress()
-        .map(|path| wasm_validate(path).unwrap())
+        .map(|path| {
+            wasm_validate(path)
+                .expect("all Wasm files in the valid input list should validate successfully")
+        })
         .count();
     println!("Validated all {validated_binaries_count} Wasm binaries in the list.");
 
@@ -349,5 +434,5 @@ pub fn update_valid_inputs_list() {
         .count();
 
     valid_inputs.into_inner().unwrap().save();
-    println!("Added {added_binaries_count} new valid Wasm binaries to the list.");
+    println!("Added {added_binaries_count} new valid Wasm binaries to the list. See the diff of '{VALID_WASM_BINARIES_LIST_FILE}' for the files.");
 }
