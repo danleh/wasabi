@@ -162,7 +162,7 @@ pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), WasmValidateError> {
         Ok(validate_output) => match validate_output.status.code() {
             Some(0) => {
                 assert!(validate_output.stdout.is_empty());
-                assert!(validate_output.stderr.is_empty());
+                assert!(validate_output.stderr.is_empty(), "{}", String::from_utf8_lossy(&validate_output.stderr));
                 Ok(())
             },
             Some(status_code) => Err(WasmValidateError::InvalidWasmFile {
