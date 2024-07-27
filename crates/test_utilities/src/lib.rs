@@ -168,7 +168,7 @@ pub fn wasm_validate(path: impl AsRef<Path>) -> Result<(), WasmValidateError> {
                 let stderr = stderr.trim();
                 if !stderr.is_empty() {
                     let file_info = WasmFileInfo::new(path);
-                    eprintln!("wasm-validate warning on {file_info}:\n\t{stderr}");
+                    eprintln!("wasm-validate warning on {file_info}\n\t{stderr}");
                 }
 
                 Ok(())
