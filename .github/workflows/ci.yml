@@ -31,3 +31,6 @@ jobs:
       working-directory: crates/wasabi/
     - run: cargo test -- --nocapture --test-threads=1 --color=always
       working-directory: crates/wasabi/
+      env:
+        # Lets limit parallel instrumentation in the hope that this lowers max memory usage and thus OOMs in CI.
+        RAYON_NUM_THREADS: 2
