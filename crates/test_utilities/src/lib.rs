@@ -131,11 +131,11 @@ impl fmt::Display for WasmValidateError {
                 writeln!(f, "invalid Wasm file {input_file}")?;
                 writeln!(f, "\twasm-validate status code: {status_code}")?;
                 writeln!(f, "\tstdout: {}", stdout.trim())?;
-                writeln!(f, "\tstderr: {}", stderr.trim())
+                write!(f, "\tstderr: {}", stderr.trim())
             }
             WasmValidateError::CouldNotValidate { input_file, error } => {
                 writeln!(f, "could not validate Wasm file {input_file}")?;
-                writeln!(f, "\tpossibly crash\n\t{}", error.trim())
+                write!(f, "\t{}", error.trim())
             }
         }
     }
