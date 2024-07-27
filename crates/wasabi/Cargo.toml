@@ -8,7 +8,7 @@ edition = "2021"
 wasabi_wasm = { path = "../wasabi_wasm" }
 
 # For parallel instrumentation of functions.
-rayon = "1.6.1"
+rayon = "1.8.0"
 
 # For upgradable RW lock during instrumentation.
 parking_lot = "0.12.1"

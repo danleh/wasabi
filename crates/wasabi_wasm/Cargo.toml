@@ -13,7 +13,7 @@ ordered-float = "3.4.0"
 
 thiserror = "1.0.38"
 
-rayon = "1.6.1"
+rayon = "1.8.0"
 
 serde = { version = "1.0.152", features = ["derive"] }
 
