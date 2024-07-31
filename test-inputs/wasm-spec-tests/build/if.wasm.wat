@@ -809,6 +809,14 @@
     drop
     drop
     drop)
+  (func $atypical-condition (type $t1)
+    i32.const 0
+    if $I0
+    end
+    i32.const 1
+    i32.eqz
+    if $I1
+    end)
   (table $T0 1 1 funcref)
   (memory $M0 1)
   (global $g0 (mut i32) (i32.const 10))
@@ -861,4 +869,5 @@
   (export "add64_u_with_carry" (func $add64_u_with_carry))
   (export "add64_u_saturated" (func $add64_u_saturated))
   (export "type-use" (func $type-use))
+  (export "atypical-condition" (func $atypical-condition))
   (elem $e0 (i32.const 0) func $f16))

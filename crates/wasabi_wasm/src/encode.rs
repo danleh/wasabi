@@ -1,6 +1,7 @@
 //! Code for encoding our AST back to the WebAssembly binary format.
 //! Uses `wasm-encoder` for the actual low-level work.
 
+use std::convert::TryInto;
 use std::sync::RwLock;
 
 use nohash_hasher::IntMap;
@@ -9,6 +10,7 @@ use rustc_hash::FxHashMap;
 
 use wasm_encoder as we;
 use wasm_encoder::Encode;
+use we::ConstExpr;
 
 use crate::*;
 
@@ -22,6 +24,8 @@ mod marker {
         pub struct Global;
         pub struct Table;
         pub struct Memory;
+        pub struct Element;
+        pub struct Data;
     }
 }
 
@@ -38,6 +42,8 @@ struct EncodeState {
     global_idx: IntMap<Idx<Global>, Idx<marker::we::Global>>,
     table_idx: IntMap<Idx<Table>, Idx<marker::we::Table>>,
     memory_idx: IntMap<Idx<Memory>, Idx<marker::we::Memory>>,
+    element_idx: IntMap<Idx<Element>, Idx<marker::we::Element>>,
+    data_idx: IntMap<Idx<Data>, Idx<marker::we::Data>>,
 
     last_encoded_section: Option<SectionId>,
     custom_sections_encoded: usize,
@@ -101,6 +107,14 @@ impl EncodeState {
         Global,
         "global"
     );
+    encode_state_idx_fns!(
+        insert_element_idx,
+        map_element_idx,
+        element_idx,
+        Element,
+        "element"
+    );
+    encode_state_idx_fns!(insert_data_idx, map_data_idx, data_idx, Data, "data");
 }
 
 pub fn encode_module(module: &Module) -> Result<Vec<u8>, EncodeError> {
@@ -127,6 +141,9 @@ pub fn encode_module(module: &Module) -> Result<Vec<u8>, EncodeError> {
     let function_section = encode_functions(module, &mut state);
     let (table_section, element_section) = encode_tables(module, &mut state)?;
     let (memory_section, data_section) = encode_memories(module, &mut state)?;
+    let data_count_section = module
+        .data_count
+        .map(|count| we::DataCountSection { count });
     let global_section = encode_globals(module, &mut state)?;
 
     // The code section can also contain types we haven't seen so far (e.g., in `call_indirect`),
@@ -193,6 +210,11 @@ pub fn encode_module(module: &Module) -> Result<Vec<u8>, EncodeError> {
     }
     state.last_encoded_section = Some(SectionId::Element);
     encode_and_insert_custom(&mut encoder, &mut state, module);
+    if let Some(data_count_section) = data_count_section {
+        encoder.section(&data_count_section);
+    }
+    state.last_encoded_section = Some(SectionId::DataCount);
+    encode_and_insert_custom(&mut encoder, &mut state, module);
     if !code_section.is_empty() {
         encoder.section(&code_section);
     }
@@ -237,7 +259,7 @@ fn encode_imports(module: &Module, state: &mut EncodeState) -> we::ImportSection
         state.get_or_insert_type(f.type_).to_u32()
     });
     add_imports!(tables, insert_table_idx, Table, |t: &Table| {
-        we::TableType::from(t.limits)
+        get_tabletype_from_table(t)
     });
     add_imports!(memories, insert_memory_idx, Memory, |m: &Memory| {
         we::MemoryType::from(m.limits)
@@ -326,30 +348,41 @@ fn encode_tables(
     let mut element_section = we::ElementSection::new();
 
     for (hl_table_idx, table) in module.tables() {
-        let ll_table_idx = if table.import.is_none() {
-            table_section.table(we::TableType::from(table.limits));
+        if table.import.is_none() {
+            table_section.table(get_tabletype_from_table(table));
             state.insert_table_idx(hl_table_idx)
         } else {
             state.map_table_idx(hl_table_idx)?
         };
-
-        for hl_element in &table.elements {
-            // `wasm-encoder` uses None as the table index to signify the MVP binary format.
-            // Use that whenever possible, to avoid producing a binary using extensions.
-            let ll_table_idx = if ll_table_idx.to_u32() == 0 {
-                None
-            } else {
-                Some(ll_table_idx.to_u32())
-            };
-            let ll_offset = encode_single_instruction_with_end(&hl_element.offset, state)?;
-            let ll_elements = hl_element
-                .functions
-                .iter()
-                .map(|function_idx| state.map_function_idx(*function_idx).map(Idx::to_u32))
-                .collect::<Result<Vec<u32>, _>>()?;
-            let ll_elements = we::Elements::Functions(ll_elements.as_slice());
-            element_section.active(ll_table_idx, &ll_offset, we::ValType::FuncRef, ll_elements);
-        }
+    }
+    for (hl_element_idx, element) in module.elements() {
+        state.insert_element_idx(hl_element_idx);
+        let element_type = match element.typ {
+            RefType::FuncRef => we::ValType::FuncRef,
+            RefType::ExternRef => we::ValType::ExternRef,
+        };
+        let expr = element
+            .init
+            .iter()
+            .map(|instrs| -> Result<ConstExpr, EncodeError> {
+                Ok(encode_single_instruction_with_end(instrs, state)?)
+            })
+            .map(|expr| expr.map_err(|e| e.into()))
+            .collect::<Result<Vec<ConstExpr>, EncodeError>>()?;
+        let elements = we::Elements::Expressions(&expr);
+        match &element.mode {
+            ElementMode::Passive => element_section.passive(element_type, elements),
+            ElementMode::Active { table, offset } => {
+                let ll_offset = encode_single_instruction_with_end(&offset, state)?;
+                element_section.active(
+                    Some(state.map_table_idx(*table)?.to_u32()),
+                    &ll_offset,
+                    element_type,
+                    elements,
+                )
+            }
+            ElementMode::Declarative => element_section.declared(element_type, elements),
+        };
     }
 
     Ok((table_section, element_section))
@@ -363,17 +396,26 @@ fn encode_memories(
     let mut data_section = we::DataSection::new();
 
     for (hl_memory_idx, memory) in module.memories() {
-        let ll_memory_idx = if memory.import.is_none() {
+        if memory.import.is_none() {
             memory_section.memory(we::MemoryType::from(memory.limits));
             state.insert_memory_idx(hl_memory_idx)
         } else {
             state.map_memory_idx(hl_memory_idx)?
         };
+    }
 
-        for data in &memory.data {
-            let ll_offset = encode_single_instruction_with_end(&data.offset, state)?;
-            let ll_data = data.bytes.iter().copied();
-            data_section.active(ll_memory_idx.to_u32(), &ll_offset, ll_data);
+    for (hl_data_idx, data) in module.datas() {
+        state.insert_data_idx(hl_data_idx);
+        match &data.mode {
+            DataMode::Passive => {
+                let ll_data = data.init.iter().copied();
+                data_section.passive(ll_data);
+            }
+            DataMode::Active { memory, offset } => {
+                let ll_offset = encode_single_instruction_with_end(&offset, state)?;
+                let ll_data = data.init.iter().copied();
+                data_section.active(memory.to_u32(), &ll_offset, ll_data);
+            }
         }
     }
 
@@ -571,12 +613,20 @@ fn encode_instruction(
         Instr::Unary(UnaryOp::I32TruncF32U) => we::Instruction::I32TruncF32U,
         Instr::Unary(UnaryOp::I32TruncF64S) => we::Instruction::I32TruncF64S,
         Instr::Unary(UnaryOp::I32TruncF64U) => we::Instruction::I32TruncF64U,
+        Instr::Unary(UnaryOp::I32TruncSatF32S) => we::Instruction::I32TruncSatF32S,
+        Instr::Unary(UnaryOp::I32TruncSatF32U) => we::Instruction::I32TruncSatF32U,
+        Instr::Unary(UnaryOp::I32TruncSatF64S) => we::Instruction::I32TruncSatF64S,
+        Instr::Unary(UnaryOp::I32TruncSatF64U) => we::Instruction::I32TruncSatF64U,
         Instr::Unary(UnaryOp::I64ExtendI32S) => we::Instruction::I64ExtendI32S,
         Instr::Unary(UnaryOp::I64ExtendI32U) => we::Instruction::I64ExtendI32U,
         Instr::Unary(UnaryOp::I64TruncF32S) => we::Instruction::I64TruncF32S,
         Instr::Unary(UnaryOp::I64TruncF32U) => we::Instruction::I64TruncF32U,
         Instr::Unary(UnaryOp::I64TruncF64S) => we::Instruction::I64TruncF64S,
         Instr::Unary(UnaryOp::I64TruncF64U) => we::Instruction::I64TruncF64U,
+        Instr::Unary(UnaryOp::I64TruncSatF32S) => we::Instruction::I64TruncSatF32S,
+        Instr::Unary(UnaryOp::I64TruncSatF32U) => we::Instruction::I64TruncSatF32U,
+        Instr::Unary(UnaryOp::I64TruncSatF64S) => we::Instruction::I64TruncSatF64S,
+        Instr::Unary(UnaryOp::I64TruncSatF64U) => we::Instruction::I64TruncSatF64U,
         Instr::Unary(UnaryOp::F32ConvertI32S) => we::Instruction::F32ConvertI32S,
         Instr::Unary(UnaryOp::F32ConvertI32U) => we::Instruction::F32ConvertI32U,
         Instr::Unary(UnaryOp::F32ConvertI64S) => we::Instruction::F32ConvertI64S,
@@ -591,6 +641,11 @@ fn encode_instruction(
         Instr::Unary(UnaryOp::I64ReinterpretF64) => we::Instruction::I64ReinterpretF64,
         Instr::Unary(UnaryOp::F32ReinterpretI32) => we::Instruction::F32ReinterpretI32,
         Instr::Unary(UnaryOp::F64ReinterpretI64) => we::Instruction::F64ReinterpretI64,
+        Instr::Unary(UnaryOp::I32Extend8S) => we::Instruction::I32Extend8S,
+        Instr::Unary(UnaryOp::I32Extend16S) => we::Instruction::I32Extend16S,
+        Instr::Unary(UnaryOp::I64Extend8S) => we::Instruction::I64Extend8S,
+        Instr::Unary(UnaryOp::I64Extend16S) => we::Instruction::I64Extend16S,
+        Instr::Unary(UnaryOp::I64Extend32S) => we::Instruction::I64Extend32S,
 
         Instr::Binary(BinaryOp::I32Eq) => we::Instruction::I32Eq,
         Instr::Binary(BinaryOp::I32Ne) => we::Instruction::I32Ne,
@@ -668,6 +723,53 @@ fn encode_instruction(
         Instr::Binary(BinaryOp::F64Min) => we::Instruction::F64Min,
         Instr::Binary(BinaryOp::F64Max) => we::Instruction::F64Max,
         Instr::Binary(BinaryOp::F64Copysign) => we::Instruction::F64Copysign,
+        Instr::RefNull(ty) => we::Instruction::RefNull(match ty {
+            RefType::FuncRef => we::ValType::FuncRef,
+            RefType::ExternRef => we::ValType::ExternRef,
+        }),
+        Instr::RefIsNull => we::Instruction::RefIsNull,
+        Instr::RefFunc(function_idx) => {
+            we::Instruction::RefFunc(state.map_function_idx(function_idx)?.to_u32())
+        }
+        Instr::TypedSelect(t) => we::Instruction::TypedSelect(t.into()),
+        Instr::TableGet(table_idx) => {
+            we::Instruction::TableGet(state.map_table_idx(table_idx)?.to_u32())
+        }
+        Instr::TableSet(table_idx) => {
+            we::Instruction::TableSet(state.map_table_idx(table_idx)?.to_u32())
+        }
+        Instr::TableSize(table_idx) => {
+            we::Instruction::TableSize(state.map_table_idx(table_idx)?.to_u32())
+        }
+        Instr::TableGrow(table_idx) => {
+            we::Instruction::TableGrow(state.map_table_idx(table_idx)?.to_u32())
+        }
+        Instr::TableFill(table_idx) => {
+            we::Instruction::TableFill(state.map_table_idx(table_idx)?.to_u32())
+        }
+        Instr::TableCopy(idx_1, idx_2) => we::Instruction::TableCopy {
+            src_table: state.map_table_idx(idx_1)?.to_u32(),
+            dst_table: state.map_table_idx(idx_2)?.to_u32(),
+        },
+        Instr::TableInit(table_idx, element_idx) => we::Instruction::TableInit {
+            table: state.map_table_idx(table_idx)?.to_u32(),
+            elem_index: state.map_element_idx(element_idx)?.to_u32(),
+        },
+        Instr::ElemDrop(element_idx) => {
+            we::Instruction::ElemDrop(state.map_element_idx(element_idx)?.to_u32())
+        }
+        Instr::MemoryFill => we::Instruction::MemoryFill(0),
+        Instr::MemoryCopy => we::Instruction::MemoryCopy {
+            src_mem: 0,
+            dst_mem: 0,
+        },
+        Instr::MemoryInit(data_idx) => we::Instruction::MemoryInit {
+            data_index: state.map_data_idx(data_idx)?.to_u32(),
+            mem: 0,
+        },
+        Instr::DataDrop(data_idx) => {
+            we::Instruction::DataDrop(state.map_data_idx(data_idx)?.to_u32())
+        }
     })
 }
 
@@ -748,13 +850,15 @@ impl From<GlobalType> for we::GlobalType {
     }
 }
 
-impl From<Limits> for we::TableType {
-    fn from(limits: Limits) -> Self {
-        Self {
-            element_type: we::ValType::FuncRef,
-            minimum: limits.initial_size,
-            maximum: limits.max_size,
-        }
+fn get_tabletype_from_table(t: &Table) -> we::TableType {
+    let element_type = match t.ref_type {
+        RefType::FuncRef => we::ValType::FuncRef,
+        RefType::ExternRef => we::ValType::ExternRef,
+    };
+    we::TableType {
+        element_type,
+        minimum: t.limits.initial_size,
+        maximum: t.limits.max_size,
     }
 }
 
@@ -777,6 +881,8 @@ impl From<ValType> for we::ValType {
             I64 => we::ValType::I64,
             F32 => we::ValType::F32,
             F64 => we::ValType::F64,
+            Ref(RefType::FuncRef) => we::ValType::FuncRef,
+            Ref(RefType::ExternRef) => we::ValType::ExternRef,
         }
     }
 }

@@ -1,12 +1,3 @@
 (module
-  (type $t0 (func))
-  (func $f0 (type $t0)
-    unreachable
-    i32.trunc_sat_f32_s
-    unreachable
-    i32.trunc_sat_f32_u
-    unreachable
-    i64.trunc_sat_f64_s
-    unreachable
-    i64.trunc_sat_f64_u
-    unreachable))
+  (table $T0 0 funcref)
+  (elem $e0 (i32.const 0) func))
