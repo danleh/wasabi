@@ -13,7 +13,6 @@ use wasabi_wasm::ValType;
 use wasabi_wasm::ValType::*;
 
 use super::block_stack::BlockStackElement;
-use super::convert_i64::convert_i64_type;
 
 /*
  * This does 3 things:
@@ -32,18 +31,12 @@ pub struct Arg {
 impl Arg {
     /// for the parameter name in the low-level JavaScript function
     fn to_lowlevel_param_name(&self) -> String {
-        match self.ty {
-            I64 => self.name.clone() + "_low, " + &self.name + "_high",
-            _ => self.name.clone(),
-        }
+        self.name.clone()
     }
 
     /// for the actual argument when forwarding to the high-level hook
     fn to_lowlevel_long_expr(&self) -> String {
-        match self.ty {
-            I64 => format!("new Long({})", self.to_lowlevel_param_name()),
-            _ => self.name.clone(),
-        }
+        self.name.clone()
     }
 }
 
@@ -88,7 +81,7 @@ impl Hook {
                         |Arg {
                              name: _name,
                              ref ty,
-                         }| convert_i64_type(ty),
+                         }| std::slice::from_ref(ty),
                     ),
             );
 

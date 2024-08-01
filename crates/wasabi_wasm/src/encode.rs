@@ -1,7 +1,6 @@
 //! Code for encoding our AST back to the WebAssembly binary format.
 //! Uses `wasm-encoder` for the actual low-level work.
 
-use std::convert::TryInto;
 use std::sync::RwLock;
 
 use nohash_hasher::IntMap;
