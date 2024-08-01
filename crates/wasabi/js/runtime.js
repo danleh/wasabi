@@ -172,6 +172,7 @@ const wireInstanceExports = function(instance) {
             wireInstanceExports(instance);
         });
 
+    WebAssembly.instantiate = oldInstantiate;
     // FIXME Due to the added imports of __wasabi functions, host code that mutates the table
     // might insert the wrong numerical index into the table.
     // We could at least detect (and warn that this changes behavior), or fix it, by wrapping

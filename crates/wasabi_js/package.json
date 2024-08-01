@@ -1,0 +1,16 @@
+{
+    "scripts": {
+        "build": "wasm-pack build --debug -t web",
+        "demo": "npm run build && npx copyfiles ./pkg/* ./example/ && npx http-server ./example -p 8888",
+        "test": "wasm-pack build --debug -t nodejs && vitest",
+        "instrument": "wasm-pack build --debug -t nodejs && node src/js/instrument.js"
+    },
+    "devDependencies": {
+        "copyfiles": "^2.3.0",
+        "http-server": "^14.1.1",
+        "vitest": "^0.34.6"
+    },
+    "dependencies": {
+        "arg": "^5.0.2"
+    }
+}
