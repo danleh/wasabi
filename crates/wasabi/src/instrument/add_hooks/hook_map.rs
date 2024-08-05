@@ -233,28 +233,28 @@ impl HookMap {
                 let args = args!(index: I32, value: polymorphic_tys[0]);
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {}", instr_name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
-                Hook::new(ll_name, args, "table.get", js_args)
+                Hook::new(ll_name, args, "table_get", js_args)
             }
             TableSet(_) => {
                 assert_eq!(polymorphic_tys.len(), 1, "table.set has only one argument");
                 let args = args!(index: I32, value: polymorphic_tys[0]);
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {}", instr_name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
-                Hook::new(ll_name, args, "table.set", js_args)
+                Hook::new(ll_name, args, "table_set", js_args)
             }
             TableGrow(_) => {
                 assert_eq!(polymorphic_tys.len(), 1, "table.grow has only one argument");
                 let args = args!(init: polymorphic_tys[0], delta: I32, previousSize: I32);
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {}", instr_name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
-                Hook::new(ll_name, args, "table.grow", js_args)
+                Hook::new(ll_name, args, "table_grow", js_args)
             }
             TableFill(_) => {
                 assert_eq!(polymorphic_tys.len(), 1, "table.fill has only one argument");
                 let args = args!(size: I32, value: polymorphic_tys[0], destination: I32);
                 let instr_name = instr.to_name();
                 let js_args = &format!("\"{}\", {}", instr_name, args.iter().map(Arg::to_lowlevel_long_expr).collect::<Vec<_>>().join(", "));
-                Hook::new(ll_name, args, "table.fill", js_args)
+                Hook::new(ll_name, args, "table_fill", js_args)
             }
             Global(_, _) => {
                 assert_eq!(polymorphic_tys.len(), 1, "global instructions have only one argument");
