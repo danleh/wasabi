@@ -59,6 +59,8 @@ impl Val {
             ValType::I64 => Val::I64(str.parse().map_err(|_| ())?),
             ValType::F32 => Val::F32(str.parse().map_err(|_| ())?),
             ValType::F64 => Val::F64(str.parse().map_err(|_| ())?),
+            // from_str is never called for Ref types.
+            ValType::Ref(_) => return Err(()),
         })
     }
 }
@@ -82,6 +84,14 @@ pub enum ValType {
     I64,
     F32,
     F64,
+    Ref(RefType),
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RefType {
+    FuncRef,
+    ExternRef,
 }
 
 #[test]
@@ -97,6 +107,7 @@ impl ValType {
             ValType::I64 => Val::I64(0),
             ValType::F32 => Val::F32(OrderedFloat(0.0)),
             ValType::F64 => Val::F64(OrderedFloat(0.0)),
+            ValType::Ref(_) => panic!("zero not defined for Ref types"),
         }
     }
 
@@ -108,6 +119,8 @@ impl ValType {
             ValType::I64 => "i64",
             ValType::F32 => "f32",
             ValType::F64 => "f64",
+            ValType::Ref(RefType::FuncRef) => "funcref",
+            ValType::Ref(RefType::ExternRef) => "externref",
         }
     }
 
@@ -120,6 +133,8 @@ impl ValType {
             ValType::I64 => 'I',
             ValType::F32 => 'f',
             ValType::F64 => 'F',
+            ValType::Ref(RefType::ExternRef) => 'E',
+            ValType::Ref(RefType::FuncRef) => 'R',
         }
     }
 
@@ -233,7 +248,7 @@ impl<T> fmt::Debug for Idx<T> {
 impl<T> Clone for Idx<T> {
     #[inline]
     fn clone(&self) -> Self {
-        *self
+        self.to_usize().into()
     }
 }
 
@@ -322,7 +337,10 @@ pub struct Module {
     // TODO make these options to ensure there is only a single one of each
     pub tables: Vec<Table>,
     pub memories: Vec<Memory>,
+    pub elements: Vec<Element>,
+    pub datas: Vec<Data>,
 
+    pub data_count: Option<u32>,
     pub start: Option<Idx<Function>>,
 
     pub custom_sections: Vec<RawCustomSection>,
@@ -434,9 +452,9 @@ pub struct Global {
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Table {
     pub limits: Limits,
+    pub ref_type: RefType,
     // Unlike functions and globals, an imported table can still be initialized with elements.
     pub import: Option<(String, String)>,
-    pub elements: Vec<Element>,
     pub export: Vec<String>,
 }
 
@@ -445,7 +463,6 @@ pub struct Memory {
     pub limits: Limits,
     // Unlike functions and globals, an imported memory can still be initialized with data elements.
     pub import: Option<(String, String)>,
-    pub data: Vec<Data>,
     pub export: Vec<String>,
 }
 
@@ -486,14 +503,27 @@ pub struct ParamRef<'a> {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Element {
-    pub offset: Expr,
-    pub functions: Vec<Idx<Function>>,
+    pub typ: RefType,
+    pub init: Vec<Expr>,
+    pub mode: ElementMode,
+}
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum ElementMode {
+    Passive,
+    Active { table: Idx<Table>, offset: Expr },
+    Declarative,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Data {
-    pub offset: Expr,
-    pub bytes: Vec<u8>,
+    pub init: Vec<u8>,
+    pub mode: DataMode,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum DataMode {
+    Passive,
+    Active { memory: Idx<Memory>, offset: Expr },
 }
 
 /// Metainformation how low-level sections and function bodies map to byte offsets in the binary.
@@ -567,6 +597,7 @@ pub enum SectionId {
     Export,
     Start,
     Element,
+    DataCount,
     Code,
     Data,
     Custom(String),
@@ -719,12 +750,17 @@ pub enum Instr {
     // TODO: remove Idx<Table>, always 0 in MVP.
     CallIndirect(FunctionType, Idx<Table>),
 
+    RefNull(RefType),
+    RefIsNull,
+    RefFunc(Idx<Function>),
+
     // TODO: Include the type explicitly in the instruction to remove
     // value-polymorphism.
     // However, this would require type checking during lowlevel parsing :(
     Drop,
     // TODO: Replace with `If([ty, ty] -> [ty], ...)
     Select,
+    TypedSelect(ValType),
 
     // TODO: Get rid of all locals by using block params and results only + a pick or copy
     // instruction, that copies the nth value on the stack to the top.
@@ -732,12 +768,24 @@ pub enum Instr {
     Local(LocalOp, Idx<Local>),
     Global(GlobalOp, Idx<Global>),
 
+    TableGet(Idx<Table>),
+    TableSet(Idx<Table>),
+    TableSize(Idx<Table>),
+    TableGrow(Idx<Table>),
+    TableFill(Idx<Table>),
+    TableCopy(Idx<Table>, Idx<Table>),
+    TableInit(Idx<Table>, Idx<Element>),
+    ElemDrop(Idx<Element>),
+
     Load(LoadOp, Memarg),
     Store(StoreOp, Memarg),
 
-    // TODO: remove Idx<Memory>, always 0 in MVP.
     MemorySize(Idx<Memory>),
     MemoryGrow(Idx<Memory>),
+    MemoryFill,
+    MemoryCopy,
+    MemoryInit(Idx<Data>),
+    DataDrop(Idx<Data>),
 
     Const(Val),
     Unary(UnaryOp),
@@ -1032,6 +1080,10 @@ pub enum UnaryOp {
     I32TruncF32U,
     I32TruncF64S,
     I32TruncF64U,
+    I32TruncSatF32S,
+    I32TruncSatF32U,
+    I32TruncSatF64S,
+    I32TruncSatF64U,
 
     I64ExtendI32S,
     I64ExtendI32U,
@@ -1039,6 +1091,10 @@ pub enum UnaryOp {
     I64TruncF32U,
     I64TruncF64S,
     I64TruncF64U,
+    I64TruncSatF32S,
+    I64TruncSatF32U,
+    I64TruncSatF64S,
+    I64TruncSatF64U,
 
     F32ConvertI32S,
     F32ConvertI32U,
@@ -1056,6 +1112,12 @@ pub enum UnaryOp {
     I64ReinterpretF64,
     F32ReinterpretI32,
     F64ReinterpretI64,
+
+    I32Extend8S,
+    I32Extend16S,
+    I64Extend8S,
+    I64Extend16S,
+    I64Extend32S,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -1188,12 +1250,20 @@ impl UnaryOp {
             I32TruncF32U => "i32.trunc_f32_u",
             I32TruncF64S => "i32.trunc_f64_s",
             I32TruncF64U => "i32.trunc_f64_u",
+            I32TruncSatF32S => "i32.trunc_sat_f32_s",
+            I32TruncSatF32U => "i32.trunc_sat_f32_u",
+            I32TruncSatF64S => "i32.trunc_sat_f64_s",
+            I32TruncSatF64U => "i32.trunc_sat_f64_u",
             I64ExtendI32S => "i64.extend_i32_s",
             I64ExtendI32U => "i64.extend_i32_u",
             I64TruncF32S => "i64.trunc_f32_s",
             I64TruncF32U => "i64.trunc_f32_u",
             I64TruncF64S => "i64.trunc_f64_s",
             I64TruncF64U => "i64.trunc_f64_u",
+            I64TruncSatF32S => "i64.trunc_sat_f32_s",
+            I64TruncSatF32U => "i64.trunc_sat_f32_u",
+            I64TruncSatF64S => "i64.trunc_sat_f64_s",
+            I64TruncSatF64U => "i64.trunc_sat_f64_u",
             F32ConvertI32S => "f32.convert_i32_s",
             F32ConvertI32U => "f32.convert_i32_u",
             F32ConvertI64S => "f32.convert_i64_s",
@@ -1208,6 +1278,11 @@ impl UnaryOp {
             I64ReinterpretF64 => "i64.reinterpret_f64",
             F32ReinterpretI32 => "f32.reinterpret_i32",
             F64ReinterpretI64 => "f64.reinterpret_i64",
+            I32Extend8S => "i32.extend8_s",
+            I32Extend16S => "i32.extend16_s",
+            I64Extend8S => "i64.extend8_s",
+            I64Extend16S => "i64.extend16_s",
+            I64Extend32S => "i64.extend32_s",
         }
     }
 
@@ -1230,11 +1305,19 @@ impl UnaryOp {
 
             // conversions
             I32WrapI64 => FunctionType::new(&[I64], &[I32]),
-            I32TruncF32S | I32TruncF32U => FunctionType::new(&[F32], &[I32]),
-            I32TruncF64S | I32TruncF64U => FunctionType::new(&[F64], &[I32]),
+            I32TruncF32S | I32TruncF32U | I32TruncSatF32S | I32TruncSatF32U => {
+                FunctionType::new(&[F32], &[I32])
+            }
+            I32TruncF64S | I32TruncF64U | I32TruncSatF64S | I32TruncSatF64U => {
+                FunctionType::new(&[F64], &[I32])
+            }
             I64ExtendI32S | I64ExtendI32U => FunctionType::new(&[I32], &[I64]),
-            I64TruncF32S | I64TruncF32U => FunctionType::new(&[F32], &[I64]),
-            I64TruncF64S | I64TruncF64U => FunctionType::new(&[F64], &[I64]),
+            I64TruncF32S | I64TruncF32U | I64TruncSatF32S | I64TruncSatF32U => {
+                FunctionType::new(&[F32], &[I64])
+            }
+            I64TruncF64S | I64TruncF64U | I64TruncSatF64S | I64TruncSatF64U => {
+                FunctionType::new(&[F64], &[I64])
+            }
             F32ConvertI32S | F32ConvertI32U => FunctionType::new(&[I32], &[F32]),
             F32ConvertI64S | F32ConvertI64U => FunctionType::new(&[I64], &[F32]),
             F32DemoteF64 => FunctionType::new(&[F64], &[F32]),
@@ -1245,6 +1328,8 @@ impl UnaryOp {
             I64ReinterpretF64 => FunctionType::new(&[F64], &[I64]),
             F32ReinterpretI32 => FunctionType::new(&[I32], &[F32]),
             F64ReinterpretI64 => FunctionType::new(&[I64], &[F64]),
+            I32Extend8S | I32Extend16S => FunctionType::new(&[I32], &[I32]),
+            I64Extend8S | I64Extend16S | I64Extend32S => FunctionType::new(&[I64], &[I64]),
         }
     }
 }
@@ -1532,7 +1617,16 @@ impl Instr {
             CallIndirect(_, _) => "call_indirect",
 
             Drop => "drop",
-            Select => "select",
+            Select | TypedSelect(_) => "select",
+
+            TableGet(_) => "table.get",
+            TableSet(_) => "table.set",
+            TableSize(_) => "table.size",
+            TableGrow(_) => "table.grow",
+            TableFill(_) => "table.fill",
+            TableCopy(_, _) => "table.copy",
+            TableInit(_, _) => "table.init",
+            ElemDrop(_) => "elem.drop",
 
             Local(LocalOp::Get, _) => "local.get",
             Local(LocalOp::Set, _) => "local.set",
@@ -1542,6 +1636,10 @@ impl Instr {
 
             MemorySize(_) => "memory.size",
             MemoryGrow(_) => "memory.grow",
+            MemoryFill => "memory.fill",
+            MemoryCopy => "memory.copy",
+            MemoryInit(_) => "memory.init",
+            DataDrop(_) => "data.drop",
 
             Const(Val::I32(_)) => "i32.const",
             Const(Val::I64(_)) => "i64.const",
@@ -1552,6 +1650,10 @@ impl Instr {
             Store(op, _) => op.to_name(),
             Unary(op) => op.to_name(),
             Binary(op) => op.to_name(),
+
+            RefNull(_) => "ref.null",
+            RefIsNull => "ref.is_null",
+            RefFunc(_) => "ref.func",
         }
     }
 
@@ -1575,6 +1677,7 @@ impl Instr {
                 func_ty.inputs().iter().copied().chain(std::iter::once(I32)),
                 func_ty.results().iter().copied(),
             )),
+            TypedSelect(t) => Some(FunctionType::new(&[t, t, I32], &[t])),
 
             // Difficult because of nesting and block types.
             Block(_) | Loop(_) | If(_) | Else | End => None,
@@ -1588,6 +1691,20 @@ impl Instr {
             Drop | Select => None,
             // Stack-polymorphic, needs type inference (br* above as well).
             Unreachable => None,
+            RefNull(t) => Some(FunctionType::new(&[], &[ValType::Ref(t)])),
+            RefIsNull => None,
+            RefFunc(_) => Some(FunctionType::new(&[], &[ValType::Ref(RefType::FuncRef)])),
+            TableGet(_) => None,
+            TableSet(_) => None,
+            TableSize(_) => Some(FunctionType::new(&[], &[I32])),
+            TableGrow(_) => None,
+            TableFill(_) => None,
+            TableCopy(_, _) => Some(FunctionType::new(&[I32, I32, I32], &[])),
+            TableInit(_, _) => Some(FunctionType::new(&[I32, I32, I32], &[])),
+            ElemDrop(_) => Some(FunctionType::new(&[], &[])),
+            MemoryFill => Some(FunctionType::new(&[I32, I32, I32], &[])),
+            MemoryCopy | MemoryInit(_) => Some(FunctionType::new(&[I32, I32, I32], &[])),
+            DataDrop(_) => Some(FunctionType::new(&[], &[])),
         }
     }
 }
@@ -1694,7 +1811,7 @@ impl fmt::Display for Instr {
         match self {
             // instructions without arguments
             Unreachable | Nop | Drop | Select | Return | Else | End | MemorySize(_)
-            | MemoryGrow(_) | Unary(_) | Binary(_) => Ok(()),
+            | MemoryGrow(_) | Unary(_) | Binary(_) | RefIsNull | MemoryFill | MemoryCopy => Ok(()),
 
             Block(ty) | Loop(ty) | If(ty) => write!(f, " {ty}"),
 
@@ -1729,6 +1846,20 @@ impl fmt::Display for Instr {
             }
 
             Const(val) => write!(f, " {val}"),
+            TypedSelect(ty) => write!(f, " {ty:?}"),
+            RefNull(ty) => write!(f, " {ty:?}"),
+
+            RefFunc(i) => write!(f, " {i:?}"),
+            TableGet(table_idx) => write!(f, " {table_idx:?}"),
+            TableSet(table_idx) => write!(f, " {table_idx:?}"),
+            TableSize(table_idx) => write!(f, " {table_idx:?}"),
+            TableGrow(table_idx) => write!(f, " {table_idx:?}"),
+            TableFill(table_idx) => write!(f, " {table_idx:?}"),
+            TableCopy(table_idx_1, table_idx_2) => write!(f, " {table_idx_1:?}, {table_idx_2:?}"),
+            TableInit(table_idx, element_idx) => write!(f, " {table_idx:?}, {element_idx:?}"),
+            ElemDrop(element_idx) => write!(f, " {element_idx:?}"),
+            MemoryInit(data_idx) => write!(f, " {data_idx:?}"),
+            DataDrop(data_idx) => write!(f, " {data_idx:?}"),
         }
     }
 }
@@ -1766,6 +1897,14 @@ impl Module {
         self.memories.iter().enumerate().map(|(i, m)| (i.into(), m))
     }
 
+    pub fn elements(&self) -> impl Iterator<Item = (Idx<Element>, &Element)> {
+        self.elements.iter().enumerate().map(|(i, t)| (i.into(), t))
+    }
+
+    pub fn datas(&self) -> impl Iterator<Item = (Idx<Data>, &Data)> {
+        self.datas.iter().enumerate().map(|(i, m)| (i.into(), m))
+    }
+
     // Convenient accessors of functions for the typed, high-level index.
     // TODO Add the same for globals, tables, and memories, if needed.
 
@@ -1783,6 +1922,14 @@ impl Module {
 
     pub fn global_mut(&mut self, idx: Idx<Global>) -> &mut Global {
         &mut self.globals[idx.to_usize()]
+    }
+
+    pub fn table(&self, idx: Idx<Table>) -> &Table {
+        &self.tables[idx.to_usize()]
+    }
+
+    pub fn table_mut(&mut self, idx: Idx<Table>) -> &mut Table {
+        &mut self.tables[idx.to_usize()]
     }
 
     pub fn add_function(
@@ -2166,20 +2313,25 @@ impl Global {
 }
 
 impl Table {
-    pub fn new(limits: Limits) -> Table {
+    pub fn new(limits: Limits, ref_type: RefType) -> Table {
         Table {
             limits,
+            ref_type,
             import: None,
-            elements: Vec::new(),
             export: Vec::new(),
         }
     }
 
-    pub fn new_imported(limits: Limits, import_module: String, import_name: String) -> Table {
+    pub fn new_imported(
+        limits: Limits,
+        ref_type: RefType,
+        import_module: String,
+        import_name: String,
+    ) -> Table {
         Table {
             limits,
+            ref_type,
             import: Some((import_module, import_name)),
-            elements: Vec::new(),
             export: Vec::new(),
         }
     }
@@ -2196,7 +2348,6 @@ impl Memory {
         Memory {
             limits,
             import: None,
-            data: Vec::new(),
             export: Vec::new(),
         }
     }
@@ -2205,7 +2356,6 @@ impl Memory {
         Memory {
             limits,
             import: Some((import_module, import_name)),
-            data: Vec::new(),
             export: Vec::new(),
         }
     }

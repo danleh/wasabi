@@ -6,6 +6,7 @@ use wasabi_wasm::Idx;
 use wasabi_wasm::Instr;
 use wasabi_wasm::Label;
 use wasabi_wasm::Module;
+use wasabi_wasm::RefType;
 use wasabi_wasm::ValType;
 
 use super::block_stack::BlockStack;
@@ -23,6 +24,7 @@ pub struct ModuleInfo {
     #[serde(serialize_with = "serialize_types")]
     pub globals: Vec<ValType>,
     pub start: Option<Idx<Function>>,
+    pub tables: Vec<RefType>,
     pub table_export_name: Option<String>,
     pub br_tables: Vec<BrTableInfo>,
     // For mapping indices of indirectly called functions to the original indices, see
@@ -36,11 +38,12 @@ impl<'a> From<&'a Module> for ModuleInfo {
             functions: module.functions.iter().map(Into::into).collect(),
             globals: module.globals.iter().map(|g| g.type_.0).collect(),
             start: module.start,
+            tables: module.tables.iter().map(|t| t.ref_type).collect(),
             // if the module has no table, there cannot be a call_indirect, so this null will never be read from JS runtime
             table_export_name: module
                 .tables
-                .first()
-                .and_then(|table| table.export.first().cloned()),
+                .get(0)
+                .and_then(|table| table.export.get(0).cloned()),
             br_tables: vec![],
             original_function_imports_count: module
                 .functions

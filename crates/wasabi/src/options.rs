@@ -88,6 +88,7 @@ pub enum Hook {
     Return,
 
     Drop,
+    // together for Select and TypedSelect
     Select,
 
     Const,
@@ -99,6 +100,19 @@ pub enum Hook {
 
     MemorySize,
     MemoryGrow,
+    MemoryFill,
+    MemoryCopy,
+    MemoryInit,
+
+    TableGet,
+    TableSet,
+    TableSize,
+    TableGrow,
+    TableFill,
+    TableCopy,
+    TableInit,
+
+    RefIsNull,
 
     Local,
     Global,

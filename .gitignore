@@ -13,3 +13,5 @@ target/
 # Wasabi outputs, test outputs.
 out/
 /test-outputs/
+node_modules
+pkg

@@ -1,4 +1,3 @@
-use wasabi_wasm::Function;
 use wasabi_wasm::Idx;
 use wasabi_wasm::Instr;
 use wasabi_wasm::Local;
@@ -31,13 +30,8 @@ pub fn save_stack_to_locals(append_to: &mut Vec<Instr>, locals: &[Idx<Local>]) {
 pub fn restore_locals_with_i64_handling(
     append_to: &mut Vec<Instr>,
     locals: impl IntoIterator<Item = Idx<Local>>,
-    function: &Function,
 ) {
     for local in locals {
-        super::convert_i64::convert_i64_instr(
-            append_to,
-            Instr::Local(Get, local),
-            function.param_or_local_type(local),
-        );
+        append_to.push(Instr::Local(Get, local));
     }
 }

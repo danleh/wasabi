@@ -2,19 +2,19 @@
   (type $t0 (func (param i32 i32 i32)))
   (type $t1 (func))
   (type $t2 (func (result i32)))
-  (type $t3 (func (result f64)))
-  (type $t4 (func (result i64)))
-  (type $t5 (func (param i32 i32) (result i32)))
-  (type $t6 (func (result f32)))
+  (type $t3 (func (result i64)))
+  (type $t4 (func (result f32)))
+  (type $t5 (func (result f64)))
+  (type $t6 (func (param i32 i32) (result i32)))
   (func $f0 (type $t1))
   (func $f1 (type $t0) (param $p0 i32) (param $p1 i32) (param $p2 i32))
   (func $type-i32 (type $t2) (result i32)
     unreachable)
-  (func $type-i64 (type $t2) (result i32)
+  (func $type-i64 (type $t3) (result i64)
     unreachable)
-  (func $type-f32 (type $t3) (result f64)
+  (func $type-f32 (type $t4) (result f32)
     unreachable)
-  (func $type-f64 (type $t3) (result f64)
+  (func $type-f64 (type $t5) (result f64)
     unreachable)
   (func $as-func-first (type $t2) (result i32)
     unreachable
@@ -144,7 +144,7 @@
       br_table $B0 $B0
       i32.const 8
     end)
-  (func $as-return-value (type $t4) (result i64)
+  (func $as-return-value (type $t3) (result i64)
     unreachable
     return)
   (func $as-if-cond (type $t2) (result i32)
@@ -154,32 +154,32 @@
     else
       i32.const 1
     end)
-  (func $as-if-then (type $t5) (param $p0 i32) (param $p1 i32) (result i32)
+  (func $as-if-then (type $t6) (param $p0 i32) (param $p1 i32) (result i32)
     local.get $p0
     if $I0 (result i32)
       unreachable
     else
       local.get $p1
     end)
-  (func $as-if-else (type $t5) (param $p0 i32) (param $p1 i32) (result i32)
+  (func $as-if-else (type $t6) (param $p0 i32) (param $p1 i32) (result i32)
     local.get $p0
     if $I0 (result i32)
       local.get $p1
     else
       unreachable
     end)
-  (func $as-if-then-no-else (type $t5) (param $p0 i32) (param $p1 i32) (result i32)
+  (func $as-if-then-no-else (type $t6) (param $p0 i32) (param $p1 i32) (result i32)
     local.get $p0
     if $I0
       unreachable
     end
     local.get $p1)
-  (func $as-select-first (type $t5) (param $p0 i32) (param $p1 i32) (result i32)
+  (func $as-select-first (type $t6) (param $p0 i32) (param $p1 i32) (result i32)
     unreachable
     local.get $p0
     local.get $p1
     select)
-  (func $as-select-second (type $t5) (param $p0 i32) (param $p1 i32) (result i32)
+  (func $as-select-second (type $t6) (param $p0 i32) (param $p1 i32) (result i32)
     local.get $p0
     unreachable
     local.get $p1
@@ -232,17 +232,17 @@
     (local $l0 f32)
     unreachable
     local.set $l0)
-  (func $as-local.tee-value (type $t6) (result f32)
+  (func $as-local.tee-value (type $t4) (result f32)
     (local $l0 f32)
     unreachable
     local.tee $l0)
-  (func $as-global.set-value (type $t6) (result f32)
+  (func $as-global.set-value (type $t4) (result f32)
     unreachable
     global.set $g0)
-  (func $as-load-address (type $t6) (result f32)
+  (func $as-load-address (type $t4) (result f32)
     unreachable
     f32.load)
-  (func $as-loadN-address (type $t4) (result i64)
+  (func $as-loadN-address (type $t3) (result i64)
     unreachable
     i64.load8_s)
   (func $as-store-address (type $t1)
@@ -261,14 +261,14 @@
     i32.const 2
     unreachable
     i64.store16)
-  (func $as-unary-operand (type $t6) (result f32)
+  (func $as-unary-operand (type $t4) (result f32)
     unreachable
     f32.neg)
   (func $as-binary-left (type $t2) (result i32)
     unreachable
     i32.const 10
     i32.add)
-  (func $as-binary-right (type $t4) (result i64)
+  (func $as-binary-right (type $t3) (result i64)
     i64.const 10
     unreachable
     i64.sub)

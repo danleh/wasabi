@@ -1,0 +1,38 @@
+<html>
+  <head>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type"/>
+  </head>
+  <body>
+    <script type="module">
+      import init, { instrument_wasm } from './pkg/wasabi_js.js';
+      await init();
+      async function add() {
+        let buf = await fetch('./add.wasm')
+          .then(res => res.arrayBuffer())
+        const original_arr = new Uint8Array(buf);
+        console.log(`original wasm:`, original_arr)
+        const { instrumented, js } = instrument_wasm(original_arr);
+        const instrumented_arr = new Uint8Array(instrumented);
+        console.log(`instrumented wasm:`, instrumented_arr)
+        const res = eval(js);
+        const { instance } = await WebAssembly.instantiate(instrumented_arr, res);
+        console.log(`1 + 2 = `, instance.exports.add(1, 2))
+      }
+      async function hello() {
+        let buf = await fetch('./hello.wasm')
+          .then(res => res.arrayBuffer())
+        const original_arr = new Uint8Array(buf);
+        console.log(`original wasm:`, original_arr)
+        const { instrumented, js } = instrument_wasm(original_arr);
+        const instrumented_arr = new Uint8Array(instrumented);
+        console.log(`instrumented wasm:`, instrumented_arr)
+        const res = eval(js);
+        res.env = {print: console.log}
+        const { instance } = await WebAssembly.instantiate(instrumented_arr, res);
+      }
+      await add();
+      await hello();
+    </script>
+    <h1>Open Console</h1>
+  </body>
+</html>
