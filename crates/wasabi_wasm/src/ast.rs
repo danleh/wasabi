@@ -1056,6 +1056,13 @@ pub enum UnaryOp {
     I64ReinterpretF64,
     F32ReinterpretI32,
     F64ReinterpretI64,
+
+    // sign-extension operators from sign-ext-ops proposal
+    I32Extend8S,
+    I32Extend16S,
+    I64Extend8S,
+    I64Extend16S,
+    I64Extend32S,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -1208,6 +1215,11 @@ impl UnaryOp {
             I64ReinterpretF64 => "i64.reinterpret_f64",
             F32ReinterpretI32 => "f32.reinterpret_i32",
             F64ReinterpretI64 => "f64.reinterpret_i64",
+            I32Extend8S => "i32.extend8_s",
+            I32Extend16S => "i32.extend16_s",
+            I64Extend8S => "i64.extend8_s",
+            I64Extend16S => "i64.extend16_s",
+            I64Extend32S => "i64.extend32_s",
         }
     }
 
@@ -1245,6 +1257,8 @@ impl UnaryOp {
             I64ReinterpretF64 => FunctionType::new(&[F64], &[I64]),
             F32ReinterpretI32 => FunctionType::new(&[I32], &[F32]),
             F64ReinterpretI64 => FunctionType::new(&[I64], &[F64]),
+            I32Extend8S | I32Extend16S => FunctionType::new(&[I32], &[I32]),
+            I64Extend8S | I64Extend16S | I64Extend32S => FunctionType::new(&[I64], &[I64]),
         }
     }
 }
@@ -1302,6 +1316,11 @@ impl FromStr for UnaryOp {
             "i64.reinterpret_f64" => I64ReinterpretF64,
             "f32.reinterpret_i32" => F32ReinterpretI32,
             "f64.reinterpret_i64" => F64ReinterpretI64,
+            "i32.extend8_s" => I32Extend8S,
+            "i32.extend16_s" => I32Extend16S,
+            "i64.extend8_s" => I64Extend8S,
+            "i64.extend16_s" => I64Extend16S,
+            "i64.extend32_s" => I64Extend32S,
             _ => return Err(()),
         })
     }

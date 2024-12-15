@@ -591,6 +591,11 @@ fn encode_instruction(
         Instr::Unary(UnaryOp::I64ReinterpretF64) => we::Instruction::I64ReinterpretF64,
         Instr::Unary(UnaryOp::F32ReinterpretI32) => we::Instruction::F32ReinterpretI32,
         Instr::Unary(UnaryOp::F64ReinterpretI64) => we::Instruction::F64ReinterpretI64,
+        Instr::Unary(UnaryOp::I32Extend8S) => we::Instruction::I32Extend8S,
+        Instr::Unary(UnaryOp::I32Extend16S) => we::Instruction::I32Extend16S,
+        Instr::Unary(UnaryOp::I64Extend8S) => we::Instruction::I64Extend8S,
+        Instr::Unary(UnaryOp::I64Extend16S) => we::Instruction::I64Extend16S,
+        Instr::Unary(UnaryOp::I64Extend32S) => we::Instruction::I64Extend32S,
 
         Instr::Binary(BinaryOp::I32Eq) => we::Instruction::I32Eq,
         Instr::Binary(BinaryOp::I32Ne) => we::Instruction::I32Ne,
