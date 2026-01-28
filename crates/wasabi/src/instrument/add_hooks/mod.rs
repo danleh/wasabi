@@ -425,7 +425,11 @@ pub fn add_hooks(
 
                         // each br_table instruction gets its own entry in the static info object
                         // that maps table index to label and location
-                        module_info.write().br_tables.push(BrTableInfo::from_br_table(table, default, &block_stack, fidx));
+                        let table_idx = {
+                            let mut info = module_info.write();
+                            info.br_tables.push(BrTableInfo::from_br_table(table, default, &block_stack, fidx));
+                            info.br_tables.len() - 1
+                        };
 
                         // NOTE calling the end() hooks for the intermediate blocks is done at runtime
                         // by the br_table low-level hook
@@ -437,7 +441,7 @@ pub fn add_hooks(
                             location.0,
                             location.1,
                             Local(Get, target_idx_tmp),
-                            Const(Val::I32((module_info.read().br_tables.len() - 1) as i32)),
+                            Const(Val::I32(table_idx as i32)),
                             hooks.instr(&instr, &[])
                         ])
                     }
