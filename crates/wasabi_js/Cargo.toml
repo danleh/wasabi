@@ -1,0 +1,16 @@
+[package]
+name = "wasabi_js"
+version = "0.3.0"
+authors = ["Doehyun Baek <doehyunbaek@gmail.com>"]
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasabi = { path = "../wasabi" }
+wasabi_wasm = { path = "../wasabi_wasm" }
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.4"
+wasm-bindgen = { version = "0.2.87" }
+console_error_panic_hook = "0.1.7"

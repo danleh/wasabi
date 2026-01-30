@@ -14,7 +14,9 @@ use wasabi_wasm::LocalOp::*;
 use wasabi_wasm::MemoryOp;
 use wasabi_wasm::Module;
 use wasabi_wasm::Mutability;
+use wasabi_wasm::RefType;
 use wasabi_wasm::Val;
+use wasabi_wasm::ValType;
 use wasabi_wasm::ValType::*;
 
 use crate::options::Hook;
@@ -22,14 +24,12 @@ use crate::options::HookSet;
 
 use self::block_stack::BlockStack;
 use self::block_stack::BlockStackElement;
-use self::convert_i64::convert_i64_instr;
 use self::duplicate_stack::*;
 use self::hook_map::HookMap;
 use self::static_info::*;
 use self::type_stack::TypeStack;
 
 pub mod block_stack;
-mod convert_i64;
 mod duplicate_stack;
 mod hook_map;
 mod static_info;
@@ -44,9 +44,9 @@ pub fn add_hooks(
     node_js: bool,
 ) -> Option<(String, usize)> {
     // make sure table is exported, needed for Wasabi runtime to resolve table indices to function indices.
-    for table in &mut module.tables {
+    for (i, table) in module.tables.iter_mut().enumerate() {
         if table.export.is_empty() {
-            table.export.push("__wasabi_table".into());
+            table.export.push(format!("__wasabi_table{i}"));
         }
     }
     // FIXME is this a valid workaround for wrong Firefox exported function .name property?
@@ -251,8 +251,7 @@ pub fn add_hooks(
                 }
                 If(block_ty) => {
                     block_stack.begin_if(iidx);
-                    type_stack.instr(&FunctionType::new(&[I32], &[]));
-                    type_stack.begin(block_ty);
+                    type_stack.begin_if(block_ty);
 
                     // if_ hook for the condition (always executed on either branch)
                     if enabled_hooks.contains(Hook::If) {
@@ -326,7 +325,7 @@ pub fn add_hooks(
                                 location.0,
                                 Const(Val::I32(-1)),
                             ]);
-                            restore_locals_with_i64_handling(&mut instrumented_body, result_tmps, function);
+                            restore_locals_with_i64_handling(&mut instrumented_body, result_tmps);
                             instrumented_body.push(hooks.instr(&Return, result_tys));
                         }
                     }
@@ -467,7 +466,7 @@ pub fn add_hooks(
                             location.0,
                             location.1,
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, result_tmps, function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, result_tmps);
                         instrumented_body.push(hooks.instr(&instr, result_tys));
                     }
 
@@ -498,7 +497,7 @@ pub fn add_hooks(
                             location.1.clone(),
                             target_func_idx.to_const(),
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, arg_tmps, function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, arg_tmps);
                         instrumented_body.extend_from_slice(&[
                             hooks.instr(&instr, func_ty.inputs()),
                             instr,
@@ -513,7 +512,7 @@ pub fn add_hooks(
                             location.0,
                             location.1,
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, result_tmps, function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, result_tmps);
                         instrumented_body.push(hooks.call_post(func_ty.results()))
                     } else {
                         instrumented_body.push(instr);
@@ -536,7 +535,7 @@ pub fn add_hooks(
                             location.1.clone(),
                             Local(Get, target_table_idx_tmp),
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, arg_tmps, function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, arg_tmps);
                         instrumented_body.extend_from_slice(&[
                             hooks.instr(&instr, func_ty.inputs()),
                             instr.clone(),
@@ -551,7 +550,7 @@ pub fn add_hooks(
                             location.0,
                             location.1,
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, result_tmps, function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, result_tmps);
                         instrumented_body.push(hooks.call_post(func_ty.results()));
                     } else {
                         instrumented_body.push(instr.clone());
@@ -572,7 +571,7 @@ pub fn add_hooks(
                             location.0,
                             location.1,
                         ]);
-                        convert_i64_instr(&mut instrumented_body, Local(Get, tmp), ty);
+                        instrumented_body.push(Local(Get, tmp));
                         // replace drop with hook call
                         instrumented_body.push(hooks.instr(&instr, &[ty]));
                     } else {
@@ -585,7 +584,7 @@ pub fn add_hooks(
                     assert_eq!(type_stack.pop_val(), ty, "select arguments should have same type");
                     type_stack.push_val(ty);
 
-                    if enabled_hooks.contains(Hook::Drop) {
+                    if enabled_hooks.contains(Hook::Select) {
                         let condition_tmp = function.add_fresh_local(I32);
                         let arg_tmps = function.add_fresh_locals(&[ty, ty]);
 
@@ -596,7 +595,7 @@ pub fn add_hooks(
                             location.1,
                             Local(Get, condition_tmp),
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, arg_tmps, function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, arg_tmps);
                         // replace select with hook call
                         instrumented_body.push(hooks.instr(&instr, &[ty, ty]));
                     } else {
@@ -604,6 +603,30 @@ pub fn add_hooks(
                     }
                 }
 
+                TypedSelect(ty) => {
+                    assert_eq!(type_stack.pop_val(), I32, "select condition should be i32");
+                    assert_eq!(type_stack.pop_val(), ty, "select argument should match given ty");
+                    assert_eq!(type_stack.pop_val(), ty, "select argument should match given ty");
+                    type_stack.push_val(ty);
+
+                    if enabled_hooks.contains(Hook::Select) {
+                        let condition_tmp = function.add_fresh_local(I32);
+                        let arg_tmps = function.add_fresh_locals(&[ty, ty]);
+
+                        save_stack_to_locals(&mut instrumented_body, &[arg_tmps[0], arg_tmps[1], condition_tmp]);
+                        instrumented_body.extend_from_slice(&[
+                            instr.clone(),
+                            location.0,
+                            location.1,
+                            Local(Get, condition_tmp),
+                        ]);
+                        restore_locals_with_i64_handling(&mut instrumented_body, arg_tmps);
+                        // replace select with hook call
+                        instrumented_body.push(hooks.instr(&instr, &[ty, ty]));
+                    } else {
+                        instrumented_body.push(instr);
+                    }
+                }
 
                 /* Variable Instructions */
 
@@ -621,7 +644,7 @@ pub fn add_hooks(
                             location.1,
                             local_idx.to_const(),
                         ]);
-                        convert_i64_instr(&mut instrumented_body, Local(Get, local_idx), local_ty);
+                        instrumented_body.push(Local(Get, local_idx));
                         instrumented_body.push(hooks.instr(&instr, &[local_ty]));
                     }
                 }
@@ -639,7 +662,7 @@ pub fn add_hooks(
                             location.1,
                             global_idx.to_const(),
                         ]);
-                        convert_i64_instr(&mut instrumented_body, Global(GlobalOp::Get, global_idx), global_ty);
+                        instrumented_body.push(Global(GlobalOp::Get, global_idx));
                         instrumented_body.push(hooks.instr(&instr, &[global_ty]));
                     }
                 }
@@ -684,6 +707,113 @@ pub fn add_hooks(
                     }
                 }
 
+                MemoryFill  => {
+                    let ty = instr.simple_type().unwrap();
+                    type_stack.instr(&ty);
+                    if enabled_hooks.contains(Hook::MemoryFill) {
+                        setup_instrument(function, ty, &mut instrumented_body, &instr, &location);
+                        instrumented_body.push(hooks.instr(&instr, &[]));
+                    } else {
+                        instrumented_body.push(instr);
+                    }
+                },
+                MemoryCopy => {
+                    let ty = instr.simple_type().unwrap();
+                    type_stack.instr(&ty);
+                    if enabled_hooks.contains(Hook::MemoryCopy) {
+                        setup_instrument(function, ty, &mut instrumented_body, &instr, &location);
+                        instrumented_body.push(hooks.instr(&instr, &[]));
+                    } else {
+                        instrumented_body.push(instr);
+                    }
+                },
+                MemoryInit(_) => {
+                    let ty = instr.simple_type().unwrap();
+                    type_stack.instr(&ty);
+                    if enabled_hooks.contains(Hook::MemoryInit) {
+                        setup_instrument(function, ty, &mut instrumented_body, &instr, &location);
+                        instrumented_body.push(hooks.instr(&instr, &[]));
+                    } else {
+                        instrumented_body.push(instr);
+                    }
+                },
+
+                /* Table Instructions */
+
+                TableGet(table_idx) => {
+                    let t = module_info.read().tables[table_idx.to_usize()];
+                    let ty = FunctionType::new(&[I32], &[ValType::Ref(t)]);
+                    type_stack.instr(&ty);
+                    if enabled_hooks.contains(Hook::TableGet) {
+                        setup_instrument(function, ty, &mut instrumented_body, &instr, &location);
+                        instrumented_body.push(hooks.instr(&instr, &[ValType::Ref(t)]));
+                    } else {
+                        instrumented_body.push(instr);
+                    }
+                },
+                TableSet(table_idx) => {
+                    let t = module_info.read().tables[table_idx.to_usize()];
+                    let ty = FunctionType::new(&[I32, ValType::Ref(t)], &[]);
+                    type_stack.instr(&ty);
+                    if enabled_hooks.contains(Hook::TableSet) {
+                        setup_instrument(function, ty, &mut instrumented_body, &instr, &location);
+                        instrumented_body.push(hooks.instr(&instr, &[ValType::Ref(t)]));
+                    } else {
+                        instrumented_body.push(instr);
+                    }
+                }
+                TableSize(_) => {
+                    let ty = instr.simple_type().unwrap();
+                    type_stack.instr(&ty);
+                    if enabled_hooks.contains(Hook::TableSize) {
+                        setup_instrument(function, ty, &mut instrumented_body, &instr, &location);
+                        instrumented_body.push(hooks.instr(&instr, &[]));
+                    } else {
+                        instrumented_body.push(instr);
+                    }
+                }
+                TableGrow(table_idx) => {
+                    let t = module_info.read().tables[table_idx.to_usize()];
+                    let ty = FunctionType::new(&[ValType::Ref(t), I32], &[I32]);
+                    type_stack.instr(&ty);
+                    if enabled_hooks.contains(Hook::TableGrow) {
+                        setup_instrument(function, ty, &mut instrumented_body, &instr, &location);
+                        instrumented_body.push(hooks.instr(&instr, &[ValType::Ref(t)]));
+                    } else {
+                        instrumented_body.push(instr);
+                    }
+                },
+                TableFill(table_idx) => {
+                    let t = module_info.read().tables[table_idx.to_usize()];
+                    let ty = FunctionType::new(&[I32, ValType::Ref(t), I32], &[]);
+                    type_stack.instr(&ty);
+                    if enabled_hooks.contains(Hook::TableFill) {
+                        setup_instrument(function, ty, &mut instrumented_body, &instr, &location);
+                        instrumented_body.push(hooks.instr(&instr, &[ValType::Ref(t)]));
+                    } else {
+                        instrumented_body.push(instr);
+                    }
+                }
+                TableCopy(_, _) => {
+                    let ty = instr.simple_type().unwrap();
+                    type_stack.instr(&ty);
+                    if enabled_hooks.contains(Hook::TableCopy) {
+                        setup_instrument(function, ty, &mut instrumented_body, &instr, &location);
+                        instrumented_body.push(hooks.instr(&instr, &[]));
+                    } else {
+                        instrumented_body.push(instr);
+                    }
+                }
+                TableInit(_, _) => {
+                    let ty = instr.simple_type().unwrap();
+                    type_stack.instr(&ty);
+                    if enabled_hooks.contains(Hook::TableInit) {
+                        setup_instrument(function, ty, &mut instrumented_body, &instr, &location);
+                        instrumented_body.push(hooks.instr(&instr, &[]));
+                    } else {
+                        instrumented_body.push(instr);
+                    }
+                }
                 /* rest are "grouped instructions", i.e., where many instructions can be handled in a similar manner */
 
                 Load(op, memarg) => {
@@ -703,7 +833,7 @@ pub fn add_hooks(
                             Const(Val::I32(memarg.offset as i32)),
                             Const(Val::I32(memarg.alignment_exp as i32)),
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, [addr_tmp, value_tmp], function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, [addr_tmp, value_tmp]);
                         instrumented_body.push(hooks.instr(&instr, &[]));
                     } else {
                         instrumented_body.push(instr);
@@ -725,7 +855,7 @@ pub fn add_hooks(
                             Const(Val::I32(memarg.offset as i32)),
                             Const(Val::I32(memarg.alignment_exp as i32)),
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, [addr_tmp, value_tmp], function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, [addr_tmp, value_tmp]);
                         instrumented_body.push(hooks.instr(&instr, &[]));
                     } else {
                         instrumented_body.push(instr);
@@ -735,7 +865,7 @@ pub fn add_hooks(
 
                 /* Numeric Instructions */
 
-                Const(val) => {
+                Const(_val) => {
                     type_stack.instr(&instr.simple_type().unwrap());
 
                     instrumented_body.push(instr.clone());
@@ -746,7 +876,7 @@ pub fn add_hooks(
                             location.1,
                         ]);
                         // optimization: just call T.const again, instead of duplicating result into local
-                        convert_i64_instr(&mut instrumented_body, instr.clone(), val.to_type());
+                        instrumented_body.push(instr.clone());
                         instrumented_body.push(hooks.instr(&instr, &[]));
                     }
                 }
@@ -766,11 +896,48 @@ pub fn add_hooks(
                             location.0,
                             location.1,
                         ]);
-                        restore_locals_with_i64_handling(&mut instrumented_body, input_tmps.iter().chain( result_tmps.iter()).copied(), function);
+                        restore_locals_with_i64_handling(&mut instrumented_body, input_tmps.iter().chain( result_tmps.iter()).copied());
                         instrumented_body.push(hooks.instr(&instr, &[]));
                     } else {
                         instrumented_body.push(instr);
                     }
+                }
+                RefIsNull => {
+                    let ty = type_stack.pop_val();
+                    let t = match ty {
+                        ValType::Ref(refty) => refty,
+                        _ => panic!("ref.is_null on non-ref type {:?}", ty)
+                    };
+                    type_stack.push_val(I32);
+
+                    if enabled_hooks.contains(Hook::RefIsNull) {
+                        let result_tmp = function.add_fresh_local(I32);
+
+                        instrumented_body.extend_from_slice(&[
+                            instr.clone(),
+                            Local(Tee, result_tmp),
+                            location.0,
+                            location.1,
+                            Local(Get, result_tmp),
+                            hooks.instr(&instr, &[ValType::Ref(t)])
+                        ]);
+                    } else {
+                        instrumented_body.push(instr);
+                    }
+                }
+                RefNull(ty) => {
+                    type_stack.push_val(ValType::Ref(ty));
+                    instrumented_body.push(instr.clone());
+                },
+                RefFunc(_) => {
+                    type_stack.push_val(ValType::Ref(RefType::FuncRef));
+                    instrumented_body.push(instr.clone());
+                }
+                ElemDrop(_) => {
+                    instrumented_body.push(instr.clone());
+                }
+                DataDrop(_) => {
+                    instrumented_body.push(instr.clone());
                 }
             }
         }
@@ -800,6 +967,25 @@ pub fn add_hooks(
         generate_js(module_info.into_inner(), &js_hooks, node_js),
         hook_count,
     ))
+}
+
+fn setup_instrument(
+    function: &mut Function,
+    ty: FunctionType,
+    instrumented_body: &mut Vec<Instr>,
+    instr: &Instr,
+    location: &(Instr, Instr),
+) {
+    let input_tmps = function.add_fresh_locals(ty.inputs());
+    let result_tmps = function.add_fresh_locals(ty.results());
+    save_stack_to_locals(instrumented_body, &input_tmps);
+    instrumented_body.push(instr.clone());
+    save_stack_to_locals(instrumented_body, &result_tmps);
+    instrumented_body.extend_from_slice(&[location.0.clone(), location.1.clone()]);
+    restore_locals_with_i64_handling(
+        instrumented_body,
+        input_tmps.iter().chain(result_tmps.iter()).copied(),
+    );
 }
 
 /// convenience to hand (function/instr/local/global) indices to hooks
@@ -861,33 +1047,13 @@ fn generate_js(module_info: ModuleInfo, hooks: &[String], node_js: bool) -> Stri
     let mut result = r#"/*
 * Generated by Wasabi. DO NOT EDIT.
 * Contains:
-*   - independent of program-to-instrument: long.js dependency, Wasabi loader and runtime
+*   - independent of program-to-instrument: Wasabi loader and runtime
 *   - generated from program-to-instrument: static information and low-level hooks
 */
 
 "#
     .to_string();
 
-    if node_js {
-        // For Node.js, write the long.js dependency to a separate file (in main) and
-        // only `require()` it here.
-        result.push_str("const Long = require('./long.js');");
-    } else {
-        // Browser case (default):
-        // FIXME super hacky: just cat together long.js dependency, program-independent, and
-        // program-dependent JavaScript into one big file.
-        // * Alternative A: use webpack or other bundler, drawbacks:
-        //    - users need to install another tool
-        //    - needs to be run after every instrumentation
-        // * Alternative B: compile Wasabi itself to WebAssembly, instrument at runtime
-        result.push_str("// long.js\n");
-        result.push_str(
-            include_str!("../../../js/long.js/long.js")
-                .lines()
-                .next()
-                .expect("could not include long.js dependency"),
-        );
-    }
     result.push_str("\n\n");
 
     result.push_str(include_str!("../../../js/runtime.js"));

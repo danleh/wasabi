@@ -55,10 +55,6 @@ fn main() -> Result<(), MainError> {
     fs::create_dir_all(&opt.output_dir)?;
     module.to_file(output_file_wasm)?;
     fs::write(output_file_wasabi_js, js)?;
-    if opt.node_js {
-        let output_file_long_js = opt.output_dir.join("long.js");
-        fs::write(output_file_long_js, include_str!("../js/long.js/long.js"))?;
-    }
 
     Ok(())
 }
