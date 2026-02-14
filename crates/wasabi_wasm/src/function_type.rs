@@ -2,7 +2,7 @@
 //! representation for them.
 //! The goals are:
 //! - Use at most 32 bits of memory, because they are frequently part of larger
-//!   AST data types, e.g., in functions and instructions.
+//! AST data types, e.g., in functions and instructions.
 //! - Should be cheap to compare for equality, just a single `u32` comparison.
 //! - Should be cheap to copy, ideally just a memcpy (Rust: Copy trait)
 //! - Should be cheap to create, which is espaclly common in parsing and type checking.
@@ -19,7 +19,7 @@ use std::sync::RwLock;
 use once_cell::sync::Lazy;
 use rustc_hash::FxHashMap;
 
-use crate::ValType;
+use crate::{RefType, ValType};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum FunctionType {
@@ -260,6 +260,8 @@ const fn val_type_to_goedel_number(val_type: ValType) -> usize {
         ValType::I64 => 1,
         ValType::F32 => 2,
         ValType::F64 => 3,
+        ValType::Ref(RefType::FuncRef) => 4,
+        ValType::Ref(RefType::ExternRef) => 5,
     }
 }
 
@@ -269,12 +271,14 @@ const fn goedel_number_to_val_type(goedel_number: usize) -> Option<ValType> {
         1 => Some(ValType::I64),
         2 => Some(ValType::F32),
         3 => Some(ValType::F64),
+        4 => Some(ValType::Ref(RefType::FuncRef)),
+        5 => Some(ValType::Ref(RefType::ExternRef)),
         _ => None,
     }
 }
 
 // Determined by the number of variants of `ValType`.
-const VAL_TYPE_MAX_GOEDEL_NUMBER: usize = 3;
+const VAL_TYPE_MAX_GOEDEL_NUMBER: usize = 5;
 
 #[allow(unused)]
 const fn val_type_seq_max_goedel_number(max_seq_len: u32) -> usize {
@@ -293,10 +297,10 @@ fn test_goedel_number_constants() {
     assert_eq!(val_type_to_goedel_number(ValType::I32), 0);
     assert_eq!(val_type_to_goedel_number(ValType::F64), 3);
     assert_eq!(val_type_seq_max_goedel_number(0), 0);
-    assert_eq!(val_type_seq_max_goedel_number(1), 4);
-    assert_eq!(val_type_seq_max_goedel_number(2), 20);
-    assert_eq!(val_type_seq_max_goedel_number(3), 84);
-    assert_eq!(val_type_seq_max_goedel_number(4), 340);
+    assert_eq!(val_type_seq_max_goedel_number(1), 6);
+    assert_eq!(val_type_seq_max_goedel_number(2), 42);
+    assert_eq!(val_type_seq_max_goedel_number(3), 258);
+    assert_eq!(val_type_seq_max_goedel_number(4), 1554);
 }
 
 fn val_type_seq_to_goedel_number(seq: impl IntoIterator<Item = ValType>) -> Option<usize> {
@@ -316,7 +320,7 @@ fn test_val_type_seq_to_goedel_number() {
     assert_eq!(val_type_seq_to_goedel_number([ValType::I32]), Some(1));
     assert_eq!(
         val_type_seq_to_goedel_number([ValType::I32, ValType::I32]),
-        Some(5)
+        Some(7)
     );
 }
 
@@ -384,7 +388,7 @@ fn test_goedel_number_to_val_type_seq() {
     assert_eq!(goedel_number_to_val_type_seq(0), vec![]);
     assert_eq!(goedel_number_to_val_type_seq(1), vec![ValType::I32]);
     assert_eq!(
-        goedel_number_to_val_type_seq(5),
+        goedel_number_to_val_type_seq(7),
         vec![ValType::I32, ValType::I32]
     );
 }

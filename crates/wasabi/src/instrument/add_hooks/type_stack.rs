@@ -76,7 +76,39 @@ impl TypeStack {
     }
 
     pub fn begin(&mut self, block_ty: FunctionType) {
-        self.0.push(BlockBegin(block_ty))
+        for &input_ty in block_ty.inputs().iter().rev() {
+            println!("blockty: {}", block_ty);
+            assert_eq!(
+                input_ty,
+                self.pop_val(),
+                "instruction expected input type, but stack top was"
+            );
+        }
+        self.0.push(BlockBegin(block_ty));
+        for &input_ty in block_ty.inputs().iter() {
+            self.push_val(input_ty)
+        }
+    }
+
+    pub fn begin_if(&mut self, block_ty: FunctionType) {
+        assert_eq!(
+            ValType::I32,
+            self.pop_val(),
+            "instruction expected input type, but stack top was"
+        );
+        for &input_ty in block_ty.inputs().iter().rev() {
+            println!("blockty: {}", block_ty);
+            assert_eq!(
+                input_ty,
+                self.pop_val(),
+                "instruction expected input type, but stack top was"
+            );
+        }
+        self.0.push(BlockBegin(block_ty));
+        self.0.push(Val(ValType::I32));
+        for &input_ty in block_ty.inputs().iter() {
+            self.push_val(input_ty)
+        }
     }
 
     /// implicitly pops all types from the stack until the last block begin
@@ -90,8 +122,8 @@ impl TypeStack {
                 Some(BlockBegin(block_ty)) => {
                     // NOTE there is no validation that the stack is correct at the end of a block
                     // it is unclear to me how it exactly works with, e.g., br/return + drops
-                    if let &[ty] = block_ty.results() {
-                        self.push_val(ty);
+                    for ty in block_ty.results() {
+                        self.push_val(*ty);
                     }
                     return Some(block_ty);
                 }
@@ -104,10 +136,13 @@ impl TypeStack {
         // reuse code from end...
         let block_ty = self.end().expect("else cannot end a function");
         // but undo pushing of block result (this will be done by the "real" end)
-        if let &[ty] = block_ty.results() {
-            assert_eq!(ty, self.pop_val());
+        for ty in block_ty.results().iter().rev() {
+            assert_eq!(*ty, self.pop_val());
         }
-        self.begin(block_ty);
+        self.0.push(BlockBegin(block_ty));
+        for &input_ty in block_ty.inputs().iter() {
+            self.push_val(input_ty)
+        }
     }
 
     // TODO see add_hooks/mod.rs

@@ -1,5 +1,5 @@
-commit 1782235239ddebaf2cb079b00fdaa2d2c4dedba3
-Author: YAMAMOTO Takashi <yamamoto@midokura.com>
-Date:   Fri Dec 16 00:24:54 2022 +0900
+commit 43d405f5301adefb823b443c6fb9bb6093b1e1a7
+Author: Andreas Rossberg <rossberg@chromium.org>
+Date:   Wed Oct 25 21:55:07 2023 +0200
 
-    [test] elem.wast: force to use exprs in a element (#1561)
+    [spec/interpreter/test] Align definition of newline with Unicode recommendation (#1684)

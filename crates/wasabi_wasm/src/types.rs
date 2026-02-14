@@ -830,6 +830,34 @@ fn check_instr(
             state.push_vals(function_ty.results())?;
             to_inferred_type(function_ty)
         }
+        TableGet(idx) => {
+            let ref_ty = module.table(*idx).ref_type;
+            let function_ty = FunctionType::new(&[ValType::I32], &[ValType::Ref(ref_ty)]);
+            state.pop_vals_expected(function_ty.inputs())?;
+            state.push_vals(function_ty.results())?;
+            to_inferred_type(function_ty)
+        }
+        TableSet(idx) => {
+            let ref_ty = module.table(*idx).ref_type;
+            let function_ty = FunctionType::new(&[ValType::I32, ValType::Ref(ref_ty)], &[]);
+            state.pop_vals_expected(function_ty.inputs())?;
+            state.push_vals(function_ty.results())?;
+            to_inferred_type(function_ty)
+        }
+        TableGrow(idx) => {
+            let ref_ty = module.table(*idx).ref_type;
+            let function_ty = FunctionType::new(&[ValType::Ref(ref_ty), ValType::I32], &[ValType::I32]);
+            state.pop_vals_expected(function_ty.inputs())?;
+            state.push_vals(function_ty.results())?;
+            to_inferred_type(function_ty)
+        },
+        TableFill(idx) => {
+            let ref_ty = module.table(*idx).ref_type;
+            let function_ty = FunctionType::new(&[ValType::I32, ValType::Ref(ref_ty), ValType::I32], &[]);
+            state.pop_vals_expected(function_ty.inputs())?;
+            state.push_vals(function_ty.results())?;
+            to_inferred_type(function_ty)
+        },
 
         // Value-polymorphic instructions:
         Drop => {
@@ -840,12 +868,25 @@ fn check_instr(
                 (Err(UnconstrainedTypeError), false) => unreachable!("unconstrained value type should never appear in reachable code"),
             }
         }
+        RefIsNull => {
+            let ty = state.pop_val()?;
+            state.push_val(InferredValType::from(ValType::I32))?;
+            match (ValType::try_from(ty), was_unreachable) {
+                (_, true) => InferredInstructionType::Unreachable,
+                (Ok(ValType::Ref(refty)), false) => InferredInstructionType::Reachable(FunctionType::new(&[ValType::Ref(refty)], &[ValType::I32])),
+                (Ok(ty), false) => {
+                    return Err(TypeError::from(format!("ref.isnull is valid only for ref types, but got {ty}")));
+                }
+                (Err(UnconstrainedTypeError), false) => unreachable!("unconstrained value type should never appear in reachable code"),
+            }
+        },
         Select => {
             state.pop_val_expected(ValType::I32)?;
             let ty1 = state.pop_val()?;
             let ty2 = state.pop_val()?;
             let ty = ty1.join(ty2)
                 .ok_or_else(|| TypeError::from(format!("incompatible types {ty1} and {ty2} for select arguments")))?;
+            // TODO: select is invalid with ref types, but we don't check that here.
             state.push_val(ty)?;
             match (ValType::try_from(ty), was_unreachable) {
                 (_, true) => InferredInstructionType::Unreachable,
@@ -876,7 +917,7 @@ fn check_instr(
         }
         End => {
             let frame = state.pop_block()?;
-            // If the block stack is emtpy after the end, then this end was for the whole function, 
+            // If the block stack is emtpy after the end, then this end was for the whole function,
             // so there is no parent stack to push the results to and `push_vals` would panic.
             let is_function_end = state.block_stack.is_empty();
             if !is_function_end {
