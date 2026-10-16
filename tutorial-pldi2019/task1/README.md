@@ -1,6 +1,6 @@
 # Task 1: Your First Wasabi Analysis
 
-The goal of this task is to learn how to build and run a Wasabi analysis. Go to the `tutorial/task1` directory.
+The goal of this task is to learn how to build and run a Wasabi analysis. Go to the `tutorial-pldi2019/task1` directory.
 
 ## Step 1: Inspect
 
