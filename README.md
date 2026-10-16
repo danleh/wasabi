@@ -44,8 +44,11 @@ cargo install --path .
 
 # Test:
 wasabi
-> Error: expected at least one argument
-> Usage: wasabi <input_wasm_file> [<output_dir>]
+> error: The following required arguments were not provided:
+>     <input.wasm>
+>
+> USAGE:
+>     wasabi [OPTIONS] <input.wasm>
 ```
 
 
@@ -126,7 +129,7 @@ Apply **Wasabi** to WebAssembly programs in the **browser**:
 * Step 2: **Analyze**
     ```bash
     # Use one of the example analyses, e.g., that logs all instructions with their inputs and results.
-    cp /path/to/wasabi/analyses/log-all.js .
+    cp /path/to/wasabi/examples/analyses/log-all.js .
     
     # Include analysis in Emscripten-generated HTML harness (FIXME hacky).
     # NOTE The analysis must be loaded *after* the Wasabi-generated JavaScript.
@@ -137,7 +140,7 @@ Apply **Wasabi** to WebAssembly programs in the **browser**:
     firefox http://localhost:8080/hello.html
     ```
 
-You can find more example Wasabi analyses in `example-analyses/`.
+You can find more example Wasabi analyses in `examples/analyses/`.
 
 
 ## License

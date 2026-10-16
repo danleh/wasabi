@@ -30,12 +30,12 @@ Since we want to only perform a call graph analysis, we can select to insert cod
 That is, inside `bb/` execute:
 
 ```
-wasabi --hooks=call bb.wasm .
+wasabi --hooks=call bb.wasm --output-dir .
 ```
 
 This does three things:
 - `--hooks=call` will instrument only call instructions, nothing else, which results in not quite as much code size increase and runtime overhead as instrumenting every instruction.
-- `.` means that the outputs shall be placed in the current directory.
+- `--output-dir .` means that the outputs shall be placed in the current directory.
 - One output is the instrumented file. Since it will also be named bb.wasm, it overwrites the original, uninstrumented file.
 - The second output is `bb.wasabi.js`, a generated JavaScript file that contains glue code and statically extracted information about the binary.
 
